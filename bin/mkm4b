@@ -2954,6 +2954,9 @@ proc main { args } {
     foreach app {ffmpeg mp4chaps mp4tags mp4art mp4info} {
         if { ![llength [auto_execok $app]] } { return -code error "Dependency missing: $app" }
     }
+    foreach app {id3info id3v2 soxi file sox gm} {
+        if { ![llength [auto_execok $app]] } { puts "WARNING: $app not found; Functionality may be limited." }
+    }
 
     if { $bReturn } { return }
 
