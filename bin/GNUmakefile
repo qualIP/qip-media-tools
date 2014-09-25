@@ -8,4 +8,4 @@ install: install-mkm4b
 install-mkm4b: ~/bin/mkm4b
 ~/bin/mkm4b: mkm4b
 	mkdir -p $(@D)
-	ln -s "$<" "$@"
+	ln -s "$(CURDIR)/$<" "$@"
