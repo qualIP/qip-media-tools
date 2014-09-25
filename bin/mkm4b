@@ -1,0 +1,4374 @@
+#!/usr/bin/env tclsh
+
+package require Tcl 8.5
+package require Tclx
+
+set ::opts [dict create \
+        interactive 0 \
+        dry_run 0 \
+        debug 0 \
+        ipod_compat 1 \
+        itunes_compat 1 \
+        force_encode 0 \
+        yes 0 \
+        single 0 \
+        reuse_chapters 0 \
+        chapter_naming_format "default" \
+        OverDrive_MediaMarkers 1 \
+    ]
+
+proc cmp_dict { s1 s2 } {
+    return [expr {
+	$s1 eq $s2 ? 0 :
+	[lindex [lsort -dictionary [list $s1 $s2]] 0] eq $s1 ? -1 :
+	1
+    }]
+}
+
+proc cmp_audio_file_info { d1 d2 } {
+    if { [catch {dict get $d1 tags disk} v] || ![regexp {^(\d+)(?:/(\d*))?$} $v - v1] } { set v1 0 }
+    if { [catch {dict get $d2 tags disk} v] || ![regexp {^(\d+)(?:/(\d*))?$} $v - v2] } { set v2 0 }
+    if { [set c [expr { $v1 - $v2 }]] } { return $c }
+    if { [catch {dict get $d1 tags track} v] || ![regexp {^(\d+)(?:/(\d*))?$} $v - v1] } { set v1 0 }
+    if { [catch {dict get $d2 tags track} v] || ![regexp {^(\d+)(?:/(\d*))?$} $v - v2] } { set v2 0 }
+    if { [set c [expr { $v1 - $v2 }]] } { return $c }
+    return [cmp_dict [dict get $d1 file] [dict get $d2 file]]
+}
+
+proc list2cmdline { seq } {
+    # From: http://svn.python.org/projects/python/trunk/Lib/subprocess.py
+    set result ""
+    set needquote 0
+    foreach arg $seq {
+        set bs_buf ""
+        # Add a space to separate this argument from the others
+        if { $result ne "" } {
+            append result " "
+        }
+        # set needquote [regexp { |\t|^$} $arg]
+        set needquote [regexp { |\t|\||<|>|^$} $arg]
+        if { $needquote } {
+            append result "\""
+        }
+        foreach c [split $arg {}] {
+            if { $c eq "\\" } {
+                # Don't know if we need to double yet.
+                append bs_buf $c
+            } elseif { $c eq "\"" } {
+                # Double backslashes.
+                append result [string repeat "\\" [expr { [string length $bs_buf] * 2 }]]
+                set bs_buf ""
+                append result "\\\""
+            } else {
+                # Normal char
+                if { $bs_buf ne "" } {
+                    append result $bs_buf
+                    set bs_buf ""
+                }
+                append result $c
+            }
+        }
+        # Add remaining backslashes, if any.
+        if { $bs_buf ne "" } {
+            append result $bs_buf
+        }
+        if { $needquote } {
+            append result $bs_buf "\""
+        }
+    }
+    return $result
+}
+
+proc dbg_exec_cmd { cmd {hidden_args {}} } {
+    if { [dict get $::opts debug] } { puts "CMD: [list2cmdline $cmd]" }
+    return [eval [concat [list exec] $cmd $hidden_args]]
+}
+
+proc do_exec_cmd { cmd {hidden_args {}} } {
+    if { [dict get $::opts dry_run] } {
+        puts "CMD (dry-run): [list2cmdline $cmd]"
+    } else {
+        return [dbg_exec_cmd $cmd $hidden_args]
+    }
+}
+
+# edfile {{{
+
+proc edfile { file } {
+
+    if { [info exists ::env(EDITOR)] } {
+        set editor $::env(EDITOR)
+    } elseif {
+        ![llength [set editor [auto_execok vim]]] &&
+        ![llength [set editor [auto_execok vi]]] &&
+        ![llength [set editor [auto_execok emacs]]]
+    } {
+        return -code error "No editor found; Please set 'EDITOR' environment variable."
+    }
+
+    set startMtime [file mtime $file]
+    system [list2cmdline [linsert $editor end $file]]
+    return [expr { [file mtime $file] != $startMtime }]
+}
+
+# }}}
+# edvar {{{
+
+proc edvar { _var { type "" } } {
+    upvar 1 $_var value
+
+    set f [file tempfile tmpFilename]
+    try {
+
+        try {
+            switch -exact -- $type {
+                "array" {
+                    set keys [lsort -dictionary [array names value]]
+                    set maxlen 0 ; foreach k $keys { set maxlen [expr { max($maxlen,[string length [list $k]]) }] }
+                    foreach k $keys {
+                        puts $f [format "%-*s %s" $maxlen [list $k] [list $value($k)]]
+                    }
+                }
+                "dict" {
+                    set keys [lsort -dictionary [dict keys $value]]
+                    set maxlen 0 ; foreach k $keys { set maxlen [expr { max($maxlen,[string length [list $k]]) }] }
+                    foreach k $keys {
+                        puts $f [format "%-*s %s" $maxlen [list $k] [list [dict get $value $k]]]
+                    }
+                }
+                "" {
+                    puts $f $value
+                }
+                default { return -code error "Invalid value type '$type'" }
+            }
+        } finally {
+            close $f
+        }
+
+        if { ![edfile $tmpFilename] } { return 0 }
+        set new_value [safe_read_file $tmpFilename]
+
+    } finally {
+        unlink $tmpFilename
+    }
+    switch -exact -- $type {
+        "array" {
+            set new_value [dict merge $new_value]
+            array unset value ; array set value $new_value
+        }
+        "dict" {
+            set value [dict merge $new_value]
+        }
+        "" {
+            set value $new_value
+        }
+        default { return -code error "Invalid value type '$type'" }
+    }
+    return 1
+}
+
+# }}}
+
+# test_file_writable {{{
+
+proc test_file_writable { file {mode w} } {
+    if { [string index $file 0] eq "|" } {
+        # TODO pipe
+        return
+    }
+    if { [regexp {^[+abw]*$} $mode] } {
+        set mode [join [lsort -unique [split $mode ""]] ""]
+        switch -exact -- $mode {
+            "w"   { set mode [list WRONLY CREAT TRUNC         ] }
+            "bw"  { set mode [list WRONLY CREAT TRUNC  BINARY ] }
+            "+w"  { set mode [list RDWR   CREAT TRUNC         ] }
+            "+bw" { set mode [list RDWR   CREAT TRUNC  BINARY ] }
+            "a"   { set mode [list WRONLY CREAT APPEND        ] }
+            "ab"  { set mode [list WRONLY CREAT APPEND BINARY ] }
+            "+a"  { set mode [list RDWR   CREAT APPEND        ] }
+            "+ab" { set mode [list RDWR   CREAT APPEND BINARY ] }
+        }
+    }
+    if { [file exists $file] } {
+        if { "CREAT" in $mode && "EXCL" in $mode } { return -code error -errorcode [list POSIX EEXIST [set m "file already exists"]] "couldn't open \"$file\": $m" }
+        if { [file isdirectory $file] } { return -code error -errorcode [list POSIX EISDIR [set m "illegal operation on a directory"]] "couldn't open \"$file\": $m" }
+        if { ![file writable $file] } { return -code error -errorcode [list POSIX EACCES [set m "permission denied"]] "couldn't open \"$file\": $m" }
+    } else {
+        if { "CREAT" ni $mode } { return -code error -errorcode [list POSIX ENOENT "no such file or directory"]] "couldn't open \"$file\": $m" }
+        set dir [file dirname $file]
+        if { ![file exists $dir] } { return -code error -errorcode [list POSIX ENOENT "no such file or directory"]] "couldn't open \"$file\": $m" }
+        if { ![file isdirectory $dir] } { return -code error -errorcode [list POSIX ENOTDIR [set m "not a directory"]] "couldn't open \"$file\": $m" }
+        if { ![file writable $dir] } { return -code error -errorcode [list POSIX EACCES [set m "permission denied"]] "couldn't open \"$file\": $m" }
+    }
+    return
+}
+
+# }}}
+# safe_write_file_eval {{{
+
+proc safe_write_file_eval { file body } {
+    test_file_writable $file
+    upvar 1 f f
+    set f [open $file.tmp w]
+    try {
+        uplevel 1 $body
+    } finally {
+        close $f
+        unset f
+    }
+    file rename -force -- $file.tmp $file
+    return
+}
+
+# }}}
+# safe_write_file {{{
+
+proc safe_write_file { file content } {
+    safe_write_file_eval $file {
+        puts $f $content
+    }
+    return
+}
+
+# }}}
+# safe_read_file {{{
+
+proc safe_read_file { file } {
+    # test_file_readable $file
+    set f [open $file r]
+    return [try {
+            read $f
+        } finally {
+            close $f
+        }]
+}
+
+# }}}
+
+# id3v1_genres... {{{
+
+# From: id3v2 -L
+set ::id3v1_genres_id_map {
+    0   "Blues"
+    1   "Classic Rock"
+    2   "Country"
+    3   "Dance"
+    4   "Disco"
+    5   "Funk"
+    6   "Grunge"
+    7   "Hip-Hop"
+    8   "Jazz"
+    9   "Metal"
+    10  "New Age"
+    11  "Oldies"
+    12  "Other"
+    13  "Pop"
+    14  "R&B"
+    15  "Rap"
+    16  "Reggae"
+    17  "Rock"
+    18  "Techno"
+    19  "Industrial"
+    20  "Alternative"
+    21  "Ska"
+    22  "Death Metal"
+    23  "Pranks"
+    24  "Soundtrack"
+    25  "Euro-Techno"
+    26  "Ambient"
+    27  "Trip-Hop"
+    28  "Vocal"
+    29  "Jazz+Funk"
+    30  "Fusion"
+    31  "Trance"
+    32  "Classical"
+    33  "Instrumental"
+    34  "Acid"
+    35  "House"
+    36  "Game"
+    37  "Sound Clip"
+    38  "Gospel"
+    39  "Noise"
+    40  "AlternRock"
+    41  "Bass"
+    42  "Soul"
+    43  "Punk"
+    44  "Space"
+    45  "Meditative"
+    46  "Instrumental Pop"
+    47  "Instrumental Rock"
+    48  "Ethnic"
+    49  "Gothic"
+    50  "Darkwave"
+    51  "Techno-Industrial"
+    52  "Electronic"
+    53  "Pop-Folk"
+    54  "Eurodance"
+    55  "Dream"
+    56  "Southern Rock"
+    57  "Comedy"
+    58  "Cult"
+    59  "Gangsta"
+    60  "Top 40"
+    61  "Christian Rap"
+    62  "Pop/Funk"
+    63  "Jungle"
+    64  "Native American"
+    65  "Cabaret"
+    66  "New Wave"
+    67  "Psychedelic"
+    68  "Rave"
+    69  "Showtunes"
+    70  "Trailer"
+    71  "Lo-Fi"
+    72  "Tribal"
+    73  "Acid Punk"
+    74  "Acid Jazz"
+    75  "Polka"
+    76  "Retro"
+    77  "Musical"
+    78  "Rock & Roll"
+    79  "Hard Rock"
+    80  "Folk"
+    81  "Folk-Rock"
+    82  "National Folk"
+    83  "Swing"
+    84  "Fast Fusion"
+    85  "Bebob"
+    86  "Latin"
+    87  "Revival"
+    88  "Celtic"
+    89  "Bluegrass"
+    90  "Avantgarde"
+    91  "Gothic Rock"
+    92  "Progressive Rock"
+    93  "Psychedelic Rock"
+    94  "Symphonic Rock"
+    95  "Slow Rock"
+    96  "Big Band"
+    97  "Chorus"
+    98  "Easy Listening"
+    99  "Acoustic"
+    100 "Humour"
+    101 "Speech"
+    102 "Chanson"
+    103 "Opera"
+    104 "Chamber Music"
+    105 "Sonata"
+    106 "Symphony"
+    107 "Booty Bass"
+    108 "Primus"
+    109 "Porn Groove"
+    110 "Satire"
+    111 "Slow Jam"
+    112 "Club"
+    113 "Tango"
+    114 "Samba"
+    115 "Folklore"
+    116 "Ballad"
+    117 "Power Ballad"
+    118 "Rhythmic Soul"
+    119 "Freestyle"
+    120 "Duet"
+    121 "Punk Rock"
+    122 "Drum Solo"
+    123 "A capella"
+    124 "Euro-House"
+    125 "Dance Hall"
+    126 "Goa"
+    127 "Drum & Bass"
+    128 "Club-House"
+    129 "Hardcore"
+    130 "Terror"
+    131 "Indie"
+    132 "Britpop"
+    133 "Negerpunk"
+    134 "Polsk Punk"
+    135 "Beat"
+    136 "Christian Gangsta Rap"
+    137 "Heavy Metal"
+    138 "Black Metal"
+    139 "Crossover"
+    140 "Contemporary Christian"
+    141 "Christian Rock "
+    142 "Merengue"
+    143 "Salsa"
+    144 "Thrash Metal"
+    145 "Anime"
+    146 "JPop"
+    147 "Synthpop"
+}
+
+set id3v1_genres [dict values $::id3v1_genres_id_map]
+
+# }}}
+# mp4v2_categories... / mp4v2_genres... {{{
+
+set ::mp4v2_categories {}
+set ::mp4v2_categories_id_map [dict create]
+set ::mp4v2_genres {}
+set ::mp4v2_genres_id_map [dict create]
+set ::mp4v2_genres_info [dict create]
+
+# http://www.apple.com/itunes/affiliates/resources/documentation/genre-mapping.html
+#   Category    Genre       Sub Genre
+foreach {cat_id cat_name genres_info} {
+    26 "Podcasts" {
+        1301 "Arts" {
+            1306 "Food"
+            1401 "Literature"
+            1402 "Design"
+            1405 "Performing Arts"
+            1406 "Visual Arts"
+            1459 "Fashion & Beauty"
+        }
+        1303 "Comedy" {
+        }
+        1304 "Education" {
+            1415 "K-12"
+            1416 "Higher Education"
+            1468 "Educational Technology"
+            1469 "Language Courses"
+            1470 "Training"
+        }
+        1305 "Kids & Family" {
+        }
+        1307 "Health" {
+            1417 "Fitness & Nutrition"
+            1420 "Self-Help"
+            1421 "Sexuality"
+            1481 "Alternative Health"
+        }
+        1309 "TV & Film" {
+        }
+        1310 "Music" {
+        }
+        1311 "News & Politics" {
+        }
+        1314 "Religion & Spirituality" {
+            1438 "Buddhism"
+            1439 "Christianity"
+            1440 "Islam"
+            1441 "Judaism"
+            1444 "Spirituality"
+            1463 "Hinduism"
+            1464 "Other"
+        }
+        1315 "Science & Medicine" {
+            1477 "Natural Sciences"
+            1478 "Medicine"
+            1479 "Social Sciences"
+        }
+        1316 "Sports & Recreation" {
+            1456 "Outdoor"
+            1465 "Professional"
+            1466 "College & High School"
+            1467 "Amateur"
+        }
+        1318 "Technology" {
+            1446 "Gadgets"
+            1448 "Tech News"
+            1450 "Podcasting"
+            1480 "Software How-To"
+        }
+        1321 "Business" {
+            1410 "Careers"
+            1412 "Investing"
+            1413 "Management & Marketing"
+            1471 "Business News"
+            1472 "Shopping"
+        }
+        1323 "Games & Hobbies" {
+            1404 "Video Games"
+            1454 "Automotive"
+            1455 "Aviation"
+            1460 "Hobbies"
+            1461 "Other Games"
+        }
+        1324 "Society & Culture" {
+            1302 "Personal Journals"
+            1320 "Places & Travel"
+            1443 "Philosophy"
+            1462 "History"
+        }
+        1325 "Government & Organizations" {
+            1473 "National"
+            1474 "Regional"
+            1475 "Local"
+            1476 "Non-Profit"
+        }
+    }
+    31 "Music Videos" {
+        1602 "Blues" {
+        }
+        1603 "Comedy" {
+        }
+        1604 "Children's Music" {
+        }
+        1605 "Classical" {
+        }
+        1606 "Country" {
+        }
+        1607 "Electronic" {
+        }
+        1608 "Holiday" {
+        }
+        1609 "Opera" {
+        }
+        1610 "Singer/Songwriter" {
+        }
+        1611 "Jazz" {
+        }
+        1612 "Latino" {
+        }
+        1613 "New Age" {
+        }
+        1614 "Pop" {
+        }
+        1615 "R&B/Soul" {
+        }
+        1616 "Soundtrack" {
+        }
+        1617 "Dance" {
+        }
+        1618 "Hip-Hop/Rap" {
+        }
+        1619 "World" {
+        }
+        1620 "Alternative" {
+        }
+        1621 "Rock" {
+        }
+        1622 "Christian & Gospel" {
+        }
+        1623 "Vocal" {
+        }
+        1624 "Reggae" {
+        }
+        1625 "Easy Listening" {
+        }
+        1626 "Podcasts" {
+        }
+        1627 "J-Pop" {
+        }
+        1628 "Enka" {
+        }
+        1629 "Anime" {
+        }
+        1630 "Kayokyoku" {
+        }
+        1631 "Disney" {
+        }
+        1632 "French Pop" {
+        }
+        1633 "German Pop" {
+        }
+        1634 "German Folk" {
+        }
+    }
+    32 "TV Shows" {
+        4000 "Comedy" {
+        }
+        4001 "Drama" {
+        }
+        4002 "Animation" {
+        }
+        4003 "Action & Adventure" {
+        }
+        4004 "Classic" {
+        }
+        4005 "Kids" {
+        }
+        4006 "Nonfiction" {
+        }
+        4007 "Reality TV" {
+        }
+        4008 "Sci-Fi & Fantasy" {
+        }
+        4009 "Sports" {
+        }
+        4010 "Teens" {
+        }
+        4011 "Latino TV" {
+        }
+    }
+    33 "Movies" {
+        4401 "Action & Adventure" {
+        }
+        4402 "Anime" {
+        }
+        4403 "Classics" {
+        }
+        4404 "Comedy" {
+        }
+        4405 "Documentary" {
+        }
+        4406 "Drama" {
+        }
+        4407 "Foreign" {
+        }
+        4408 "Horror" {
+        }
+        4409 "Independent" {
+        }
+        4410 "Kids & Family" {
+        }
+        4411 "Musicals" {
+        }
+        4412 "Romance" {
+        }
+        4413 "Sci-Fi & Fantasy" {
+        }
+        4414 "Short Films" {
+        }
+        4415 "Special Interest" {
+        }
+        4416 "Thriller" {
+        }
+        4417 "Sports" {
+        }
+        4418 "Western" {
+        }
+        4419 "Urban" {
+        }
+        4420 "Holiday" {
+        }
+        4421 "Made for TV" {
+        }
+        4422 "Concert Films" {
+        }
+        4423 "Music Documentaries" {
+        }
+        4424 "Music Feature Films" {
+        }
+        4425 "Japanese Cinema" {
+        }
+        4426 "Jidaigeki" {
+        }
+        4427 "Tokusatsu" {
+        }
+        4428 "Korean Cinema" {
+        }
+    }
+    34 "Music" {
+        2 "Blues" {
+            1007 "Chicago Blues"
+            1009 "Classic Blues"
+            1010 "Contemporary Blues"
+            1011 "Country Blues"
+            1012 "Delta Blues"
+            1013 "Electric Blues"
+            1210 "Acoustic Blues"
+        }
+        3 "Comedy" {
+            1167 "Novelty"
+            1171 "Standup Comedy"
+        }
+        4 "Children's Music" {
+            1014 "Lullabies"
+            1015 "Sing-Along"
+            1016 "Stories"
+        }
+        5 "Classical" {
+            1017 "Avant-Garde"
+            1018 "Baroque"
+            1019 "Chamber Music"
+            1020 "Chant"
+            1021 "Choral"
+            1022 "Classical Crossover"
+            1023 "Early Music"
+            1024 "Impressionist"
+            1025 "Medieval"
+            1026 "Minimalism"
+            1027 "Modern Composition"
+            1028 "Opera"
+            1029 "Orchestral"
+            1030 "Renaissance"
+            1031 "Romantic"
+            1032 "Wedding Music"
+            1211 "High Classical"
+        }
+        6 "Country" {
+            1033 "Alternative Country"
+            1034 "Americana"
+            1035 "Bluegrass"
+            1036 "Contemporary Bluegrass"
+            1037 "Contemporary Country"
+            1038 "Country Gospel"
+            1039 "Honky Tonk"
+            1040 "Outlaw Country"
+            1041 "Traditional Bluegrass"
+            1042 "Traditional Country"
+            1043 "Urban Cowboy"
+        }
+        7 "Electronic" {
+            1056 "Ambient"
+            1057 "Downtempo"
+            1058 "Electronica"
+            1060 "IDM/Experimental"
+            1061 "Industrial"
+        }
+        8 "Holiday" {
+            1079 "Chanukah"
+            1080 "Christmas"
+            1081 "Christmas: Children's"
+            1082 "Christmas: Classic"
+            1083 "Christmas: Classical"
+            1084 "Christmas: Jazz"
+            1085 "Christmas: Modern"
+            1086 "Christmas: Pop"
+            1087 "Christmas: R&B"
+            1088 "Christmas: Religious"
+            1089 "Christmas: Rock"
+            1090 "Easter"
+            1091 "Halloween"
+            1092 "Holiday: Other"
+            1093 "Thanksgiving"
+        }
+        9 "Opera" {
+        }
+        10 "Singer/Songwriter" {
+            1062 "Alternative Folk"
+            1063 "Contemporary Folk"
+            1064 "Contemporary Singer/Songwriter"
+            1065 "Folk-Rock"
+            1066 "New Acoustic"
+            1067 "Traditional Folk"
+        }
+        11 "Jazz" {
+            1052 "Big Band"
+            1106 "Avant-Garde Jazz"
+            1107 "Contemporary Jazz"
+            1108 "Crossover Jazz"
+            1109 "Dixieland"
+            1110 "Fusion"
+            1111 "Latin Jazz"
+            1112 "Mainstream Jazz"
+            1113 "Ragtime"
+            1114 "Smooth Jazz"
+            1207 "Hard Bop"
+            1208 "Trad Jazz"
+            1209 "Cool"
+        }
+        12 "Latino" {
+            1115 "Latin Jazz"
+            1116 "Contemporary Latin"
+            1117 "Pop Latino"
+            1118 "Raíces"
+            1119 "Reggaeton y Hip-Hop"
+            1120 "Baladas y Boleros"
+            1121 "Alternativo & Rock Latino"
+            1123 "Regional Mexicano"
+            1124 "Salsa y Tropical"
+        }
+        13 "New Age" {
+            1125 "Environmental"
+            1126 "Healing"
+            1127 "Meditation"
+            1128 "Nature"
+            1129 "Relaxation"
+            1130 "Travel"
+        }
+        14 "Pop" {
+            1131 "Adult Contemporary"
+            1132 "Britpop"
+            1133 "Pop/Rock"
+            1134 "Soft Rock"
+            1135 "Teen Pop"
+        }
+        15 "R&B/Soul" {
+            1136 "Contemporary R&B"
+            1137 "Disco"
+            1138 "Doo Wop"
+            1139 "Funk"
+            1140 "Motown"
+            1141 "Neo-Soul"
+            1142 "Quiet Storm"
+            1143 "Soul"
+        }
+        16 "Soundtrack" {
+            1165 "Foreign Cinema"
+            1166 "Musicals"
+            1168 "Original Score"
+            1169 "Soundtrack"
+            1172 "TV Soundtrack"
+        }
+        17 "Dance" {
+            1044 "Breakbeat"
+            1045 "Exercise"
+            1046 "Garage"
+            1047 "Hardcore"
+            1048 "House"
+            1049 "Jungle/Drum'n'bass"
+            1050 "Techno"
+            1051 "Trance"
+        }
+        18 "Hip-Hop/Rap" {
+            1068 "Alternative Rap"
+            1069 "Dirty South"
+            1070 "East Coast Rap"
+            1071 "Gangsta Rap"
+            1072 "Hardcore Rap"
+            1073 "Hip-Hop"
+            1074 "Latin Rap"
+            1075 "Old School Rap"
+            1076 "Rap"
+            1077 "Underground Rap"
+            1078 "West Coast Rap"
+        }
+        19 "World" {
+            1177 "Afro-Beat"
+            1178 "Afro-Pop"
+            1179 "Cajun"
+            1180 "Celtic"
+            1181 "Celtic Folk"
+            1182 "Contemporary Celtic"
+            1184 "Drinking Songs"
+            1185 "Indian Pop"
+            1186 "Japanese Pop"
+            1187 "Klezmer"
+            1188 "Polka"
+            1189 "Traditional Celtic"
+            1190 "Worldbeat"
+            1191 "Zydeco"
+            1195 "Caribbean"
+            1196 "South America"
+            1197 "Middle East"
+            1198 "North America"
+            1199 "Hawaii"
+            1200 "Australia"
+            1201 "Japan"
+            1202 "France"
+            1203 "Africa"
+            1204 "Asia"
+            1205 "Europe"
+            1206 "South Africa"
+        }
+        20 "Alternative" {
+            1001 "College Rock"
+            1002 "Goth Rock"
+            1003 "Grunge"
+            1004 "Indie Rock"
+            1005 "New Wave"
+            1006 "Punk"
+        }
+        21 "Rock" {
+            1144 "Adult Alternative"
+            1145 "American Trad Rock"
+            1146 "Arena Rock"
+            1147 "Blues-Rock"
+            1148 "British Invasion"
+            1149 "Death Metal/Black Metal"
+            1150 "Glam Rock"
+            1151 "Hair Metal"
+            1152 "Hard Rock"
+            1153 "Metal"
+            1154 "Jam Bands"
+            1155 "Prog-Rock/Art Rock"
+            1156 "Psychedelic"
+            1157 "Rock & Roll"
+            1158 "Rockabilly"
+            1159 "Roots Rock"
+            1160 "Singer/Songwriter"
+            1161 "Southern Rock"
+            1162 "Surf"
+            1163 "Tex-Mex"
+        }
+        22 "Christian & Gospel" {
+            1094 "CCM"
+            1095 "Christian Metal"
+            1096 "Christian Pop"
+            1097 "Christian Rap"
+            1098 "Christian Rock"
+            1099 "Classic Christian"
+            1100 "Contemporary Gospel"
+            1101 "Gospel"
+            1103 "Praise & Worship"
+            1104 "Southern Gospel"
+            1105 "Traditional Gospel"
+        }
+        23 "Vocal" {
+            1173 "Standards"
+            1174 "Traditional Pop"
+            1175 "Vocal Jazz"
+            1176 "Vocal Pop"
+        }
+        24 "Reggae" {
+            1183 "Dancehall"
+            1192 "Roots Reggae"
+            1193 "Dub"
+            1194 "Ska"
+        }
+        25 "Easy Listening" {
+            1053 "Bop"
+            1054 "Lounge"
+            1055 "Swing"
+        }
+        27 "J-Pop" {
+        }
+        28 "Enka" {
+        }
+        29 "Anime" {
+        }
+        30 "Kayokyoku" {
+        }
+        50 "Fitness & Workout" {
+        }
+        51 "K-Pop" {
+        }
+        52 "Karaoke" {
+        }
+        53 "Instrumental" {
+        }
+        1122 "Brazilian" {
+            1220 "Axé"
+            1221 "Bossa Nova"
+            1222 "Choro"
+            1223 "Forró"
+            1224 "Frevo"
+            1225 "MPB"
+            1226 "Pagode"
+            1227 "Samba"
+            1228 "Sertanejo"
+            1229 "Baile Funk"
+        }
+        50000061 "Spoken Word" {
+        }
+        50000063 "Disney" {
+        }
+        50000064 "French Pop" {
+        }
+        50000066 "German Pop" {
+        }
+        50000068 "German Folk" {
+        }
+    }
+    35 "iPod Games" {
+    }
+    36 "App Store" {
+        6000 "Business" {
+        }
+        6001 "Weather" {
+        }
+        6002 "Utilities" {
+        }
+        6003 "Travel" {
+        }
+        6004 "Sports" {
+        }
+        6005 "Social Networking" {
+        }
+        6006 "Reference" {
+        }
+        6007 "Productivity" {
+        }
+        6008 "Photo & Video" {
+        }
+        6009 "News" {
+        }
+        6010 "Navigation" {
+        }
+        6011 "Music" {
+        }
+        6012 "Lifestyle" {
+        }
+        6013 "Health & Fitness" {
+        }
+        6014 "Games" {
+            7001 "Action"
+            7002 "Adventure"
+            7003 "Arcade"
+            7004 "Board"
+            7005 "Card"
+            7006 "Casino"
+            7007 "Dice"
+            7008 "Educational"
+            7009 "Family"
+            7010 "Kids"
+            7011 "Music"
+            7012 "Puzzle"
+            7013 "Racing"
+            7014 "Role Playing"
+            7015 "Simulation"
+            7016 "Sports"
+            7017 "Strategy"
+            7018 "Trivia"
+            7019 "Word"
+        }
+        6015 "Finance" {
+        }
+        6016 "Entertainment" {
+        }
+        6017 "Education" {
+        }
+        6018 "Books" {
+        }
+        6020 "Medical" {
+        }
+        6021 "Newsstand" {
+            13001 "News & Politics"
+            13002 "Fashion & Style"
+            13003 "Home & Garden"
+            13004 "Outdoors & Nature"
+            13005 "Sports & Leisure"
+            13006 "Automotive"
+            13007 "Arts & Photography"
+            13008 "Brides & Weddings"
+            13009 "Business & Investing"
+            13010 "Children's Magazines"
+            13011 "Computers & Internet"
+            13012 "Cooking, Food & Drink"
+            13013 "Crafts & Hobbies"
+            13014 "Electronics & Audio"
+            13015 "Entertainment"
+            13017 "Health, Mind & Body"
+            13018 "History"
+            13019 "Literary Magazines & Journals"
+            13020 "Men's Interest"
+            13021 "Movies & Music"
+            13023 "Parenting & Family"
+            13024 "Pets"
+            13025 "Professional & Trade"
+            13026 "Regional News"
+            13027 "Science"
+            13028 "Teens"
+            13029 "Travel & Regional"
+            13030 "Women's Interest"
+        }
+        6022 "Catalogs" {
+        }
+    }
+    37 "Tones" {
+        8053 "Ringtones" {
+            8001 "Alternative"
+            8002 "Blues"
+            8003 "Children's Music"
+            8004 "Classical"
+            8005 "Comedy"
+            8006 "Country"
+            8007 "Dance"
+            8008 "Electronic"
+            8009 "Enka"
+            8010 "French Pop"
+            8011 "German Folk"
+            8012 "German Pop"
+            8013 "Hip-Hop/Rap"
+            8014 "Holiday"
+            8015 "Inspirational"
+            8016 "J-Pop"
+            8017 "Jazz"
+            8018 "Kayokyoku"
+            8019 "Latin"
+            8020 "New Age"
+            8021 "Opera"
+            8022 "Pop"
+            8023 "R&B/Soul"
+            8024 "Reggae"
+            8025 "Rock"
+            8026 "Singer/Songwriter"
+            8027 "Soundtrack"
+            8028 "Spoken Word"
+            8029 "Vocal"
+            8030 "World"
+        }
+        8054 "Alert Tones" {
+            8050 "Sound Effects"
+            8051 "Dialogue"
+            8052 "Music"
+        }
+    }
+    38 "Books" {
+        9002 "Nonfiction" {
+            10038 "Family & Relationships"
+            10091 "Philosophy"
+            10120 "Social Science"
+            10138 "Transportation"
+            10149 "True Crime"
+        }
+        9003 "Romance" {
+            10056 "Erotica"
+            10057 "Contemporary"
+            10058 "Fantasy, Futuristic & Ghost"
+            10059 "Historical"
+            10060 "Short Stories"
+            10061 "Suspense"
+            10062 "Western"
+        }
+        9004 "Travel & Adventure" {
+            10139 "Africa"
+            10140 "Asia"
+            10141 "Specialty Travel"
+            10142 "Canada"
+            10143 "Caribbean"
+            10144 "Latin America"
+            10145 "Essays & Memoirs"
+            10146 "Europe"
+            10147 "Middle East"
+            10148 "United States"
+        }
+        9007 "Arts & Entertainment" {
+            10002 "Art & Architecture"
+            10036 "Theater"
+            10067 "Games"
+            10087 "Music"
+            10089 "Performing Arts"
+            10092 "Photography"
+        }
+        9008 "Biographies & Memoirs" {
+        }
+        9009 "Business & Personal Finance" {
+            10005 "Industries & Professions"
+            10006 "Marketing & Sales"
+            10007 "Small Business & Entrepreneurship"
+            10008 "Personal Finance"
+            10009 "Reference"
+            10010 "Careers"
+            10011 "Economics"
+            10012 "Investing"
+            10013 "Finance"
+            10014 "Management & Leadership"
+        }
+        9010 "Children & Teens" {
+            10081 "Children's Fiction"
+            10082 "Children's Nonfiction"
+        }
+        9012 "Humor" {
+        }
+        9015 "History" {
+            10070 "Africa"
+            10071 "Americas"
+            10072 "Ancient"
+            10073 "Asia"
+            10074 "Australia & Oceania"
+            10075 "Europe"
+            10076 "Latin America"
+            10077 "Middle East"
+            10078 "Military"
+            10079 "United States"
+            10080 "World"
+        }
+        9018 "Religion & Spirituality" {
+            10003 "Bibles"
+            10105 "Bible Studies"
+            10106 "Buddhism"
+            10107 "Christianity"
+            10108 "Hinduism"
+            10109 "Islam"
+            10110 "Judaism"
+        }
+        9019 "Science & Nature" {
+            10085 "Mathematics"
+            10088 "Nature"
+            10111 "Astronomy"
+            10112 "Chemistry"
+            10113 "Earth Sciences"
+            10114 "Essays"
+            10115 "History"
+            10116 "Life Sciences"
+            10117 "Physics"
+            10118 "Reference"
+        }
+        9020 "Sci-Fi & Fantasy" {
+            10044 "Fantasy"
+            10063 "Science Fiction"
+            10064 "Science Fiction & Literature"
+        }
+        9024 "Lifestyle & Home" {
+            10001 "Antiques & Collectibles"
+            10034 "Crafts & Hobbies"
+            10068 "Gardening"
+            10090 "Pets"
+        }
+        9025 "Health, Mind & Body" {
+            10004 "Spirituality"
+            10069 "Health & Fitness"
+            10094 "Psychology"
+            10119 "Self-Improvement"
+        }
+        9026 "Comics & Graphic Novels" {
+            10015 "Graphic Novels"
+            10016 "Manga"
+        }
+        9027 "Computers & Internet" {
+            10017 "Computers"
+            10018 "Databases"
+            10019 "Digital Media"
+            10020 "Internet"
+            10021 "Network"
+            10022 "Operating Systems"
+            10023 "Programming"
+            10024 "Software"
+            10025 "System Administration"
+        }
+        9028 "Cookbooks, Food & Wine" {
+            10026 "Beverages"
+            10027 "Courses & Dishes"
+            10028 "Special Diet"
+            10029 "Special Occasions"
+            10030 "Methods"
+            10031 "Reference"
+            10032 "Regional & Ethnic"
+            10033 "Specific Ingredients"
+        }
+        9029 "Professional & Technical" {
+            10035 "Design"
+            10037 "Education"
+            10083 "Law"
+            10086 "Medical"
+            10137 "Engineering"
+        }
+        9030 "Parenting" {
+        }
+        9031 "Fiction & Literature" {
+            10039 "Action & Adventure"
+            10040 "African American"
+            10041 "Religious"
+            10042 "Classics"
+            10043 "Erotica"
+            10045 "Gay"
+            10046 "Ghost"
+            10047 "Historical"
+            10048 "Horror"
+            10049 "Literary"
+            10065 "Short Stories"
+            10084 "Literary Criticism"
+            10093 "Poetry"
+        }
+        9032 "Mysteries & Thrillers" {
+            10050 "Hard-Boiled"
+            10051 "Historical"
+            10052 "Police Procedural"
+            10053 "Short Stories"
+            10054 "British Detectives"
+            10055 "Women Sleuths"
+        }
+        9033 "Reference" {
+            10066 "Foreign Languages"
+            10095 "Almanacs & Yearbooks"
+            10096 "Atlases & Maps"
+            10097 "Catalogs & Directories"
+            10098 "Consumer Guides"
+            10099 "Dictionaries & Thesauruses"
+            10100 "Encyclopedias"
+            10101 "Etiquette"
+            10102 "Quotations"
+            10103 "Words & Language"
+            10104 "Writing"
+            10136 "Study Aids"
+        }
+        9034 "Politics & Current Events" {
+        }
+        9035 "Sports & Outdoors" {
+            10121 "Baseball"
+            10122 "Basketball"
+            10123 "Coaching"
+            10124 "Extreme Sports"
+            10125 "Football"
+            10126 "Golf"
+            10127 "Hockey"
+            10128 "Mountaineering"
+            10129 "Outdoors"
+            10130 "Racket Sports"
+            10131 "Reference"
+            10132 "Soccer"
+            10133 "Training"
+            10134 "Water Sports"
+            10135 "Winter Sports"
+        }
+    }
+    39 "Mac App Store" {
+        12001 "Business" {
+        }
+        12002 "Developer Tools" {
+        }
+        12003 "Education" {
+        }
+        12004 "Entertainment" {
+        }
+        12005 "Finance" {
+        }
+        12006 "Games" {
+            12201 "Action"
+            12202 "Adventure"
+            12203 "Arcade"
+            12204 "Board"
+            12205 "Card"
+            12206 "Casino"
+            12207 "Dice"
+            12208 "Educational"
+            12209 "Family"
+            12210 "Kids"
+            12211 "Music"
+            12212 "Puzzle"
+            12213 "Racing"
+            12214 "Role Playing"
+            12215 "Simulation"
+            12216 "Sports"
+            12217 "Strategy"
+            12218 "Trivia"
+            12219 "Word"
+        }
+        12007 "Health & Fitness" {
+        }
+        12008 "Lifestyle" {
+        }
+        12010 "Medical" {
+        }
+        12011 "Music" {
+        }
+        12012 "News" {
+        }
+        12013 "Photography" {
+        }
+        12014 "Productivity" {
+        }
+        12015 "Reference" {
+        }
+        12016 "Social Networking" {
+        }
+        12017 "Sports" {
+        }
+        12018 "Travel" {
+        }
+        12019 "Utilities" {
+        }
+        12020 "Video" {
+        }
+        12021 "Weather" {
+        }
+        12022 "Graphics & Design" {
+        }
+    }
+    40 "Textbooks" {
+    }
+    40000000 "iTunes U" {
+        40000001 "Business" {
+            40000002 "Economics"
+            40000003 "Finance"
+            40000004 "Hospitality"
+            40000005 "Management"
+            40000006 "Marketing"
+            40000007 "Personal Finance"
+            40000008 "Real Estate"
+            40000121 "Entrepreneurship"
+        }
+        40000009 "Engineering" {
+            40000010 "Chemical & Petroleum Engineering"
+            40000011 "Civil Engineering"
+            40000012 "Computer Science"
+            40000013 "Electrical Engineering"
+            40000014 "Environmental Engineering"
+            40000015 "Mechanical Engineering"
+        }
+        40000016 "Art & Architecture" {
+            40000017 "Architecture"
+            40000019 "Art History"
+            40000020 "Dance"
+            40000021 "Film"
+            40000022 "Design"
+            40000023 "Interior Design"
+            40000024 "Music"
+            40000025 "Theater"
+            40000116 "Culinary Arts"
+            40000117 "Fashion"
+            40000118 "Media Arts"
+            40000119 "Photography"
+            40000120 "Visual Art"
+        }
+        40000026 "Health & Medicine" {
+            40000027 "Anatomy & Physiology"
+            40000028 "Behavioral Science"
+            40000029 "Dentistry"
+            40000030 "Diet & Nutrition"
+            40000031 "Emergency Medicine"
+            40000032 "Genetics"
+            40000033 "Gerontology"
+            40000034 "Health & Exercise Science"
+            40000035 "Immunology"
+            40000036 "Neuroscience"
+            40000037 "Pharmacology & Toxicology"
+            40000038 "Psychiatry"
+            40000039 "Global Health"
+            40000040 "Radiology"
+            40000129 "Nursing"
+        }
+        40000041 "History" {
+            40000042 "Ancient History"
+            40000043 "Medieval History"
+            40000044 "Military History"
+            40000045 "Modern History"
+            40000046 "African History"
+            40000047 "Asia-Pacific History"
+            40000048 "European History"
+            40000049 "Middle Eastern History"
+            40000050 "North American History"
+            40000051 "South American History"
+        }
+        40000053 "Communications & Media" {
+            40000122 "Broadcasting"
+            40000123 "Digital Media"
+            40000124 "Journalism"
+            40000125 "Photojournalism"
+            40000126 "Print"
+            40000127 "Speech"
+            40000128 "Writing"
+        }
+        40000054 "Philosophy" {
+            40000146 "Aesthetics"
+            40000147 "Epistemology"
+            40000148 "Ethics"
+            40000149 "Metaphysics"
+            40000150 "Political Philosophy"
+            40000151 "Logic"
+            40000152 "Philosophy of Language"
+            40000153 "Philosophy of Religion"
+        }
+        40000055 "Religion & Spirituality" {
+            40000156 "Buddhism"
+            40000157 "Christianity"
+            40000158 "Comparative Religion"
+            40000159 "Hinduism"
+            40000160 "Islam"
+            40000161 "Judaism"
+            40000162 "Other Religions"
+            40000163 "Spirituality"
+        }
+        40000056 "Language" {
+            40000057 "African Languages"
+            40000058 "Ancient Languages"
+            40000061 "English"
+            40000063 "French"
+            40000064 "German"
+            40000065 "Italian"
+            40000066 "Linguistics"
+            40000068 "Spanish"
+            40000069 "Speech Pathology"
+            40000130 "Arabic"
+            40000131 "Chinese"
+            40000132 "Hebrew"
+            40000133 "Hindi"
+            40000134 "Indigenous Languages"
+            40000135 "Japanese"
+            40000136 "Korean"
+            40000137 "Other Languages"
+            40000138 "Portuguese"
+            40000139 "Russian"
+        }
+        40000070 "Literature" {
+            40000071 "Anthologies"
+            40000072 "Biography"
+            40000073 "Classics"
+            40000074 "Literary Criticism"
+            40000075 "Fiction"
+            40000076 "Poetry"
+            40000145 "Comparative Literature"
+        }
+        40000077 "Mathematics" {
+            40000078 "Advanced Mathematics"
+            40000079 "Algebra"
+            40000080 "Arithmetic"
+            40000081 "Calculus"
+            40000082 "Geometry"
+            40000083 "Statistics"
+        }
+        40000084 "Science" {
+            40000085 "Agricultural"
+            40000086 "Astronomy"
+            40000087 "Atmosphere"
+            40000088 "Biology"
+            40000089 "Chemistry"
+            40000090 "Ecology"
+            40000091 "Geography"
+            40000092 "Geology"
+            40000093 "Physics"
+            40000164 "Environment"
+        }
+        40000094 "Psychology & Social Science" {
+            40000098 "Psychology"
+            40000099 "Social Welfare"
+            40000100 "Sociology"
+            40000154 "Archaeology"
+            40000155 "Anthropology"
+        }
+        40000101 "Society" {
+            40000103 "Asia Pacific Studies"
+            40000104 "European Studies"
+            40000105 "Indigenous Studies"
+            40000106 "Latin & Caribbean Studies"
+            40000107 "Middle Eastern Studies"
+            40000108 "Women's Studies"
+            40000165 "African Studies"
+            40000166 "American Studies"
+            40000167 "Cross-cultural Studies"
+            40000168 "Immigration & Emigration"
+            40000169 "Race & Ethnicity Studies"
+            40000170 "Sexuality Studies"
+        }
+        40000109 "Teaching & Learning" {
+            40000110 "Curriculum & Teaching"
+            40000111 "Educational Leadership"
+            40000112 "Family & Childcare"
+            40000113 "Learning Resources"
+            40000114 "Psychology & Research"
+            40000115 "Special Education"
+            40000171 "Educational Technology"
+            40000172 "Information/Library Science"
+        }
+        40000140 "Law & Politics" {
+            40000095 "Law"
+            40000096 "Political Science"
+            40000097 "Public Administration"
+            40000141 "Foreign Policy & International Relations"
+            40000142 "Local Governments"
+            40000143 "National Governments"
+            40000144 "World Affairs"
+        }
+    }
+    50000024 "Audiobooks" {
+        74 "News" {
+        }
+        75 "Programs & Performances" {
+        }
+        50000040 "Fiction" {
+        }
+        50000041 "Arts & Entertainment" {
+        }
+        50000042 "Biography & Memoir" {
+        }
+        50000043 "Business" {
+        }
+        50000044 "Kids & Young Adults" {
+        }
+        50000045 "Classics" {
+        }
+        50000046 "Comedy" {
+        }
+        50000047 "Drama & Poetry" {
+        }
+        50000048 "Speakers & Storytellers" {
+        }
+        50000049 "History" {
+        }
+        50000050 "Languages" {
+        }
+        50000051 "Mystery" {
+        }
+        50000052 "Nonfiction" {
+        }
+        50000053 "Religion & Spirituality" {
+        }
+        50000054 "Science" {
+        }
+        50000055 "Sci-Fi & Fantasy" {
+        }
+        50000056 "Self Development" {
+        }
+        50000057 "Sports" {
+        }
+        50000058 "Technology" {
+        }
+        50000059 "Travel & Adventure" {
+        }
+        50000069 "Romance" {
+        }
+        50000070 "Audiobooks Latino" {
+        }
+    }
+} {
+    dict set ::mp4v2_categories_id_map $cat_id $cat_name
+    lappend ::mp4v2_categories $cat_name
+    foreach {genre_id genre_name subgenres_info} $genres_info {
+        dict set ::mp4v2_genres_id_map $genre_id $genre_name
+        lappend ::mp4v2_genres $genre_name
+        dict set ::mp4v2_genres_info $genre_id [dict create \
+                cat_id     $cat_id \
+                genre_id   $genre_id \
+                genre_name $genre_name \
+                sub_genres_info [dict create] \
+            ]
+        foreach {subgenre_id subgenre_name} $subgenres_info {
+            dict set ::mp4v2_genres_id_map $subgenre_id $subgenre_name
+            lappend ::mp4v2_genres $subgenre_name
+            dict set ::mp4v2_genres_info $genre_id sub_genres_info $subgenre_id [dict create \
+                    cat_id          $cat_id \
+                    parent_genre_id $genre_id \
+                    genre_id        $subgenre_id \
+                    genre_name      $subgenre_name \
+                ]
+        }
+    }
+}
+
+proc do_genre_list { { cat_id Audiobooks } } {
+    if { [catch {dict get $::mp4v2_categories_id_map $cat_id} cat_name] } {
+        set bFound false
+        dict for {cat_id2 cat_name} $::mp4v2_categories_id_map {
+            if { $cat_name == $cat_id } {
+                set cat_id $cat_id2
+                set bFound true
+                break
+            }
+        }
+        if { !$bFound } { return -code error "Unknown category '$cat_id'" }
+    }
+    puts "Genres for category '$cat_name'  ($cat_id):"
+    foreach genre_id [lsort -integer [dict keys $::mp4v2_genres_info]] {
+        if { [dict get $::mp4v2_genres_info $genre_id cat_id] != $cat_id } { continue }
+        puts [format "  %-8i '%s'" $genre_id [dict get $::mp4v2_genres_info $genre_id genre_name]]
+        foreach subgenre_id [lsort -integer [dict keys [dict get $::mp4v2_genres_info $genre_id sub_genres_info]]] {
+            puts [format "    %-8i '%s'" $subgenre_id [dict get $::mp4v2_genres_info $genre_id sub_genres_info $subgenre_id genre_name]]
+        }
+    }
+    return
+}
+
+# }}}
+# tag_info {{{
+
+# http://id3.org/id3v2-00 (ID3 tag version 2 - Informal Standard) {{{
+#    4.19  BUF Recommended buffer size
+#
+#    4.17  CNT Play counter
+#    4.11  COM Comments
+#    4.21  CRA Audio encryption
+#    4.20  CRM Encrypted meta frame
+#
+#    4.6   ETC Event timing codes
+#    4.13  EQU Equalization
+#
+#    4.16  GEO General encapsulated object
+#
+#    4.4   IPL Involved people list
+#
+#    4.22  LNK Linked information
+#
+#    4.5   MCI Music CD Identifier
+#    4.7   MLL MPEG location lookup table
+#
+#    4.15  PIC Attached picture
+#    4.18  POP Popularimeter
+#
+#    4.14  REV Reverb
+#    4.12  RVA Relative volume adjustment
+#
+#    4.10  SLT Synchronized lyric/text
+#    4.8   STC Synced tempo codes
+#
+#    4.2.1 TAL Album/Movie/Show title
+#    4.2.1 TBP BPM (Beats Per Minute)
+#    4.2.1 TCM Composer
+#    4.2.1 TCO Content type
+#    4.2.1 TCR Copyright message
+#    4.2.1 TDA Date
+#    4.2.1 TDY Playlist delay
+#    4.2.1 TEN Encoded by
+#    4.2.1 TFT File type
+#    4.2.1 TIM Time
+#    4.2.1 TKE Initial key
+#    4.2.1 TLA Language(s)
+#    4.2.1 TLE Length
+#    4.2.1 TMT Media type
+#    4.2.1 TOA Original artist(s)/performer(s)
+#    4.2.1 TOF Original filename
+#    4.2.1 TOL Original Lyricist(s)/text writer(s)
+#    4.2.1 TOR Original release year
+#    4.2.1 TOT Original album/Movie/Show title
+#    4.2.1 TP1 Lead artist(s)/Lead performer(s)/Soloist(s)/Performing group
+#    4.2.1 TP2 Band/Orchestra/Accompaniment
+#    4.2.1 TP3 Conductor/Performer refinement
+#    4.2.1 TP4 Interpreted, remixed, or otherwise modified by
+#    4.2.1 TPA Part of a set
+#    4.2.1 TPB Publisher
+#    4.2.1 TRC ISRC (International Standard Recording Code)
+#    4.2.1 TRD Recording dates
+#    4.2.1 TRK Track number/Position in set
+#    4.2.1 TSI Size
+#    4.2.1 TSS Software/hardware and settings used for encoding
+#    4.2.1 TT1 Content group description
+#    4.2.1 TT2 Title/Songname/Content description
+#    4.2.1 TT3 Subtitle/Description refinement
+#    4.2.1 TXT Lyricist/text writer
+#    4.2.2 TXX User defined text information frame
+#    4.2.1 TYE Year
+#
+#    4.1   UFI Unique file identifier
+#    4.9   ULT Unsychronized lyric/text transcription
+#
+#    4.3.1 WAF Official audio file webpage
+#    4.3.1 WAR Official artist/performer webpage
+#    4.3.1 WAS Official audio source webpage
+#    4.3.1 WCM Commercial information
+#    4.3.1 WCP Copyright/Legal information
+#    4.3.1 WPB Publishers official webpage
+#    4.3.2 WXX User defined URL link frame
+# }}}
+
+# http://id3.org/id3v2.3.0 {{{
+#    4.20    AENC    [[#sec4.20|Audio encryption]]
+#    4.15    APIC    [#sec4.15 Attached picture]
+#    4.11    COMM    [#sec4.11 Comments]
+#    4.25    COMR    [#sec4.25 Commercial frame]
+#    4.26    ENCR    [#sec4.26 Encryption method registration]
+#    4.13    EQUA    [#sec4.13 Equalization]
+#    4.6     ETCO    [#sec4.6 Event timing codes]
+#    4.16    GEOB    [#sec4.16 General encapsulated object]
+#    4.27    GRID    [#sec4.27 Group identification registration]
+#    4.4     IPLS    [#sec4.4 Involved people list]
+#    4.21    LINK    [#sec4.21 Linked information]
+#    4.5     MCDI    [#sec4.5 Music CD identifier]
+#    4.7     MLLT    [#sec4.7 MPEG location lookup table]
+#    4.24    OWNE    [#sec4.24 Ownership frame]
+#    4.28    PRIV    [#sec4.28 Private frame]
+#    4.17    PCNT    [#sec4.17 Play counter]
+#    4.18    POPM    [#sec4.18 Popularimeter]
+#    4.22    POSS    [#sec4.22 Position synchronisation frame]
+#    4.19    RBUF    [#sec4.19 Recommended buffer size]
+#    4.12    RVAD    [#sec4.12 Relative volume adjustment]
+#    4.14    RVRB    [#sec4.14 Reverb]
+#    4.10    SYLT    [#sec4.10 Synchronized lyric/text]
+#    4.8     SYTC    [#sec4.8 Synchronized tempo codes]
+#    4.2.1   TALB    [#TALB Album/Movie/Show title]
+#    4.2.1   TBPM    [#TBPM BPM (beats per minute)]
+#    4.2.1   TCOM    [#TCOM Composer]
+#    4.2.1   TCON    [#TCON Content type]
+#    4.2.1   TCOP    [#TCOP Copyright message]
+#    4.2.1   TDAT    [#TDAT Date]
+#    4.2.1   TDLY    [#TDLY Playlist delay]
+#    4.2.1   TENC    [#TENC Encoded by]
+#    4.2.1   TEXT    [#TEXT Lyricist/Text writer]
+#    4.2.1   TFLT    [#TFLT File type]
+#    4.2.1   TIME    [#TIME Time]
+#    4.2.1   TIT1    [#TIT1 Content group description]
+#    4.2.1   TIT2    [#TIT2 Title/songname/content description]
+#    4.2.1   TIT3    [#TIT3 Subtitle/Description refinement]
+#    4.2.1   TKEY    [#TKEY Initial key]
+#    4.2.1   TLAN    [#TLAN Language(s)]
+#    4.2.1   TLEN    [#TLEN Length]
+#    4.2.1   TMED    [#TMED Media type]
+#    4.2.1   TOAL    [#TOAL Original album/movie/show title]
+#    4.2.1   TOFN    [#TOFN Original filename]
+#    4.2.1   TOLY    [#TOLY Original lyricist(s)/text writer(s)]
+#    4.2.1   TOPE    [#TOPE Original artist(s)/performer(s)]
+#    4.2.1   TORY    [#TORY Original release year]
+#    4.2.1   TOWN    [#TOWN File owner/licensee]
+#    4.2.1   TPE1    [#TPE1 Lead performer(s)/Soloist(s)]
+#    4.2.1   TPE2    [#TPE2 Band/orchestra/accompaniment]
+#    4.2.1   TPE3    [#TPE3 Conductor/performer refinement]
+#    4.2.1   TPE4    [#TPE4 Interpreted, remixed, or otherwise modified by]
+#    4.2.1   TPOS    [#TPOS Part of a set]
+#    4.2.1   TPUB    [#TPUB Publisher]
+#    4.2.1   TRCK    [#TRCK Track number/Position in set]
+#    4.2.1   TRDA    [#TRDA Recording dates]
+#    4.2.1   TRSN    [#TRSN Internet radio station name]
+#    4.2.1   TRSO    [#TRSO Internet radio station owner]
+#    4.2.1   TSIZ    [#TSIZ Size]
+#    4.2.1   TSRC    [#TSRC ISRC (international standard recording code)]
+#    4.2.1   TSSE    [#TSEE Software/Hardware and settings used for encoding]
+#    4.2.1   TYER    [#TYER Year]
+#    4.2.2   TXXX    [#TXXX User defined text information frame]
+#    4.1     UFID    [#sec4.1 Unique file identifier]
+#    4.23    USER    [#sec4.23 Terms of use]
+#    4.9     USLT    [#sec4.9 Unsychronized lyric/text transcription]
+#    4.3.1   WCOM    [#WCOM Commercial information]
+#    4.3.1   WCOP    [#WCOP Copyright/Legal information]
+#    4.3.1   WOAF    [#WOAF Official audio file webpage]
+#    4.3.1   WOAR    [#WOAR Official artist/performer webpage]
+#    4.3.1   WOAS    [#WOAS Official audio source webpage]
+#    4.3.1   WORS    [#WORS Official internet radio station homepage]
+#    4.3.1   WPAY    [#WPAY Payment]
+#    4.3.1   WPUB    [#WPUB Publishers official webpage]
+#    4.3.2   WXXX    [#WXXX User defined URL link frame]
+# }}}
+
+# https://code.google.com/p/mp4v2/wiki/iTunesMetadata
+set ::tag_info [dict create \
+        tags {} \
+        map  {} \
+    ]
+foreach {
+    element                  mp4v2_tag                data_type                mp4v2_name               id3v2_20_tag             id3v2_30_tag   aliases
+} {
+    "Name"                   ©nam                     utf-8                    song                     TT2                      TIT2           {"Song" "Title" name}
+    "Artist"                 ©ART                     utf-8                    artist                   TP1                      TPE1           {}
+    "Album Artist"           aART                     utf-8                    albumArtist              -                        -              {}
+    "Album"                  ©alb                     utf-8                    album                    TAL                      TALB           {}
+    "Grouping"               ©grp                     utf-8                    grouping                 TT1                      TIT1           {}
+    "Composer"               ©wrt                     utf-8                    writer                   TCM                      TCOM           {}
+    "Comment"                ©cmt                     utf-8                    comments                 -                        -              {}
+    "Genre ID"               gnre                     enum                     genreID                  -                        -              {}
+    "Genre"                  ©gen                     utf-8                    genre                    TCO                      TCON           {GenreType}
+    "Release Date"           ©day                     utf-8                    year                     TYE                      TYER           {releaseDate Date}
+    "Track Number"           trkn                     binary                   track                    TRK                      TRCK           {}
+    "Disc Number"            disk                     binary                   disk                     TPA                      TPOS           {disc}
+    "Tempo (bpm)"            tmpo                     int16                    tempo                    -                        -              {}
+    "Compilation"            cpil                     bool8                    compilation              -                        -              {}
+    "TV Show Name"           tvsh                     utf-8                    tvShow                   -                        -              {}
+    "TV Episode ID"          tven                     utf-8                    tvEpisodeID              -                        -              {}
+    "TV Season"              tvsn                     int32                    tvSeason                 -                        -              {}
+    "TV Episode"             tves                     int32                    tvEpisode                -                        -              {}
+    "TV Network"             tvnn                     utf-8                    tvNetwork                -                        -              {}
+    "Description"            desc                     utf-8                    description              -                        -              {}
+    "Long Description"       ldes                     utf-8                    longDescription          -                        -              {}
+    "Lyrics"                 ©lyr                     utf-8                    lyrics                   -                        -              {}
+    "Sort Name"              sonm                     utf-8                    sortName                 -                        -              {}
+    "Sort Artist"            soar                     utf-8                    sortArtist               -                        -              {}
+    "Sort Album Artist"      soaa                     utf-8                    sortAlbumArtist          -                        -              {}
+    "Sort Album"             soal                     utf-8                    sortAlbum                -                        -              {}
+    "Sort Composer"          soco                     utf-8                    sortComposer             -                        -              {}
+    "Sort Show"              sosn                     utf-8                    sortTVShow               -                        -              {}
+    "Cover Art"              covr                     picture                  artwork                  -                        -              {}
+    "Copyright"              cprt                     utf-8                    copyright                TCR                      TCOP           {}
+    "Encoding Tool"          ©too                     utf-8                    tool                     -                        -              {"Encoded with" encodingTool}
+    "Encoded By"             ©enc                     utf-8                    encodedBy                TEN                      TENC           {}
+    "Purchase Date"          purd                     utf-8                    purchaseDate             -                        -              {}
+    "Podcast"                pcst                     bool8                    podcast                  -                        -              {}
+    "Podcast URL"            purl                     utf-8                    podcastUrl               -                        -              {}
+    "Keywords"               keyw                     utf-8                    keywords                 -                        -              {}
+    "Category"               catg                     utf-8                    category                 -                        -              {}
+    "HD Video"               hdvd                     bool8                    hdVideo                  -                        -              {}
+    "Media Type"             stik                     enum8                    type                     TMT                      TMED           {mediaType}
+    "Content Rating"         rtng                     int8                     contentRating            -                        -              {}
+    "Gapless Playback"       pgap                     bool8                    gapless                  -                        -              {}
+    "Purchase Account"       apID                     utf-8                    iTunesAccount            -                        -              {}
+    "Account Type"           akID                     int8                     iTunesAccountType        -                        -              {}
+    "Catalog ID"             cnID                     int32                    iTunesCatalogID          -                        -              {}
+    "Country Code"           sfID                     int32                    iTunesCountry            -                        -              {}
+    "Artist ID"              atID                     int32                    artistID                 -                        -              {}
+    "Alnum ID"               plID                     int64                    plID                     -                        -              {}
+    "Genre ID"               geID                     int32                    geID                     -                        -              {}
+    "Subtitle"               ©st3                     utf-8                    subtitle                 TT3                      TIT3           {}
+} {
+    set tag [string tolower $mp4v2_name]
+    foreach v {element mp4v2_tag data_type mp4v2_name id3v2_20_tag id3v2_30_tag aliases} {
+        set t [set $v]
+        if { $t ne "-" } {
+            dict set ::tag_info tags $tag $v $t
+        }
+    }
+    foreach t [concat [list $element $mp4v2_tag $mp4v2_name $id3v2_20_tag $id3v2_30_tag] $aliases] {
+        if { $t ne "-" } {
+            dict set ::tag_info map [string tolower $t] $tag
+            dict set ::tag_info map $t $tag
+        }
+    }
+}
+
+# }}}
+# tag_stik_info (iTunes Media Type) {{{
+
+set ::tag_stik_info [dict create \
+        stik {} \
+        map  {} \
+    ]
+# mp4v2 source
+# AtomicParsley source
+# https://code.google.com/p/mp4v2/wiki/iTunesMetadata
+# TODO http://help.mp3tag.de/main_tags.html {{{
+# ITUNESMEDIATYPE
+#   Syntax: Enter the media type
+#   Possible values: Movie, Normal, Audiobook, Music Video, Short Film, TV Show, Ringtone, iTunes U
+# }}}
+foreach {
+    element              stik mp4v2_arg    atomicparsley_arg  aliases
+} {
+    "Movie (Old)"        0    "oldmovie"   "Movie"            {}
+    "Normal (Music)"     1    "normal"     "Normal"           {"music"}
+    "Audio Book"         2    "audiobook"  "Audiobook"        {}
+    "Whacked Bookmark"   5    -            "Whacked Bookmark" {}
+    "Music Video"        6    "musicvideo" "Music Video"      {}
+    "Movie"              9    "movie"      "Short Film"       {}
+    "TV Show"            10   "tvshow"     "TV Show"          {}
+    "Booklet"            11   "booklet"    "Bookley"          {}
+    "Ringtone"           14   "ringtone"   -                  {}
+    "iTunes U"           TODO -            -                  {}
+    "Voice Memo"         TODO -            -                  {}
+    "Podcast"            TODO -            -                  {}
+} {
+    if { $stik eq "TODO" } { continue }
+    foreach v {element stik mp4v2_arg atomicparsley_arg aliases} {
+        set t [set $v]
+        if { $t ne "-" } {
+            dict set ::tag_stik_info stik $stik $v $t
+        }
+    }
+    foreach t [concat [list $element $mp4v2_arg $atomicparsley_arg] $aliases] {
+        if { $t ne "-" } {
+            dict set ::tag_stik_info map [regsub -all {\s} [string tolower $t] ""] $stik
+            dict set ::tag_stik_info map [string tolower $t] $stik
+            dict set ::tag_stik_info map $t $stik
+        }
+    }
+}
+
+proc do_type_list { } {
+    puts "Types:"
+    foreach stik [lsort -integer [dict keys [dict get $::tag_stik_info stik]]] {
+        puts [format "  %-2d '%s'" $stik [dict get $::tag_stik_info stik $stik element]]
+    }
+    return
+}
+
+# }}}
+
+# times_1000 {{{
+
+proc times_1000 { v } {
+    if { [regexp {^(\d+)\.(\d{1,3})(\d*)$} $v - a b c] } {
+        set v $a[string range "${b}00" 0 2]
+        if { $c ne "" } { append v .$c }
+    } else {
+        set v [expr { $v * 1000 }]
+    }
+    return $v
+}
+
+# }}}
+
+# add_audio_file_tag {{{
+
+proc add_audio_file_tag { _d tag value {source ""} } {
+    set tag [string trim $tag]
+    if {
+        [catch {set tag [dict get $::tag_info map $tag]}] &&
+        [catch {set tag [dict get $::tag_info map [string tolower $tag]]}]
+    } { return 0 }
+    set value [string trim $value]
+    if { $value eq "" || $value eq "null" || $value eq "XXX" } { return 0 }
+    upvar 1 $_d d
+    switch -exact -- $tag {
+        "genre" - "genreID" {
+            regexp {^\((\d+)\)$} $value "\\1" value
+            if { [string is integer -strict $value] } {
+                if { [string match "id3*" $source] } {
+                    if { [catch {set value [dict get $::id3v1_genres_id_map $value]}] } {
+                        # The iTunes (mp4v2) genre tag is one greater than the corresponding ID3 tag
+                        incr value
+                    }
+                }
+            }
+            if { [string is integer -strict $value] } {
+                if { ![catch {set value [dict get $::mp4v2_genres_id_map $value]}] } {
+                    set tag "genre" ; dict unset d "genreID"
+                } else {
+                    set tag "genreID" ; dict unset d "genre"
+                }
+            } else {
+                if {
+                    [regexp {^(.+) \((\d+)\)$} $value - value id] ||
+                    [regexp {^(\d+), (.+)$} $value - id value]
+                } {
+                    # Attempt to normalize
+                    catch {set value [dict get $::mp4v2_genres_id_map $id]}
+                }
+                set tag "genre" ; dict unset d "genreID"
+            }
+        }
+        "disk" -
+        "track" {
+            if { [regexp {^0*(\d*)(?:(?: of |/)0*(\d*))?$} $value - value n] } {
+                if { $n ne "" } { append value "/$n" }
+            }
+        }
+        "comment" {
+            if { $value eq "<p>" } { return 0 }
+            set l {} ; catch {dict get $d tags $tag}
+            if { [lsearch -exact -- $l $value] == -1 } {
+                lappend l $value
+            }
+            set value $l
+        }
+        "type" {
+            if { [string is integer -strict $value] } {
+                # Ok
+                # NOTE: AtomicParsley takes "value=$value"
+            } elseif {
+                ![catch {set value [dict get $::tag_stik_info map $value]}] ||
+                ![catch {set value [dict get $::tag_stik_info map [regsub -all {\s} [string tolower $value] ""]]}]
+            } {
+                # Known
+            } else {
+                error "Unsupported $tag value '$value'"
+            }
+            catch {set value [dict get $::tag_stik_info stik $value mp4v2_arg]}
+        }
+        default {
+        }
+    }
+    dict set d tags $tag $value
+    return 1
+}
+
+# }}}
+# get_audio_file_info {{{
+
+proc get_audio_file_info { file args } {
+    set need_actual_duration 1
+    for { set argi 0 } { $argi < [llength $args] } { incr argi } {
+	switch -glob -- [set arg [lindex $args $argi]] {
+            -need_actual_duration { set need_actual_duration [lindex $args [incr argi]] }
+	    default {
+		return -code error "Invalid argument '$arg'"
+	    }
+        }
+    }
+    set d [dict create \
+	    file $file \
+	    audio_type [string range [file extension $file] 1 end] \
+            tags [dict create] \
+	]
+    set done 0
+    if { [lsearch -exact [dict get [get_mp4v2_formats] extensions_can_read] [file extension $file]] != -1 } {
+        if { !$done && [llength [auto_execok mp4info]] && ![catch {dbg_exec_cmd [concat [auto_execok mp4info] [list $file]]} out] } {
+            # {{{
+            regsub -all "\t" $out " " out
+            regsub -line -all " +$" $out "" out
+            set lines [split $out \n]
+            while { [llength $lines] } {
+                set line [lvarpop lines]
+                switch -regexp -matchvar m -- $line {
+                    {^Track +Type +Info$} {
+                        while { [llength $lines] } {
+                            set line [lvarpop lines]
+                            switch -regexp -matchvar m -- $line {
+                                {^$} {}
+                                {^(\d+) +(\S+) +(.+)$} {
+                                    lassign $m - trackno type infos
+                                    # 1	audio	MPEG-4 AAC LC, 424.135 secs, 256 kbps, 44100 Hz
+                                    switch -exact -- $type {
+                                        "audio" {
+                                            set done 1
+                                            set infos [split $infos ,]
+                                            dict set d audio_type [normalize_audio_type [lvarpop infos]]
+                                            foreach info $infos {
+                                                switch -regexp -matchvar m -- [string trim $info] {
+                                                    {^(\d+\.\d+) secs}      { dict set d duration [lindex $m 1] }
+                                                    {^(\d+(?:\.\d+)?) kbps} { dict set d bitrate  [times_1000 [lindex $m 1]] }
+                                                    {^(\d+) Hz}             { dict set d frequency [lindex $m 1] }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                default { lvarpush lines $line ; break }
+                            }
+                        }
+                    }
+                    {^ +Cover Art pieces: (\d+)$} { dict set d num_cover   [lindex $m 1] }
+                    {^ +(\w+(?: \w+)*): (.+)$}    { add_audio_file_tag d [lindex $m 1] [lindex $m 2] }
+                    {^$} {}
+                    default {
+                        # if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+                    }
+                }
+            }
+            # }}}
+        }
+    }
+    if { [lsearch -exact {.ogg .mp4 .m4a .m4p .m4b .m4r .m4v} [file extension $file]] == -1 } {
+        set parse_id3v2_id3info_out {
+            # {{{
+            regsub -all "\t" $out " " out
+            regsub -line -all " +$" $out "" out
+            set lines [split $out \n]
+            while { [llength $lines] } {
+                set line [lvarpop lines]
+                set tag_type "id3v2"
+                switch -regexp -matchvar m -- $line {
+                    {^\*\*\* Tag information for } {
+                        # (id3info)
+                        # *** Tag information for 01 Bad Monkey - Part 1.mp3
+                    }
+                    {^\*\*\* mp3 info$} {
+                        # (id3info)
+                        # *** mp3 info
+                    }
+                    {^(MPEG1/layer III)$} {
+                        # (id3info)
+                        # MPEG1/layer III
+                        dict set d audio_type [normalize_audio_type [lindex $m 1]]
+                    }
+                    {^Bitrate: (\d+(?:\.\d+)?)KBps$} {
+                        # (id3info)
+                        # Bitrate: 64KBps
+                        dict set d bitrate [times_1000 [lindex $m 1]]
+                    }
+                    {^Frequency: (\d+(?:\.\d+)?)KHz$} {
+                        # (id3info)
+                        # Frequency: 44KHz
+                        dict set d frequency [times_1000 [lindex $m 1]]
+                    }
+                    {^(id3v1|id3v2) tag info for } {
+                        # (id3v2)
+                        # id3v1 tag info for 01 Bad Monkey - Part 1.mp3:
+                        # id3v2 tag info for 01 Bad Monkey - Part 1.mp3:
+                        set tag_type [lindex $m 1]
+                    }
+
+                    {^Title *: (.+) Artist:(?: (.+))?$} {
+                        # (id3v2)
+                        # Title  : Bad Monkey - Part 1             Artist: Carl Hiaasen
+                        set done 1
+                        add_audio_file_tag d Title   [lindex $m 1] $tag_type
+                        add_audio_file_tag d Artist  [lindex $m 2] $tag_type
+                    }
+                    {^Album *: (.+) Year: (.+), Genre:(?: (.+))?$} {
+                        # (id3v2)
+                        # Album  : Bad Monkey                      Year:     , Genre: Other (12)
+                        set done 1
+                        add_audio_file_tag d Album   [lindex $m 1] $tag_type
+                        add_audio_file_tag d Year    [lindex $m 2] $tag_type
+                        add_audio_file_tag d Genre   [lindex $m 3] $tag_type
+                    }
+                    {^Comment: (.+) Track:(?: (.+))?$} {
+                        # (id3v2)
+                        # Comment: <p>                             Track: 1
+                        set done 1
+                        add_audio_file_tag d Comment [lindex $m 1] $tag_type
+                        add_audio_file_tag d Track   [lindex $m 2] $tag_type
+                    }
+
+                    {^(?:=== )?(TPA|TPOS) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TRK|TRCK) \(.*?\): (.+)$} {
+                        # ("===" version is id3info, else id3v2)
+                        # === TPA (Part of a set): 1/2
+                        # === TRK (Track number/Position in set): 1/3
+                        set done 1
+                        add_audio_file_tag d [lindex $m 1] [lindex $m 2] $tag_type
+                    }
+
+                    {^(?:=== )?(TAL|TALB) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TCM|TCOM) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TCO|TCON) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TCR|TCOP) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TEN|TENC) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TMT|TMED) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TP1|TPE1) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TT2|TIT2) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TT3|TIT3) \(.*?\): (.+)$} -
+                    {^(?:=== )?(TYE|TYER) \(.*?\): (.+)$} {
+                        # ("===" version is id3info, else id3v2)
+                        set done 1
+                        add_audio_file_tag d [lindex $m 1] [lindex $m 2] $tag_type
+                    }
+
+                    {^(?:=== )?(PIC|APIC) \(.*?\): (.+)$} {
+                        # ("===" version is id3info, else id3v2)
+                        # === PIC (Attached picture): ()[PNG, 0]: , 407017 bytes
+                        # APIC (Attached picture): ()[, 0]: image/jpeg, 40434 bytes
+                        set done 1
+                        dict set d num_cover 1 ;# TODO
+                    }
+
+                    {^(?:=== )?(TXX|TXXX) \(.*?\): \(OverDrive MediaMarkers\): (<Markers>.+</Markers>)$} {
+                        # TXXX (User defined text information): (OverDrive MediaMarkers): <Markers><Marker><Name>Bad Monkey</Name><Time>0:00.000</Time></Marker><Marker><Name>Preface</Name><Time>0:11.000</Time></Marker><Marker><Name>Chapter 1</Name><Time>0:35.000</Time></Marker><Marker><Name>      Chapter 1 (05:58)</Name><Time>5:58.000</Time></Marker><Marker><Name>      Chapter 1 (10:30)</Name><Time>10:30.000</Time></Marker><Marker><Name>Chapter 2</Name><Time>17:51.000</Time></Marker><Marker><Name>      Chapter 2 (24:13)</Name><Time>24:13.000</Time></Marker><Marker><Name>      Chapter 2 (30:12)</Name><Time>30:12.000</Time></Marker><Marker><Name>      Chapter 2 (36:57)</Name><Time>36:57.000</Time></Marker><Marker><Name>Chapter 3</Name><Time>42:28.000</Time></Marker><Marker><Name>      Chapter 3 (49:24)</Name><Time>49:24.000</Time></Marker><Marker><Name>      Chapter 3 (51:41)</Name><Time>51:41.000</Time></Marker><Marker><Name>      Chapter 3 (55:27)</Name><Time>55:27.000</Time></Marker><Marker><Name>Chapter 4</Name><Time>59:55.000</Time></Marker><Marker><Name>      Chapter 4 (01:07:10)</Name><Time>67:10.000</Time></Marker><Marker><Name>      Chapter 4 (01:10:57)</Name><Time>70:57.000</Time></Marker></Markers>
+                        set done 1
+                        dict set d OverDrive_MediaMarkers [lindex $m 2]
+                    }
+
+                    {^$} {}
+                    default {
+                        # if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+                        # TLAN (Language(s)): XXX
+                        # TPUB (Publisher): Books On Tape
+                    }
+                }
+            }
+            # }}}
+        }
+        if { !$done && [llength [auto_execok id3info]] && ![catch {dbg_exec_cmd [concat [auto_execok id3info] [list $file]]} out] } {
+            eval $parse_id3v2_id3info_out
+        }
+        if { !$done && [llength [auto_execok id3v2]] && ![catch {dbg_exec_cmd [concat [auto_execok id3v2] [list -i $file]]} out] } {
+            eval $parse_id3v2_id3info_out
+        }
+    }
+    if { [lsearch -exact [dict get [get_sox_formats] extensions_can_read] [file extension $file]] != -1 } {
+        if { ( !$done || ![dict exists $d duration] ) && [llength [auto_execok soxi]] && ![catch {dbg_exec_cmd [concat [auto_execok soxi] [list $file]]} out] } {
+            # {{{
+            regsub -all "\t" $out " " out
+            regsub -line -all " +$" $out "" out
+            set lines [split $out \n]
+            while { [llength $lines] } {
+                set line [lvarpop lines]
+                set tag_type "id3v2"
+                switch -regexp -matchvar m -- $line {
+                    {^$} {}
+                    {^Sample Rate *: (\d+)$} {
+                        # Sample Rate    : 44100
+                        dict set d frequency [lindex $m 1]
+                    }
+                    {^Duration *: 0?(\d+):0?(\d+):0?(\d+\.\d+) } {
+                        # Duration       : 01:17:52.69 = 206065585 samples = 350452 CDDA sectors
+                        dict set d duration [expr {
+                                [lindex $m 1] * 60 * 60 +
+                                [lindex $m 2] * 60 +
+                                [lindex $m 3]
+                        }]
+                    }
+                    {^Bit Rate *: (\d+(?:\.\d+)?)M$} {
+                        # Bit Rate       : 99.1M
+                        if { [lindex $m 1] >= 2 } {
+                            error "soxi bug #251: soxi reports invalid rate (M instead of K) for some VBR MP3s. (https://sourceforge.net/p/sox/bugs/251/)"
+                        }
+                        dict set d sub_bitrate [times_1000 [times_1000 [lindex $m 1]]]
+                    }
+                    {^Bit Rate *: (\d+(?:\.\d+)?)k$} {
+                        # Bit Rate       : 64.1k
+                        dict set d sub_bitrate [times_1000 [lindex $m 1]]
+                    }
+                    {(?i)^(Discnumber|Tracknumber)=(\d*/\d*)$} {
+                        # Tracknumber=1/2
+                        # Discnumber=1/2
+                        add_audio_file_tag d [lindex $m 1] [lindex $m 2] $tag_type
+                    }
+                    {(?i)^(ALBUMARTIST|Artist|Album|DATE|Genre|Title|Year)=(.+)$} {
+                        # ALBUMARTIST=James Patterson & Maxine Paetro
+                        # Album=Bad Monkey
+                        # Artist=Carl Hiaasen
+                        # DATE=2012
+                        # Genre=Spoken & Audio
+                        # Title=Bad Monkey - Part 1
+                        # Year=2012
+                        set done 1
+                        add_audio_file_tag d [lindex $m 1] [lindex $m 2] $tag_type
+                    }
+                    {^Sample Encoding *: (.+)$} {
+                        # Sample Encoding: MPEG audio (layer I, II or III)
+                        dict set d audio_type [normalize_audio_type [lindex $m 1]]
+                    }
+                    {(?i)^TRACKNUMBER=(\d+)$} {
+                        # Tracknumber=1
+                        # TRACKNUMBER=1
+                        if {
+                            [catch {dict get $d tags track} track] ||
+                            ![regexp {^(\d*)(?:/(\d*))?$} $track - track tracks]
+                        } { set track "" ; set tracks "" }
+                        set track [lindex $m 1]
+                        add_audio_file_tag d track $track/$tracks
+                    }
+                    {(?i)^TRACKTOTAL=(\d+)$} {
+                        # TRACKTOTAL=15
+                        if {
+                            [catch {dict get $d tags track} track] ||
+                            ![regexp {^(\d*)(?:/(\d*))?$} $track - track tracks]
+                        } { set track "" ; set tracks "" }
+                        set tracks [lindex $m 1]
+                        add_audio_file_tag d track $track/$tracks
+                    }
+                    {(?i)^DISCNUMBER=(\d+)$} {
+                        # DISCNUMBER=1
+                        if {
+                            [catch {dict get $d tags disk} disk] ||
+                            ![regexp {^(\d*)(?:/(\d*))?$} $disk - disk disks]
+                        } { set disk "" ; set disks "" }
+                        set disk [lindex $m 1]
+                        add_audio_file_tag d disk $disk/$disks
+                    }
+                    {(?i)^DISCTOTAL=(\d+)$} {
+                        # DISCTOTAL=15
+                        if {
+                            [catch {dict get $d tags disk} disk] ||
+                            ![regexp {^(\d*)(?:/(\d*))?$} $disk - disk disks]
+                        } { set disk "" ; set disks "" }
+                        set disks [lindex $m 1]
+                        add_audio_file_tag d disk $disk/$disks
+                    }
+                    default {
+                        if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+                        # TODO
+                        # Input File     : '11th Hour (Women's Murder Club #11) [Disc 1]/01. Disc 1_4, Track 1_15.ogg'
+                        # Channels       : 2
+                        # Precision      : 16-bit
+                        # File Size      : 5.47M
+                        # Comments       :
+                        # DISCID=c8108f0f
+                        # MUSICBRAINZ_DISCID=liGlmWj2ww4up0n.XKJUqaIb25g-
+                        # RATING:BANSHEE=0.5
+                        # PLAYCOUNT:BANSHEE=0
+                    }
+                }
+            }
+            # }}}
+        }
+    }
+    if { ( !$done || ![dict exists $d bitrate] ) && [llength [auto_execok file]] && ![catch {dbg_exec_cmd [concat [auto_execok file] [list -b -L $file]]} out] } {
+        # Ogg data, Vorbis audio, stereo, 44100 Hz, ~160000 bps, created by: Xiph.Org libVorbis I
+        regsub -all "\t" $out " " out
+        regsub -line -all " +$" $out "" out
+        set lines [split $out \n]
+        while { [llength $lines] } {
+            set line [lvarpop lines]
+            foreach info [split $line ,] {
+                set info [string trim $info]
+                switch -regexp -matchvar m -- $info {
+                    {^(\d+) Hz$}         { dict set d frequency [lindex $m 1] }
+                    {^\~(\d+) bps$}      { dict set d bitrate [lindex $m 1] }
+                    {^created by: (.+)$} { add_audio_file_tag d encodedBy [lindex $m 1] }
+                    default {
+                        # if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+                        # TODO
+                    }
+                }
+            }
+        }
+    }
+
+    # TODO ffprobe
+
+    if {
+        $need_actual_duration && ![dict exists $d actual_duration]
+    } {
+        set d [dict merge $d [get_audio_file_ffmpeg_stats $file]]
+    }
+    if {
+        $need_actual_duration && ![dict exists $d actual_duration]
+    } {
+        set d [dict merge $d [get_audio_file_sox_stats $file]]
+    }
+
+    if { [catch {dict get $d sub_bitrate} bitrate] && ![dict exists $d bitrate] } {
+        dict set d bitrate $bitrate
+    }
+    if { ![catch {dict get $d actual_duration} duration] } {
+        dict set d duration $duration
+    }
+
+    if { !$done } {
+        return -code error "Failed to read tags from $file"
+    }
+    return $d
+}
+
+# }}}
+# get_audio_file_sox_stats {{{
+
+proc get_audio_file_sox_stats { file } {
+    set d [dict create]
+    if {
+        [file exists $file.soxstats] &&
+        [file mtime $file.soxstats] >= [file mtime $file]
+    } {
+        set out [safe_read_file $file.soxstats]
+    } elseif {
+        [llength [auto_execok sox]] &&
+        [lsearch -exact [dict get [get_sox_formats] extensions_can_read] [file extension $file]] != -1
+    } {
+        puts "Analyzing $file..."
+        # NOTE --ignore-length: see #251 soxi reports invalid rate (M instead of K) for some VBR MP3s. (https://sourceforge.net/p/sox/bugs/251/)
+        if { ![catch {dbg_exec_cmd [concat [auto_execok sox] [list --ignore-length $file -n stat]] [list 2>@1]} out] } {
+            safe_write_file $file.soxstats $out
+        } else {
+            error $out ;# TODO ignore/report failure only?
+            set out ""
+        }
+    } else {
+        set out ""
+    }
+    # {{{
+    regsub -all "\t" $out " " out
+    regsub -line -all " +$" $out "" out
+    set lines [split $out \n]
+    while { [llength $lines] } {
+        set line [lvarpop lines]
+        switch -regexp -matchvar m -- $line {
+            {^Samples +read: +(\S+)$} {
+                # Samples read:         398082816
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Length +\(seconds\): +(\d+(?:\.\d+)?)$} {
+                # Length (seconds):   4513.410612
+                dict set d actual_duration [lindex $m 1]
+            }
+            {^Scaled +by: +(\S+)$} {
+                # Scaled by:         2147483647.0
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Maximum +amplitude: +(\S+)$} {
+                # Maximum amplitude:     0.597739
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Minimum +amplitude: +(\S+)$} {
+                # Minimum amplitude:    -0.586463
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Midline +amplitude: +(\S+)$} {
+                # Midline amplitude:     0.005638
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Mean +norm: +(\S+)$} {
+                # Mean    norm:          0.027160
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Mean +amplitude: +(\S+)$} {
+                # Mean    amplitude:     0.000005
+                # dict set d TODO [lindex $m 1]
+            }
+            {^RMS +amplitude: +(\S+)$} {
+                # RMS     amplitude:     0.047376
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Maximum +delta: +(\S+)$} {
+                # Maximum delta:         0.382838
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Minimum +delta: +(\S+)$} {
+                # Minimum delta:         0.000000
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Mean +delta: +(\S+)$} {
+                # Mean    delta:         0.002157
+                # dict set d TODO [lindex $m 1]
+            }
+            {^RMS +delta: +(\S+)$} {
+                # RMS     delta:         0.006849
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Rough +frequency: +(\S+)$} {
+                # Rough   frequency:         1014
+                # dict set d TODO [lindex $m 1]
+            }
+            {^Volume +adjustment: +(\S+)$} {
+                # Volume adjustment:        1.673
+                # dict set d TODO [lindex $m 1]
+            }
+            {^$} {}
+            default {
+                if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+            }
+        }
+    }
+    # }}}
+    # puts "soxstats for $file: $d"
+    return $d
+}
+
+# }}}
+# get_audio_file_ffmpeg_stats {{{
+
+proc get_audio_file_ffmpeg_stats { file } {
+    set d [dict create]
+    if {
+        [file exists $file.ffmpegstats] &&
+        [file mtime $file.ffmpegstats] >= [file mtime $file]
+    } {
+        set out [safe_read_file $file.ffmpegstats]
+    } elseif {
+        [llength [auto_execok ffmpeg]]
+    } {
+        puts "Analyzing $file..."
+        if { ![catch {dbg_exec_cmd [concat [auto_execok ffmpeg] [list -i $file -vn -f null -y /dev/null]] [list 2>@1]} out] } {
+            safe_write_file $file.ffmpegstats $out
+        } else {
+            error $out ;# TODO ignore/report failure only?
+            set out ""
+        }
+    } else {
+        set out ""
+    }
+    # {{{
+    regsub -all "\t" $out " " out
+    regsub -line -all " +$" $out "" out
+    set lines [split $out \n]
+    while { [llength $lines] } {
+        set line [lvarpop lines]
+        switch -regexp -matchvar m -- $line {
+            {^size=N/A time=(\S+) bitrate=N/A$} {
+                # size=N/A time=00:02:17.71 bitrate=N/A
+                # There will be multiple; Only the last one is relevant.
+                dict set d actual_duration [parse_time_duration [lindex $m 1]]
+            }
+            {^$} {}
+            default {
+                if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+            }
+        }
+    }
+    # }}}
+    # puts "ffmpegstats for $file: $d"
+    return $d
+}
+
+# }}}
+# get_audio_file_chapters {{{
+
+proc get_audio_file_chapters { d chapter_naming_format } {
+    set file [dict get $d file]
+    set chaps {}
+    if {
+        ![llength $chaps] &&
+        [dict get $::opts OverDrive_MediaMarkers] &&
+        ![catch {dict get $d OverDrive_MediaMarkers} xml]
+    } {
+        set chaps [parse_OverDrive_MediaMarkers $xml]
+    }
+    if {
+        ![llength $chaps] &&
+        [lsearch -exact [dict get [get_mp4v2_formats] extensions_can_read] [file extension $file]] != -1 &&
+        [llength [auto_execok mp4chaps]] && ![catch {dbg_exec_cmd [concat [auto_execok mp4chaps] [list -l $file]]} out]
+    } {
+        # {{{
+        regsub -all "\t" $out " " out
+        regsub -line -all " +$" $out "" out
+        set lines [split $out \n]
+        while { [llength $lines] } {
+            set line [lvarpop lines]
+            switch -regexp -matchvar m -- $line {
+                {^(QuickTime|Nero) Chapters of "(.*)"$} {
+                    # QuickTime Chapters of "../Carl Hiaasen - Bad Monkey.m4b"
+                    # Nero Chapters of "../Carl Hiaasen - Bad Monkey.m4b"
+                }
+                {^ +Chapter #0*(\d+) - (\d+:\d+:\d+\.\d+) - "(.*)"$} {
+                    #     Chapter #001 - 00:00:00.000 - "Bad Monkey"
+                    lappend chaps [dict create \
+                            Time [parse_time_duration [lindex $m 2]] \
+                            Name [lindex $m 3] \
+                        ]
+                }
+                {^File ".*" does not contain chapters} {
+                    # File "Mario Jean_ Gare au gros nounours!.m4a" does not contain chapters of type QuickTime and Nero
+                }
+                {^$} {}
+                default {
+                    if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+                    error "Invalid mp4chaps line: $line"
+                    # TODO
+                }
+            }
+        }
+        # }}}
+    }
+    if { ![llength $chaps] } {
+        lappend chaps [dict create \
+                Time 0 \
+                Name [get_audio_file_default_chapter $d $chapter_naming_format] \
+            ]
+    }
+    return $chaps
+}
+
+proc get_audio_file_default_chapter { d chapter_naming_format } {
+    switch -exact -- $chapter_naming_format {
+        "default" {
+            if {
+                ![catch {dict get $d tags song} song] &&
+                [regexp {^Track \d+$} $song]
+            } {
+                if { ![catch {dict get $d tags disk} disk] && $disk ne "1/1" } {
+                    set chap [get_audio_file_default_chapter $d "disk-track"]
+                } else {
+                    set chap [get_audio_file_default_chapter $d "track"]
+                }
+            } else {
+                set chap [get_audio_file_default_chapter $d "song"]
+            }
+        }
+        "song" {
+            if { [dict exists $d tags song] } {
+                set chap [dict get $d tags song]
+            } else {
+                set chap [clean_audio_file_song_name $d [file rootname [file tail [dict get $d file]]]]
+            }
+        }
+        "track" {
+            if {
+                ![catch {dict get $d tags track} track] &&
+                [regexp {^(\d+)(?:/(\d*))?$} $track - track tracks]
+            } {
+                if { $tracks eq "" } { set tracks 0 }
+                set chap [format "Track %0*d" [string length $tracks] $track]
+            } else {
+                set chap [get_audio_file_default_chapter $d "song"]
+            }
+        }
+        "disc-track" -
+        "disk-track" {
+            if {
+                ![catch {dict get $d tags disk} disk] &&
+                [regexp {^(\d+)(?:/(\d*))?$} $disk - disk disks]
+            } {
+                if { $disks eq "" } { set disks 0 }
+                set chap [format "Disc %0*d - %s" [string length $disks] $disk [get_audio_file_default_chapter $d "track"]]
+            } else {
+                set chap [get_audio_file_default_chapter $d "track"]
+            }
+        }
+        default {
+            return -code error "Invalid chapter naming format '$chapter_naming_format'"
+        }
+    }
+    return $chap
+}
+
+# }}}
+# clean_audio_file_song_name {{{
+
+proc clean_audio_file_song_name { d song } {
+    if {
+        ![catch {dict get $d tags track} track] &&
+        [regexp {^(\d+)(?:/(\d*))?$} $track - track tracks]
+    } {
+        regsub "^0*${track}( *\[:-\] *)" $song "" song
+    }
+    return $song
+}
+
+# }}}
+
+# normalize_audio_type {{{
+
+proc normalize_audio_type { v } {
+    set v [string trim $v]
+    switch -regexp -matchvar m -- $v {
+        {^MPEG-4 AAC HE$} {
+            set v "he-aac"
+        }
+        {^MPEG-4 AAC LC$} {
+            set v "lc-aac"
+        }
+        {^MPEG1/layer III$} -
+        {^MPEG audio \(layer I, II or III\)$} {
+            set v "mp3"
+        }
+    }
+    return $v
+}
+
+# }}}
+
+# format_mp4chaps_time_offset {{{
+
+proc format_mp4chaps_time_offset { offset } {
+    lassign [split [format "%.3f" $offset] .] s ms
+    set m [expr { $s / 60 }] ; set s [expr { $s % 60 }]
+    set h [expr { $m / 60 }] ; set m [expr { $m % 60 }]
+    return [format "%02d:%02d:%02d.%s" $h $m $s $ms]
+}
+
+# }}}
+# parse_time_duration {{{
+
+proc parse_time_duration { str } {
+    if { [regexp {^(?:(?:0*(\d+):)?0*(\d+):)?0*(\d+.\d+)$} $str - h m s] } {
+        # 00:00:00.000
+        # 00:00.000
+        # 00.000
+        if { $m ne "" } { set s [expr { $s + $m * 60 }] }
+        if { $h ne "" } { set s [expr { $s + $h * 60 * 60 }] }
+    } else {
+        return -code error "Invalid time offset format: $str"
+    }
+    return $s
+}
+
+# }}}
+# parse_OverDrive_MediaMarkers {{{
+
+proc parse_OverDrive_MediaMarkers { xml } {
+    set markers {}
+    package require tdom
+    dom parse $xml doc
+    $doc documentElement root
+    foreach nodeMarker [$root selectNodes /Markers/Marker] {
+        set marker {}
+        set bKeep true
+        foreach childNode [$nodeMarker childNodes] {
+            set value [$childNode text]
+            switch -exact -- [set nodeName [$childNode nodeName]] {
+                Name {
+                    # "Chapter 1"
+                    if {
+                        [string match "\xA0*" $value] ||
+                        [string match "* continued" $value]
+                    } {
+                        # Continuation
+                        # "______Chapter 1 (05:58)" (\xA0 = &nbsp;, shown as "_")
+                        # "Chapter 1 continued"
+                        set bKeep false
+                        break
+                    }
+                }
+                Time {
+                    set value [parse_time_duration $value]
+                }
+                default {
+                }
+            }
+            dict set marker $nodeName $value
+        }
+        if { $bKeep } { lappend markers $marker }
+    }
+    return $markers
+}
+
+# }}}
+
+# get_sox_formats {{{
+
+unset -nocomplain sox_formats
+proc get_sox_formats {} {
+    global sox_formats
+    if { ![info exists sox_formats] } {
+        set sox_formats [dict create \
+                formats [dict create] \
+                map_extension [dict create] \
+                extensions_can_read {} \
+                extensions_can_write {} \
+            ]
+        if { [llength [auto_execok sox]] } {
+            # sox --help-format all {{{
+            if 0 {
+                set out [dbg_exec_cmd [concat [auto_execok sox] [list --help-format all]]]
+            } else {
+                # NOTE: sox will exit with code 1, hence the pipe/exec/wait trick
+                pipe r w
+                try {
+                    try {
+                        lassign [dbg_exec_cmd [concat [auto_execok sox] [list --help-format all]] [list >@$w &]] pid
+                    } finally {
+                        close $w
+                    }
+                    set out [read $r]
+                } finally {
+                    close $r
+                }
+                lassign [wait $pid] pid status code
+                if { $status ne "EXIT" || ($code != 0 && $code != 1) } {
+                    error "'[auto_execok sox] --help-format all' failed: $status $code"
+                }
+            }
+
+            regsub -all "\t" $out " " out
+            regsub -line -all " +$" $out "" out
+            set lines [split $out \n]
+            while { [llength $lines] } {
+                set line [lvarpop lines]
+                switch -regexp -matchvar m -- $line {
+                    {^$} {}
+                    {^Format: (\S+)$} {
+                        # Format: wav
+                        set format [lindex $m 1]
+                        dict set sox_formats formats $format [dict create \
+                                extensions [list .$format] \
+                                can_read false \
+                                can_write false \
+                                description "$format" \
+                            ]
+                    }
+                    {^Description: (.+)$} {
+                        # Description: Microsoft audio format
+                        dict set sox_formats formats $format description [lindex $m 1]
+                    }
+                    {^Also handles: (.+)$} {
+                        # Also handles: wavpcm amb
+                        set extensions [dict get $sox_formats formats $format extensions]
+                        foreach ext [lindex $m 1] { lappend extensions .$ext }
+                        dict set sox_formats formats $format extensions [lsort -dictionary $extensions]
+                    }
+                    {^Reads: yes$} {
+                        # Reads: yes
+                        dict set sox_formats formats $format can_read true
+                    }
+                    {^Writes: yes$} {
+                        # theoritical... not seen
+                        dict set sox_formats formats $format can_write true
+                    }
+                    {^Writes: no$} {
+                        # Writes: no
+                        dict set sox_formats formats $format can_write false
+                    }
+                    {^Writes:$} {
+                        # Writes:
+                        dict set sox_formats formats $format can_write true
+                        #   16-bit Signed Integer PCM (16-bit precision)
+                        #   24-bit Signed Integer PCM (24-bit precision)
+                        #   32-bit Signed Integer PCM (32-bit precision)
+                        # ...
+                    }
+                    default {
+                        # if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+                        # TODO
+                    }
+                }
+            }
+
+            # }}}
+            # sox --help {{{
+
+            if { ![catch {dbg_exec_cmd [concat [auto_execok sox] [list --help]]} out] } {
+                regsub -all "\t" $out " " out
+                regsub -line -all " +$" $out "" out
+                set lines [split $out \n]
+                while { [llength $lines] } {
+                    set line [lvarpop lines]
+                    switch -regexp -matchvar m -- $line {
+                        {^$} {}
+                        {^AUDIO FILE FORMATS: (.+)$} {
+                            # AUDIO FILE FORMATS: 8svx aif aifc ...
+                            foreach format [lindex $m 1] {
+                                if { ![dict exists $sox_formats formats $format] } {
+                                    # Assume can_read and can_write
+                                    dict set sox_formats formats $format [dict create \
+                                            extensions [list .$format] \
+                                            can_read true \
+                                            can_write true \
+                                            description "$format" \
+                                        ]
+                                }
+                            }
+                        }
+                        default {
+                            # if { [dict get $::opts debug] } { puts [format "DBG: TODO: %s" $line] }
+                            # TODO
+                        }
+                    }
+                }
+            } else {
+                error $out $::errorInfo $::errorCode
+                # TODO
+            }
+
+            # }}}
+
+        }
+        foreach format [dict keys [dict get $sox_formats formats]] {
+            set l_extensions [dict get $sox_formats formats $format extensions]
+            foreach ext $l_extensions {
+                dict set sox_formats map_extension $ext $format
+            }
+            if { [dict get $sox_formats formats $format can_read] } {
+                eval [linsert $l_extensions 0 dict lappend sox_formats extensions_can_read]
+            }
+            if { [dict get $sox_formats formats $format can_write] } {
+                eval [linsert $l_extensions 0 dict lappend sox_formats extensions_can_write]
+            }
+        }
+    }
+    return $sox_formats
+}
+# puts sox_formats=[get_sox_formats]
+# puts extensions_can_read=[lsort -dictionary [dict get [get_sox_formats] extensions_can_read]]
+
+# }}}
+# get_mp4v2_formats {{{
+
+unset -nocomplain mp4v2_formats
+proc get_mp4v2_formats {} {
+    global mp4v2_formats
+    if { ![info exists mp4v2_formats] } {
+        set mp4v2_formats [dict create \
+                formats [dict create] \
+                map_extension [dict create] \
+                extensions_can_read {} \
+                extensions_can_write {} \
+            ]
+        foreach format {mp4 m4a m4p m4b m4r m4v} {
+            dict set mp4v2_formats formats $format [dict create \
+                    extensions [list .$format] \
+                    can_read true \
+                    can_write true \
+                    description "$format" \
+                ]
+        }
+        foreach format [dict keys [dict get $mp4v2_formats formats]] {
+            set l_extensions [dict get $mp4v2_formats formats $format extensions]
+            foreach ext $l_extensions {
+                dict set mp4v2_formats map_extension $ext $format
+            }
+            if { [dict get $mp4v2_formats formats $format can_read] } {
+                eval [linsert $l_extensions 0 dict lappend mp4v2_formats extensions_can_read]
+            }
+            if { [dict get $mp4v2_formats formats $format can_write] } {
+                eval [linsert $l_extensions 0 dict lappend mp4v2_formats extensions_can_write]
+            }
+        }
+    }
+    return $mp4v2_formats
+}
+
+# }}}
+
+proc usage { {f stdout} } {
+    puts $f "Usage: $::argv0 \[-options...\] input_files..."
+    return
+}
+
+proc main { args } {
+    set in_info [dict create \
+            tags [dict create] \
+        ]
+    add_audio_file_tag in_info type "audiobook"
+    set action "mkm4b"
+    set bReturn 0
+    # Parse arguments {{{
+
+    for { set argi 0 } { $argi < [llength $args] } { incr argi } {
+	switch -glob -- [set arg [lindex $args $argi]] {
+	    -h { usage ; set bReturn 1 }
+
+            -type-list      { do_type_list ; set bReturn 1 }
+            -genre-list     { do_genre_list ; set bReturn 1 }
+
+            -i - -interactive { dict set ::opts interactive 1 }
+            -n - -dry-run     { dict set ::opts dry_run     1 }
+            -d - -debug       { dict set ::opts debug       1 }
+
+            -no-ipod-compat   { dict set ::opts ipod_compat 0 }
+            -no-itunes-compat { dict set ::opts itunes_compat 0 }
+            -force-encode   { dict set ::opts force_encode 1 }
+            -no-OverDrive-MediaMarkers { dict set ::opts OverDrive_MediaMarkers 0 }
+            -yes            { dict set ::opts yes         1 }
+            -single         { dict set ::opts single      1 }
+            -reuse-chapters { dict set ::opts reuse_chapters 1 }
+            -o              { dict set ::opts outputfile            [lindex $args [incr argi]] }
+            -cover          { dict set ::opts coverfile             [lindex $args [incr argi]] }
+            -chapters       { dict set ::opts chaptersfile          [lindex $args [incr argi]] }
+            -chapter-naming { dict set ::opts chapter_naming_format [lindex $args [incr argi]] }
+            -bitrate        { dict set ::opts bitrate               [lindex $args [incr argi]] }
+            -target-bitrate { dict set ::opts target_bitrate        [lindex $args [incr argi]] }
+            -ac             { dict set ::opts channels              [lindex $args [incr argi]] }
+
+            -s - -song        { add_audio_file_tag in_info song        [lindex $args [incr argi]] }
+            -A - -album       { add_audio_file_tag in_info album       [lindex $args [incr argi]] }
+            -a - -artist      { add_audio_file_tag in_info artist      [lindex $args [incr argi]] }
+            -R - -albumartist { add_audio_file_tag in_info albumartist [lindex $args [incr argi]] }
+            -g - -genre       { add_audio_file_tag in_info genre       [lindex $args [incr argi]] }
+            -w - -writer      { add_audio_file_tag in_info writer      [lindex $args [incr argi]] }
+            -year             { add_audio_file_tag in_info year        [lindex $args [incr argi]] }
+            -i - -type        { add_audio_file_tag in_info type        [lindex $args [incr argi]] }
+            -disk             { add_audio_file_tag in_info disk        [lindex $args [incr argi]] }
+
+            -y                { lset args $argi [expr { [string is integer -strict [lindex $args [expr { $argi + 1 }]]] ? "-year" : "-yes" }] ; incr argi -1 }
+
+            -ffmpegstats      { set action ffmpegstats }
+
+	    -- { incr argi ; break }
+	    -* {
+		return -code error "Invalid argument '$arg'"
+	    }
+            default { break }
+	}
+    }
+
+    # }}}
+
+    foreach app {ffmpeg mp4chaps mp4tags mp4art mp4info} {
+        if { ![llength [auto_execok $app]] } { return -code error "Dependency missing: $app" }
+    }
+
+    if { $bReturn } { return }
+
+    switch -exact -- $action {
+        return {}
+        ffmpegstats {
+            # {{{
+
+            set inputfiles [lrange $args $argi end]
+            if { ![llength $inputfiles] } {
+                return -code error "No input files provided"
+            }
+            foreach file $inputfiles {
+                get_audio_file_ffmpeg_stats $file
+            }
+
+            # }}}
+        }
+        mkm4b {
+            # {{{
+
+            set inputfiles [lrange $args $argi end]
+            if { ![llength $inputfiles] } {
+                #if { [dict get $::opts interactive] } {
+                #    glob -nocomplain *.mp3 *.m4a *.ogg *.wav
+                #}
+                return -code error "No input files provided"
+            }
+            if { [dict get $::opts single] } {
+                foreach inputfile $inputfiles {
+                    mkm4b [list $inputfile] [dict get $in_info tags]
+                }
+            } else {
+                mkm4b $inputfiles [dict get $in_info tags]
+            }
+
+            # }}}
+        }
+        default { return -code error "Invalid action '$action'" }
+    }
+
+    return
+}
+
+# clean_file_name {{{
+
+proc clean_file_name { file } {
+    set ext [file extension $file]
+    set name [file rootname $file]
+    # http://en.wikipedia.org/wiki/Filename {{{
+    # UNIX: a leading . indicates that ls and file managers will not show the file by default
+    regsub      {^[.]+} $name "" name
+    # Remove leading spaces too
+    regsub      {^[ ]+} $name "" name
+    # NTFS: The Win32 API strips trailing space and period (full-stop) characters from filenames, except when UNC paths are used.
+    regsub      {[ .]+$} $name "" name
+    # most: forbids the use of 0x00
+    regsub -all {\x00} $name "_" name
+    # NTFS/vfat: forbids the use of characters in range 1-31 (0x01-0x1F) and characters " * : < > ? \ / | unless the name is flagged as being in the Posix namespace.
+    regsub -all {[\x01-\x1F\"*:<>?\\/|]} $name "_" name
+    # vfat: forbids the use of 0x7F
+    regsub -all {\x7F} $name "_" name
+    # NTFS allows each path component (directory or filename) to be 255 characters long.
+    if { [set over [expr { [string length $name] + [string length $ext] }]] - 255 > 0 } { set name [string range 0 end-$over] }
+    # }}}
+    set file $name$ext
+    return $file
+}
+
+# }}}
+
+# test_file_readable {{{
+
+proc test_file_readable { file } {
+    if { ![file exists $file] } { return -code error -errorcode [list POSIX ENOENT [set m "no such file or directory"]] "couldn't open \"$file\": $m" }
+    if { [file isdirectory $file] } { return -code error -errorcode [list POSIX EISDIR [set m "illegal operation on a directory"]] "couldn't open \"$file\": $m" }
+    if { ![file readable $file] } { return -code error -errorcode [list POSIX EACCES [set m "permission denied"]] "couldn't open \"$file\": $m" }
+    return
+}
+
+# }}}
+# select_src_coverfile {{{
+
+proc select_src_coverfile { new_coverfile } {
+    upvar 1 \
+        coverfile coverfile \
+        outputfile outputfile \
+        src_coverfile src_coverfile
+    if { $new_coverfile eq "" } {
+        set src_coverfile ""
+        puts "No cover art picture."
+        unset -nocomplain coverfile
+    } else {
+        test_file_readable $new_coverfile
+        set src_coverfile $new_coverfile
+        puts "Using cover art picture from $src_coverfile..."
+        set coverfile $src_coverfile
+        if { ![lcontain {gif png jpg jpeg} $new_coverfile] } {
+            set coverfile [file rootname $outputfile].png
+            if { $new_coverfile ne $coverfile } {
+                puts "Writing new cover art picture $coverfile..."
+            }
+            set cmd [auto_execok ffmpeg]
+            if { 1 || [dict get $::opts yes] } { lappend cmd -y }
+            lappend cmd -i $new_coverfile
+            lappend cmd -an $coverfile
+            do_exec_cmd $cmd [list 2>@1]
+            set new_coverfile $coverfile
+        }
+        if { [dict get $::opts ipod_compat] && [llength [auto_execok gm]] } {
+            set coverfile [file rootname $outputfile].png
+            puts "Writing iPod-compatible cover art picture $coverfile..."
+            set cmd [concat [auto_execok gm] [list convert $new_coverfile -resize x480> $coverfile]]
+            do_exec_cmd $cmd
+        }
+    }
+    return
+}
+
+# }}}
+
+proc mkm4b { inputfiles tags } {
+
+    set infos {}
+    foreach inputfile $inputfiles {
+        if { ![file isfile $inputfile] } {
+            return -code error -errorcode [list POSIX ENOENT {no such file}] "$inputfile: No such file"
+        }
+        puts "Reading $inputfile..."
+        lappend infos [get_audio_file_info $inputfile \
+                -need_actual_duration [expr { [llength $inputfiles] > 1 }] \
+            ]
+    }
+    if { [dict get $::opts debug] } { foreach info $infos { puts [format "DBG: %s" $info] } }
+
+    set infos [lsort -command cmp_audio_file_info $infos]
+    set i -1 ; foreach info $infos { incr i
+        catch {dict set info tags song [clean_audio_file_song_name $info [dict get $info tags song]]}
+        lset infos $i $info
+    }
+
+    if { [dict get $::opts single] } {
+        foreach {tag1 tag2} {
+            song        song
+            subtitle    subtitle
+            artist      artist
+            disk        disk
+            track       track
+        } {
+            if { ![dict exists $tags $tag1] } {
+                if {
+                    ![catch {dict get $tags $tag2} v] ||
+                    ![catch {dict get [lindex $infos 0] tags $tag2} v]
+                } {
+                    dict set tags $tag1 $v
+                }
+            }
+        }
+    }
+    if 1 {
+        foreach {tag1 tag2} {
+            album       album
+            album       song
+            song        album
+            song        song
+            albumartist albumartist
+            albumartist artist
+            artist      albumartist
+            artist      artist
+            writer      writer
+            genre       genre
+            year        year
+            copyright   copyright
+            encodedby   encodedby
+            tool        tool
+            type        type
+        } {
+            if { ![dict exists $tags $tag1] } {
+                if {
+                    ![catch {dict get $tags $tag2} v] ||
+                    ![catch {dict get [lindex $infos 0] tags $tag2} v]
+                } {
+                    dict set tags $tag1 $v
+                }
+            }
+        }
+    }
+
+    if { [dict exists $::opts outputfile] } {
+        set outputfile [dict get $::opts outputfile]
+    } else {
+        set parts {}
+        catch {lappend parts [dict get $tags albumartist]}
+        if { 1 || [dict get $::opts single] } {
+            catch {lappend parts [dict get $tags artist]}
+        }
+        lappend parts [dict get $tags album]
+        if { 1 || [dict get $::opts single] } {
+            lappend parts [dict get $tags song]
+        }
+        for { set i 0 } { $i < [llength $parts] - 1 } { incr i } {
+            lset parts $i [regsub -all { */ *} [lindex $parts $i] " and "]
+        }
+        for { set i 0 } { $i < [llength $parts] - 1 } { incr i } {
+            if { [lindex $parts $i] eq [lindex $parts [expr { $i + 1 }]] } {
+                lvarpop parts $i ; incr i -1
+            }
+        }
+        set outputfile [clean_file_name [join $parts " - "].m4b]
+    }
+
+    if { [llength $inputfiles] > 1 } {
+        set filesfile [file rootname $outputfile].files.txt
+        puts "Writing $filesfile..."
+        safe_write_file_eval $filesfile {
+            fconfigure $f -encoding utf-8
+            puts $f "ffconcat version 1.0"
+            foreach info $infos {
+                puts $f [format "file '%s'" [string map [list "\\" "\\\\" "'" "'\\''"] [dict get $info file]]]
+                if { ![catch {dict get $info actual_duration} duration] } {
+                    puts $f [format "duration %.3f" $duration]
+                }
+            }
+        }
+        puts [regsub -all -line {^} [safe_read_file $filesfile] "    "]
+    }
+
+    unset -nocomplain expected_duration
+    set chaptersfile [file rootname $outputfile].chapters.txt
+    if { ![catch {dict get $::opts chaptersfile} opts_chaptersfile] } {
+        if {
+            [file normalize [file join [pwd] $opts_chaptersfile]] eq
+            [file normalize [file join [pwd] $chaptersfile]]
+        } {
+            puts "Reusing $chaptersfile..."
+        } else {
+            puts "Writing $chaptersfile from $opts_chaptersfile..."
+            file copy -- $opts_chaptersfile $chaptersfile
+        }
+    } elseif { [dict get $::opts reuse_chapters] && [file exists $chaptersfile] } {
+        puts "Reusing $chaptersfile..."
+    } else {
+        puts "Writing $chaptersfile..."
+        safe_write_file_eval $chaptersfile {
+            fconfigure $f -encoding utf-8
+            set offset 0
+            foreach info $infos {
+                foreach chap_info [get_audio_file_chapters $info [dict get $::opts chapter_naming_format]] {
+                    puts $f [format "%s %s" \
+                            [format_mp4chaps_time_offset [expr { $offset + [dict get $chap_info Time] }]] \
+                            [dict get $chap_info Name] \
+                        ]
+                }
+                set offset [expr { $offset + [dict get $info duration] }]
+            }
+            set expected_duration $offset
+        }
+    }
+    puts [regsub -all -line {^} [safe_read_file $chaptersfile] "    "]
+    if { [info exists expected_duration] } {
+        puts [format "Expected final duration: %s (%.3f seconds)" [format_mp4chaps_time_offset $expected_duration] $expected_duration]
+    }
+
+    set src_coverfile ""
+    if { [dict exists $::opts coverfile] } {
+        set src_coverfile [dict get $::opts coverfile]
+    } else {
+        if { ![catch {dict get [lindex $infos 0] num_cover} v] && $v } {
+            set src_coverfile [dict get [lindex $infos 0] file]
+        } else {
+            foreach ext {.png .jpg .jpeg .gif} {
+                if { [file exists [set test_src_coverfile [file join [file dirname [dict get [lindex $infos 0] file]] AlbumArt$ext]]] } {
+                    set src_coverfile $test_src_coverfile
+                    break
+                }
+            }
+        }
+    }
+    select_src_coverfile $src_coverfile
+
+    puts "Tags..."
+    set tags [dict merge {
+            album       {}
+            artist      {}
+            comment     {}
+            copyright   {}
+            disk        {}
+            encodedby   {}
+            tool        {}
+            genre       {}
+            grouping    {}
+            type        {}
+            longdesc    {}
+            description {}
+            episode     {}
+            season      {}
+            network     {}
+            category    {}
+            podcast     {}
+            albumartist {}
+            song        {}
+            show        {}
+            track       {}
+            rating      {}
+            writer      {}
+            year        {}
+        } $tags]
+    foreach tag [lsort -dictionary [dict keys $tags]] { set value [dict get $tags $tag] ; if { $value ne "" } { puts [format "    %-13s = %s" $tag $value] } }
+
+    if { [dict get $::opts interactive] } {
+        package require tclreadline
+        while 1 {
+            puts ""
+            puts "Interactive mode..."
+            puts " t - edit tags"
+            puts " c - edit chapters"
+            puts " p - change cover art picture[if { $src_coverfile ne "" } { format " (%s)" $src_coverfile }]"
+            puts " q - quit"
+            puts " y - yes, do it!"
+            set c [::tclreadline::readline read "Choice: "]
+            switch -exact -- $c {
+                t { edvar tags "dict" }
+                c { edfile $chaptersfile }
+                p { select_src_coverfile [::tclreadline::readline read "Choice: "] }
+                q { return 0 }
+                y { break }
+                default { puts stderr "Invalid input" }
+            }
+        }
+    }
+
+    puts "Writing $outputfile..."
+    set cmd [auto_execok ffmpeg]
+    if { [dict get $::opts yes] } { lappend cmd -y }
+    lappend cmd -stats
+    if { [llength $inputfiles] > 1 } {
+        lappend cmd -f concat -safe 0 -i $filesfile
+    } else {
+        lappend cmd -i [lindex $inputfiles 0]
+    }
+    lappend cmd -vn
+    set ffmpeg_format "ipod"
+    set bCopied false
+    if { [dict exists $::opts bitrate] } {
+        set bitrate [dict get $::opts bitrate]
+    } else {
+        set audio_type {}
+        foreach info $infos { lappend audio_type [dict get $info audio_type] }
+        set audio_type [lsort -dictionary -unique $audio_type]
+        if {
+            ![dict get $::opts force_encode] &&
+            [llength $audio_type] == 1 && [lcontain {aac lc-aac he-aac ac3} [lindex $audio_type 0]]
+        } {
+            # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
+            lappend cmd -c:a copy
+            set bCopied true
+            set ffmpeg_format "ipod" ;# See codec_ipod_tags @ ffmpeg/libavformat/movenc.c
+        } elseif {
+            ![dict get $::opts force_encode] &&
+            ![dict get $::opts ipod_compat] &&
+            [llength $audio_type] == 1 && [lcontain {mp2 mp3} [lindex $audio_type 0]]
+        } {
+            # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
+            lappend cmd -c:a copy
+            set bCopied true
+            set ffmpeg_format "mp4"
+        } else {
+            # TODO select preferred encoder based on bitrate: https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio
+            if { [dict exists $::opts target_bitrate] } {
+                set kbitrate [dict get $::opts target_bitrate]
+            } else {
+                set kbitrate {}
+                foreach info $infos { lappend kbitrate [expr { round([dict get $info bitrate] / 1000.0 / 16.0) * 16 }] }
+                set kbitrate [lsort -integer -unique $kbitrate]
+                set kbitrate [lrange $kbitrate 0 0] ;# TODO
+            }
+            if { [llength $kbitrate] == 1 } {
+                if { 0 && $kbitrate >= 160 } {
+                    # http://wiki.hydrogenaud.io/index.php?title=FAAC
+                    puts "NOTE: Using recommended high-quality LC-AAC libfaac settings; If it fails, try: -bitrate ${kbitrate}k"
+                    lappend cmd -c:a libfaac -q:a 330 -cutoff 15000
+                } elseif { $kbitrate > 64 } {
+                    puts "NOTE: Using recommended high-quality LC-AAC libfdk_aac settings; If it fails, try: -bitrate ${kbitrate}k"
+                    lappend cmd -c:a libfdk_aac -b:a ${kbitrate}k
+                } elseif { $kbitrate >= 48 } {
+                    puts "NOTE: Using recommended high-quality HE-AAC libfdk_aac 64k settings; If it fails, try: -bitrate ${kbitrate}k"
+                    lappend cmd -c:a libfdk_aac -profile:a aac_he -b:a 64k
+                    if { [dict get $::opts itunes_compat] } {
+                        lappend cmd -signaling:a implicit ;# iTunes compatibility: implicit backwards compatible signaling
+                    }
+                } elseif { 1 } {
+                    puts "NOTE: Using recommended high-quality HE-AAC libfdk_aac 32k settings; If it fails, try: -bitrate ${kbitrate}k"
+                    lappend cmd -c:a libfdk_aac -profile:a aac_he_v2 -b:a 32k
+                    if { [dict get $::opts itunes_compat] } {
+                        lappend cmd -signaling:a implicit ;# iTunes compatibility: implicit backwards compatible signaling
+            }
+                } else {
+                    set bitrate ${kbitrate}k
+                }
+            } else {
+                error "Unable to determine proper bitrate from {[join $kbitrate]}k"
+            }
+        }
+    }
+    if { [info exists bitrate] } {
+        lappend cmd -b:a $bitrate
+    }
+    if { [dict exists $::opts channels] } {
+        lappend cmd -ac [dict get $::opts channels]
+    }
+    if { !$bCopied } {
+        dict unset tags encodedby
+        dict unset tags tool
+    }
+    lappend cmd -f $ffmpeg_format $outputfile
+    do_exec_cmd $cmd [list >@ stdout 2>@ stderr]
+
+    set cmd [auto_execok mp4chaps]
+    lappend cmd -i $outputfile
+    set out [do_exec_cmd $cmd]
+    unset -nocomplain out_time
+    # {{{
+    regsub -all "\t" $out " " out
+    regsub -line -all " +$" $out "" out
+    set lines [split $out \n]
+    while { [llength $lines] } {
+        set line [lvarpop lines]
+        switch -regexp -matchvar m -- $line {
+            {^size= *(\S+) time=(\S+) bitrate= *(\S+)$} {
+                # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
+                lassign $m - out_size out_time out_bitrate
+                set out_time [parse_time_duration $out_time]
+            }
+            default {
+                # TODO
+            }
+        }
+    }
+    # }}}
+    if { ![info exists out_time] } {
+        puts stderr "WARNING: final duration unknown!"
+    } else {
+        puts     [format "Final duration:          %s (%.3f seconds)" [format_mp4chaps_time_offset $out_time] $out_time]
+        if { [info exists expected_duration] } {
+            puts [format "Expected final duration: %s (%.3f seconds)" [format_mp4chaps_time_offset $expected_duration] $expected_duration]
+        }
+    }
+
+    set cmd [auto_execok mp4tags]
+    dict for {tag value} $tags {
+        if { $value ne "" } {
+            switch -exact -- $tag {
+                "disk" -
+                "track" {
+                    if { [regexp {^(\d*)(?:/(\d*))?$} $value - v1 v2] } {
+                        if { $v1 ne "" } { lappend cmd -${tag}  $v1 }
+                        if { $v2 ne "" } { lappend cmd -${tag}s $v2 }
+                    }
+                }
+                default {
+                    lappend cmd -$tag $value
+                }
+            }
+        }
+    }
+    lappend cmd $outputfile
+    do_exec_cmd $cmd
+
+    if { [info exists coverfile] } {
+        set cmd [auto_execok mp4art]
+        lappend cmd --add $coverfile $outputfile
+        do_exec_cmd $cmd
+    }
+
+    puts "DONE!"
+    puts ""
+
+    set cmd [auto_execok mp4info]
+    lappend cmd $outputfile
+    puts [do_exec_cmd $cmd]
+
+    return 1
+}
+eval [linsert $argv 0 main]
+
+return 0
+
+# 1295  for f in *.ogg ; do avconv -i "$f" "../wav/$(basename "$f" .ogg).wav" ; done
+# 1296  rm ../wav/*
+# 1297  for f in *.ogg ; do avconv -i "$f" "../wav/$(basename "$f" .ogg).wav" & ; done
+# 1298  for f in *.ogg
+# 1299  for f in *.ogg ; avconv -i "$f" "../wav/$(basename "$f" .ogg).wav" &
+# 1300  for f in *.ogg ; do avconv -i "$f" "../wav/$(basename "$f" .ogg).wav" &  done
+# 1301  jobs
+# 1302  fg
+# 1303  jobs
+# 1304  fg
+# 1305  man ffmpeg
+# 1306  fg
+# 1307  (set -e ; while true ; gf ; end)
+# 1308  fg
+# 1309  jobs
+# 1310  fg
+# 1311  [A
+# 1312  fg
+# 1313  A
+# 1314  fg
+# 1315  history
+# 1316  fg
+# 1317  fg ;fg ;fg;fg;fg;fg;fg;fg;fg
+# 1318  fg ;fg ;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg
+# 1319  fg ;fg ;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg
+# 1320  jobs
+# 1321  for f in *.ogg ; do avconv -i "$f" "../wav/$(basename "$f" .ogg).wav" -nostdin -y &  done
+# 1322  jobs
+# 1323  fg
+# 1324  fg ;fg ;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg
+# 1325  for f in *.ogg ; do avconv -i "$f" "../wav/$(basename "$f" .ogg).wav" -nostdin -y < /dev/null &  done
+# 1326  jobs
+# 1327  fg ;fg ;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg;fg
+# 1328  for f in *.ogg ; do avconv -i "$f" "../wav/$(basename "$f" .ogg).wav" -nostdin -y < /dev/null &  done
+# 1329  jobs
+# 1330  cat /proc/cpuinfo
+# 1331  mkdir ../mp3
+# 1332  for f in *.ogg ; do avconv -i "$f" "../mp3/$(basename "$f" .ogg).mp3" < /dev/null &  done
+# 1333  jobs
+# 1334  for f in *.ogg ; do avconv -i "$f" -b:a 160k "../mp3/$(basename "$f" .ogg).mp3" -y ; done
+# 1335  for f in *.ogg ; do avconv -i "$f" -b:a 160k "../mp3/$(basename "$f" .ogg).mp3" -y < /dev/null & done
+# 1336  jobs
+# 1337  fg ; jobs
+# 1338  jobs
+# 1339  fg ; jobs
+# 1340  cd ..
+# 1341  avconv -i mp3/1-01\ Track\ 1.mp3
+# 1342  locate m4baker
+# 1343  vgrep mp3 `locate m4baker`
+# 1344  soxi
+# 1345  fg
+# 1346  soxi mp3/1-01\ Track\ 1.mp3
+# 1347  soxi ogg/1-01\ Track\ 1.ogg
+# 1348  fg
+# 1349  cd
+# 1350  m4baker
+# 1351  soxi Music/Audiobooks/David\ Baldacci/Zero\ Day/ogg/1-01\ Track\ 1.ogg
+# 1352  m4baker
+# 1353  ls -l
+# 1354  fg
+# 1355  history
+# 1356  vi bin/ogg2mp3
+# 1357  fg
+# 1358  exit
+# 1359  top
+# 1360  m4baker
+# 1361  ssu
+# 1362  cd Music/Audiobooks/David\ Baldacci/Zero\ Day/
+# 1363  avconv -i ogg/1-01\ Track\ 1.ogg
+# 1364  avconv -i mp3/1-01\ Track\ 1.mp3
+# 1365  man ffmpeg
+# 1366  which ogg
+# 1367  man ffmpeg
+# 1368  m4baker
+# 1369  fg %
+# 1370  bg %
+# 1371  cd
+# 1372  ssu
+# 1373  exit
+# 1374  id3tag
+# 1375  aptitude
+# 1376  easytag
+# 1377  ls
+# 1378  easytag David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1379  exfalso David\ Baldacci\ -\ Zero\ Day\ -\ Disc\
+# 1380  exfalso David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1381  id3v2
+# 1382  id3v2 -l David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1383  faac
+# 1384  fg
+# 1385  aptitude
+# 1386  dpkg -L atomicparsley
+# 1387  AtomicParsley
+# 1388  AtomicParsley David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1389  AtomicParsley --longhelp
+# 1390  man AtomicParsley
+# 1391  AtomicParsley --3gp-help
+# 1392  id3info David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1393  fg
+# 1394  aptitude
+# 1395  avconv -i David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1396  mkdir m4bbak
+# 1397  cp David\ Baldacci\ -\ Zero\ Day* m4bbak/
+# 1398  AtomicParsley
+# 1399  AtomicParsley --disk 1/6 David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1400  AtomicParsley
+# 1401  AtomicParsley David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b --disk 1/6
+# 1402  AtomicParsley David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 2.m4b --disk 2/6
+# 1403  AtomicParsley David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 3.m4b --disk 3/6
+# 1404  AtomicParsley David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 4.m4b --disk 4/6
+# 1405  AtomicParsley David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 5.m4b --disk 5/6
+# 1406  AtomicParsley David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 6.m4b --disk 6/6
+# 1407  ls -l
+# 1408  ls -ltr
+# 1409  avconv -i David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1-temp-21254.m4b
+# 1410  avconv -i David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1411  AtomicParsley
+# 1412  AtomicParsley --longhelp
+# 1413  ls -l
+# 1414  ls -ld
+# 1415  avconv -i David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b > 1a
+# 1416  (avconv -i David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b 2>&1) > 1a
+# 1417  (avconv -i David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1-temp-21254.m4b 2>&1) > 1b
+# 1418  vi -d 1a 1v
+# 1419  vi -d 1a 1b
+# 1420  rm 1a 1b
+# 1421  rm David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ ?-temp-*.m4b
+# 1422  for i in 1 2 3 4 5 6 ; do AtomicParsley David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ $i.m4b --disk $i/6 --overWrite ; done
+# 1423  ls -l
+# 1424  ls
+# 1425  cd Music/Audiobooks/David\ Baldacci/Zero\ Day/
+# 1426  ls
+# 1427  cd ogg/
+# 1428  ls
+# 1429  soxi "1-01 Track 1.ogg"
+# 1430  avconv -i "1-01 Track 1.ogg"
+# 1431  avconv -i "1-01 Track 1.ogg" "1-01 Track 1.aac"
+# 1432  avconv -i "1-01 Track 1.aac"
+# 1433  avconv -i "1-01 Track 1.ogg" "1-01 Track 1.wav"
+# 1434  avconv -i "1-01 Track 1.wav"
+# 1435  avconv -i "1-01 Track 1.ogg"
+# 1436  avconv -i "1-01 Track 1.ogg" -b 132k "1-01 Track 1.wav"
+# 1437  avconv -i "1-01 Track 1.ogg" -b:a 132k "1-01 Track 1.wav"
+# 1438  avconv -i "1-01 Track 1.wav"
+# 1439  avconv -i "1-01 Track 1.ogg" -b:a 132k "1-01 Track 1.aac"
+# 1440  avconv -i "1-01 Track 1.aac"
+# 1441  man ffmpeg
+# 1442  avconv -i "1-01 Track 1.ogg" -b:a 132k -fix_sub_duration "1-01 Track 1.aac"
+# 1443  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 132k "1-01 Track 1.aac"
+# 1444  avconv -i "1-01 Track 1.aac"
+# 1445  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 160k "1-01 Track 1.aac"
+# 1446  avconv -i "1-01 Track 1.aac"
+# 1447  avconv -fix_sub_duration -i "1-01 Track 1.ogg" "1-01 Track 1.aac"
+# 1448  man ffmpeg
+# 1449  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -qscale 1 "1-01 Track 1.aac"
+# 1450  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -qscale:a 1 "1-01 Track 1.aac"
+# 1451  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 160 "1-01 Track 1.aac"
+# 1452  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 160k "1-01 Track 1.aac"
+# 1453  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 160k "1-01 Track 1.160k.aac"
+# 1454  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 132k "1-01 Track 1.132k.aac"
+# 1455  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 128k "1-01 Track 1.128k.aac"
+# 1456  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 192k "1-01 Track 1.192k.aac"
+# 1457  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a def "1-01 Track 1.def.aac"
+# 1458  avconv -fix_sub_duration -i "1-01 Track 1.ogg" "1-01 Track 1.def.aac"
+# 1459  ls -l *.aac
+# 1460  avconv -fix_sub_duration -i "1-01 Track 1.ogg"
+# 1461  avconv -i "1-01 Track 1.ogg" | grep "Stream #0:0"
+# 1462  avconv -i "1-01 Track 1.ogg" 2>&1 | grep "Stream #0:0"
+# 1463  ls -l *.aac
+# 1464  avconv -i "1-01 Track 1.192k.aac"
+# 1465  avconv -i "1-01 Track 1.160k.aac"
+# 1466  avconv -i "1-01 Track 1.128k.aac"
+# 1467  avconv -i "1-01 Track 1.160k.aac"
+# 1468  soxi
+# 1469  man soxi
+# 1470  man soxformat
+# 1471  man sox
+# 1472  ls
+# 1473  rm *.aac
+# 1474  ls -l
+# 1475  ls
+# 1476  m4baker --help
+# 1477  m4baker --verbose
+# 1478  rm *.wav
+# 1479  fg
+# 1480  m4baker
+# 1481  m4baker --verbose
+# 1482  m4baker --verbose | tee m4b.log
+# 1483  vi m4b.log
+# 1484  man
+# 1485  man sox
+# 1486  fg
+# 1487  man mp4chaps
+# 1488  man mp4chaps
+# 1489  mp4chaps  --help
+# 1490  fg
+# 1491  man faac
+# 1492  fg
+# 1493  mp4chaps  --help
+# 1494  fg
+# 1495  ls
+# 1496  vi 'David Baldacci - Zero Day - Disc 1.chapters.txt'
+# 1497  soxi 1-01\ Track\ 1.ogg
+# 1498  avconv -i '1-01 Track 1.ogg' -b:a 192 '1-01 Track 1.aac'
+# 1499  soxi 1-01\ Track\ 1.aac
+# 1500  avconv -i '1-01 Track 1.ogg' -b:a 192 '1-01 Track 1.m4a'
+# 1501  soxi 1-01\ Track\ 1.m4a
+# 1502  soxi
+# 1503  soxi --help
+# 1504  man soxi
+# 1505  man sox
+# 1506  man soxformat
+# 1507  avconv -i '1-01 Track 1.ogg'
+# 1508  ls -l
+# 1509  vi David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.chapters.txt
+# 1510  mp4chaps
+# 1511  mp4chaps --help
+# 1512  man mp4chaps
+# 1513  aptitude
+# 1514  dpkg -L mp4v2-utils
+# 1515  avconv -i David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1516  fg
+# 1517  man mp4art
+# 1518  man faac
+# 1519  ls -l
+# 1520  avconv -i '1-01 Track 1.ogg' -b:a 192 '1-01 Track 1.mp3'
+# 1521  avconv -i '1-01 Track 1.ogg' -b:a 192k '1-01 Track 1.mp3'
+# 1522  avconv -i '1-01 Track 1.ogg' -b:a 192k '1-01 Track 1.m4a'
+# 1523  avconv -i '1-01 Track 1.ogg' -b:a 192k '1-01 Track 1.wav'
+# 1524  ls
+# 1525  avconv -i 1-01\ Track\ 1.aac
+# 1526  avconv -i '1-01 Track 1.ogg' -b:a 192k '1-01 Track 1.aac'
+# 1527  avconv -i '1-01 Track 1.aac'
+# 1528  avconv -i '1-01 Track 1.ogg' -b:a 192k '1-01 Track 1-2.ogg'
+# 1529  avconv -i '1-01 Track 1-2.ogg'
+# 1530  sox 1-01\ Track\ 1.ogg > 1-01\ Track\ 1-2.wav
+# 1531  sox 1-01\ Track\ 1.ogg -o - > 1-01\ Track\ 1-2.wav
+# 1532  fg
+# 1533  sox 1-01\ Track\ 1.ogg -t .wav -o - > 1-01\ Track\ 1-2.wav
+# 1534  ls -l
+# 1535  ls -l 1-01\ Track\ 1*
+# 1536  avconv 1-01\ Track\ 1.wav
+# 1537  avconv 1-i -01\ Track\ 1.wav
+# 1538  avconv -i 1-01\ Track\ 1.wav
+# 1539  avconv -i 1-01\ Track\ 1-2.wav
+# 1540  fg
+# 1541  man faac
+# 1542  avconv -i David\ Baldacci\ -\ Zero\ Day\ -\ Disc\ 1.m4b
+# 1543  avconv -i 1-01\ Track\ 1.aac
+# 1544  cd /usr/local/src/
+# 1545  git clone https://github.com/crabmanX/m4baker.git
+# 1546  ssu
+# 1547  exit
+# 1548  fg
+# 1549  m4baker --verbose
+# 1550  cd -
+# 1551  m4baker --verbose
+# 1552  fg
+# 1553  m4baker --verbose
+# 1554  fg
+# 1555  m4baker --verbose
+# 1556  ls -l
+# 1557  m4baker --verbose
+# 1558  ls -l /usr/lib/python2.7/dist-packages/m4baker
+# 1559  m4baker --verbose
+# 1560  soxi 1-01\ Track\ 1.ogg
+# 1561  m4baker --verbose
+# 1562  ls -l
+# 1563  ls -ltr
+# 1564  du -hc *.ogg
+# 1565  du -hc *.m4b
+# 1566  avconv -i David\ Baldacci\ -\ Zero\ Day.m4b
+# 1567  ll *.aac
+# 1568  ls -l *.aac
+# 1569  m4baker --verbose
+# 1570  ls -l *.m4a
+# 1571  avconv -i 1-01\ Track\ 1.m4a
+# 1572  avconv -i 1-01\ Track\ 1.aac
+# 1573  m4baker --verbos
+# 1574  m4baker --verbose
+# 1575  sox -h
+# 1576  avconv -i 1-01\ Track\ 1.ogg -c:a copy 1-01\ Track\ 1-aac.ogg
+# 1577  avconv -codecs
+# 1578  avconv -codecs | vi -
+# 1579  avconv -i 1-01\ Track\ 1.ogg -c:a aac 1-01\ Track\ 1-aac.ogg
+# 1580  avconv -i 1-01\ Track\ 1.ogg -c:a libfaac 1-01\ Track\ 1-aac.ogg
+# 1581  faac --help
+# 1582  avconv -i David\ Baldacci\ -\ Zero\ Day.m4b
+# 1583  avconv -i 1-01\ Track\ 1.ogg
+# 1584  ls -l
+# 1585  avconv -i 1-01\ Track\ 1.aac
+# 1586  history
+# 1587  history | grep aac
+# 1588  avconv -fix_sub_duration -i "1-01 Track 1.ogg" -b:a 192k "1-01 Track 1.192k.aac"
+# 1589  avconv -i 1-01\ Track\ 1.192k.aac
+# 1590  avconv -i 1-01\ Track\ 1.aac
+# 1591  avconv -i David\ Baldacci\ -\ Zero\ Day.m4b
+# 1592  fg
+# 1593  ls
+# 1594  mv David\ Baldacci\ -\ Zero\ Day.m4b ~/Music/Audiobooks/
+# 1595  cd ..
+# 1596  ls -l
+# 1597  cd ..
+# 1598  ls-l
+# 1599  cd ..
+# 1600  ls -l
+# 1601  ls -l  David\ Baldacci
+# 1602  ls -l  David\ Baldacci/Zero\ Day/
+# 1603  rm -Rf David\ Baldacci
+# 1604  ls
+# 1605  avconv -i Zero\ Day.m4b
+# 1606  soxi Zero\ Day.m4b
+# 1607  soxi David\ Baldacci/Zero\ Day/1-01\ Track\ 1.ogg
+# 1608  soxi 1-01\ Track\ 01.mp3
+# 1609  man soxi
+# 1610  soxi -a 1-01\ Track\ 01.mp3
+# 1611  fg
+# 1612  man soxi
+# 1613  man sox
+# 1614  soxi -V3 -a 1-01\ Track\ 01.mp3
+# 1615  soxi -V4 -a 1-01\ Track\ 01.mp3
+# 1616  soxi -V4 1-01\ Track\ 01.mp3
+# 1617  soxi -V10 1-01\ Track\ 01.mp3
+# 1618  id3v2 1-01\ Track\ 01.mp3
+# 1619  id3v2 -l 1-01\ Track\ 01.mp3
+# 1620  soxi 1-01\ Track\ 01.mp3
+# 1621  man sox
+# 1622  man soxformat
+# 1623  man soci
+# 1624  man soxi
+# 1625  id3info 1-01\ Track\ 01.mp3
+# 1626  man id3info
+# 1627  man mp4tags
+# 1628  mp4tags
+# 1629  mp4tags | grep compo
+# 1630  mp4tags 2>&1 | grep compo
+# 1631  m4baker
+# 1632  fg
+# 1633  m4baker
+# 1634  soxi 1-01\ Track\ 01.mp3
+# 1635  id3info 1-01\ Track\ 01.mp3
+# 1636  id3info --help
+# 1637  dpkg -S id3info
+# 1638  dpkg -S id3v2
+# 1639  id3v2 -l 1-01\ Track\ 01.mp3
+# 1640  fg
+# 1641  m4baker
+# 1642  ps -aef | grep smb
+# 1643  ps -aef | grep 17256
+# 1644  cd /etc/sa
+# 1645  cd /etc/samba/
+# 1646  ls
+# 1647  ls -l
+# 1648  man smbclient
+# 1649  ps -aef | grep smb
+# 1650  pstree -pac 17341
+# 1651  ps -aef | grep smb
+# 1652  pstree -pac 17341
+# 1653  ps -aef | grep 17344
+# 1654  pstree -pac 17341
+# 1655  ps -aef | grep 17344
+# 1656  ps -aef | grep gvfs
+# 1657  mount
+# 1658  mount | grep gvfs
+# 1659  man /usr/lib/gvfs/gvfsd-smb
+# 1660  man gvfsd-smb
+# 1661  locate gvfs
+# 1662  info gvfs
+# 1663  man gvfsd-info
+# 1664  info gvfs
+# 1665  man gvfsd-fuse
+# 1666  man gvfsd
+# 1667  man gvfs
+# 1668  man smbclient
+# 1669  man smb.conf
+# 1670  ssu
+# 1671  cd
+# 1672  cd Music/
+# 1673  ln -s ../Audiobooks/
+# 1674  rm Audiobooks
+# 1675  mv ../Audiobooks/ .
+# 1676  ls -l
+# 1677  cd Audiobooks/
+# 1678  ls -l
+# 1679  rm David\ Baldacci\ -\ Zero\ Day.m4b
+# 1680  rm Zero\ Day.m4b 1-01\ Track\ 01.mp3
+# 1681  ls
+# 1682  cd David\ Baldacci/
+# 1683  ls -l
+# 1684  mkdir ~/music-bak
+# 1685  mv Zero\ Day ~/music-bak/
+# 1686  ls
+# 1687  exit
+# 1688  banshee
+# 1689  locate banshee
+# 1690  vi .gconf/apps/banshee-1/library/%gconf.xml
+# 1691  vi .gconf/apps/banshee-1/sources/_audiobook_library_source_-_audiobook_library/%gconf.xml
+# 1692  cd Music/
+# 1693  mv Audiobooks/ ..
+# 1694  banshee
+# 1695  cd
+# 1696  ls -l
+# 1697  historu
+# 1698  history
+# 1699  rm ~/.gconf/apps/banshee-1/
+# 1700  rm -Rf ~/.gconf/apps/banshee-1/
+# 1701  locate banshee
+# 1702  rm ~/.config/banshee-1/
+# 1703  rm -Rf ~/.config/banshee-1/
+# 1704  locate banshee
+# 1705  rm -Rf .cache/banshee-1/
+# 1706  locate banshee
+# 1707  cd
+# 1708  cd Audiobooks/
+# 1709  ls
+# 1710  cd David\ Baldacci/
+# 1711  ls
+# 1712  cd ..
+# 1713  cd Jean\ de\ La\ Fontaine/
+# 1714  ls
+# 1715  m4baker
+# 1716  id3info 01\ 01\ -\ Contre\ ceux\ qui\ ont\ le\ goût.mp3
+# 1717  id3info --help
+# 1718  locale
+# 1719  man id3info
+# 1720  man id3v2
+# 1721  id3v2 -l 01\ 01\ -\ Contre\ ceux\ qui\ ont\ le\ goût.mp3
+# 1722  m4baker
+# 1723  id3v2
+# 1724  id3info
+# 1725  id3info  --help
+# 1726  id3tag
+# 1727  id3tag --help
+# 1728  id3v2
+# 1729  id3v2 -R 01\ 01\ -\ Contre\ ceux\ qui\ ont\ le\ goût.mp3
+# 1730  id3v2 -l 01\ 01\ -\ Contre\ ceux\ qui\ ont\ le\ goût.mp3
+# 1731  for f in *.mp3 ; do a=$(id3v2 -l "$f" | sed -n -e 's/^TALB[^:]*: //p') ; echo "a=$a" ; done
+# 1732  for f in *.mp3 ; do a=$(id3v2 -l "$f" | sed -n -e 's/^TALB[^:]*: //p') ; if [ -n "$a" ] ; then echo "a=$a" ; fi ; done
+# 1733  for f in *.mp3 ; do a=$(id3v2 -l "$f" | sed -n -e 's/^TALB[^:]*: //p') ; if [ -n "$a" ] ; then mkdir -p "$a/" ; mv "$f" "$a/" ; fi ; done
+# 1734  ls -l
+# 1735  id3v2 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1736  id3v2 -l 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1737  id3v2 -R 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1738  id3v2 -l 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1739  id3info 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1740  for f in *.mp3 ; do a=$(id3info -l "$f" | sed -n -e 's/^=== TALB[^:]*: //p') ; if [ -n "$a" ] ; then mkdir -p "$a/" ; mv "$f" "$a/" ; fi ; done
+# 1741  for f in *.mp3 ; do a=$(id3info "$f" | sed -n -e 's/^=== TALB[^:]*: //p') ; if [ -n "$a" ] ; then mkdir -p "$a/" ; mv "$f" "$a/" ; fi ; done
+# 1742  ls -l
+# 1743  ls Fables\ de\ La\ Fontaine\,\ livre\ p
+# 1744  ls Fables\ de\ La\ Fontaine\,\ livre\ 1
+# 1745  cd Fables\ de\ La\ Fontaine\,\ livre\ p/
+# 1746  ls
+# 1747  id3info
+# 1748  id3v2
+# 1749  id3v2 -A "Fables de La Fontaine, livre 1" *.mp3
+# 1750  mv *.mp3 ..
+# 1751  cd ..
+# 1752  rmdir *
+# 1753  for f in *.mp3 ; do a=$(id3info "$f" | sed -n -e 's/^=== TALB[^:]*: //p') ; if [ -n "$a" ] ; then mkdir -p "$a/" ; mv "$f" "$a/" ; fi ; done
+# 1754  ls -l
+# 1755  cd Fables\ de\ La\ Fontaine\,\ livre\ 1
+# 1756  ls -l
+# 1757  m4baker &
+# 1758  mp4extract
+# 1759  mp4art
+# 1760  mp4art  --help
+# 1761  mp4art  --list 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1762  id3cp
+# 1763  id3cp --help
+# 1764  id3info
+# 1765  id3info  --help
+# 1766  man id3v2
+# 1767  exfalso
+# 1768  aptitude
+# 1769  eyed3
+# 1770  aptitude
+# 1771  spkg -L eyed3
+# 1772  dpkg -L eyed3
+# 1773  eyeD3
+# 1774  eyeD3 --help
+# 1775  eyeD3 --help | vi -
+# 1776  eyeD3 -i . 02\ 01\ -\ La\ Cigale\ et\ la\ Fourmi.mp3
+# 1777  ls-l
+# 1778  ls -l
+# 1779  id3info 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1780  id3v2 -l 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1781  id3v2 -l 02\ 01\ -\ La\ Cigale\ et\ la\ Fourmi.mp3
+# 1782  id3v2 -l 03\ 02\ -\ Le\ Corbeau\ et\ le\ Renard.mp3
+# 1783  id3v2 -l 04\ 03\ -\ La\ Grenouille\ qui\ se\ veut\ fa.mp3
+# 1784  id3v2 -l *.mp3
+# 1785  id3v2 -l *.mp3 | grep Enreg
+# 1786  id3v2 -R *.mp3 | grep Enreg
+# 1787  exfalso
+# 1788  soxi 01\ À\ Monseigneur\ le\ Dauphin.mp3
+# 1789  ls -ltr
+# 1790  m4baker
+# 1791  m4baker  --verbose
+# 1792  bg %
+# 1793  id3v2 -l 14\ 13\ -\ Les\ Voleurs\ et\ l\'Âne.mp3
+# 1794  id3v2 -l 15\ 14\ -\ Simonide\ préservé\ par\ les\ Di.mp3
+# 1795  id3v2 --help
+# 1796  id3v2 -R 15\ 14\ -\ Simonide\ préservé\ par\ les\ Di.mp3
+# 1797  ls -l
+# 1798  mv 07\ 06\ -\ La\ Génisse\,\ la\ Chèvre\ et\ la.mp3 07\ 06\ -\ La\ Genisse\,\ la\ Chevre\ et\ la.mp3
+# 1799  mv 13\ 12\ -\ Le\ Dragon\ à\ plusieurs\ têtes.mp3 13\ 12\ -\ Le\ Dragon\ a\ plusieurs\ tetes.mp3
+# 1800  ls -l
+# 1801  mv 14\ 13\ -\ Les\ Voleurs\ et\ l\'Âne.mp3 14\ 13\ -\ Les\ Voleurs\ et\ l\'Ane.mp3
+# 1802  mv 17\ 16\ -\ La\ Mort\ et\ le\ Bûcheron.mp3 17\ 16\ -\ La\ Mort\ et\ le\ Bucheron.mp3
+# 1803  mv 18\ 17\ -\ L\'Homme\ entre\ deux\ âges\,\ et.mp3 18\ 17\ -\ L\'Homme\ entre\ deux\ ages\,\ et.mp3
+# 1804  mv 20\ 19\ -\ L\'Enfant\ et\ le\ Maître\ d\'écol.mp3 20\ 19\ -\ L\'Enfant\ et\ le\ Maitre\ d\'ecol.mp3
+# 1805  mv 22\ 21\ -\ Les\ Frelons\ et\ les\ Mouches\ à.mp3 22\ 21\ -\ Les\ Frelons\ et\ les\ Mouches\ a.mp3
+# 1806  mv 23\ 22\ -\ Le\ Chêne\ et\ le\ Roseau.mp3 23\ 22\ -\ Le\ Chene\ et\ le\ Roseau.mp3
+# 1807  ls
+# 1808  ls -l
+# 1809  m4baker  --verbose
+# 1810  ls
+# 1811  mv 01\ À\ Monseigneur\ le\ Dauphin.mp3 01\ A\ Monseigneur\ le\ Dauphin.mp3
+# 1812  ls | grep -v '[^a-zA-Z0-9 .]'
+# 1813  mv 01\ A\ Monseigneur\ le\ Dauphin.mp3 01\ A\ Monseigneur\ le\ Dauphin.mp3
+# 1814  ls | grep -v '[^a-zA-Z0-9 .]'
+# 1815  ls | grep -v '[^a-zA-Z0-9 .]' | vi -
+# 1816  ls | grep '[^a-zA-Z0-9 .]' | vi -
+# 1817  ls | grep '[^a-zA-Z0-9 .]'
+# 1818  ls | egrep '[^a-zA-Z0-9 .]'
+# 1819  ls | egrep '\[^a-zA-Z0-9 .\]'
+# 1820  ls | egrep '\[^a-zA-Z .\]'
+# 1821  man egrep
+# 1822  mv 15\ 14\ -\ Simonide\ préservé\ par\ les\ Di.mp3 15\ 14\ -\ Simonide\ preserve\ par\ les\ Di.mp3
+# 1823  m4baker --verbose
+# 1824  ls -l
+# 1825  avconv -i 01\ A\ Monseigneur\ le\ Dauphin.mp3
+# 1826  avconv -i 02\ 01\ -\ La\ Cigale\ et\ la\ Fourmi.mp3
+# 1827  avconv -i 03\ 02\ -\ Le\ Corbeau\ et\ le\ Renard.mp3
+# 1828  for f in *.mp3 ; do avconv -i "$f" 2>&1 | grep Audio ; done
+# 1829  man avconv
+# 1830  man ffmpeg
+# 1831  for f in *.mp3 ; do echo "$f: $(avconv -i "$f" 2>&1 | grep Audio)" ; done
+# 1832  for f in *.mp3 ; do echo "$f: $(avconv -i "$f" 2>&1 | grep Audio)" ; done | grep stereo
+# 1833  avconv -i 09\ 08\ -\ L\'Hirondelle\ et\ les\ petits\ O.mp3
+# 1834  avconv -i 09\ 08\ -\ L\'Hirondelle\ et\ les\ petits\ O.mp3 -ac 1 09\ 08\ -\ L\'Hirondelle\ et\ les\ petits\ O.wav
+# 1835  avconv -i 09\ 08\ -\ L\'Hirondelle\ et\ les\ petits\ O.mp3 -ac 1 09\ 08\ -\ L\'Hirondelle\ et\ les\ petits\ O.mono.mp3
+# 1836  wget http://www.archive.org/download/LibrivoxM4bCollectionAudiobooks6/Fables_01_Lafontaine.64kb.m4b
+# 1837  avconv -i Fables_01_Lafontaine.64kb.m4b
+# 1838  mp4chaps
+# 1839  mp4chaps -h
+# 1840  mp4chaps -x Fables_01_Lafontaine.64kb.m4b
+# 1841  vi Fables_01_Lafontaine.64kb.chapters.txt
+# 1842  fg
+# 1843  mp4chaps -i Fables_01_Lafontaine.64kb.m4b
+# 1844  avconv -i Fables_01_Lafontaine.64kb.m4b
+# 1845  ls -l
+# 1846  mp4art
+# 1847  mp4art -h
+# 1848  mp4art --extract Fables_01_Lafontaine.64kb.
+# 1849  mp4art --extract Fables_01_Lafontaine.64kb.m4b
+# 1850  nautilus .
+# 1851  mv Fables_01_Lafontaine.64kb.m4b ..
+# 1852  h
+# 1853  history
+# 1854  mkdir 132
+# 1855  cd 132
+# 1856  for i in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 ; do wget https://archive.org/download/fables_lafontaine_01_librivox/fables_01_${i}_lafontaine.mp3 & done
+# 1857  jobs
+# 1858  history
+# 1859  for f in *.mp3 ; do avconv -i "$f" 2>&1 | grep Audio ; done
+# 1860  cd ..
+# 1861  ls -l
+# 1862  ls ..
+# 1863  cd ..
+# 1864  rm AlbumArt*
+# 1865  rm desktop.ini
+# 1866  rm Folder.jpg Thumbs.db
+# 1867  rm -Rf Fables\ de\ La\ Fontaine\,\ livre\ 1
+# 1868  wget http://www.archive.org/download/LibrivoxM4bCollectionAudiobooks6/Fables_02_Lafontaine.64kb.m4b
+# 1869  ls
+# 1870  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre1V2.m4b
+# 1871  mkdir JeanLambert
+# 1872  mv FablesDeLaFontaineLivre1V2.m4b JeanLambert/
+# 1873  cd JeanLambert/
+# 1874  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre2V2.m4b
+# 1875  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre3V2.m4b
+# 1876  wget http://wiki.librivox.org/index.php/M4B_Catalog
+# 1877  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre05.m4b
+# 1878  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre04.m4b
+# 1879  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre06.m4b
+# 1880  wget http://wiki.librivox.org/index.php/M4B_Catalog_French
+# 1881  ls
+# 1882  rm M4B_Catalog M4B_Catalog_French
+# 1883  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre08.m4b
+# 1884  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre07.m4b
+# 1885  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks5/FablesDeLaFontaineLivre07.m4b
+# 1886  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre09.m4b
+# 1887  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre10.m4b &
+# 1888  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre11.m4b &
+# 1889  wget http://archive.org/download/LibrivoxM4bCollectionAudiobooks6/FablesDeLaFontaineLivre12.m4b &
+# 1890  ls
+# 1891  ls -l
+# 1892  mv FablesDeLaFontaineLivre1V2.m4b FablesDeLaFontaineLivre01V2.m4b
+# 1893  mv FablesDeLaFontaineLivre2V2.m4b FablesDeLaFontaineLivre02V2.m4b
+# 1894  mv FablesDeLaFontaineLivre3V2.m4b FablesDeLaFontaineLivre03V2.m4b
+# 1895  ls
+# 1896  ls -l
+# 1897  wget https://archive.org/download/fables_de_la_fontaine_04_jl_librivox/fables_de_la_fontaine_04_jl_librivox_64kb_mp3.zip
+# 1898  wget http://www.archive.org/download/fables_de_la_fontaine_07_jl_librivox/fables_de_la_fontaine_07_jl_librivox_64kb_mp3.zip &
+# 1899  wget http://www.archive.org/download/LibrivoxCdCoverArt12/Fables_Fontaine_Book4_1109.jpg
+# 1900  wget http://www.archive.org/download/LibrivoxCdCoverArt12/Fables_Fontaine_Book7_1110.jpg
+# 1901  ls -l
+# 1902  mkdir FablesDeLaFontaineLivre04
+# 1903  mkdir FablesDeLaFontaineLivre07
+# 1904  cd FablesDeLaFontaineLivre04
+# 1905  unzip ../fables_de_la_fontaine_04_jl_librivox_64kb_mp3.zip
+# 1906  cd ../FablesDeLaFontaineLivre07/
+# 1907  unzip ../fables_de_la_fontaine_07_jl_librivox_64kb_mp3.zip
+# 1908  mv ../Fables_Fontaine_Book7_1110.jpg .
+# 1909  cd -
+# 1910  mv ../Fables_Fontaine_Book4_1109.jpg .
+# 1911  ls -l
+# 1912  history
+# 1913  for f in *.mp3 ; do avconv -i "$f" 2>&1 | grep Audio ; done
+# 1914  cd -
+# 1915  for f in *.mp3 ; do avconv -i "$f" 2>&1 | grep Audio ; done
+# 1916  m4baker &
+# 1917  cd -
+# 1918  m4baker &
+# 1919  ls -l
+# 1920  avconv -i Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ IV.m4b
+# 1921  mp4chaps
+# 1922  mp4chaps -h
+# 1923  mp4chaps -x Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ IV.m4b
+# 1924  vi Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ IV.chapters.txt
+# 1925  vi ~/.ssh/
+# 1926  vi ~/.vimrc
+# 1927  scp qip@gw.jsoft.lan:.vimrc ~
+# 1928  fg
+# 1929  vi Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ IV.chapters.txt
+# 1930  vi ~/.vimrc
+# 1931  scp qip@gw.jsoft.lan:.vim/dot_vimrc /home/strottie/.vimrc
+# 1932  vi ~/.vimrc
+# 1933  vi Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ IV.chapters.txt
+# 1934  cd ..
+# 1935  mp4chaps -x FablesDeLaFontaineLivre01V2.m4b
+# 1936  vi FablesDeLaFontaineLivre01V2.chapters.txt
+# 1937  cd -
+# 1938  fg
+# 1939  mp4chaps -i Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ IV.m4b
+# 1940  ls -l
+# 1941  mv Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ IV.m4b ../FablesDeLaFontaineLivre04.m4b
+# 1942  cd ../FablesDeLaFontaineLivre07/
+# 1943  ls -l
+# 1944  mp4chaps -x Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ 7.m4b
+# 1945  vi Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ 7.chapters.txt
+# 1946  mp4chaps -i Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ 7.m4b
+# 1947  cd ..
+# 1948  cd -
+# 1949  mv Jean\ de\ La\ Fontaine\ -\ Fables\ de\ La\ Fontaine\,\ livre\ 7.m4b ../FablesDeLaFontaineLivre07.m4b
+# 1950  cd ..
+# 1951  ls -l
+# 1952  rm fables_de_la_fontaine_0*.zip
+# 1953  rm -Rf FablesDeLaFontaineLivre04
+# 1954  rm -Rf FablesDeLaFontaineLivre07
+# 1955  ls -l
+# 1956  mp4chaps -x *.m4b
+# 1957  ls -l
+# 1958  rm *.chapters.txt
+# 1959  mp4chaps -x *.m4b
+# 1960  vi *.chapters.txt
+# 1961  mp4chaps -i *.m4b
+# 1962  ls -l
+# 1963  rm *chapters.txt
+# 1964  mp4chaps -x *.m4b
+# 1965  vi *.chapters.txt
+# 1966  rm *chapters.txt
+# 1967  ls -l
+# 1968  cd ..
+# 1969  ls -l
+# 1970  rm -Rf Fables\ de\ La\ Fontaine\,\ livre\ *
+# 1971  rm Fables_0*
+# 1972  ls -l
+# 1973  mv JeanLambert/* .
+# 1974  rmdir JeanLambert/
+# 1975  ls -l
+# 1976  soxi FablesDeLaFontaineLivre01V2.m4b
+# 1977  cd ..
+# 1978  ls -l
+# 1979  ls -l David\ Baldacci/
+# 1980  ls -l ../Music/
+# 1981  nautilus
+# 1982  ps -aef | grep naut
+# 1983  kill 2334
+# 1984  nautilus
+# 1985  ps -aef | grep gvf
+# 1986  ps -aef | grep 17782
+# 1987  ps -aef
+# 1988  mount
+# 1989  top
+# 1990  fg
+# 1991  exit
+# 1992  ls
+# 1993  ls -l
+# 1994  avconv -i David\ Baldacci\ -\ Zero\ Day.m4b
+# 1995  m4baker --help
+# 1996  man m4baker
+# 1997  m4baker
+# 1998  ssu
+# 1999  fg
+# 2000  exit
+# 2001  cd Audiobooks/David\ Baldacci/
+# 2002  ls
+# 2003  cd The\ Forgotten/
+# 2004  ls
+# 2005  ls -l
+# 2006  ls -lh
+# 2007  m4baker
+# 2008  bg %
+# 2009  soxi 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2010  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2011  soxi --help
+# 2012  id3info
+# 2013  id3info  --help
+# 2014  id3v2 -h
+# 2015  id3tag
+# 2016  id3tag -h
+# 2017  history
+# 2018  eyeD3
+# 2019  eyeD3 -h
+# 2020  eyeD3 -i . 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2021  ls -l
+# 2022  cp 01\ The\ Forgotten\ -\ Part\ 01.mp3 01\ The\ Forgotten\ -\ Part\ 01-strip.mp3
+# 2023  eyeD3 --remove-all 01\ The\ Forgotten\ -\ Part\ 01-strip.mp3
+# 2024  eyeD3 -i . 01\ The\ Forgotten\ -\ Part\ 01-strip.mp3
+# 2025  ls -l
+# 2026  avconv -i 01\ The\ Forgotten\ -\ Part\ 01
+# 2027  avconv -i 01\ The\ Forgotten\ -\ Part\ 01-strip.mp3
+# 2028  rm 01\ The\ Forgotten\ -\ Part\ 01-strip.mp3
+# 2029  avconv -i 01\ The\ Forgotten\ -\ Part\ 01-strip.mp3
+# 2030  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2031  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3  01\ The\ Forgotten\ -\ Part\ 01.jpg
+# 2032  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3 -v:a copy 01\ The\ Forgotten\ -\ Part\ 01.jpg
+# 2033  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3 -c:v copy 01\ The\ Forgotten\ -\ Part\ 01.jpg
+# 2034  nautilus .
+# 2035  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2036  wget http://www.hachettebookgroup.com/_b2c/media/cache/90/41/90415ce85ae7140f81fd191bb77a1955.jpg
+# 2037  df -h
+# 2038  ls -l
+# 2039  m4baker &
+# 2040  ls -l
+# 2041  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2042  id3v2 -l 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2043  ls -l
+# 2044  mv David\ Baldacci\ -\ The\ Forgotten.m4b /media/sf_strottie/Music/iTunes/iTunes\ Media/Automatically\ Add\ to\ iTunes/
+# 2045  ls -l
+# 2046  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.
+# 2047  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2048  id3v2 -l 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2049  ls -l
+# 2050  avconv /media/sf_strottie/Music/iTunes/iTunes\ Media/Audiobooks/David\ Baldacci/The\ Forgotten\ \(John\ Puller\ #2\).m4b
+# 2051  file /media/sf_strottie/Music/iTunes/iTunes\ Media/Audiobooks/David\ Baldacci/The\ Forgotten\ \(John\ Puller\ #2\).m4b
+# 2052  avconv -i /media/sf_strottie/Music/iTunes/iTunes\ Media/Audiobooks/David\ Baldacci/The\ Forgotten\ \(John\ Puller\ #2\).m4b
+# 2053  ls -lh /media/sf_strottie/Music/iTunes/iTunes\ Media/Audiobooks/David\ Baldacci/The\ Forgotten\ \(John\ Puller\ #2\).m4b
+# 2054  du -hsc /media/sf_strottie/Music/iTunes/iTunes\ Media/Audiobooks/David\ Baldacci/The\ Forgotten\ \(John\ Puller\ #2\).m4b
+# 2055  du -hsc *.mp3
+# 2056  sox -h
+# 2057  avconv -i 01\ The\ Forgotten\ -\ Part\ 01.mp3
+# 2058  cp 01\ The\ Forgotten\ -\ Part\ 01.mp3 /media/sf_strottie/Music/iTunes/iTunes\ Media/Automatically\ Add\ to\ iTunes/
+# 2059  ls -l
+# 2060  cd ..
+# 2061  ls -l
+# 2062  rm -Rf The\ Forgotten/
+# 2063  cd ..
+# 2064  rmdir *
+# 2065  ls -l
+# 2066  cd Andrew\ Gross/
+# 2067  ls -l
+# 2068  cd Don\'t\ Look\ Twice/
+# 2069  ls -l
+# 2070  history | grep -- -i
+# 2071  eyeD3 -i 1-01\ Track\ 01.mp3
+# 2072  ls -l
+# 2073  id3v2 -l 1-01\ Track\ 01.mp3
+# 2074  avconv -i 1-01\ Track\ 01.mp3
+# 2075  eyeD3 -i 1-01\ Track\ 01.mp3
+# 2076  eyeD3 1-01\ Track\ 01.mp3
+# 2077  eyeD3
+# 2078  eyeD3 -h
+# 2079  eyeD3 -i . 1-01\ Track\ 01.mp3
+# 2080  ls -l
+# 2081  avconv -i 1-01\ Track\ 01.mp3 -a:v copy 1-01\ Track\ 01.jpg
+# 2082  avconv -i 1-01\ Track\ 01.mp3 -c:v copy 1-01\ Track\ 01.jpg
+# 2083  ls -l
+# 2084  file 1-01\ Track\ 01.
+# 2085  file 1-01\ Track\ 01.jpg
+# 2086  file OTHER.JPG
+# 2087  avconv -i 1-01\ Track\ 01.mp3 1-01\ Track\ 01.png
+# 2088  ls -l
+# 2089  m4baker &
+# 2090  soxi 1-01\ Track\ 01.
+# 2091  soxi 1-01\ Track\ 01.mp3
+# 2092  m4baker &
+# 2093  soxi 1-01\ Track\ 01.mp3
+# 2094  echo $?
+# 2095  m4baker &
+# 2096  fg
+# 2097  bg %
+# 2098  man faac
+# 2099  cd ..
+# 2100  ls -l
+# 2101  cd ..
+# 2102  ls -l
+# 2103  ln -s /media/sf_strottie/Music/iTunes/iTunes\ Media/ ~/iTunes
+# 2104  mv ~/iTunes/Music/Deborah\ Harkness .
+# 2105  du -h
+# 2106  m4baker &
+# 2107  ls-l
+# 2108  ls -l
+# 2109  mv Andrew\ Gross/Don\'t\ Look\ Twice/Andrew\ Gross\ -\ Don\'t\ Look\ Twice.m4b .
+# 2110  rm -Rf Andrew\ Gross
+# 2111  ls -l
+# 2112  ls -lh
+# 2113  cd Deborah\ Harkness/The\ Book\ of\ Life/
+# 2114  ls -l
+# 2115  m4baker &
+# 2116  ll
+# 2117  ls -l
+# 2118  sox -h
+# 2119  man sox
+# 2120  avconv -i 1-01\ Track\ 01.m4a 1-01\ Track\ 01.wav
+# 2121  avconv -i 1-01\ Track\ 01.m4a -b:a 192k 1-01\ Track\ 01.192.wav
+# 2122  avconv -i 1-01\ Track\ 01.m4a -b:a 800k 1-01\ Track\ 01.800.wav
+# 2123  ls -l
+# 2124  ls -l 1-01\ Track\ 01.*
+# 2125  avconv -i 1-01\ Track\ 01.m4a -b:a 64k 1-01\ Track\ 01.64.wav
+# 2126  ls -l 1-01\ Track\ 01.*
+# 2127  man ffmpeg
+# 2128  ffmpeg -codecs
+# 2129  ffmpeg -codecs | vi -
+# 2130  man sox
+# 2131  mkdir wav
+# 2132  for f in 1-*.m4a ; do avconv -i $f $(basename $f .m4a).wav ; done
+# 2133  for f in 1-*.m4a ; do avconv -i "$f" wav/$(basename "$f" .m4a).wav ; done
+# 2134  for f in 1-*.m4a ; do avconv -i "$f" "wav/$(basename "$f" .m4a).wav" ; done
+# 2135  mkdir oki
+# 2136  fg
+# 2137  for f in 1-*.m4a ; do avconv -i "$f" -a:c adpcm_ima_oki "oki/$(basename "$f" .m4a).wav" ; done
+# 2138  for f in 1-*.m4a ; do avconv -i "$f" -c:a adpcm_ima_oki "oki/$(basename "$f" .m4a).wav" ; done
+# 2139  rmdir oki
+# 2140  ls wav
+# 2141  du -h wav
+# 2142  du -hc 1-*.m4a
+# 2143  cd wav/
+# 2144  m4baker &
+# 2145  ls -l
+# 2146  avconv -i Unknown\ Author\ -\ 1-01\ Track\ 01.m4b
+# 2147  m4baker &
+# 2148  ls -l
+# 2149  cmp Unknown\ Author\ -\ 1-01\ Track\ 01*
+# 2150  cmp --help
+# 2151  cmp Unknown\ Author\ -\ 1-01\ Track\ 01*
+# 2152  diff Unknown\ Author\ -\ 1-01\ Track\ 01*
+# 2153  cmp -b Unknown\ Author\ -\ 1-01\ Track\ 01*
+# 2154  cmp -l Unknown\ Author\ -\ 1-01\ Track\ 01*
+# 2155  ls -l
+# 2156  man sox
+# 2157  sox -h
+# 2158  cd ..
+# 2159  mkdir ogg
+# 2160  history
+# 2161  for f in 1-*.m4a ; do avconv -i "$f" -c:a copy "ogg/$(basename "$f" .m4a).ogg" ; done
+# 2162  for f in 1-*.m4a ; do avconv -i "$f" "ogg/$(basename "$f" .m4a).ogg" ; done
+# 2163  \rm ogg/1-*
+# 2164  for f in 1-*.m4a ; do avconv -i "$f" "ogg/$(basename "$f" .m4a).ogg" ; done
+# 2165  man faac
+# 2166  avconv -i wav/Unknown\ Author\ -\ 1-01\ Track\ 01
+# 2167  avconv -i wav/Unknown\ Author\ -\ 1-01\ Track\ 01.m4b
+# 2168  ls
+# 2169  du -hsc 1-01*.m4a
+# 2170  du -hsc wav/Unknown\ Author\ -\ 1-01\ Track\ 01.m4b
+# 2171  avconv -i 1-01\ Track\ 01.m4a
+# 2172  ls 1-01\ Track\ 01.*.m4a > concat
+# 2173  ls 1-01*.m4a > concat
+# 2174  vi concat
+# 2175  ls 1-*.m4a > concat
+# 2176  viico
+# 2177  vi concat
+# 2178  . concat
+# 2179  vi concat
+# 2180  . concat
+# 2181  ls -l
+# 2182  for f in *.m4a ; do mv -iv "$f" $(sed -e 's/ //g' <<< "$f") ; done
+# 2183  vi concat
+# 2184  . concat
+# 2185  for f in 1-*.m4a ; do ffmpeg -i "$f" -c copy -bsf:v h264_mp4toannexb -f mpegts "$(basename "$f" .m4a).ts ; done
+# 2186  for f in 1-*.m4a ; do ffmpeg -i "$f" -c copy -bsf:v h264_mp4toannexb -f mpegts "$(basename "$f" .m4a).ts" ; done
+# 2187  vi concat
+# 2188  . concat
+# 2189  echo $?
+# 2190  ls -l 1-03Track03.ts
+# 2191  ls -l 1-03Track03*
+# 2192  for f in 1-*.m4a ; do avconv -i "$f" -c copy "$(basename "$f" .m4a).mp4" ; done
+# 2193  vi concat
+# 2194  history
+# 2195  for f in 1-*.mp4 ; do ffmpeg -i "$f" -c copy -bsf:v h264_mp4toannexb -f mpegts "$(basename "$f" .mp4).ts" ; done
+# 2196  for f in 1-*.mp4 ; do ffmpeg -y -i "$f" -c copy -bsf:v h264_mp4toannexb -f mpegts "$(basename "$f" .mp4).ts" ; done
+# 2197  . concat
+# 2198  ls -ltr
+# 2199  . concat
+# 2200  echo $?
+# 2201  v ico
+# 2202  vi concat
+# 2203  rm 1.ts
+# 2204  . concat
+# 2205  ls -l 1.mp4
+# 2206  ls -l 1-*
+# 2207  ls -l 1-*.ts
+# 2208  ls -l 1.mp4
+# 2209  man ffmpeg
+# 2210  avconv -bsfs
+# 2211  . concat
+# 2212  vi concat
+# 2213  avconv -i 1-01Track01.ts
+# 2214  avconv -i 1-02Track02.ts
+# 2215  avconv -i 1-01Track01.m4a
+# 2216  history
+# 2217  man avconv
+# 2218  man ffmpeg
+
+# for f in *.m4a ; do ffmpeg -i "$f" -vn -c copy -bsf:v h264_mp4toannexb -f mpegts "$(basename "$f" .m4a).ts" ; done
+# ffmpeg -i "concat:intermediate1.ts|intermediate2.ts" -c copy -bsf:a aac_adtstoasc output.mp4
+
+# ffmpeg -f concat -i <(for f in 1-*.m4a; do echo "file '$(pwd)/$f'"; done) -vn -c copy out.m4b
+
+# vim: ft=tcl ts=8 sw=4 sts=4 ai et fdm=marker
