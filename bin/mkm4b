@@ -2580,6 +2580,18 @@ proc get_audio_file_default_chapter { d chapter_naming_format } {
                 set chap [get_audio_file_default_chapter $d "song"]
             }
         }
+        "disc" -
+        "disk" {
+            if {
+                ![catch {dict get $d tags disk} disk] &&
+                [regexp {^(\d+)(?:/(\d*))?$} $disk - disk disks]
+            } {
+                if { $disks eq "" } { set disks 0 }
+                set chap [format "Disc %0*d" [string length $disks] $disk]
+            } else {
+                set chap [get_audio_file_default_chapter $d "song"]
+            }
+        }
         "disc-track" -
         "disk-track" {
             if {
@@ -3385,7 +3397,7 @@ proc mkm4b { inputfiles tags } {
     while { [llength $lines] } {
         set line [lvarpop lines]
         switch -regexp -matchvar m -- $line {
-            {^size= *(\S+) time=(\S+) bitrate= *(\S+)$} {
+            {^size= *(\S+) time= *(\S+) bitrate= *(\S+)$} {
                 # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
                 lassign $m - out_size out_time out_bitrate
                 set out_time [parse_time_duration $out_time]
@@ -3396,13 +3408,14 @@ proc mkm4b { inputfiles tags } {
         }
     }
     # }}}
+    puts ""
+    if { [info exists expected_duration] } {
+	puts [format "Expected final duration: %s (%.3f seconds)" [format_mp4chaps_time_offset $expected_duration] $expected_duration]
+    }
     if { ![info exists out_time] } {
         puts stderr "WARNING: final duration unknown!"
     } else {
         puts     [format "Final duration:          %s (%.3f seconds)" [format_mp4chaps_time_offset $out_time] $out_time]
-        if { [info exists expected_duration] } {
-            puts [format "Expected final duration: %s (%.3f seconds)" [format_mp4chaps_time_offset $expected_duration] $expected_duration]
-        }
     }
 
     set cmd [auto_execok mp4tags]
