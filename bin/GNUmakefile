@@ -4,8 +4,8 @@ all:
 .PHONY: install install-%
 install:
 
-install: install-mkm4b
-install-mkm4b: ~/bin/mkm4b
-~/bin/mkm4b: mkm4b
+install: install-qaac
+install-qaac: ~/bin/qaac
+~/bin/qaac: qaac
 	mkdir -p $(@D)
 	ln -s "$(CURDIR)/$<" "$@"
