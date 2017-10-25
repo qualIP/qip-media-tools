@@ -86,7 +86,7 @@ else:
 
 args_file = JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.args.json'))
 if app.args._continue:
-    with args_file.open(mode="r") as fp:
+    with args_file.open(mode='r', encoding='utf-8') as fp:
         new_args = {k: v for k, v in vars(app.args).items() if v is not None}
         old_args = dict(json.load(fp))
         app.args = argparse.Namespace()
@@ -94,7 +94,7 @@ if app.args._continue:
         app.args.__dict__.update(new_args)
 else:
     os.makedirs(app.args.dir, exist_ok=True)
-with args_file.open(mode="w") as fp:
+with args_file.open(mode='w', encoding='utf-8') as fp:
     json.dump(
             {k: v for k, v in vars(app.args).items() if k not in ('logging_level',)},
             fp, indent=2, sort_keys=True)
@@ -173,7 +173,7 @@ audiobook.cover_file = ImageFile(file_name=os.path.join(app.args.dir, rel_cover_
 audiobook.cover_file.download(url=url_file, md5=cover_file_info.md5)
 
 book_info_file = JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.book_info.json'))
-with book_info_file.open(mode="w") as fp:
+with book_info_file.open(mode='w', encoding='utf-8') as fp:
     json.dump(vars(book_info), fp, indent=2, sort_keys=True)
     print('', file=fp)
 

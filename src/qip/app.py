@@ -7,7 +7,14 @@ import re
 import logging
 import os
 import sys
-import argcomplete
+import codecs
+
+HAVE_ARGCOMPLETE = False
+try:
+    import argcomplete
+    HAVE_ARGCOMPLETE = True
+except ImportError:
+    pass
 
 HAVE_COLOREDLOGS = False
 try:
@@ -75,10 +82,25 @@ class App(object):
         self.version = version
         self.contact = contact
         self.description = description
+        self.init_encoding()
         self.init_parser()
         self.init_logging(
                 level=logging_level,
                 )
+
+    def init_encoding(self):
+        if False:
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            e = sys.stdout.encoding
+            if e is not None:
+                sys.stdout = codecs.getwriter(e)(old_stdout);
+                if old_stderr is old_stdout:
+                    sys.stderr = sys.stdout
+            if old_stderr is not old_stdout:
+                e = sys.stderr.encoding
+                if e is not None:
+                    sys.stderr = codecs.getwriter(e)(old_stderr);
 
     def init_parser(self, allow_config_file=True, **kwargs):
         description = self.description
@@ -137,7 +159,8 @@ class App(object):
             logging.getLogger().setLevel(level)
 
     def parse_args(self, **kwargs):
-        argcomplete.autocomplete(self.parser)
+        if HAVE_ARGCOMPLETE:
+            argcomplete.autocomplete(self.parser)
         self.args = self.parser.parse_args(**kwargs)
         return self.args
 

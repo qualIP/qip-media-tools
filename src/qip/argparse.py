@@ -215,7 +215,7 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
             # replace arguments referencing files with the file content
             else:
                 try:
-                    with open(arg_string[1:]) as args_file:
+                    with open(arg_string[1:], encoding='utf-8') as args_file:
                         arg_strings = []
                         for arg_line in args_file.read().splitlines():
                             for arg in self.convert_arg_line_to_args(arg_line):

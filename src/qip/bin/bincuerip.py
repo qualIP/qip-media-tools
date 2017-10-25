@@ -54,13 +54,15 @@ def main():
 
     # Tie in to bincuetags {{{
     pgroup = app.parser.add_argument_group('Database Control (bincuetags)')
+    pgroup.add_argument('--no-tags', dest='use_bincuetags', default=True, action='store_false', help='Do not retrieve tags using bincuetags')
     pgroup.add_argument('--cddb', dest='use_cddb', default=True, action='store_true', help='Use CDDB')
     pgroup.add_argument('--no-cddb', dest='use_cddb', default=argparse.SUPPRESS, action='store_false', help='Do not use CDDB')
     pgroup.add_argument('--musicbrainz', dest='use_musicbrainz', default=True, action='store_true', help='Use MusicBrainz')
     pgroup.add_argument('--no-musicbrainz', dest='use_musicbrainz', default=argparse.SUPPRESS, action='store_false', help='Do not use MusicBrainz')
 
-    pgroup.add_argument('--mbdiscid', default=None, help='specify MusicBrainz discid')
-    pgroup.add_argument('--mbreleaseid', default=None, help='specify MusicBrainz releaseid')
+    pgroup.add_argument('--mb-discid', dest='musicbrainz_discid', default=None, help='specify MusicBrainz discid')
+    pgroup.add_argument('--mb-releaseid', dest='musicbrainz_releaseid', default=None, help='specify MusicBrainz releaseid')
+    pgroup.add_argument('--cddb-discid', dest='cddb_discid', default=None, help='specify CDDB discid')
     pgroup.add_argument('--barcode', default=None, help='specify barcode')
     pgroup.add_argument('--country', dest='country_list', default=None, nargs='*', help='specify country list')
     # }}}
@@ -97,15 +99,17 @@ def bincuerip(cue_file_name):
     tags_file = JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
     if tags_file.exists():
         app.log.info('Reading %s...', tags_file)
-        with tags_file.open('r') as fp:
+        with tags_file.open('r', encoding='utf-8') as fp:
             album_tags = AlbumTags.json_load(fp)
         print('{}'.format(
             album_tags.short_str()))
         for track_no, track_tags in album_tags.tracks_tags.items():
             print('  Track {:2d}: {}'.format(track_no, track_tags.short_str()))
-    else:
+    elif app.args.use_bincuetags:
         import qip.bin.bincuetags
         album_tags = qip.bin.bincuetags.bincuetags(cue_file_name)
+    else:
+        album_tags = AlbumTags()
 
     for track_no, track in enumerate(cue_file.tracks, start=1):
         bin_file = BinaryFile(os.path.join(os.path.dirname(cue_file.file_name), track.file.name))
@@ -123,10 +127,12 @@ def bincuerip(cue_file_name):
         else:
             raise ValueError(app.args.format)
 
-        app.log.info('Ripping %s...', track_out_file)
+        track_tags = album_tags.tracks_tags[track_no]
+
+        app.log.info('Ripping %s (%s [%s])...', track_out_file, track_tags.short_str(), track.length)
         track_out_file.rip_cue_track(track,
                                      bin_file=bin_file,
-                                     tags=album_tags.tracks_tags[track_no])
+                                     tags=track_tags)
 
     return True
 

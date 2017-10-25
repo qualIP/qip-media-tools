@@ -395,6 +395,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     def __init__(self, dict=None, **kwargs):
         if dict is not None:
+            #print('dict=%r' % (dict,))
             self.update(dict)
         if len(kwargs):
             self.update(kwargs)
@@ -2506,11 +2507,12 @@ for element, mp4v2_tag, data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag, alias
     ["Grouping",               "©grp",                     "utf-8",                    "grouping",                 "TT1",                      "TIT1",           []],
     # composer = mp4v2 writer
     ["Composer",               "©wrt",                     "utf-8",                    "composer",                 "TCM",                      "TCOM",           ["writer"]],
-    ["Comment",                "©cmt",                     "utf-8",                    "comments",                 None,                       None,             []],
+    ["Comment",                "©cmt",                     "utf-8",                    "comment",                  None,                       None,             []],
     ["Genre ID",               "gnre",                     "enum",                     "genreID",                  None,                       None,             []],
     ["Genre",                  "©gen",                     "utf-8",                    "genre",                    "TCO",                      "TCON",           ["GenreType"]],
     # date = mp4v2 year
     ["Release Date",           "©day",                     "utf-8",                    "date",                     "TDA",                      "TDAT",           ["releaseDate", "Date", "date"]],
+    ["Year",                   None,                       None,                       None,                       "TYE",                      "TYER",           ["year"]],
     ["Track Number",           "trkn",                     "binary",                   "track",                    None,                       None,             []],
     ["Total Tracks",           None,                       "int32",                    "tracks",                   None,                       None,             []],
     ["track_slash_tracks",     None,                       "utf-8",                    None,                       "TPK",                      "TRCK",           []],
@@ -2537,7 +2539,7 @@ for element, mp4v2_tag, data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag, alias
     ["Sort Show",              "sosn",                     "utf-8",                    "sortTVShow",               None,                       None,             []],
     ["Cover Art",              "covr",                     "picture",                  "picture",                  "PIC",                      "APIC",           []], # TODO artwork?
     ["Copyright",              "cprt",                     "utf-8",                    "copyright",                "TCR",                      "TCOP",           []],
-    ["Encoding Tool",          "©too",                     "utf-8",                    "tool",                     None,                       None,             ["Encoded with", "encodingTool", "encoder"]],
+    ["Encoding Tool",          "©too",                     "utf-8",                    "tool",                     "TSS",                      "TSSE",           ["Encoded with", "encodingTool", "encoder"]],
     ["Encoded By",             "©enc",                     "utf-8",                    "encodedBy",                "TEN",                      "TENC",           []],
     ["Purchase Date",          "purd",                     "utf-8",                    "purchaseDate",             None,                       None,             []],
     ["Podcast",                "pcst",                     "bool8",                    "podcast",                  None,                       None,             []],

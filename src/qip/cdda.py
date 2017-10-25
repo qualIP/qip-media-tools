@@ -472,7 +472,7 @@ class CDTocFile(TextFile):
 
     def create(self, indent='  ', include_defaults=False, file=None):
         if file is None:
-            with self.open('w') as file:
+            with self.open('w', encoding='utf-8') as file:
                 return self.create(file=file)
         if self.catalog_id:
             print('CATALOG "%s"' % (self.catalog_id,), file=file)
@@ -709,7 +709,7 @@ class CDDACueSheetFile(TextFile):
 
     def create(self, indent='  ', file=None):
         if file is None:
-            with self.open('w') as file:
+            with self.open('w', encoding='utf-8') as file:
                 return self.create(file=file)
         cur_file = None
         for cmd, tag_enum in (

@@ -132,13 +132,13 @@ class File(object):
                   tempfile._TemporaryFileWrapper,
               ))))
 
-    def open(self, mode='r'):
+    def open(self, mode='r', encoding=None):
         assert not self.fp
         if not self.file_name:
             raise ValueError('%r: file_name not defined' % (self,))
         if 't' not in mode and 'b' not in mode:
             mode += self.open_mode
-        return open(self.file_name, mode=mode)
+        return open(self.file_name, mode=mode, encoding=encoding)
 
     def read(self):
         fp = self.fp or self.open()

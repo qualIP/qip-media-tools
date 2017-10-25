@@ -56,6 +56,7 @@ pgroup.add_argument('--ripper', default='cdparanoia', choices=['cdparanoia', 'sa
 pgroup.add_argument('--force-read-speed', dest='force_read_speed', default=None, help='force CDROM read speed')
 pgroup.add_argument('--safecopy-timing', dest='safecopy_timing', default=False, action='store_true', help='write safecopy timing files')
 pgroup.add_argument('--cdparanoia-max-skip-retries', dest='cdparanoia_max_skip_retries', default=None, type=int, help='number of retries before cdparanoia is allowed to skip a sector')
+pgroup.add_argument('--no-disable-paranoia', dest='no_disable_paranoia', default=False, action='store_true', help='Do not use cdparanoia --disable-paranoia on first try')
 pgroup.add_argument('--max-track-retries', dest='max_track_retries', default=None, type=int, help='number of retries before giving up reading a track')
 pgroup.add_argument('--rebuild', default=False, action='store_true', help='rebuild tracks from best sectors if all else fails')
 pgroup.add_argument('--rebuild-unique-sectors', dest='rebuild_unique_sectors', default=False, action='store_true', help='rebuild tracks even from unique sectors')
@@ -163,7 +164,6 @@ def do_spawn_cmd(cmd, **kwargs):
 
 def main():
     global in_tags
-    print('in_tags=%r' % (in_tags,))
 
     for prog in (
             'cdrdao',
@@ -430,6 +430,10 @@ def mkbincue(file_name_prefix, in_tags):
                                     ]
                             if app.args.force_read_speed is not None:
                                 cmd += ['--force-read-speed', app.args.force_read_speed]
+                            if False:  # TODO gets stuck on last sector!
+                                if not app.args.no_disable_paranoia:
+                                    if try_number == 1:
+                                        cmd += ['--disable-paranoia']
                             cmd += ['--', '%d-%d' % (start_track_no, end_track_no),
                                     try_file_name_prefix + '.bin']
                             t0 = time.time()
@@ -766,41 +770,5 @@ if __name__ == "__main__":
 # the cdparanoia.log file produced by this failed analysis to
 # paranoia-dev@xiph.org to assist developers in extending
 # Paranoia to handle this CDROM properly.
-
-# 2016-03-31 23:18:36 VERBOSE CMD: /usr/bin/cdparanoia --query --verbose --force-cdrom-device /dev/sr1
-# cdparanoia III release 10.2 (September 11, 2008)
-# 
-# Using cdda library version: 10.2
-# Using paranoia library version: 10.2
-# Checking /dev/sr1 for cdrom...
-#     Testing /dev/sr1 for SCSI/MMC interface
-#         SG_IO device: /dev/sr1
-# 
-# CDROM model sensed sensed: ASUS BW-12B1ST   a 1.00 
-# 
-# Checking for SCSI emulation...
-#     Drive is ATAPI (using SG_IO host adaptor emulation)
-# 
-# Checking for MMC style command set...
-#     Drive is MMC style
-# 004: Unable to read table of contents header
-# 
-# Unable to open disc.  Is there an audio CD in the drive?
-# Traceback (most recent call last):
-#   File "/home/strottie/bin/mkbincue", line 448, in <module>
-#     main()
-#   File "/home/strottie/bin/mkbincue", line 164, in main
-#     mkbincue(app.args.file_name_prefix)
-#   File "/home/strottie/bin/mkbincue", line 201, in mkbincue
-#     run_func=do_spawn_cmd,
-#   File "/home/strottie/tools/bin/../lib/python/qip/cdparanoia.py", line 24, in query
-#     d = self._run(*args, **kwargs)
-#   File "/home/strottie/tools/bin/../lib/python/qip/exec.py", line 74, in _run
-#     d.out = run_func(cmd)
-#   File "/home/strottie/bin/mkbincue", line 128, in do_spawn_cmd
-#     return dbg_spawn_cmd(cmd, **kwargs)
-#   File "/home/strottie/bin/mkbincue", line 120, in dbg_spawn_cmd
-#     raise Exception('Command returned status %r' % (p.exitstatus,))
-# Exception: Command returned status 1
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

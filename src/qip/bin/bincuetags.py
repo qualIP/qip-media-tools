@@ -6,15 +6,17 @@
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
 import argparse
+import functools
 import logging
+import musicbrainzngs
 import os
 import pexpect
 import re
 import shutil
 import subprocess
-import musicbrainzngs
-import urllib
 import sys
+import urllib
+import types
 
 from qip.app import app
 from qip.snd import *
@@ -37,6 +39,26 @@ class MusicBrainzLoggingFilter(logging.Filter):
 
 musicbrainzLoggingFilter = MusicBrainzLoggingFilter()
 logging.getLogger("musicbrainzngs").addFilter(musicbrainzLoggingFilter)
+
+def set_useragent(app, version, contact=None):
+    if False:
+        musicbrainzngs.set_useragent(app, version, contact)
+    else:
+        """Set the User-Agent to be used for requests to the MusicBrainz webservice.
+        This must be set before requests are made."""
+        #global _useragent, _client
+        from musicbrainzngs import musicbrainz as _mb
+        if not app or not version:
+            raise ValueError("App and version can not be empty")
+        if contact is not None:
+            #_useragent = "%s/%s python-musicbrainzngs/%s ( %s )" % (app, version, _version, contact)
+            _mb._useragent = "%s/%s ( %s )" % (app, version, contact)
+        else:
+            #_useragent = "%s/%s python-musicbrainzngs/%s" % (app, version, _version)
+            _mb._useragent = "%s/%s" % (app, version)
+        #_client = "%s-%s" % (app, version)
+        _mb._client = "%s-%s" % (app, version)
+        _mb._log.debug("set user-agent to %s" % _mb._useragent)
 
 def dbg_spawn_cmd(cmd, hidden_args=[], no_status=False, yes=False, logfile=True):
     if app.log.isEnabledFor(logging.DEBUG):
@@ -138,7 +160,6 @@ def main():
     app.parser.add_argument('--version', '-V', action='version')
 
     pgroup = app.parser.add_argument_group('Program Control')
-    pgroup.add_argument('--continue', '-c', dest='_continue', action='store_true', help='continue creating RIP')
     #pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
     pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
     #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
@@ -154,9 +175,12 @@ def main():
     pgroup.add_argument('--no-cddb', dest='use_cddb', default=argparse.SUPPRESS, action='store_false', help='Do not use CDDB')
     pgroup.add_argument('--musicbrainz', dest='use_musicbrainz', default=True, action='store_true', help='Use MusicBrainz')
     pgroup.add_argument('--no-musicbrainz', dest='use_musicbrainz', default=argparse.SUPPRESS, action='store_false', help='Do not use MusicBrainz')
+    pgroup.add_argument('--cache', dest='use_cache', default=True, action='store_true', help='Use caching')
+    pgroup.add_argument('--no-cache', dest='use_cache', default=argparse.SUPPRESS, action='store_false', help='Do not use caching')
 
-    pgroup.add_argument('--mbdiscid', default=None, help='specify MusicBrainz discid')
-    pgroup.add_argument('--mbreleaseid', default=None, help='specify MusicBrainz releaseid')
+    pgroup.add_argument('--mb-discid', dest='musicbrainz_discid', default=None, help='specify MusicBrainz discid')
+    pgroup.add_argument('--mb-releaseid', dest='musicbrainz_releaseid', default=None, help='specify MusicBrainz releaseid')
+    pgroup.add_argument('--cddb-discid', dest='cddb_discid', default=None, help='specify CDDB discid')
     pgroup.add_argument('--barcode', default=None, help='specify barcode')
     pgroup.add_argument('--country', dest='country_list', default=None, nargs='*', help='specify country list')
 
@@ -177,6 +201,11 @@ def main():
     if app.args.action == 'bincuetags':
         if not app.args.cue_files:
             raise Exception('No CUE file name provided')
+        if app.args.use_cache:
+            if False:
+                # Parameters are not hashable!
+                musicbrainzngs.get_releases_by_discid = functools.lru_cache(typed=True)(musicbrainzngs.get_releases_by_discid)
+                musicbrainzngs.get_release_by_id = functools.lru_cache(typed=True)(musicbrainzngs.get_release_by_id)
         for cue_file in app.args.cue_files:
             bincuetags(cue_file)
     else:
@@ -397,7 +426,14 @@ def bincuetags(cue_file_name):
 
     cue_file = CDDACueSheetFile(cue_file_name)
     cue_file.read()
+    app.log.debug('%r: cue_file: %r', cue_file, cue_file.tags)
     discid = cue_file.discid
+    discid = types.SimpleNamespace(
+        id=app.args.musicbrainz_discid or discid.id,
+        freedb_id=app.args.cddb_discid or discid.freedb_id,
+        toc=discid.toc,
+        track_offsets=discid.track_offsets,
+    )
     app.log.debug('%r: MusicBrainz disc ID: %r', cue_file, discid.id)
     app.log.debug('%r: CDDB/FreeDB disc ID: %r', cue_file, discid.freedb_id)
 
@@ -406,7 +442,7 @@ def bincuetags(cue_file_name):
     mbmediums = []
     if app.args.use_musicbrainz:
         app.log.info('Querying MusicBrainz...')
-        musicbrainzngs.set_useragent(app.prog, app.version, app.contact)
+        set_useragent(app.prog, app.version, app.contact)
         try:
             d = musicbrainzngs.get_releases_by_discid(
                     discid.id,
@@ -558,7 +594,7 @@ def bincuetags(cue_file_name):
             app.log.debug('Parsing musicbrainz medium-list...')
             medium_found = False
             for mbmedium in mbrel['release']['medium-list']:
-                if True:
+                if mbmedium['disc-list']:
                     for mbdisc in mbmedium['disc-list']:
                         if mbdisc['id'] != discid.id:
                             continue
@@ -630,14 +666,21 @@ def bincuetags(cue_file_name):
             album_tags_list.append(album_tags)
 
     # Cleanup
-    for album_tags in album_tags_list:
-        for track_tags in album_tags.tracks_tags.values():
+
+    def cleanup_album_tags(album_tags):
+        album_tags.update(cue_file.tags)
+        for track_no, track_tags in album_tags.tracks_tags.items():
+            if track_no in cue_file.tags.tracks_tags:
+                track_tags.update(cue_file.tags.tracks_tags[track_no])
             if track_tags.contains('artist', strict=True) and track_tags.artist == album_tags.artist:
                 del track_tags.artist
             if track_tags.contains('title', strict=True) and track_tags.title == album_tags.title:
                 del track_tags.title
         if album_tags.contains('tracks', strict=True) and album_tags.tracks == len(album_tags.tracks_tags):
             del album_tags.tracks
+
+    for album_tags in album_tags_list:
+        cleanup_album_tags(album_tags)
 
     tags_file = JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
 
@@ -672,12 +715,12 @@ def bincuetags(cue_file_name):
                         tags_filei = tags_file
                     else:
                         tags_filei = JsonFile('{}.{}'.format(tags_file.file_name, i))
-                    with tags_filei.open('w') as fp:
+                    with tags_filei.open('w', encoding='utf-8') as fp:
                         album_tags.json_dump(fp)
                         fp.write('\n')
                     edcmd.append(tags_filei.file_name)
                 subprocess.call(edcmd)
-                with tags_file.open('r') as fp:
+                with tags_file.open('r', encoding='utf-8') as fp:
                     album_tags_list[0] = AlbumTags.json_load(fp)
                 for i, album_tags in enumerate(album_tags_list, start=1):
                     if i == 1:
@@ -696,10 +739,11 @@ def bincuetags(cue_file_name):
         album_tags = AlbumTags()
         for track_no, track in enumerate(cue_file.tracks, start=1):
             track_tags = album_tags.tracks_tags[track_no]
-            track_tags.title = 'Track %0*d' % (len(str(len(cue_file.tracks))), track_no)
+            track_tags.setdefault('title', 'Track %0*d' % (len(str(len(cue_file.tracks))), track_no))
+        cleanup_album_tags(album_tags)
 
     app.log.info('Writing %s...', tags_file)
-    with tags_file.open('w') as fp:
+    with tags_file.open('w', encoding='utf-8') as fp:
         album_tags.json_dump(fp)
         fp.write('\n')
 

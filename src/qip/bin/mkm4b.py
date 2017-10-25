@@ -122,16 +122,16 @@ def edfile(file):
 # }}}
 # edvar {{{
 
-def edvar(value):
+def edvar(value, *, encoding='utf-8'):
 
     with TempFile(file_name=None) as tmp_file:
         fp, tmp_file.file_name = tempfile.mkstemp(suffix='.json', text=True)
-        with os.fdopen(fp, 'wt') as fp:
+        with os.fdopen(fp, 'w') as fp:
             json.dump(value, fp, indent=2, sort_keys=True, ensure_ascii=False)
             print('', file=fp)
         if not edfile(tmp_file):
             return (False, value)
-        with tmp_file.open(mode='rt') as fp:
+        with tmp_file.open(mode='r', encoding=encoding) as fp:
             new_value = json.load(fp)
             #if type(new_value) is not type(value):
             #    raise ValueError(new_value)
@@ -141,7 +141,7 @@ def edvar(value):
 
 # safe_write_file_eval {{{
 
-def safe_write_file_eval(file, body):
+def safe_write_file_eval(file, body, *, encoding='utf-8'):
     file = str(file)
     if (
             not os.access(file, os.W_OK) and
@@ -149,7 +149,7 @@ def safe_write_file_eval(file, body):
                 not os.access(os.path.dirname(file), os.W_OK))):
         pass # XXXJST TODO: raise Exception('couldn\'t open "%s"' % (file,))
     with TempFile(file + '.tmp') as tmp_file:
-        with tmp_file.open(mode='w') as fp:
+        with tmp_file.open(mode='w', encoding=encoding) as fp:
             ret = body(fp)
         os.rename(tmp_file.file_name, file)
         tmp_file.delete = False
@@ -166,8 +166,8 @@ def safe_write_file(file, content):
 # }}}
 # safe_read_file {{{
 
-def safe_read_file(file):
-    return open(str(file), mode='r').read()
+def safe_read_file(file, *, encoding='utf-8'):
+    return open(str(file), mode='r', encoding=encoding).read()
 
 # }}}
 
@@ -301,6 +301,7 @@ def get_audio_file_info(d, need_actual_duration=True):
                         parser.re_search(r'^(?:=== )?(TEN|TENC) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TMT|TMED) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TP1|TPE1) \(.*?\): (.+)$') or
+                        parser.re_search(r'^(?:=== )?(TSE|TSSE) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TT2|TIT2) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TT3|TIT3) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TYE|TYER) \(.*?\): (.+)$')
@@ -536,7 +537,7 @@ class AlbumTagsCache(dict):
         album_tags = None
         if tags_file.exists():
             app.log.info('Reading %s...', tags_file)
-            with tags_file.open('r') as fp:
+            with tags_file.open('r', encoding='utf-8') as fp:
                 album_tags = AlbumTags.json_load(fp)
         self[key] = album_tags
         return album_tags
@@ -548,7 +549,7 @@ class TrackTagsCache(dict):
         track_tags = None
         if tags_file.exists():
             app.log.info('Reading %s...', tags_file)
-            with tags_file.open('r') as fp:
+            with tags_file.open('r', encoding='utf-8') as fp:
                 track_tags = TrackTags.json_load(fp)
         self[key] = track_tags
         return track_tags
@@ -744,16 +745,20 @@ def get_audio_file_chapters(snd_file, chapter_naming_format):
 
 def get_audio_file_default_chapter(d, chapter_naming_format):
     if chapter_naming_format == 'default':
-        if d.tags.title is not None:
+        if d.tags.contains(SoundTagEnum.title, strict=True):
             m = re.search(r'^Track \d+$', d.tags.title)
             if m:
                 if d.tags.disk is not None and d.tags.disk != '1/1':
                     return get_audio_file_default_chapter(d, chapter_naming_format='disk-track')
                 else:
                     return get_audio_file_default_chapter(d, chapter_naming_format='track')
-        return get_audio_file_default_chapter(d, chapter_naming_format='title')
+            return d.tags.title
+        if d.tags.track is not None:
+            return get_audio_file_default_chapter(d, chapter_naming_format='disk-track')
+        else:
+            return get_audio_file_default_chapter(d, chapter_naming_format='title')
     if chapter_naming_format == 'title':
-        if SoundTagEnum.title in d.tags:
+        if d.tags.contains(SoundTagEnum.title, strict=True):
             return d.tags.title
         return clean_audio_file_title(d, os.path.splitext(os.path.split(d.file_name)[1])[0])
     if chapter_naming_format == 'track':
@@ -1122,8 +1127,8 @@ def mkm4b(inputfiles, default_tags):
         if os.path.abspath(app.args.chaptersfile) == os.path.abspath(chapters_file.file_name):
             app.log.info('Reusing %s...', chapters_file)
         else:
-            app.log.info('Writing %s from %s...', chapters_file, opts_chaptersfile)
-            shutil.copyfile(opts_chaptersfile, chapters_file.file_name)
+            app.log.info('Writing %s from %s...', chapters_file, app.args.chaptersfile)
+            shutil.copyfile(app.args.chaptersfile, chapters_file.file_name)
     elif app.args.reuse_chapters and chapters_file.exists():
         app.log.info('Reusing %s...', chapters_file)
     else:
@@ -1253,13 +1258,15 @@ def mkm4b(inputfiles, default_tags):
     use_qaac_cmd = False
     use_qaac_intermediate = False
     ffmpeg_cmd = [shutil.which('ffmpeg')]
+    ffmpeg_input_cmd = []
+    ffmpeg_output_cmd = []
     qaac_cmd = [qaac.which()]
     qaac_cmd += ['--threading']
     if app.args.yes:
         ffmpeg_cmd += ['-y']
     ffmpeg_cmd += ['-stats']
     qaac_cmd += ['--verbose']
-    ffmpeg_cmd += ['-vn']
+    ffmpeg_output_cmd += ['-vn']
     ffmpeg_format = 'ipod'
     bCopied = False
     bitrate = getattr(app.args, 'bitrate', None)
@@ -1276,7 +1283,7 @@ def mkm4b(inputfiles, default_tags):
                     AudioType.ac3,
                     )):
             # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
-            ffmpeg_cmd += ['-c:a', 'copy']
+            ffmpeg_output_cmd += ['-c:a', 'copy']
             bCopied = True
             ffmpeg_format = 'ipod'  # See codec_ipod_tags @ ffmpeg/libavformat/movenc.c
         elif (
@@ -1287,7 +1294,7 @@ def mkm4b(inputfiles, default_tags):
                     AudioType.mp3,
                     )):
             # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
-            ffmpeg_cmd += ['-c:a', 'copy']
+            ffmpeg_output_cmd += ['-c:a', 'copy']
             bCopied = True
             ffmpeg_format = 'mp4'
         else:
@@ -1319,29 +1326,29 @@ def mkm4b(inputfiles, default_tags):
                     if False and kbitrate >= 160:
                         # http://wiki.hydrogenaud.io/index.php?title=FAAC
                         app.log.info('NOTE: Using recommended high-quality LC-AAC libfaac settings; If it fails, try: --bitrate %dk', kbitrate)
-                        ffmpeg_cmd += ['-c:a', 'libfaac', '-q:a', '330', '-cutoff', '15000']  # 100% ~= 128k, 330% ~= ?
+                        ffmpeg_output_cmd += ['-c:a', 'libfaac', '-q:a', '330', '-cutoff', '15000']  # 100% ~= 128k, 330% ~= ?
                     elif kbitrate > 64:
                         app.log.info('NOTE: Using recommended high-quality LC-AAC libfdk_aac settings; If it fails, try: --bitrate %dk', kbitrate)
-                        ffmpeg_cmd += ['-c:a', 'libfdk_aac', '-b:a', '%dk' % (kbitrate,)]
+                        ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-b:a', '%dk' % (kbitrate,)]
                     elif kbitrate >= 48:
                         app.log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 64k settings; If it fails, try: --bitrate %dk', kbitrate)
-                        ffmpeg_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he', '-b:a', '64k']
+                        ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he', '-b:a', '64k']
                         if app.args.itunes_compat:
-                            ffmpeg_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
+                            ffmpeg_output_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
                     elif True:
                         app.log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 32k settings; If it fails, try: --bitrate %dk', kbitrate)
-                        ffmpeg_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he_v2', '-b:a', '32k']
+                        ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he_v2', '-b:a', '32k']
                         if app.args.itunes_compat:
-                            ffmpeg_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
+                            ffmpeg_output_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
                     else:
                         bitrate = '%dk' % (kbitrate,)
             else:
                 raise Exception('Unable to determine proper bitrate from %rk' % (kbitrate,))
         # }}}
     if bitrate is not None:
-        ffmpeg_cmd += ['-b:a', bitrate]
+        ffmpeg_output_cmd += ['-b:a', bitrate]
     if hasattr(app.args, 'channels'):
-        ffmpeg_cmd += ['-ac', app.args.channels]
+        ffmpeg_output_cmd += ['-ac', app.args.channels]
     if not bCopied:
         try:
             del m4b.tags.encodedby
@@ -1351,12 +1358,13 @@ def mkm4b(inputfiles, default_tags):
             del m4b.tags.tool
         except AttributeError:
             pass
-    ffmpeg_cmd += ['-f', ffmpeg_format]
     inputfiles_names = [inputfile.file_name for inputfile in inputfiles]
     if len(inputfiles_names) > 1:
-        ffmpeg_cmd += ['-f', 'concat', '-safe', '0', '-i', filesfile]
+        ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', filesfile]
     else:
-        ffmpeg_cmd += ['-i', inputfiles_names[0]]
+        ffmpeg_input_cmd += ['-i', inputfiles_names[0]]
+
+    ffmpeg_output_cmd += ['-f', ffmpeg_format]
 
     intermediate_wav_files = []
     try:
@@ -1377,7 +1385,7 @@ def mkm4b(inputfiles, default_tags):
         else:
             qaac_cmd += [inputfiles_names[0]]
 
-        ffmpeg_cmd += [m4b.file_name]
+        ffmpeg_output_cmd += [m4b.file_name]
         qaac_cmd += ['-o', m4b.file_name]
         if use_qaac_cmd:
             qaac_cmd += ['--text-codepage', '65001']  # utf-8
@@ -1388,7 +1396,7 @@ def mkm4b(inputfiles, default_tags):
         if use_qaac_cmd:
             out = do_spawn_cmd(qaac_cmd)
         else:
-            out = do_spawn_cmd(ffmpeg_cmd)
+            out = do_spawn_cmd(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd)
         out_time = None
         # {{{
         out = clean_cmd_output(out)
