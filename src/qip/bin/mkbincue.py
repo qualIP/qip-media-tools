@@ -46,7 +46,7 @@ pgroup.add_argument('--continue', '-c', dest='_continue', action='store_true', h
 #pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
 pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
 #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
-pgroup.add_argument('--device', default="/dev/cdrom", help='specify alternate cdrom device')
+pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
 # TODO pgroup.add_argument('--device-cache-size', dest='device_cache_size', default=None, help='cache size for your device (MB)')
 pgroup.add_argument('--device-sample-offset', dest='device_sample_offset', default=6, help='sample read offset for your device (http://www.accuraterip.com/driveoffsets.htm)')
 pgroup.add_argument('--eject', default=False, action='store_true', help='eject cdrom when done')
