@@ -301,6 +301,7 @@ def get_audio_file_info(d, need_actual_duration=True):
                         parser.re_search(r'^(?:=== )?(TEN|TENC) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TMT|TMED) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TP1|TPE1) \(.*?\): (.+)$') or
+                        parser.re_search(r'^(?:=== )?(TP2|TPE2) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TSE|TSSE) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TT2|TIT2) \(.*?\): (.+)$') or
                         parser.re_search(r'^(?:=== )?(TT3|TIT3) \(.*?\): (.+)$') or
