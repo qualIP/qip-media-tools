@@ -699,7 +699,21 @@ class CDDACueSheetFile(TextFile):
                     # TODO PREGAP [00:00:00]
                     #   -- unless track 1 is (HTOA)
                     # TODO ISRC
-                    # TODO FLAGS [PRE] [DCP]
+                    elif parser.re_search(r'^FLAGS\s+"(?P<value>.+)"$'):
+                        # http://www.goldenhawk.com/download/cdrwin.pdf
+                        for flag in parser.match.group('value').split():
+                            if flag == "DCP":
+                                self.copy_permitted = True
+                            elif flag == "4CH":
+                                self.audio_channels = 4
+                            elif flag == "PRE":
+                                self.pre_emphasis = True
+                            #elif flag == "SCMS":
+                            #    # TODO Serial Copy Management System (not supported by all recorders)
+                            #elif flag == "DATA":
+                            #    # TODO Data track
+                            else:
+                                raise ValueError('Unsupported cue sheet track flag: %s' % (flag,))
                     else:
                         parser.pushback(parser.line)
                         break
@@ -739,12 +753,20 @@ class CDDACueSheetFile(TextFile):
                     # TODO PREGAP [00:00:00]
                     #   -- unless track 1 is (HTOA)
                     # TODO ISRC
-                    # TODO FLAGS [PRE] [DCP]
                     ):
                 if track.tags.contains(tag_enum, strict=True):
                     v = track.tags[tag_enum]
                     if v is not None:
                         print('%s%s "%s"' % (indent * 2, cmd, v), file=file)
+            flags = []
+            if self.copy_permitted:
+                flags.append('DCP')
+            if self.audio_channels == 4:
+                flags.append('4CH')
+            if self.pre_emphasis:
+                flags.append('PRE')
+            if flags:
+                print('%sFLAGS %s' % (indent * 2, ' '.join(flags)))
             for index_key, index in sorted(track.indexes.items()):
                 print('%sINDEX %02d %s' % (indent * 2, index.number, index.position), file=file)
 
