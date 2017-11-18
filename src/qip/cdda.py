@@ -699,7 +699,7 @@ class CDDACueSheetFile(TextFile):
                     # TODO PREGAP [00:00:00]
                     #   -- unless track 1 is (HTOA)
                     # TODO ISRC
-                    elif parser.re_search(r'^FLAGS\s+"(?P<value>.+)"$'):
+                    elif parser.re_search(r'^FLAGS\s+(?P<value>.+)$'):
                         # http://www.goldenhawk.com/download/cdrwin.pdf
                         for flag in parser.match.group('value').split():
                             if flag == "DCP":
@@ -759,11 +759,11 @@ class CDDACueSheetFile(TextFile):
                     if v is not None:
                         print('%s%s "%s"' % (indent * 2, cmd, v), file=file)
             flags = []
-            if self.copy_permitted:
+            if track.copy_permitted:
                 flags.append('DCP')
-            if self.audio_channels == 4:
+            if track.audio_channels == 4:
                 flags.append('4CH')
-            if self.pre_emphasis:
+            if track.pre_emphasis:
                 flags.append('PRE')
             if flags:
                 print('%sFLAGS %s' % (indent * 2, ' '.join(flags)))
