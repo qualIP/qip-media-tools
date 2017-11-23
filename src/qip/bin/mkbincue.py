@@ -332,6 +332,7 @@ def mkbincue(file_name_prefix, in_tags):
         dt.bytes_copied = 0
         dt.elapsed_time = 0.0
         d1 = safecopy(app.args.device, bin_file.file_name, stage=1,
+                      I=app.args._continue and stage3_badblocks_file.exists() and stage3_badblocks_file.file_name,
                       o=stage1_badblocks_file.file_name,
                       timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
         try:
