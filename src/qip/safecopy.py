@@ -10,6 +10,20 @@ class Safecopy(Executable):
 
     name = 'safecopy'
 
+    @classmethod
+    def kwargs_to_cmdargs(cls, **kwargs):
+        cmdargs = []
+        for k, v in kwargs.items():
+            if v is False:
+                continue
+            if len(k) == 1:
+                cmdargs.append('-' + k)
+            else:
+                cmdargs.append('--' + k)
+            if v is not True:
+                cmdargs.append(str(v))
+        return cmdargs
+
     def __call__(self, source, destination, *extra_args, stage=None, timing=False, **kwargs):
         args = []
         if stage is not None:

@@ -51,7 +51,7 @@ class Qaac(Executable):
         for k, v in kwargs.items():
             if v is False:
                 continue
-            if k in ('o',):
+            if len(k) == 1:
                 cmdargs.append('-' + k)
             else:
                 cmdargs.append('--' + k)
