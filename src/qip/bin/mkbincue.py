@@ -356,7 +356,8 @@ def mkbincue(file_name_prefix, in_tags):
                 pass
             if stage2_badblocks_file.getsize():
                 d3 = safecopy(app.args.device, bin_file.file_name, stage=3,
-                              I=stage3_badblocks_file.file_name,
+                              I=stage2_badblocks_file.file_name,
+                              o=stage3_badblocks_file.file_name,
                               timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
                 try:
                     dt.bytes_copied += d3.bytes_copied
