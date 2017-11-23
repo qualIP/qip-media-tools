@@ -318,9 +318,9 @@ def mkbincue(file_name_prefix, in_tags):
     app.log.info('Creating %s...', bin_file)
     # TODO continue
     if app.args.ripper == 'safecopy':
-        stage1_badblocks_file = TextFile('stage1.badblocks')
-        stage2_badblocks_file = TextFile('stage2.badblocks')
-        stage3_badblocks_file = TextFile('stage3.badblocks')
+        stage1_badblocks_file = TextFile(file_name_prefix + '.stage1.badblocks')
+        stage2_badblocks_file = TextFile(file_name_prefix + '.stage2.badblocks')
+        stage3_badblocks_file = TextFile(file_name_prefix + '.stage3.badblocks')
         if not app.args.dry_run:
             stage1_badblocks_file.unlink(force=True)
             stage2_badblocks_file.unlink(force=True)
@@ -331,7 +331,9 @@ def mkbincue(file_name_prefix, in_tags):
         dt = types.SimpleNamespace()
         dt.bytes_copied = 0
         dt.elapsed_time = 0.0
-        d1 = safecopy(app.args.device, bin_file.file_name, stage=1, timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
+        d1 = safecopy(app.args.device, bin_file.file_name, stage=1,
+                      o=stage1_badblocks_file.file_name,
+                      timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
         try:
             dt.bytes_copied += d1.bytes_copied
             dt.elapsed_time += d1.elapsed_time
@@ -340,7 +342,10 @@ def mkbincue(file_name_prefix, in_tags):
         except:
             pass
         if stage1_badblocks_file.getsize():
-            d2 = safecopy(app.args.device, bin_file.file_name, stage=2, timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
+            d2 = safecopy(app.args.device, bin_file.file_name, stage=2,
+                          I=stage1_badblocks_file.file_name,
+                          o=stage2_badblocks_file.file_name,
+                          timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
             try:
                 dt.bytes_copied += d2.bytes_copied
                 dt.elapsed_time += d2.elapsed_time
@@ -349,7 +354,9 @@ def mkbincue(file_name_prefix, in_tags):
             except:
                 pass
             if stage2_badblocks_file.getsize():
-                d3 = safecopy(app.args.device, bin_file.file_name, stage=3, timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
+                d3 = safecopy(app.args.device, bin_file.file_name, stage=3,
+                              I=stage3_badblocks_file.file_name,
+                              timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
                 try:
                     dt.bytes_copied += d3.bytes_copied
                     dt.elapsed_time += d3.elapsed_time
