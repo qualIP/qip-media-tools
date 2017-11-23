@@ -321,7 +321,7 @@ def mkbincue(file_name_prefix, in_tags):
         stage1_badblocks_file = TextFile(file_name_prefix + '.stage1.badblocks')
         stage2_badblocks_file = TextFile(file_name_prefix + '.stage2.badblocks')
         stage3_badblocks_file = TextFile(file_name_prefix + '.stage3.badblocks')
-        if not app.args.dry_run:
+        if not app.args.dry_run and not app.args._continue:
             stage1_badblocks_file.unlink(force=True)
             stage2_badblocks_file.unlink(force=True)
             stage3_badblocks_file.unlink(force=True)
