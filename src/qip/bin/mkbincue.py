@@ -321,43 +321,61 @@ def mkbincue(file_name_prefix, in_tags):
         stage1_badblocks_file = TextFile(file_name_prefix + '.stage1.badblocks')
         stage2_badblocks_file = TextFile(file_name_prefix + '.stage2.badblocks')
         stage3_badblocks_file = TextFile(file_name_prefix + '.stage3.badblocks')
+        stage3_old_badblocks_file = TextFile(file_name_prefix + '.stage3.old.badblocks')
         if not app.args.dry_run and not app.args._continue:
             stage1_badblocks_file.unlink(force=True)
             stage2_badblocks_file.unlink(force=True)
             stage3_badblocks_file.unlink(force=True)
+            stage3_old_badblocks_file.unlink(force=True)
         run_func = functools.partial(do_spawn_cmd,
                 no_status=True,
                 )
+        d1 = None
+        d2 = None
+        d3 = None
         dt = types.SimpleNamespace()
         dt.bytes_copied = 0
         dt.elapsed_time = 0.0
-        d1 = safecopy(app.args.device, bin_file.file_name, stage=1,
-                      I=app.args._continue and stage3_badblocks_file.exists() and stage3_badblocks_file.file_name,
-                      o=stage1_badblocks_file.file_name,
-                      timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
-        try:
-            dt.bytes_copied += d1.bytes_copied
-            dt.elapsed_time += d1.elapsed_time
-            if d1.bytes_copied:
-                app.log.info('Stage 1 Speed: %.1fx', d1.bytes_copied / d1.elapsed_time / cdda.CDDA_1X_SPEED)
-        except:
-            pass
-        if stage1_badblocks_file.getsize():
-            d2 = safecopy(app.args.device, bin_file.file_name, stage=2,
-                          I=stage1_badblocks_file.file_name,
-                          o=stage2_badblocks_file.file_name,
+        in_badblocks_file = False
+        out_badblocks_file = stage1_badblocks_file
+        if app.args._continue and out_badblocks_file.exists():
+            app.log.info('... CONTINUE: %s file exists.' % (out_badblocks_file,))
+        else:
+            d1 = safecopy(app.args.device, bin_file.file_name, stage=1,
+                          I=in_badblocks_file, o=out_badblocks_file,
                           timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
             try:
-                dt.bytes_copied += d2.bytes_copied
-                dt.elapsed_time += d2.elapsed_time
-                if d2.bytes_copied:
-                    app.log.info('Stage 2 Speed: %.1fx', d2.bytes_copied / d2.elapsed_time / cdda.CDDA_1X_SPEED)
+                dt.bytes_copied += d1.bytes_copied
+                dt.elapsed_time += d1.elapsed_time
+                if d1.bytes_copied:
+                    app.log.info('Stage 1 Speed: %.1fx', d1.bytes_copied / d1.elapsed_time / cdda.CDDA_1X_SPEED)
             except:
                 pass
-            if stage2_badblocks_file.getsize():
+        if out_badblocks_file.getsize():
+            in_badblocks_file = out_badblocks_file
+            out_badblocks_file = stage2_badblocks_file
+            if app.args._continue and out_badblocks_file.exists():
+                app.log.info('... CONTINUE: %s file exists.' % (out_badblocks_file,))
+            else:
+                d2 = safecopy(app.args.device, bin_file.file_name, stage=2,
+                              I=in_badblocks_file, o=out_badblocks_file,
+                              timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
+                try:
+                    dt.bytes_copied += d2.bytes_copied
+                    dt.elapsed_time += d2.elapsed_time
+                    if d2.bytes_copied:
+                        app.log.info('Stage 2 Speed: %.1fx', d2.bytes_copied / d2.elapsed_time / cdda.CDDA_1X_SPEED)
+                except:
+                    pass
+            if out_badblocks_file.getsize():
+                in_badblocks_file = out_badblocks_file
+                out_badblocks_file = stage3_badblocks_file
+                if app.args._continue and out_badblocks_file.exists():
+                    app.log.info('... CONTINUE: %s file exists.' % (out_badblocks_file,))
+                    in_badblocks_file = stage3_old_badblocks_file
+                    out_badblocks_file.rename(in_badblocks_file, update_file_name=False)
                 d3 = safecopy(app.args.device, bin_file.file_name, stage=3,
-                              I=stage2_badblocks_file.file_name,
-                              o=stage3_badblocks_file.file_name,
+                              I=in_badblocks_file, o=out_badblocks_file,
                               timing=app.args.safecopy_timing, run_func=run_func)  # TODO: dry-run
                 try:
                     dt.bytes_copied += d3.bytes_copied
@@ -366,8 +384,8 @@ def mkbincue(file_name_prefix, in_tags):
                         app.log.info('Stage 3 Speed: %.1fx', d3.bytes_copied / d3.elapsed_time / cdda.CDDA_1X_SPEED)
                 except:
                     pass
-                if stage3_badblocks_file.getsize():
-                    raise ValueError('%s size if not 0!', stage3_badblocks_file)
+                if out_badblocks_file.getsize():
+                    raise ValueError('%s size if not 0!', out_badblocks_file)
         try:
             app.log.info('Overall Speed: %.1fx', dt.bytes_copied / dt.elapsed_time / cdda.CDDA_1X_SPEED)
         except:
@@ -376,14 +394,16 @@ def mkbincue(file_name_prefix, in_tags):
             stage1_badblocks_file.unlink(force=True)
             stage2_badblocks_file.unlink(force=True)
             stage3_badblocks_file.unlink(force=True)
-        if d1.low_level_disk_size is not None:
+            stage3_old_badblocks_file.unlink(force=True)
+        d0 = d1 or d2 or d3
+        if d0.low_level_disk_size is not None:
             bin_file_size = bin_file.getsize()
-            if bin_file_size < d1.low_level_disk_size:
-                raise ValueError('%s (%r) is less than CDROM low level disk size (%r)!' % (bin_file, bin_file_size, d1.low_level_disk_size))
-            if bin_file_size > d1.low_level_disk_size:
-                app.log.info('Truncating %s to %r bytes...', bin_file, d1.low_level_disk_size)
+            if bin_file_size < d0.low_level_disk_size:
+                raise ValueError('%s (%r) is less than CDROM low level disk size (%r)!' % (bin_file, bin_file_size, d0.low_level_disk_size))
+            if bin_file_size > d0.low_level_disk_size:
+                app.log.info('Truncating %s to %r bytes...', bin_file, d0.low_level_disk_size)
                 if not app.args.dry_run:
-                    bin_file.truncate(d1.low_level_disk_size)
+                    bin_file.truncate(d0.low_level_disk_size)
                 print('')
     elif app.args.ripper == 'cdparanoia':
         run_func = functools.partial(do_spawn_cmd,
