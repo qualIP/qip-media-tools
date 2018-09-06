@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# See ~/tools/installs/qaac/
+
+export WINEPREFIX=${WINEPREFIX:-~/.wine}
+exec wine $WINEPREFIX/drive_c/qaac/refalac64.exe "$@"
