@@ -8,6 +8,9 @@ __all__ = [
         'JsonFile',
         'ImageFile',
         'TempFile',
+        'safe_write_file',
+        'safe_write_file_eval',
+        'safe_read_file',
         ]
 
 import contextlib
@@ -100,6 +103,7 @@ class File(object):
         if self.exists():
             return False
         log.info('Downloading %s...' % (url,))
+        #log.info('Downloading %s to %s...' % (url, self))
         with TempFile(file_name=self.file_name + '.tmp', open_mode=self.open_mode) as tmp_file:
             urllib.request.urlretrieve(url, filename=tmp_file.file_name)
             if md5:
@@ -196,8 +200,10 @@ def cache_url(url, cache_dict={}):
     if purl.scheme == 'file':
         return os.path.normpath(purl.path)
     elif purl.scheme == '':
-        assert purl.path == url
-        return os.path.normpath(purl.path)
+        # May not be true if url contains a #, in which case purl.path will be truncated
+        #assert purl.path == url, (purl.path, url)
+        #return os.path.normpath(purl.path)
+        return os.path.normpath(url)
 
     try:
         tfp = cache_dict[url]
@@ -243,5 +249,37 @@ def cache_url(url, cache_dict={}):
         cache_dict[url] = tfp
 
     return tfp.name
+
+# safe_write_file {{{
+
+def safe_write_file(file, content):
+    def body(fp):
+        fp.buffer.write(content)
+    safe_write_file_eval(file, body)
+
+# }}}
+# safe_write_file_eval {{{
+
+def safe_write_file_eval(file, body, *, encoding='utf-8'):
+    file = str(file)
+    if (
+            not os.access(file, os.W_OK) and
+            (os.path.exists(file) or
+                not os.access(os.path.dirname(file), os.W_OK))):
+        pass # XXXJST TODO: raise Exception('couldn\'t open "%s"' % (file,))
+    with TempFile(file + '.tmp') as tmp_file:
+        with tmp_file.open(mode='w', encoding=encoding) as fp:
+            ret = body(fp)
+        os.rename(tmp_file.file_name, file)
+        tmp_file.delete = False
+    return ret
+
+# }}}
+# safe_read_file {{{
+
+def safe_read_file(file, *, encoding='utf-8'):
+    return open(str(file), mode='r', encoding=encoding).read()
+
+# }}}
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

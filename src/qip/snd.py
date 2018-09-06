@@ -11,13 +11,14 @@ __all__ = (
 )
 
 import collections
-import operator
 import datetime
 import decimal
 import enum
 import functools
 import inspect
 import io
+import logging
+import operator
 import os
 import re
 import reprlib
@@ -25,19 +26,19 @@ import shutil
 import string
 import subprocess
 import types
-import logging
 log = logging.getLogger(__name__)
 
-import qip.file
-from qip.file import *
+from qip import _py
+from qip import argparse
+from qip import json
+from qip.app import app
 from qip.cmp import *
 from qip.exec import *
+import qip.file
+from qip.file import *
 from qip.parser import *
 from qip.propex import propex
 from qip.utils import byte_decode, TypedKeyDict, TypedValueDict
-from qip import json
-from qip import argparse
-from qip import _py
 
 
 def _tIntRange(value, rng):
@@ -82,7 +83,7 @@ class _tReMatchTest(object):
 class _tReMatchGroups(_tReMatchTest):
 
     def __call__(self, value):
-        m = re.match(self.expr, value, flags)
+        m = re.match(self.expr, value, self.flags or 0)
         if not m:
             raise ValueError('Doesn\'t match r.e. {!r}'.format(self.expr))
         return m.groups()
@@ -216,16 +217,21 @@ class SoundTagDate(object):
                 d = datetime.datetime.strptime(value, '%Y-%m-%d').date()
             except ValueError:
                 try:
-                    d = datetime.datetime.strptime(value, '%Y-%m').date()
+                    d = datetime.datetime.strptime(value, '%Y:%m:%d').date()
                 except ValueError:
                     try:
-                        d = datetime.datetime.strptime(value, '%Y').date()
+                        d = datetime.datetime.strptime(value, '%Y-%m').date()
                     except ValueError:
-                        raise ValueError('Not a compatible date string')
+                        try:
+                            d = datetime.datetime.strptime(value, '%Y').date()
+                        except ValueError:
+                            raise ValueError('Not a compatible date string')
+                        else:
+                            self.year = d.year
                     else:
-                        self.year = d.year
+                        self.year, self.month = d.year, d.month
                 else:
-                    self.year, self.month = d.year, d.month
+                    self.year, self.month, self.day = d.year, d.month, d.day
             else:
                 self.year, self.month, self.day = d.year, d.month, d.day
         else:
@@ -2515,7 +2521,7 @@ for element, mp4v2_tag, data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag, alias
     ["Year",                   None,                       None,                       None,                       "TYE",                      "TYER",           ["year"]],
     ["Track Number",           "trkn",                     "binary",                   "track",                    None,                       None,             []],
     ["Total Tracks",           None,                       "int32",                    "tracks",                   None,                       None,             []],
-    ["track_slash_tracks",     None,                       "utf-8",                    None,                       "TPK",                      "TRCK",           []],
+    ["track_slash_tracks",     None,                       "utf-8",                    None,                       "TRK",                      "TRCK",           []],
     ["Disc Number",            "disk",                     "binary",                   "disk",                     None,                       None,             ["disc"]],
     ["Total Discs",            None,                       "int32",                    "disks",                    None,                       None,             ["discs"]],
     ["disk_slash_disks",       None,                       "utf-8",                    None,                       "TPA",                      "TPOS",           []],
@@ -2721,6 +2727,28 @@ def get_mp4v2_app_support():
 
 # }}}
 
+# parse_time_duration {{{
+
+def parse_time_duration(dur):
+    match = re.search(r'^(?:(?:0*(?P<h>\d+):)?0*(?P<m>\d+):)?0*(?P<s>\d+.\d+)$', dur)
+    if match:
+        # 00:00:00.000
+        # 00:00.000
+        # 00.000
+        h = match.group('h')
+        m = match.group('m')
+        s = decimal.Decimal(match.group('s'))
+        if m:
+            s += int(m) * 60
+        if h:
+            s += int(h) * 60 * 60
+    else:
+        raise ValueError('Invalid time offset format: %s' % (dur,))
+    return s
+
+# }}}
+# parse_disk_track {{{
+
 def parse_disk_track(dt, default=None):
     if dt is None:
         return (default, default)
@@ -2733,6 +2761,8 @@ def parse_disk_track(dt, default=None):
     n = int(n) if n is not None else default
     t = int(t) if t is not None else default
     return (n, t)
+
+# }}}
 
 def soundfilecmp(f1, f2):
     v1 = parse_disk_track(f1.tags.get('disk', 0), default=0)[0]
@@ -2871,6 +2901,496 @@ class SoundFile(BinaryFile):
 
     def set_tag(self, tag, value, source=''):
         return self.tags.set_tag(tag, value, source=source)
+
+    def extract_info(self, need_actual_duration=False):
+        tags_done = False
+        if os.path.splitext(self.file_name)[1] in qip.snd.get_mp4v2_app_support().extensions_can_read:
+            if not tags_done and mp4info.which(assert_found=False):
+                # {{{
+                d2, track_tags = mp4info.query(self.file_name)
+                if d2.get('audio_type', None) is not None:
+                    tags_done = True
+                for k, v in track_tags.items():
+                    self.tags.update(track_tags)
+                for k, v in d2.items():
+                    setattr(self, k, v)
+                # }}}
+        if os.path.splitext(self.file_name)[1] not in ('.ogg', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v'):
+            # parse_id3v2_id3info_out {{{
+            def parse_id3v2_id3info_out(out):
+                nonlocal self
+                nonlocal tags_done
+                out = clean_cmd_output(out)
+                parser = lines_parser(out.split('\n'))
+                while parser.advance():
+                    tag_type = 'id3v2'
+                    if parser.line == '':
+                        pass
+                    elif parser.re_search(r'^\*\*\* Tag information for '):
+                        # (id3info)
+                        # *** Tag information for 01 Bad Monkey - Part 1.mp3
+                        pass
+                    elif parser.re_search(r'^\*\*\* mp3 info$'):
+                        # (id3info)
+                        # *** mp3 info
+                        pass
+                    elif parser.re_search(r'^(MPEG1/layer III)$'):
+                        # (id3info)
+                        # MPEG1/layer III
+                        self.audio_type = parser.match.group(1)
+                    elif parser.re_search(r'^Bitrate: (\d+(?:\.\d+)?)KBps$'):
+                        # (id3info)
+                        # Bitrate: 64KBps
+                        self.bitrate = times_1000(parser.match.group(1))
+                    elif parser.re_search(r'^Frequency: (\d+(?:\.\d+)?)KHz$'):
+                        # (id3info)
+                        # Frequency: 44KHz
+                        self.frequency = times_1000(parser.match.group(1))
+                    elif parser.re_search(r'^(?P<tag_type>id3v1|id3v2) tag info for '):
+                        # (id3v2)
+                        # id3v1 tag info for 01 Bad Monkey - Part 1.mp3:
+                        # id3v2 tag info for 01 Bad Monkey - Part 1.mp3:
+                        tag_type = parser.match.group('tag_type')
+
+                    elif parser.re_search(r'^Title *: (?P<Title>.+) Artist:(?: (?P<Artist>.+))?$'):
+                        # (id3v2)
+                        # Title  : Bad Monkey - Part 1             Artist: Carl Hiaasen
+                        tags_done = True
+                        for tag, value in parser.match.groupdict(default='').items():
+                            self.set_tag(tag, value, tag_type)
+                    elif parser.re_search(r'^Album *: (?P<Album>.+) Year: (?P<Year>.+), Genre:(?: (?P<Genre>.+))?$'):
+                        # (id3v2)
+                        # Album  : Bad Monkey                      Year:     , Genre: Other (12)
+                        tags_done = True
+                        for tag, value in parser.match.groupdict(default='').items():
+                            self.set_tag(tag, value, tag_type)
+                    elif parser.re_search(r'^Comment: (?P<Comment>.+) Track:(?: (?P<Track>.+))?$'):
+                        # (id3v2)
+                        # Comment: <p>                             Track: 1
+                        tags_done = True
+                        for tag, value in parser.match.groupdict(default='').items():
+                            self.set_tag(tag, value, tag_type)
+
+                    elif (
+                            parser.re_search(r'^(?:=== )?(TPA|TPOS) \(.*?\): (.+)$') or 
+                            parser.re_search(r'^(?:=== )?(TRK|TRCK) \(.*?\): (.+)$')
+                            ):
+                        # ("===" version is id3info, else id3v2)
+                        # === TPA (Part of a set): 1/2
+                        # === TRK (Track number/Position in set): 1/3
+                        tags_done = True
+                        tag, value = parser.match.groups()
+                        self.set_tag(tag, value, tag_type)
+
+                    elif (
+                            parser.re_search(r'^(?:=== )?(TAL|TALB) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TCM|TCOM) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TCO|TCON) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TCR|TCOP) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TEN|TENC) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TMT|TMED) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TP1|TPE1) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TP2|TPE2) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TSE|TSSE) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TT2|TIT2) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TT3|TIT3) \(.*?\): (.+)$') or
+                            parser.re_search(r'^(?:=== )?(TYE|TYER) \(.*?\): (.+)$')
+                            ):
+                        # ("===" version is id3info, else id3v2)
+                        tags_done = True
+                        tag, value = parser.match.groups()
+                        self.set_tag(tag, value, tag_type)
+
+                    elif parser.re_search(r'^(?:=== )?(PIC|APIC) \(.*?\): (.+)$'):
+                        # ("===" version is id3info, else id3v2)
+                        # === PIC (Attached picture): ()[PNG, 0]: , 407017 bytes
+                        # APIC (Attached picture): ()[, 0]: image/jpeg, 40434 bytes
+                        tags_done = True
+                        self.num_cover = 1  # TODO
+
+                    elif parser.re_search(r'^(?:=== )?(TXX|TXXX) \(.*?\): \(OverDrive MediaMarkers\): (<Markers>.+</Markers>)$'):
+                        # TXXX (User defined text information): (OverDrive MediaMarkers): <Markers><Marker><Name>Bad Monkey</Name><Time>0:00.000</Time></Marker><Marker><Name>Preface</Name><Time>0:11.000</Time></Marker><Marker><Name>Chapter 1</Name><Time>0:35.000</Time></Marker><Marker><Name>      Chapter 1 (05:58)</Name><Time>5:58.000</Time></Marker><Marker><Name>      Chapter 1 (10:30)</Name><Time>10:30.000</Time></Marker><Marker><Name>Chapter 2</Name><Time>17:51.000</Time></Marker><Marker><Name>      Chapter 2 (24:13)</Name><Time>24:13.000</Time></Marker><Marker><Name>      Chapter 2 (30:12)</Name><Time>30:12.000</Time></Marker><Marker><Name>      Chapter 2 (36:57)</Name><Time>36:57.000</Time></Marker><Marker><Name>Chapter 3</Name><Time>42:28.000</Time></Marker><Marker><Name>      Chapter 3 (49:24)</Name><Time>49:24.000</Time></Marker><Marker><Name>      Chapter 3 (51:41)</Name><Time>51:41.000</Time></Marker><Marker><Name>      Chapter 3 (55:27)</Name><Time>55:27.000</Time></Marker><Marker><Name>Chapter 4</Name><Time>59:55.000</Time></Marker><Marker><Name>      Chapter 4 (01:07:10)</Name><Time>67:10.000</Time></Marker><Marker><Name>      Chapter 4 (01:10:57)</Name><Time>70:57.000</Time></Marker></Markers>
+                        tags_done = True
+                        log.debug('TODO: OverDrive: %s', parser.match.groups(2))
+                        self.OverDrive_MediaMarkers = parser.match.group(2)
+
+                    else:
+                        log.debug('TODO: %s', parser.line)
+                        # TLAN (Language(s)): XXX
+                        # TPUB (Publisher): Books On Tape
+                        pass
+            # }}}
+            if not tags_done and shutil.which('id3info'):
+                if os.path.splitext(self.file_name)[1] not in ('.wav'):
+                    # id3info is not reliable on WAVE files as it may perceive some raw bytes as MPEG/Layer I and give out incorrect info
+                    # {{{
+                    try:
+                        out = dbg_exec_cmd(['id3info', self.file_name])
+                    except subprocess.CalledProcessError as err:
+                        log.debug(err)
+                        pass
+                    else:
+                        parse_id3v2_id3info_out(out)
+                    # }}}
+            if not tags_done and shutil.which('id3v2'):
+                # {{{
+                try:
+                    out = dbg_exec_cmd(['id3v2', '-l', self.file_name])
+                except subprocess.CalledProcessError as err:
+                    log.debug(err)
+                    pass
+                else:
+                    parse_id3v2_id3info_out(out)
+                # }}}
+        if os.path.splitext(self.file_name)[1] in qip.snd.get_sox_app_support().extensions_can_read:
+            if not tags_done and shutil.which('soxi'):
+                # {{{
+                try:
+                    out = dbg_exec_cmd(['soxi', self.file_name])
+                except subprocess.CalledProcessError:
+                    pass
+                else:
+                    out = clean_cmd_output(out)
+                    parser = lines_parser(out.split('\n'))
+                    while parser.advance():
+                        tag_type = 'id3v2'
+                        if parser.line == '':
+                            pass
+                        elif parser.re_search(r'^Sample Rate *: (\d+)$'):
+                            # Sample Rate    : 44100
+                            self.frequency = int(parser.match.group(1))
+                        elif parser.re_search(r'^Duration *: 0?(\d+):0?(\d+):0?(\d+\.\d+) '):
+                            # Duration       : 01:17:52.69 = 206065585 samples = 350452 CDDA sectors
+                            self.duration = (
+                                    decimal.Decimal(parser.match.group(3)) +
+                                    int(parser.match.group(2)) * 60 +
+                                    int(parser.match.group(1)) * 60 * 60
+                                    )
+                        elif parser.re_search(r'^Bit Rate *: (\d+(?:\.\d+)?)M$'):
+                            # Bit Rate       : 99.1M
+                            v = decimal.Decimal(parser.match.group(1))
+                            if v >= 2:
+                                #raise ValueError('soxi bug #251: soxi reports invalid rate (M instead of K) for some VBR MP3s. (https://sourceforge.net/p/sox/bugs/251/)')
+                                pass
+                            else:
+                                self.sub_bitrate = times_1000(times_1000(v))
+                        elif parser.re_search(r'^Bit Rate *: (\d+(?:\.\d+)?)k$'):
+                            # Bit Rate       : 64.1k
+                            self.sub_bitrate = times_1000(parser.match.group(1))
+                        elif parser.re_search(r'(?i)^(?P<tag>Discnumber|Tracknumber)=(?P<value>\d*/\d*)$'):
+                            # Tracknumber=1/2
+                            # Discnumber=1/2
+                            self.set_tag(parser.match.group('tag'), parser.match.group('value'), tag_type)
+                        elif parser.re_search(r'(?i)^(?P<tag>ALBUMARTIST|Artist|Album|DATE|Genre|Title|Year|encoder)=(?P<value>.+)$'):
+                            # ALBUMARTIST=James Patterson & Maxine Paetro
+                            # Album=Bad Monkey
+                            # Artist=Carl Hiaasen
+                            # DATE=2012
+                            # Genre=Spoken & Audio
+                            # Title=Bad Monkey - Part 1
+                            # Year=2012
+                            tags_done = True
+                            self.set_tag(parser.match.group('tag'), parser.match.group('value'), tag_type)
+                        elif parser.re_search(r'^Sample Encoding *: (.+)$'):
+                            # Sample Encoding: MPEG audio (layer I, II or III)
+                            try:
+                                self.audio_type = parser.match.group(1)
+                            except ValueError:
+                                # Sample Encoding: 16-bit Signed Integer PCM
+                                # TODO
+                                pass
+                        elif parser.re_search(r'(?i)^TRACKNUMBER=(\d+)$'):
+                            # Tracknumber=1
+                            # TRACKNUMBER=1
+                            self.set_tag('track', parser.match.group(1))
+                        elif parser.re_search(r'(?i)^TRACKTOTAL=(\d+)$'):
+                            # TRACKTOTAL=15
+                            self.set_tag('tracks', parser.match.group(1))
+                        elif parser.re_search(r'(?i)^DISCNUMBER=(\d+)$'):
+                            # DISCNUMBER=1
+                            self.set_tag('disk', parser.match.group(1))
+                        elif parser.re_search(r'(?i)^DISCTOTAL=(\d+)$'):
+                            # DISCTOTAL=15
+                            self.set_tag('disks', parser.match.group(1))
+                        elif parser.re_search(r'(?i)^Input File *: \'(.+)\'$'):
+                            # Input File     : 'path.ogg'
+                            pass
+                        elif parser.re_search(r'(?i)^Channels *: (\d+)$'):
+                            # Channels       : 2
+                            self.channels = int(parser.match.group(1))
+                        elif parser.re_search(r'(?i)^Precision *: (\d+)-bit$'):
+                            # Precision      : 16-bit
+                            self.precision_bits = int(parser.match.group(1))
+                        elif parser.re_search(r'(?i)^File Size *: (.+)$'):
+                            # File Size      : 5.47M
+                            # File Size      : 552k
+                            pass
+                        elif parser.re_search(r'(?i)^Comments *: (.*)$'):
+                            # Comments       :
+                            pass  # TODO
+                        else:
+                            log.debug('TODO: %s', parser.line)
+                            # TODO
+                            # DISCID=c8108f0f
+                            # MUSICBRAINZ_DISCID=liGlmWj2ww4up0n.XKJUqaIb25g-
+                            # RATING:BANSHEE=0.5
+                            # PLAYCOUNT:BANSHEE=0
+                # }}}
+        if not hasattr(self, 'bitrate'):
+            if shutil.which('file'):
+                # {{{
+                try:
+                    out = dbg_exec_cmd(['file', '-b', '-L', self.file_name])
+                except subprocess.CalledProcessError:
+                    pass
+                else:
+                    out = clean_cmd_output(out)
+                    parser = lines_parser(out.split(','))
+                    # Ogg data, Vorbis audio, stereo, 44100 Hz, ~160000 bps, created by: Xiph.Org libVorbis I
+                    # RIFF (little-endian) data, WAVE audio, Microsoft PCM, 16 bit, stereo 44100 Hz
+                    while parser.advance():
+                        parser.line = parser.line.strip()
+                        if parser.re_search(r'^(\d+) Hz$'):
+                            self.frequency = int(parser.match.group(1))
+                        elif parser.re_search(r'^stereo (\d+) Hz$'):
+                            self.channels = 2
+                            self.frequency = int(parser.match.group(1))
+                        elif parser.re_search(r'^\~(\d+) bps$'):
+                            if not hasattr(self, 'bitrate'):
+                                self.bitrate = int(parser.match.group(1))
+                        elif parser.re_search(r'^created by: (.+)$'):
+                            self.set_tag('tool', parser.match.group(1))
+                        elif parser.line == 'Ogg data':
+                            pass
+                        elif parser.line == 'Vorbis audio':
+                            self.audio_type = parser.line
+                        elif parser.line == 'WAVE audio':
+                            self.audio_type = parser.line
+                        elif parser.line == 'stereo':
+                            self.channels = 2
+                        elif parser.re_search(r'^Audio file with ID3 version ([0-9.]+)$'):
+                            # Audio file with ID3 version 2.3.0
+                            pass
+                        elif parser.line == 'RIFF (little-endian) data':
+                            # RIFF (little-endian) data
+                            pass
+                        elif parser.line == 'contains: RIFF (little-endian) data':
+                            # contains: RIFF (little-endian) data
+                            pass
+                        elif parser.line == 'Microsoft PCM':
+                            # Microsoft PCM
+                            pass
+                        elif parser.re_search(r'^(\d+) bit$'):
+                            # 16 bit
+                            self.sample_bits = int(parser.match.group(1))
+                            pass
+                        else:
+                            log.debug('TODO: %r: %s', d, parser.line)
+                            # TODO
+                            pass
+                # }}}
+
+        # TODO ffprobe
+
+        if need_actual_duration and not hasattr(self, 'actual_duration'):
+            get_audio_file_ffmpeg_stats(self)
+        if need_actual_duration and not hasattr(self, 'actual_duration'):
+            get_audio_file_sox_stats(self)
+
+        if hasattr(self, 'sub_bitrate') and not hasattr(self, 'bitrate'):
+            self.bitrate = self.sub_bitrate
+        if not hasattr(self, 'bitrate'):
+            try:
+                self.bitrate = self.frequency * self.sample_bits * self.channels
+            except AttributeError:
+                pass
+        if hasattr(self, 'actual_duration'):
+            self.duration = self.actual_duration
+
+        album_tags = get_album_tags_from_tags_file(self)
+        if album_tags is not None:
+            self.tags.album_tags = album_tags
+            tags_done = True
+        track_tags = get_track_tags_from_tags_file(self)
+        if track_tags is not None:
+            self.tags.update(track_tags)
+            tags_done = True
+        if not tags_done:
+            #raise Exception('Failed to read tags from %s' % (self.file_name,))
+            app.log.warning('Failed to read tags from %s' % (self.file_name,))
+        # log.debug('extract_info: %r', vars(self))
+
+class AlbumTagsCache(dict):
+
+    def __missing__(self, key):
+        tags_file = JsonFile(key)
+        album_tags = None
+        if tags_file.exists():
+            app.log.info('Reading %s...', tags_file)
+            with tags_file.open('r', encoding='utf-8') as fp:
+                album_tags = AlbumTags.json_load(fp)
+        self[key] = album_tags
+        return album_tags
+
+class TrackTagsCache(dict):
+
+    def __missing__(self, key):
+        tags_file = JsonFile(key)
+        track_tags = None
+        if tags_file.exists():
+            app.log.info('Reading %s...', tags_file)
+            with tags_file.open('r', encoding='utf-8') as fp:
+                track_tags = TrackTags.json_load(fp)
+        self[key] = track_tags
+        return track_tags
+
+album_tags_file_cache = AlbumTagsCache()
+
+def get_album_tags_from_tags_file(snd_file):
+    snd_file = str(snd_file)
+    m = re.match(r'^(?P<album_base_name>.+)-\d\d?$', os.path.splitext(snd_file)[0])
+    if m:
+        tags_file_name = m.group('album_base_name') + '.tags'
+        return album_tags_file_cache[tags_file_name]
+
+track_tags_file_cache = TrackTagsCache()
+
+def get_track_tags_from_tags_file(snd_file):
+    snd_file = str(snd_file)
+    tags_file_name = os.path.splitext(snd_file)[0] + '.tags'
+    return track_tags_file_cache[tags_file_name]
+
+# }}}
+# get_audio_file_sox_stats {{{
+
+def get_audio_file_sox_stats(d):
+    cache_file = app.mk_cache_file(str(d.file_name) + '.soxstats')
+    if (
+            cache_file and
+            os.path.exists(cache_file) and
+            os.path.getmtime(cache_file) >= os.path.getmtime(d.file_name)
+            ):
+        out = safe_read_file(cache_file)
+    elif shutil.which('sox') and os.path.splitext(d.file_name)[1] in qip.snd.get_sox_app_support().extensions_can_read:
+        app.log.info('Analyzing %s...', d.file_name)
+        # NOTE --ignore-length: see #251 soxi reports invalid rate (M instead of K) for some VBR MP3s. (https://sourceforge.net/p/sox/bugs/251/)
+        try:
+            out = dbg_exec_cmd(['sox', '--ignore-length', d.file_name, '-n', 'stat'], stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError:
+            # TODO ignore/report failure only?
+            raise
+        else:
+            if cache_file:
+                safe_write_file(cache_file, out)
+    else:
+        out = ''
+    # {{{
+    out = clean_cmd_output(out)
+    parser = lines_parser(out.split('\n'))
+    while parser.advance():
+        if parser.line == '':
+            pass
+        elif parser.re_search(r'^Samples +read: +(\S+)$'):
+            # Samples read:         398082816
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Length +\(seconds\): +(\d+(?:\.\d+)?)$'):
+            # Length (seconds):   4513.410612
+            d.actual_duration = decimal.Decimal(parser.match.group(1))
+        elif parser.re_search(r'^Scaled +by: +(\S+)$'):
+            # Scaled by:         2147483647.0
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Maximum +amplitude: +(\S+)$'):
+            # Maximum amplitude:     0.597739
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Minimum +amplitude: +(\S+)$'):
+            # Minimum amplitude:    -0.586463
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Midline +amplitude: +(\S+)$'):
+            # Midline amplitude:     0.005638
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Mean +norm: +(\S+)$'):
+            # Mean    norm:          0.027160
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Mean +amplitude: +(\S+)$'):
+            # Mean    amplitude:     0.000005
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^RMS +amplitude: +(\S+)$'):
+            # RMS     amplitude:     0.047376
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Maximum +delta: +(\S+)$'):
+            # Maximum delta:         0.382838
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Minimum +delta: +(\S+)$'):
+            # Minimum delta:         0.000000
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Mean +delta: +(\S+)$'):
+            # Mean    delta:         0.002157
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^RMS +delta: +(\S+)$'):
+            # RMS     delta:         0.006849
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Rough +frequency: +(\S+)$'):
+            # Rough   frequency:         1014
+            pass  # d.TODO = parser.match.group(1)
+        elif parser.re_search(r'^Volume +adjustment: +(\S+)$'):
+            # Volume adjustment:        1.673
+            pass  # d.TODO = parser.match.group(1)
+        else:
+            log.debug('TODO: %s', parser.line)
+    # }}}
+    # log.debug('get_audio_file_sox_stats: %r', vars(d))
+
+# }}}
+# get_audio_file_ffmpeg_stats {{{
+
+def get_audio_file_ffmpeg_stats(d):
+    cache_file = app.mk_cache_file(str(d.file_name) + '.ffmpegstats')
+    if (
+            cache_file and
+            os.path.exists(cache_file) and
+            os.path.getmtime(cache_file) >= os.path.getmtime(d.file_name)
+            ):
+        out = safe_read_file(cache_file)
+    elif shutil.which('ffmpeg'):
+        app.log.info('Analyzing %s...', d.file_name)
+        # TODO 16056 emby      20   0  289468   8712   7148 R   0.7  0.1   0:00.02 /opt/emby-server/bin/ffprobe -i file:/mnt/media1/Audiobooks/Various Artists/Enivrez-vous.m4b -threads 0 -v info -print_format json -show_streams -show_format
+        try:
+            out = dbg_exec_cmd([
+                'ffmpeg',
+                '-i', d.file_name,
+                '-vn',
+                '-f', 'null',
+                '-y',
+                '/dev/null'], stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError:
+            # TODO ignore/report failure only?
+            raise
+        else:
+            if cache_file:
+                safe_write_file(cache_file, out)
+    else:
+        out = ''
+    # {{{
+    out = clean_cmd_output(out)
+    parser = lines_parser(out.split('\n'))
+    while parser.advance():
+        parser.line = parser.line.strip()
+        if parser.line == '':
+            pass
+        elif parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
+            # size=N/A time=00:02:17.71 bitrate=N/A
+            # size=N/A time=00:12:32.03 bitrate=N/A speed= 309x    
+            # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
+            # There will be multiple; Only the last one is relevant.
+            d.actual_duration = parse_time_duration(parser.match.group('out_time'))
+        elif parser.re_search(r'Error while decoding stream .*: Invalid data found when processing input'):
+            # Error while decoding stream #0:0: Invalid data found when processing input
+            raise Exception('%s: %s' % (d.file_name, parser.line))
+        else:
+            #log.debug('TODO: %s', parser.line)
+            pass
+    # }}}
+    # log.debug('ffmpegstats: %r', vars(d))
 
 # }}}
 
@@ -3084,7 +3604,7 @@ class Mp4info(Executable):
             elif parser.re_search(r'^ +(?P<tag>\w+(?: \w+)*): (?P<value>.+)$'):
                 track_tags.set_tag(parser.match.group('tag'), parser.match.group('value'))
             else:
-                #app.log.debug('TODO: %s', parser.line)
+                #log.debug('TODO: %s', parser.line)
                 pass
         return d, track_tags
 

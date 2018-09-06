@@ -1,3 +1,7 @@
 # pip3 install --user -r recommends.txt
 coloredlogs
 argcomplete
+musicbrainzngs
+# requires: apt-get-install libdiscid-dev
+# or use: apt-get install python3-libdiscid
+# python-libdiscid

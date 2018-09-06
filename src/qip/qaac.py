@@ -27,7 +27,9 @@ class Qaac(Executable):
 
     class Preset(enum.Enum):
         spoken_podcast = ('Spoken Podcast(64k)', MappingProxyType({'abr': 64, 'quality': 0, 'he': True}))
+        high_quality96 = ('High Quality(96k)', MappingProxyType({'abr': 96, 'quality': 1}))  # Custom
         high_quality = ('High Quality(128k)', MappingProxyType({'abr': 128, 'quality': 1}))
+        high_quality192 = ('High Quality(192k)', MappingProxyType({'abr': 192, 'quality': 1}))
         itunes_plus = ('iTunes Plus(256k)', MappingProxyType({'cvbr': 256, 'quality': 2}))
 
         @property

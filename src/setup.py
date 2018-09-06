@@ -112,6 +112,7 @@ setup(
             'librivox-dl = qip.bin.librivox_dl:main',
             'mkbincue = qip.bin.mkbincue:main',
             'mkm4b = qip.bin.mkm4b:main',
+            'organize-media = qip.bin.organize_media:main',
         ],
     },
 )
