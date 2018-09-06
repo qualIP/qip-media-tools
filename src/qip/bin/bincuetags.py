@@ -401,26 +401,29 @@ def cddbinfo_to_tags(album_tags, cddb_info):
         if value == '':
             continue
         m = re.match(r'^(TTITLE|EXTT)(\d+)$', key)
-        if m:
-            key = m.group(1)
-            track_no = int(m.group(2)) + 1
-            tag_type = track_tag_map[key]
-            if tag_type:
-                value = value.strip()
-                if tag_type is SoundTagEnum.title:
-                    ls = [s.strip() for s in value.split('/')]
-                    if len(ls) == 2:
-                        album_tags.tracks_tags[track_no].artist, value = ls
-                album_tags.tracks_tags[track_no][tag_type] = value
-        else:
-            tag_type = album_tag_map[key]
-            if tag_type:
-                value = value.strip()
-                if tag_type is SoundTagEnum.title:
-                    ls = [s.strip() for s in value.split('/')]
-                    if len(ls) == 2:
-                        album_tags.artist, value = ls
-                album_tags[tag_type] = value
+        try:
+            if m:
+                key = m.group(1)
+                track_no = int(m.group(2)) + 1
+                tag_type = track_tag_map[key]
+                if tag_type:
+                    value = value.strip()
+                    if tag_type is SoundTagEnum.title:
+                        ls = [s.strip() for s in value.split('/')]
+                        if len(ls) == 2:
+                            album_tags.tracks_tags[track_no].artist, value = ls
+                    album_tags.tracks_tags[track_no][tag_type] = value
+            else:
+                tag_type = album_tag_map[key]
+                if tag_type:
+                    value = value.strip()
+                    if tag_type is SoundTagEnum.title:
+                        ls = [s.strip() for s in value.split('/')]
+                        if len(ls) == 2:
+                            album_tags.artist, value = ls
+                    album_tags[tag_type] = value
+        except ValueError as e:
+            app.log.error(e)
 
 def bincuetags(cue_file_name):
 
