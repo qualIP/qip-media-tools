@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import codecs
+import urllib
 
 HAVE_ARGCOMPLETE = False
 try:
@@ -60,6 +61,7 @@ class App(object):
     descripton = None
     version = None
     contact = None
+    cache_dir = None
     _user_agent = None
     _ureg = None
 
@@ -191,6 +193,16 @@ class App(object):
             json.register_class_alias(ureg.Quantity, 'pint:Quantity')
             json.register_class(ureg.Quantity, ureg.Quantity.to_tuple, ureg.Quantity.from_tuple)
         return ureg
+
+    def mk_cache_file(self, cache_token):
+        cache_dir = self.cache_dir
+        if not cache_dir:
+            return None
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(
+            cache_dir,
+            urllib.parse.quote(cache_token, safe=''))
+        return cache_file
 
 app = App()
 
