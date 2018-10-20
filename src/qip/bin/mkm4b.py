@@ -193,7 +193,7 @@ def get_audio_file_chapters(snd_file, chapter_naming_format):
                     elif parser.re_search(r'^ +Chapter #0*(\d+) - (\d+:\d+:\d+\.\d+) - "(.*)"$'):
                         #     Chapter #001 - 00:00:00.000 - "Bad Monkey"
                         chaps.append(SoundFile.Chapter(
-                            time = parse_time_duration(parser.match.group(2)),
+                            time = qip.snd.parse_time_duration(parser.match.group(2)),
                             name = parser.match.group(3)))
                     elif parser.re_search(r'^File ".*" does not contain chapters'):
                         # File "Mario Jean_ Gare au gros nounours!.m4a" does not contain chapters of type QuickTime and Nero
@@ -288,7 +288,7 @@ def parse_OverDrive_MediaMarkers(xml):
     chaps = []
     for marker in markers:
         chap = SoundFile.Chapter(
-                time=parse_time_duration(marker['Time']),
+                time=qip.snd.parse_time_duration(marker['Time']),
                 name=marker['Name'],
                 )
         # chap.OverDrive_MediaMarker = marker
@@ -864,7 +864,7 @@ def mkm4b(inputfiles, default_tags):
                 parser.line = parser.line.strip()
                 if parser.re_search(r'^\[[0-9.]+%\] [0-9:.]+/(?P<out_time>[0-9:.]+) \([0-9.]+x\), ETA [0-9:.]+$'):
                     # [35.6%] 2:51:28.297/8:01:13.150 (68.2x), ETA 4:32.491  
-                    out_time = parse_time_duration(parser.match.group('out_time'))
+                    out_time = qip.snd.parse_time_duration(parser.match.group('out_time'))
                 else:
                     pass  # TODO
         else:
@@ -874,7 +874,7 @@ def mkm4b(inputfiles, default_tags):
                 if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
                     # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
                     # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
-                    out_time = parse_time_duration(parser.match.group('out_time'))
+                    out_time = qip.snd.parse_time_duration(parser.match.group('out_time'))
                 elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
                     app.log.warning('TODO: %s', parser.line)
                     pass

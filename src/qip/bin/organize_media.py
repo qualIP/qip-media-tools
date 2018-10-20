@@ -595,7 +595,7 @@ def organize(inputfiles):
                 parser.line = parser.line.strip()
                 if parser.re_search(r'^\[[0-9.]+%\] [0-9:.]+/(?P<out_time>[0-9:.]+) \([0-9.]+x\), ETA [0-9:.]+$'):
                     # [35.6%] 2:51:28.297/8:01:13.150 (68.2x), ETA 4:32.491  
-                    out_time = parse_time_duration(parser.match.group('out_time'))
+                    out_time = qip.snd.parse_time_duration(parser.match.group('out_time'))
                 else:
                     pass  # TODO
         else:
@@ -605,7 +605,7 @@ def organize(inputfiles):
                 if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
                     # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
                     # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
-                    out_time = parse_time_duration(parser.match.group('out_time'))
+                    out_time = qip.snd.parse_time_duration(parser.match.group('out_time'))
                 elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
                     app.log.warning('TODO: %s', parser.line)
                     pass
