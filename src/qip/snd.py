@@ -88,6 +88,12 @@ class _tReMatchGroups(_tReMatchTest):
             raise ValueError('Doesn\'t match r.e. {!r}'.format(self.expr))
         return m.groups()
 
+def _tArtist(value):
+    if isinstance(value, (tuple, list)):
+        value = '; '.join(value)
+    if isinstance(value, str):
+        return value
+    raise ValueError('Must be a string or list: %r' % (value,))
 
 # times_1000 {{{
 
@@ -325,6 +331,7 @@ class SoundTagEnum(enum.Enum):
     musicbrainz_releaseid = 'musicbrainz_releaseid'
     musicbrainz_cdstubid = 'musicbrainz_cdstubid'
     accuraterip_discid = 'accuraterip_discid'
+    isrc = 'isrc'
     barcode = 'barcode'
     asin = 'asin'
 
@@ -424,6 +431,14 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             if v is not None and type(v) not in (int,):
                 d['date'] = str(v)
         return d
+
+    artist = propex(
+        name='artist',
+        type=(_tNullTag, _tArtist))
+
+    albumartist = propex(
+        name='albumartist',
+        type=(_tNullTag, _tArtist))
 
     disk = propex(
         name='disk',
@@ -595,6 +610,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     def xid(self):
         for tag_enum, prefix, scheme in (
                 (SoundTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
+                (SoundTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
                 (SoundTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
                 (SoundTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
                 (SoundTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
