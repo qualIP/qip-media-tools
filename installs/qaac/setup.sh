@@ -46,7 +46,7 @@ if ! test -d QTfiles64 ; then
 	AppleApplicationSupport_msi="AppleApplicationSupport64.msi"
 	if [ ! -e "$AppleApplicationSupport_msi" ] ; then
 	    iTunes64Setup="$HOME/Downloads/iTunes64Setup.exe"
-	    if [ -e "$iTunes64Setup" ] ; then
+	    if [ ! -e "$iTunes64Setup" ] ; then
 		echo "Download $iTunes64Setup from https://www.apple.com/itunes/download/" >&2
 		exit 1
 	    fi
@@ -56,7 +56,7 @@ if ! test -d QTfiles64 ; then
 
     mkdir QTfiles64
     cd QTfiles64
-    7z e -y "$AppleApplicationSupport_msi" \
+    7z e -y "../$AppleApplicationSupport_msi" \
 	 -i'!*AppleApplicationSupport_ASL.dll' \
 	 -i'!*AppleApplicationSupport_CoreAudioToolbox.dll' \
 	 -i'!*AppleApplicationSupport_CoreFoundation.dll' \
