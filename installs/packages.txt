@@ -1,14 +1,18 @@
-icoutils
 wine32
 wine64
 winetricks
 q4wine
+
 fuseiso
 
 progress
 
+icoutils
+graphicsmagick
+
 gddrescue
 safecopy
+
 cdparanoia
 ffmpeg
 mp4v2-utils
@@ -16,5 +20,4 @@ libid3-tools
 id3v2
 sox
 cuetools
-graphicsmagick
 python3-libdiscid
