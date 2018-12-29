@@ -2,13 +2,16 @@ __all__ = [
         'app',
         ]
 
-from . import argparse
-import re
+import codecs
+import functools
 import logging
 import os
+import re
 import sys
-import codecs
+import traceback
 import urllib
+
+from . import argparse
 
 HAVE_ARGCOMPLETE = False
 try:
@@ -155,10 +158,9 @@ class App(object):
                     **kwargs)
 
     def set_logging_level(self, level):
+        logging.getLogger().setLevel(level)
         if HAVE_COLOREDLOGS:
             coloredlogs.set_level(level)
-        else:
-            logging.getLogger().setLevel(level)
 
     def parse_args(self, **kwargs):
         if HAVE_ARGCOMPLETE:
@@ -203,6 +205,25 @@ class App(object):
             cache_dir,
             urllib.parse.quote(cache_token, safe=''))
         return cache_file
+
+    def main_wrapper(self, func):
+        @functools.wraps(func)
+        def wrapper():
+            try:
+                ret = func()
+            except Exception as e:
+                self.log.error("%s: %s", e.__class__.__name__, e)
+                if self.log.isEnabledFor(logging.DEBUG):
+                    etype, value, tb = sys.exc_info()
+                    self.log.debug(''.join(traceback.format_exception(etype, value, tb)))
+                exit(1)
+            if ret is True or ret is None:
+                exit(0)
+            elif ret is False:
+                exit(1)
+            else:
+                exit(ret)
+        return wrapper
 
 app = App()
 
