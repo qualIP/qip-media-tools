@@ -276,7 +276,7 @@ class propex(object):
         except ValueError as e:
             # Transformation failed, convert to AttributeError which is
             # appropriate for a getter.
-            raise AttributeError
+            raise AttributeError('%s: %s' % (attr, e))
         # Reached this point with a transformed value; Return.
         return value
 
@@ -535,7 +535,13 @@ class propex(object):
             # Same error message as property's
             raise AttributeError('can\'t set attribute')
         # Apply transformations (__type)
-        value = self._transform(value, self.__type)
+        try:
+            value = self._transform(value, self.__type)
+        except ValueError as e:
+            # Transformation failed, convert to AttributeError which is
+            # appropriate for a setter.
+            attr = self.__attr or '_' + self.__name__
+            raise AttributeError('%s: %s' % (attr, e))
         if fset is propex.not_specified:
             # No custom setter; Use propex's default setter
             # implementation.
@@ -556,7 +562,8 @@ class propex(object):
         if fdel is None:
             # No deleter; read-only!
             # Same error message as property's
-            raise AttributeError('can\'t delete attribute')
+            attr = self.__attr or '_' + self.__name__
+            raise AttributeError('%s: can\'t delete attribute' % (attr,))
         if fdel is propex.not_specified:
             # No custom deleter; Use propex's default deleter
             # implementation.
