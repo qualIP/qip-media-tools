@@ -264,23 +264,17 @@ def edvar(value, *, encoding='utf-8'):
     import tempfile
 
     with TempFile(file_name=None) as tmp_file:
-        fp, tmp_file.file_name = tempfile.mkstemp(suffix='.json', text=True)
-        with os.fdopen(fp, 'w') as fp:
+        fd, tmp_file.file_name = tempfile.mkstemp(suffix='.json', text=True)
+        with os.fdopen(fd, 'w') as fp:
             json.dump(value, fp, indent=2, sort_keys=True, ensure_ascii=False)
             print('', file=fp)
-        print('HERE5')
         if not edfile(tmp_file):
-            print('HERE6')
             return (False, value)
-        print('HERE7')
         with tmp_file.open(mode='r', encoding=encoding) as fp:
-            print('HERE8')
             new_value = json.load(fp)
-            print('HERE9')
             #if type(new_value) is not type(value):
             #    raise ValueError(new_value)
             return (True, new_value)
-        print('HERE10')
 
 # }}}
 
