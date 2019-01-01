@@ -19,6 +19,7 @@ from qip.app import app
 from qip.file import *
 from qip.snd import *
 from qip.m4b import *
+from qip.img import *
 from qip.cmp import *
 from qip.librivox import *
 from qip import json

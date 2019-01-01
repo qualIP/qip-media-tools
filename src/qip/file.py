@@ -6,7 +6,6 @@ __all__ = [
         'HtmlFile',
         'XmlFile',
         'JsonFile',
-        'ImageFile',
         'TempFile',
         'safe_write_file',
         'safe_write_file_eval',
@@ -169,9 +168,6 @@ class XmlFile(TextFile):
     pass
 
 class JsonFile(TextFile):
-    pass
-
-class ImageFile(BinaryFile):
     pass
 
 class TempFile(File):
