@@ -904,6 +904,19 @@ class TrackTags(SoundTagDict):
 
     track = SoundTagDict.track.copy()
 
+    def keys(self, deep=True):
+        keys = super().keys()
+        if deep and self.album_tags is not None:
+            keys = set(keys)
+            keys.add(SoundTagEnum.track)  # Implicit
+            album_keys = set(self.album_tags.keys())
+            if SoundTagEnum.title in album_keys:
+                keys.add(SoundTagEnum.albumtitle)
+            if SoundTagEnum.artist in album_keys:
+                keys.add(SoundTagEnum.albumartist)
+            keys |= album_keys
+        return keys
+
     @track.defaulter
     def track(self):
         album_tags = self.album_tags
@@ -990,9 +1003,18 @@ class AlbumTags(SoundTagDict):
             return value
 
     def __init__(self, *args, tracks_tags=None, **kwargs):
+        if args:
+            d, = args
+            if 'tracks_tags' in d:
+                assert tracks_tags is None
+                d = copy.copy(d)
+                args = (d,)
+                tracks_tags = d.pop('tracks_tags')
         self.tracks_tags = self.TracksDict(album_tags=self)
         if tracks_tags:
-            self.tracks_tags.update(tracks_tags)
+            self.tracks_tags.update({
+                track_no: track_tags if isinstance(track_tags, TrackTags) else TrackTags(track_tags)
+                for track_no, track_tags in tracks_tags.items()})
         super().__init__(*args, **kwargs)
 
     def short_str(self):
