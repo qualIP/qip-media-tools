@@ -1,0 +1,1797 @@
+#!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
+
+#if __name__ == "__main__":
+#    import os, sys
+#    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
+
+import argparse
+import copy
+import decimal
+import errno
+import functools
+import html
+import logging
+import os
+import pexpect
+import re
+import reprlib
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+reprlib.aRepr.maxdict = 100
+
+from qip import json
+from qip.app import app
+from qip.exec import *
+from qip.file import *
+from qip.isolang import isolang
+from qip.parser import *
+from qip.perf import perfcontext
+from qip.handbrake import *
+import qip.snd
+from qip.snd import *
+from qip.mkv import *
+from qip.m4a import *
+from qip.utils import byte_decode
+
+# https://www.ffmpeg.org/ffmpeg.html
+
+
+def MOD_ROUND(v, m):
+    return v if m == 1 else m * ((v + (m >> 1)) // m)
+
+def MOD_DOWN(v, m):
+    return m * (v // m)
+
+def MOD_UP(v, m):
+    return m * ((v + m - 1) // m)
+
+def isolang_or_None(v):
+    return None if v == 'None' else isolang(v)
+
+@app.main_wrapper
+def main():
+
+    app.init(
+            version='1.0',
+            description='Multimedia [de]multiplexer',
+            contact='jst@qualipsoft.com',
+            )
+
+    app.cache_dir = os.path.abspath('mmdemux-cache')
+
+    in_tags = AlbumTags()
+
+    # TODO app.parser.add_argument('--help', '-h', action='help')
+    app.parser.add_argument('--version', '-V', action='version')
+
+    pgroup = app.parser.add_argument_group('Program Control')
+    pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
+    pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
+    pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
+    xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
+    xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
+    xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
+
+    pgroup = app.parser.add_argument_group('Video Control')
+    pgroup.add_argument('--crop', default=True, action='store_true', help='enable cropping video (default)')
+    pgroup.add_argument('--no-crop', dest='crop', default=argparse.SUPPRESS, action='store_false', help='disable cropping video')
+    pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=int, default=60, help='cropdetect duration (seconds)')
+    pgroup.add_argument('--video-language', '--vlang', dest='video_language', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
+
+    pgroup = app.parser.add_argument_group('Subtitle Control')
+    pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=None, help='SubRip OCR matrix file')
+
+    pgroup = app.parser.add_argument_group('Files')
+    pgroup.add_argument('--output', '-o', dest='output_file', default=None, help='specify the output (demuxed) file name')
+
+    pgroup = app.parser.add_argument_group('Compatibility')
+
+    pgroup = app.parser.add_argument_group('Encoding')
+
+    pgroup = app.parser.add_argument_group('Tags')
+    pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--album', '--albumtitle', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--type', tags=in_tags, default='audiobook', action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--disk', '--disc', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--track', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-album', '--sort-albumtitle', dest='sortalbum', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-writer', '--sort-composer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+
+    subparsers = app.parser.add_subparsers(help='commands')
+
+    hb_parser = subparsers.add_parser('hb', help='pre-process movies with handbrake')
+    hb_parser.add_argument('--project', default=None, help='project name')
+    hb_parser.add_argument('--chain', action='store_true', help='chain hb->mux->optimize->demux')
+    hb_parser.add_argument('hb_files', nargs='+', default=(), help='files to run through HandBrake')
+
+    mux_parser = subparsers.add_parser('mux', help='split movies into tracks')
+    mux_parser.add_argument('--project', default=None, help='project name')
+    mux_parser.add_argument('--chain', action='store_true', help='chain mux->optimize->demux')
+    mux_parser.add_argument('mux_files', nargs='+', default=(), help='files to mux')
+
+    chop_parser = subparsers.add_parser('update', help='update mux parameters')
+    chop_parser.add_argument('update_dirs', nargs='+', default=(), help='directories to update mux parameters for')
+
+    chop_parser = subparsers.add_parser('chop', help='split tracks into chapters')
+    chop_parser.add_argument('chop_dirs', nargs='+', default=(), help='directories to chop into chapters')
+
+    exmusic_parser = subparsers.add_parser('extract-music', help='extract music tracks')
+    exmusic_parser.add_argument('--skip-chapters', dest='num_skip_chapters', type=int, default=0, help='number of chapters to skip')
+    exmusic_parser.add_argument('--bitrate', type=int, default=argparse.SUPPRESS, help='force the encoding bitrate')  # TODO support <int>k
+    exmusic_parser.add_argument('--target-bitrate', dest='target_bitrate', type=int, default=argparse.SUPPRESS, help='specify the resampling target bitrate')
+    exmusic_parser.add_argument('--channels', type=int, default=argparse.SUPPRESS, help='force the number of audio channels')
+    exmusic_parser.add_argument('extract_music_dirs', nargs='+', default=(), help='directories to extract music from')
+
+    optimize_parser = subparsers.add_parser('optimize', help='optimize files for size and compatibility')
+    optimize_parser.add_argument('--chain', action='store_true', help='chain optimize->demux')
+    optimize_parser.add_argument('optimize_dirs', nargs='+', default=(), help='directories to optimize')
+
+    demux_parser = subparsers.add_parser('demux', help='join tracks into movies')
+    demux_parser.add_argument('demux_dirs', nargs='+', default=(), help='directories to demux')
+
+    app.parse_args()
+
+    # if getattr(app.args, 'action', None) is None:
+    #     app.args.action = TODO
+    if not hasattr(app.args, 'logging_level'):
+        app.args.logging_level = logging.INFO
+    app.set_logging_level(app.args.logging_level)
+    if app.args.logging_level <= logging.DEBUG:
+        reprlib.aRepr.maxdict = 100
+
+    did_something = False
+    for inputfile in getattr(app.args, 'hb_files', ()):
+        action_hb(inputfile, in_tags=in_tags)
+        did_something = True
+    for inputfile in getattr(app.args, 'mux_files', ()):
+        action_mux(inputfile, in_tags=in_tags)
+        did_something = True
+    for inputdir in getattr(app.args, 'update_dirs', ()):
+        action_update(inputdir, in_tags=in_tags)
+        did_something = True
+    for inputdir in getattr(app.args, 'chop_dirs', ()):
+        action_chop(inputdir, in_tags=in_tags)
+        did_something = True
+    for inputdir in getattr(app.args, 'extract_music_dirs', ()):
+        action_extract_music(inputdir, in_tags=in_tags)
+        did_something = True
+    for inputdir in getattr(app.args, 'optimize_dirs', ()):
+        action_optimize(inputdir, in_tags=in_tags)
+        did_something = True
+    for inputdir in getattr(app.args, 'demux_dirs', ()):
+        action_demux(inputdir, in_tags=in_tags)
+        did_something = True
+    if not did_something:
+        raise ValueError('Nothing to do!')
+
+def codec_name_to_ext(codec_name):
+    try:
+        codec_ext = {
+            # video
+            'mpeg2video': '.mpeg2',
+            'h264': '.h264',
+            'h265': '.h265',
+            'vp8': '.vp8',
+            'vp9': '.vp9',
+            # audio
+            'ac3': '.ac3',
+            'dts': '.dts',
+            'opus': '.opus',
+            'aac': '.aac',
+            # subtitles
+            'dvd_subtitle': '.sub',  # and .idx
+            'hdmv_pgs_subtitle': '.sup',
+        }[codec_name]
+    except KeyError as err:
+        raise ValueError('Unsupported codec %r' % (codec_name,)) from err
+    return codec_ext
+
+def ext_to_container(ext):
+    try:
+        ext_container = {
+            # video
+            '.mpeg2': 'mpeg2video',
+            #'.h264': 'h264',
+            #'.h265': 'h265',
+            #'.vp8': 'vp8',
+            #'.vp9': 'vp9',
+            # audio
+            #'.ac3': 'ac3',
+            #'.dts': 'dts',
+            #'.opus': 'opus',
+            #'.aac': 'aac',
+            # subtitles
+            #'.sub': 'dvd_subtitle',
+            #'.idx': 'dvd_subtitle',
+            #'.sup': 'hdmv_pgs_subtitle',
+        }[ext]
+    except KeyError as err:
+        raise ValueError('Unsupported extension %r' % (ext,)) from err
+    return ext_container
+
+def get_vp9_target_bitrate(width, height, frame_rate, mq=True):
+    if type(frame_rate) is str:
+        m = re.match(r'^([0-9]+)/([1-9][0-9]*)$', frame_rate)
+        if m:
+            frame_rate = int(m.group(1)) / int(m.group(2))
+        else:
+            frame_rate = int(frame_rate)
+    # https://sites.google.com/a/webmproject.org/wiki/ffmpeg/vp9-encoding-guide
+    # https://headjack.io/blog/hevc-vp9-vp10-dalaa-thor-netvc-future-video-codecs/
+    if False:
+        # Youtube
+        if height <= 144:
+            # 8- Youtube compresses to 144p (256×144) with a bit rate  0.085 Mbps
+            video_target_bit_rate = 85
+        elif height <= 240:
+            # 7- Youtube compresses 240p (426×240) with a bit rate  0.157 Mbps
+            video_target_bit_rate = 157
+        elif height <= 360:
+            # 6- Youtube compresses to 360p  (640×360) with a bit rate  0.373 Mbps
+            video_target_bit_rate = 373
+        elif height <= 480:
+            # 5- Youtube compresses to 480p (854×480) with a bit rate  0.727 Mbps
+            video_target_bit_rate = 727
+        elif height <= 720:
+            # 4- Youtube compresses to 720p (1280×720) with a bit rate  1.468 Mbps
+            video_target_bit_rate = 1468
+        elif height <= 1080:
+            # 3- Youtube compresses 1080p (1920×1080) with a bit rate  2.567 Mbps
+            video_target_bit_rate = 2567
+        elif height <= 1440:
+            # 2- Youtube compresses to (2K) 1440p (2560×1440) with a bit rate  8.589 Mbps
+            video_target_bit_rate = 8589
+        elif height <= 2160:
+            # 1- Youtube compresses to 2160p (4K) (3840×2160) with a bit rate  17.3 Mbps
+            video_target_bit_rate = 17300
+        elif height <= 4320 or True:
+            # 0- Youtube compresses to 4320p (8K) (7680×4320) with a bit rate  21.2 Mbps
+            video_target_bit_rate = 21200
+        if frame_rate >= 30:
+            video_target_bit_rate = video_target_bit_rate * 2
+        video_target_bit_rate = video_target_bit_rate * 2
+        # video_target_bit_rate = int(video_target_bit_rate * 1.2)  # +20%
+        return video_target_bit_rate
+    else:
+        # Google
+        #     Frame Size/Frame Rate   Target Bitrate (VOD, kbps)      Min Bitrate (50%)       Max Bitrate (145%)
+        if height <= 240:
+            # 320x240p @ 24,25,30     150                             75                      218
+            return 150
+        if height <= 360:
+            # 640x360p @ 24,25,30     276                             138                     400
+            return 276
+        if height <= 480:
+            # 640x480p @ 24,25,30     512 (LQ), 750 (MQ)              256 (LQ) 375 (MQ)       742 (LQ) 1088 (MQ)
+            return 750 if mq else 512
+        if height <= 720:
+            # 1280x720p @ 24,25,30    1024                            512                     1485
+            # 1280x720p @ 50,60       1800                            900                     2610
+            if frame_rate <= 30:
+                return 1024
+            else:
+                return 1800
+        if height <= 1080:
+            # 1920x1080p @ 24,25,30   1800                            900                     2610
+            # 1920x1080p @ 50,60      3000                            1500                    4350
+            if frame_rate <= 30:
+                return 1800
+            else:
+                return 3000
+        if height <= 1440:
+            # 2560x1440p @ 24,25,30   6000                            3000                    8700
+            # 2560x1440p @ 50,60      9000                            4500                    13050
+            if frame_rate <= 30:
+                return 6000
+            else:
+                return 9000
+        elif height <= 2160 or True:
+            # 3840x2160p @ 24,25,30   12000                           6000                    17400
+            # 3840x2160p @ 50,60      18000                           9000                    26100
+            if frame_rate <= 30:
+                return 12000
+            else:
+                return 18000
+    raise NotImplementedError
+
+def get_vp9_target_quality(width, height, frame_rate):  # CQ
+    if type(frame_rate) is str:
+        m = re.match(r'^([0-9]+)/([1-9][0-9]*)$', frame_rate)
+        if m:
+            frame_rate = int(m.group(1)) / int(m.group(2))
+        else:
+            frame_rate = int(frame_rate)
+    if True:
+        # Google
+        #     Frame Height      Target Quality (CQ)
+        if height <= 240:
+            # 240               37
+            return 37
+        elif height <= 360:
+            # 360               36
+            return 36
+        elif height <= 480:
+            # 480               34 (LQ) or 33 (MQ)
+            return 33
+        elif height <= 720:
+            # 720               32
+            return 32
+        elif height <= 1080:
+            # 1080              31
+            return 31
+        elif height <= 1440:
+            # 1440              24
+            return 24
+        elif height <= 2160 or True:
+            # 2160              15
+            return 15
+    raise NotImplementedError
+
+def get_vp9_tile_columns_and_threads(width, height):
+    if True:
+        # Google
+        #     Frame Size      Number of tile-columns  Number of threads
+        if height <= 240:
+            # 320x240         1 (-tile-columns 0)     2
+            return 0, 2
+        elif height <= 360:
+            # 640x360         2 (-tile-columns 1)     4
+            return 1, 4
+        elif height <= 480:
+            # 640x480         2 (-tile-columns 1)     4
+            return 1, 4
+        elif height <= 720:
+            # 1280x720        4 (-tile-columns 2)     8
+            return 2, 8
+        elif height <= 1080:
+            # 1920x1080       4 (-tile-columns 2)     8
+            return 2, 8
+        elif height <= 1440:
+            # 2560x1440       8 (-tile-columns 3)     16
+            return 3, 16
+        elif height <= 2160 or True:
+            # 3840x2160       16 (-tile-columns 4)    24
+            return 4, 24
+    raise NotImplementedError
+
+def action_hb(inputfile, in_tags):
+    app.log.info('HandBrake %s...', inputfile)
+    inputfile = SoundFile(inputfile)
+    inputfile_base, inputfile_ext = os.path.splitext(inputfile.file_name)
+    outputfile_name = "%s.hb.mkv" % (inputfile_base,)
+    if app.args.chain:
+        app.args.mux_files += (outputfile_name,)
+
+    if inputfile_ext in (
+            '.mkv',
+            '.mpeg2',
+            ):
+        ffprobe_dict = inputfile.extract_ffprobe_json()
+
+        for stream_dict in ffprobe_dict['streams']:
+            if stream_dict.get('skip', False):
+                continue
+            stream_index = int(stream_dict['index'])
+            stream_codec_type = stream_dict['codec_type']
+            if stream_codec_type == 'video':
+                break
+        else:
+            raise ValueError('No video stream found!')
+
+        video_target_bit_rate = get_vp9_target_bitrate(
+            width=stream_dict['width'],
+            height=stream_dict['height'],
+            frame_rate=stream_dict['r_frame_rate'],
+            )
+        video_target_quality = get_vp9_target_quality(
+            width=stream_dict['width'],
+            height=stream_dict['height'],
+            frame_rate=stream_dict['r_frame_rate'],
+            )
+
+        with perfcontext('Convert w/ HandBrake'):
+            out = HandBrake(
+                   # Dimensions
+                   # crop='<top:bottom:left:right>',
+                   loose_crop=True,
+                   auto_anamorphic=True,
+                   modulus=2,
+                   # Filters
+                   deinterlace=True,
+                   # Video
+                   encoder='VP9',
+                   encoder_preset='slow',
+                   #vb=video_target_bit_rate, two_pass=True, turbo=True,
+                   quality=video_target_quality,
+                   vfr=True,
+                   # Chapters
+                   markers=True,
+                   # Audio
+                   all_audio=True,
+                   aencoder='copy',
+                   # Subtitles
+                   all_subtitles=True,
+                   subtitle_default='none',
+                   # Files
+                   input=inputfile.file_name,
+                   output=outputfile_name,
+                )
+
+    else:
+        raise ValueError('Unsupported extension %r' % (inputfile_ext,))
+
+def action_mux(inputfile, in_tags):
+    app.log.info('Muxing %s...', inputfile)
+    inputfile = SoundFile(inputfile)
+    inputfile_base, inputfile_ext = os.path.splitext(inputfile.file_name)
+    outputdir = app.args.project or "%s" % (inputfile_base,)
+    if app.args.chain:
+        app.args.optimize_dirs += (outputdir,)
+
+    if app.args.dry_run:
+        app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
+    else:
+        os.mkdir(outputdir)
+
+    mux_dict = {
+        'streams': [],
+        'chapters': {},
+        'tags': in_tags,
+    }
+
+    if inputfile_ext in (
+            '.mkv',
+            ):
+        ffprobe_dict = inputfile.extract_ffprobe_json()
+
+        has_forced_subtitle = False
+        subtitle_sizes = []
+
+        for stream_dict in ffprobe_dict['streams']:
+            if stream_dict.get('skip', False):
+                continue
+            stream_out_dict = {}
+            stream_index = int(stream_dict['index'])
+            stream_out_dict['index'] = stream_index
+            stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
+            if stream_codec_type in ('video', 'audio', 'subtitle'):
+                stream_codec_name = stream_dict['codec_name']
+                stream_ext = codec_name_to_ext(stream_codec_name)
+                output_track_file_name = '%s/track-%02d-%s%s' % (
+                        outputdir,
+                        stream_index,
+                        stream_codec_type,
+                        stream_ext,
+                        )
+                stream_out_dict['file_name'] = os.path.basename(output_track_file_name)
+
+                if stream_codec_type == 'video':
+
+                    if False:
+                        with perfcontext('Scan w/ HandBrake'):
+                            out = HandBrake(
+                                   # Dimensions
+                                   # crop='<top:bottom:left:right>',
+                                   loose_crop=True,
+                                   # Filters
+                                   deinterlace=True,
+                                   input=inputfile.file_name,
+                                   json=True,
+                                   scan=True,
+                                   run_func=do_exec_cmd,
+                                )
+                            if not app.args.dry_run:
+                                (hb_sect, hb_sect_dict), = HandBrake.parse_json_output(out.out)
+                                hb_title_dict, = hb_sect_dict['TitleList']
+                                hb_crop = hb_title_dict['Crop']
+                                t, b, l, r = hb_crop
+                                hb_geometry = hb_title_dict['Geometry']
+                                if (t, b, l, r) != (0, 0, 0, 0):
+                                    w = hb_geometry['Width'] - l - r
+                                    h = hb_geometry['Height'] - t - b
+                                    stream_out_dict['crop'] = [w, h, l, t]
+
+                                hb_InterlaceDetected = hb_title_dict['InterlaceDetected']
+                                if hb_InterlaceDetected:
+                                    raise NotImplementedError('Interlace detected')
+
+                    if app.args.video_language:
+                        stream_dict.setdefault('tags', {})
+                        stream_dict['tags']['language'] = str(app.args.video_language)
+                    stream_out_dict['sample_aspect_ratio'] = stream_dict['sample_aspect_ratio']
+                    stream_out_dict['display_aspect_ratio'] = stream_dict['display_aspect_ratio']
+
+                stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
+                try:
+                    stream_title = stream_out_dict['title'] = stream_dict['tags']['title']
+                except KeyError:
+                    pass
+                try:
+                    stream_language = stream_out_dict['language'] = stream_dict['tags']['language']
+                except KeyError:
+                    pass
+
+                with perfcontext('mkvextract track %d' % (stream_index,)):
+                    cmd = [
+                        'mkvextract', 'tracks', inputfile.file_name,
+                        '%d:%s' % (
+                            stream_index,
+                            output_track_file_name,
+                        )]
+                    do_spawn_cmd(cmd)
+
+                if not app.args.dry_run:
+                    if stream_codec_type == 'subtitle':
+                        stream_forced = stream_disposition_dict.get('forced', None)
+                        if stream_forced:
+                            has_forced_subtitle = True
+                        subtitle_sizes.append(
+                            (stream_out_dict, os.path.getsize(output_track_file_name)))
+
+                mux_dict['streams'].append(stream_out_dict)
+            else:
+                raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+        if not has_forced_subtitle and subtitle_sizes:
+            max_subtitle_size = max(siz for stream_dict, siz in subtitle_sizes)
+            for stream_dict, siz in subtitle_sizes:
+                stream_index = stream_dict['index']
+                if siz <= 0.10 * max_subtitle_size:
+                    app.log.info('Detected subtitle stream #%d (%s) is forced',
+                                 stream_index,
+                                 stream_dict.get('language', 'und'))
+                    stream_dict['disposition']['forced'] = True
+
+        if ffprobe_dict['chapters']:
+            output_chapters_file_name = '%s/chapters.xml' % (
+                    outputdir,
+                    )
+            with perfcontext('mkvextract chapters'):
+                cmd = [
+                    'mkvextract', 'chapters', inputfile.file_name,
+                    ]
+                out = do_exec_cmd(cmd,
+                                  log_append=' > %s' % (output_chapters_file_name,),
+                                  #stderr=subprocess.STDOUT,
+                                 )
+            if not app.args.dry_run:
+                safe_write_file(output_chapters_file_name, out)
+            mux_dict['chapters']['file_name'] = os.path.basename(output_chapters_file_name)
+
+    else:
+        raise ValueError('Unsupported extension %r' % (inputfile_ext,))
+
+    if not app.args.dry_run:
+        output_mux_file_name = '%s/mux.json' % (outputdir,)
+        with open(output_mux_file_name, 'w') as fp:
+            json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+    return True
+
+def load_mux_dict(input_mux_file_name, in_tags):
+    with open(input_mux_file_name, 'r') as fp:
+        mux_dict = json.load(fp)
+    try:
+        mux_tags = mux_dict['tags']
+    except KeyError:
+        mux_dict['tags'] = mux_tags = copy.copy(in_tags)
+    else:
+        if not isinstance(mux_tags, AlbumTags):
+            mux_dict['tags'] = mux_tags = AlbumTags(mux_tags)
+        mux_tags.update(in_tags)
+    app.log.debug('1:mux_tags.keys(): %r', set(mux_tags.keys()))
+    return mux_dict
+
+def action_update(inputdir, in_tags):
+    app.log.info('Updating %s...', inputdir)
+    outputdir = inputdir
+
+    input_mux_file_name = os.path.join(inputdir, 'mux.json')
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+
+    if not app.args.dry_run:
+        output_mux_file_name = '%s/mux.json' % (outputdir,)
+        with open(output_mux_file_name, 'w') as fp:
+            json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+
+def action_chop(inputdir, in_tags):
+    app.log.info('Chopping %s...', inputdir)
+    outputdir = inputdir
+    if app.args.chain:
+        app.args.optimize_dirs += (outputdir,)
+
+    input_mux_file_name = os.path.join(inputdir, 'mux.json')
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+
+    chapters_xml_file = mux_dict['chapters']['file_name']
+    chapters_xml = ET.parse(os.path.join(inputdir, chapters_xml_file))
+    chapters_root = chapters_xml.getroot()
+    for eEditionEntry in chapters_root.findall('EditionEntry'):
+        # TODO EditionFlagHidden ==? 0
+        # TODO EditionFlagDefault ==? 1
+        for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
+            # <ChapterAtom>                                                                                               
+            #   <ChapterUID>6524138974649683444</ChapterUID>                                                              
+            #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>                                                   
+            #   <ChapterFlagHidden>0</ChapterFlagHidden>                                                                  
+            #   <ChapterFlagEnabled>1</ChapterFlagEnabled>                                                                
+            #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>                                                       
+            #   <ChapterDisplay>
+            #     <ChapterString>Chapter 01</ChapterString>                                                               
+            #     <ChapterLanguage>eng</ChapterLanguage>                                                                  
+            #   </ChapterDisplay>
+            # </ChapterAtom>                                                                                              
+
+            chapter_time_start = eChapterAtom.find('ChapterTimeStart').text
+            chapter_time_end = eChapterAtom.find('ChapterTimeEnd').text
+            app.log.verbose('Chapter %d [%s..%s]',
+                            chapter_no,
+                            chapter_time_start,
+                            chapter_time_end)
+
+            for stream_dict in mux_dict['streams']:
+                if stream_dict.get('skip', False):
+                    continue
+                stream_index = stream_dict['index']
+                stream_codec_type = stream_dict['codec_type']
+                orig_stream_file_name = stream_file_name = stream_dict['file_name']
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_language = stream_dict.get('language', 'und')
+
+                if (stream_codec_type == 'video'
+                    or stream_codec_type == 'audio'):
+
+                    force_format = None
+                    try:
+                        force_format = ext_to_container(stream_file_ext)
+                    except ValueError:
+                        pass
+
+                    stream_chapter_file_name = '%s-%02d%s' % (
+                        stream_file_base,
+                        chapter_no,
+                        stream_file_ext)
+
+                    cmd = [
+                        'ffmpeg',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        '-codec', 'copy',
+                        '-ss', chapter_time_start,
+                        '-to', chapter_time_end,
+                        ]
+                    if force_format:
+                        cmd += [
+                            '-f', force_format,
+                            ]
+                    cmd += [
+                        os.path.join(inputdir, stream_chapter_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                elif stream_codec_type == 'subtitle':
+                    pass
+                else:
+                    raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+def action_optimize(inputdir, in_tags):
+    app.log.info('Optimizing %s...', inputdir)
+    outputdir = inputdir
+    if app.args.chain:
+        app.args.demux_dirs += (outputdir,)
+
+    input_mux_file_name = os.path.join(inputdir, 'mux.json')
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+
+    for stream_dict in mux_dict['streams']:
+        if stream_dict.get('skip', False):
+            continue
+        stream_index = stream_dict['index']
+        stream_codec_type = stream_dict['codec_type']
+        orig_stream_file_name = stream_file_name = stream_dict['file_name']
+        stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+        stream_language = stream_dict.get('language', 'und')
+
+        if stream_codec_type == 'video':
+            if stream_file_ext in ('.vp9', '.vp8'):
+                app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+            else:
+                new_stream_file_ext = '.vp9'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+                ffprobe_json = snd_file.extract_ffprobe_json()
+                ffprobe_stream_json = ffprobe_json['streams'][0]
+                app.log.debug(ffprobe_stream_json)
+
+                extra_args = []
+                video_filter_specs = []
+
+                if app.args.crop:
+                    stream_crop = stream_dict.pop('crop', None)
+                    if not stream_crop and 'original_crop' not in stream_dict:
+                        with perfcontext('Cropdetect w/ ffmpeg'):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-t', str(app.args.cropdetect_duration),
+                                '-filter:v', 'cropdetect=24:2:0:0',
+                                '-f', 'null', '-',
+                                ]
+                            out = do_spawn_cmd(cmd)
+                        if not app.args.dry_run:
+                            stream_crop = None
+                            parser = lines_parser(out.split('\n'))
+                            while parser.advance():
+                                parser.line = parser.line.strip()
+                                app.log.debug('line=%r', parser.line)
+                                m = re.match(r'.*Parsed_cropdetect.* crop=(\d+):(\d+):(\d+):(\d+)$', parser.line)
+                                if m:
+                                    stream_crop = (int(m.group(1)),
+                                            int(m.group(2)),
+                                            int(m.group(3)),
+                                            int(m.group(4)))
+                            if not stream_crop:
+                                raise ValueError('Crop detection failed')
+                    if stream_crop:
+                        stream_dict.setdefault('original_crop', stream_crop)
+                        w, h, l, t = stream_crop
+                        video_filter_specs.append('crop={w}:{h}:{l}:{t}'.format(
+                                    w=w, h=h, l=l, t=t))
+                        # extra_args += ['-aspect', XXX]
+
+                deint_filter_args = []
+                field_order = ffprobe_stream_json.get('field_order', None)
+                if field_order is not None:
+                    if field_order == 'progressive':
+                        pass
+                    elif field_order == 'tt':
+                        stream_dict.setdefault('original_field_order', field_order)
+                        # https://ffmpeg.org/ffmpeg-filters.html#yadif
+                        video_filter_specs.append('yadif=parity=tff')
+                        stream_dict['field_order'] = field_order = 'progressive'
+                    else:
+                        raise ValueError(field_order)
+
+                if video_filter_specs:
+                    extra_args += ['-filter:v', ','.join(video_filter_specs)]
+
+                if False:
+                    video_target_bit_rate = get_vp9_target_bitrate(
+                        width=ffprobe_stream_json['width'],
+                        height=ffprobe_stream_json['height'],
+                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        )[1]
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 1/2)' % (stream_file_ext, new_stream_file_ext)):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-c:v', 'vp9',  # 'libvpx-vp9',
+                                '-b:v', '%dk' % (video_target_bit_rate,),
+                                '-pass', '1', '-threads', '8', '-speed', '4',
+                                '-tile-columns', '6', '-frame-parallel', '1',
+                                '-auto-alt-ref', '1', '-lag-in-frames', '25',
+                                '-map', '0:v',
+                                ] + extra_args + [
+                                '-f', 'ivf', '/dev/null',
+                                ]
+                            do_spawn_cmd(cmd)
+                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 2/2)' % (stream_file_ext, new_stream_file_ext)):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-c:v', 'vp9',  # 'libvpx-vp9',
+                                '-b:v', '%dk' % (video_target_bit_rate,),
+                                '-pass', '2', '-threads', '8', '-speed', '1',
+                                '-tile-columns', '6', '-frame-parallel', '1',
+                                '-auto-alt-ref', '1', '-lag-in-frames', '25',
+                                '-map', '0:v',
+                                ] + extra_args + [
+                                '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                                ]
+                            do_spawn_cmd(cmd)
+                else:
+                    # https://developers.google.com/media/vp9/settings/vod/
+                    video_target_bit_rate = get_vp9_target_bitrate(
+                        width=ffprobe_stream_json['width'],
+                        height=ffprobe_stream_json['height'],
+                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        )
+                    # video_target_bit_rate = int(video_target_bit_rate * 1.2)  # 1800 * 1.2 = 2160
+                    video_target_bit_rate = int(video_target_bit_rate * 1.5)  # 1800 * 1.5 = 2700
+                    video_target_quality = get_vp9_target_quality(
+                        width=ffprobe_stream_json['width'],
+                        height=ffprobe_stream_json['height'],
+                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        )
+                    vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
+                        width=ffprobe_stream_json['width'],
+                        height=ffprobe_stream_json['height'],
+                        )
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 1/2)' % (stream_file_ext, new_stream_file_ext)):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-b:v', '%dk' % (video_target_bit_rate,),
+                                '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                                '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
+                                '-g', '240',
+                                '-tile-columns', str(vp9_tile_columns),
+                                '-threads', str(vp9_threads),
+                                '-quality', 'good',
+                                '-crf', str(video_target_quality),
+                                '-c:v', 'libvpx-vp9',
+                                '-pass', '1',
+                                '-speed', '4',
+                                ] + extra_args + [
+                                '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                                ]
+                            do_spawn_cmd(cmd)
+                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 2/2)' % (stream_file_ext, new_stream_file_ext)):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-b:v', '%dk' % (video_target_bit_rate,),
+                                '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                                '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
+                                '-g', '240',
+                                '-tile-columns', str(vp9_tile_columns),
+                                '-threads', str(vp9_threads),
+                                '-quality', 'good',
+                                '-crf', str(video_target_quality),
+                                '-c:v', 'libvpx-vp9',
+                                '-pass', '2',
+                                '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
+                                ] + extra_args + [
+                                '-y', '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                                ]
+                            do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+        elif stream_codec_type == 'audio':
+
+            if stream_file_ext not in ('.opus',):
+                snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+                ffprobe_json = snd_file.extract_ffprobe_json()
+                app.log.debug(ffprobe_json['streams'][0])
+                channels = ffprobe_json['streams'][0]['channels']
+                channel_layout = ffprobe_json['streams'][0].get('channel_layout', None)
+            else:
+                ffprobe_json = {}
+
+            if stream_file_ext not in ('.opus', '.wav', '.flac', '.ogg', '.pcm'):
+                # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
+                new_stream_file_ext = '.wav'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                    cmd = [
+                        'ffmpeg',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        # '-channel_layout', channel_layout,
+                        os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            if stream_file_ext in ('.wav', '.flac', '.ogg', '.pcm'):
+                # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
+                new_stream_file_ext = '.opus'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                audio_bitrate = 640000 if channels >= 4 else 384000
+                audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                audio_bitrate = audio_bitrate // 1000
+
+                with perfcontext('Convert %s -> %s w/ opusenc' % (stream_file_ext, new_stream_file_ext)):
+                    cmd = [
+                        'opusenc',
+                        '--vbr',
+                        '--bitrate', str(audio_bitrate),
+                        os.path.join(inputdir, stream_file_name),
+                        os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            if stream_file_ext in ('.opus',):
+                if stream_file_name == orig_stream_file_name:
+                    app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+            else:
+                new_stream_file_ext = '.opus'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                audio_bitrate = 640000 if channels >= 4 else 384000
+                audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                audio_bitrate = audio_bitrate // 1000
+                if channels > 2:
+                    raise NotImplementedError('Conversion not supported as ffmpeg does not respect the number of channels and channel mapping')
+
+                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                    cmd = [
+                        'ffmpeg',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        '-c:a', 'opus',
+                        '-strict', 'experimental',  # for libopus
+                        '-b:a', '%dk' % (audio_bitrate,),
+                        # '-vbr', 'on', '-compression_level', '10',  # defaults
+                        #'-channel', str(channels), '-channel_layout', channel_layout,
+                        #'-channel', str(channels), '-mapping_family', '1', '-af', 'aformat=channel_layouts=%s' % (channel_layout,),
+                        '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+        elif stream_codec_type == 'subtitle':
+            if False and stream_file_ext in ('.sup',):
+                new_stream_file_ext = '.sub'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                if False:
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                        cmd = [
+                            'ffmpeg',
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-scodec', 'dvdsub',
+                            '-map', '0',
+                            '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
+                            ]
+                        do_spawn_cmd(cmd)
+                else:
+                    with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream_file_ext)):
+                        # https://www.videohelp.com/software/BDSup2Sub
+                        # https://github.com/mjuhasz/BDSup2Sub/wiki/Command-line-Interface
+                        cmd = [
+                            'bdsup2sub',
+                            # TODO --forced-only
+                            '--language', isolang(stream_language).code2,
+                            '--output', os.path.join(inputdir, new_stream_file_name),
+                            os.path.join(inputdir, stream_file_name),
+                            ]
+                        out = do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            if stream_file_ext in ('.sup', '.sub',):
+                new_stream_file_ext = '.srt'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                if False:
+                    subrip_matrix = app.args.subrip_matrix
+                    if not subrip_matrix:
+                        subrip_matrix_dir = os.path.expanduser('~/.cache/SubRip/Matrices')
+                        if not app.args.dry_run:
+                            os.makedirs(subrip_matrix_dir, exist_ok=True)
+
+                        subrip_matrix = 'dry_run_matrix.sum' if app.args.dry_run else None
+                        # ~/tools/installs/SubRip/CLI.txt
+                        cmd = [
+                            'SubRip', '/FINDMATRIX',
+                            '--use-idx-file-offsets',
+                            '--',
+                            os.path.join(inputdir, stream_file_name),
+                            subrip_matrix_dir,
+                            ]
+                        try:
+                            with perfcontext('SubRip /FINDMATRIX'):
+                                out = do_spawn_cmd(cmd)
+                        except subprocess.CalledProcessError:
+                            raise  # Seen errors before
+                        else:
+                            if not app.args.dry_run:
+                                m = re.search(r'^([A-Z]:\\.*\.sum)\r*$', out, re.MULTILINE)
+                                if m:
+                                    subrip_matrix = m.group(1)
+                                    cmd = [
+                                        'winepath', '-u', subrip_matrix,
+                                    ]
+                                    subrip_matrix = do_exec_cmd(cmd)
+                                    subrip_matrix = byte_decode(subrip_matrix)
+                                    subrip_matrix = subrip_matrix.strip()
+                                m = re.search(r'^FindMatrix: no \'good\' matrix files found\.', out, re.MULTILINE)
+                                if m:
+                                    pass  # Ok
+                                else:
+                                    raise ValueError(out)
+                        if not subrip_matrix:
+                            for i in range(1000):
+                                subrip_matrix = os.path.join(subrip_matrix_dir, '%03d.sum' % (i,))
+                                if not os.path.exists(subrip_matrix):
+                                    break
+                            else:
+                                raise ValueError('Can\'t determine a new matrix name under %s' % (subrip_matrix_dir,))
+
+                    with perfcontext('SubRip /AUTOTEXT'):
+                        # ~/tools/installs/SubRip/CLI.txt
+                        cmd = [
+                            'SubRip', '/AUTOTEXT',
+                            '--subtitle-language', isolang(stream_language).code3,
+                            '--',
+                            os.path.join(inputdir, stream_file_name),
+                            os.path.join(inputdir, new_stream_file_name),
+                            subrip_matrix,
+                            ]
+                        do_spawn_cmd(cmd)
+
+                else:
+                    with perfcontext('Convert %s -> %s w/ SubtitleEdit' % (stream_file_ext, new_stream_file_ext)):
+                        if False:
+                            cmd = [
+                                'SubtitleEdit', '/convert',
+                                os.path.join(inputdir, stream_file_name),
+                                'subrip',  # format
+                                ]
+                        else:
+                            app.log.warn('Run OCR and save as SubRip (.srt) format')
+                            cmd = [
+                                'SubtitleEdit',
+                                os.path.join(inputdir, stream_file_name),
+                                ]
+                        do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            # NOTE:
+            #  WebVTT format exported by SubtitleEdit is same as ffmpeg .srt->.vtt except ffmpeg's timestamps have more 0-padding
+            if stream_file_ext in ('.srt',):
+                new_stream_file_ext = '.vtt'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                    cmd = [
+                        'ffmpeg',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            if stream_file_ext in ('.vtt',):
+                if stream_file_name == orig_stream_file_name:
+                    app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+            else:
+                raise ValueError('Unsupported subtitle extension %r' % (stream_file_ext,))
+
+        else:
+            raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+def action_extract_music(inputdir, in_tags):
+    app.log.info('Extracting music from %s...', inputdir)
+    outputdir = inputdir
+
+    input_mux_file_name = os.path.join(inputdir, 'mux.json')
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+
+    chapters_xml_file = mux_dict['chapters']['file_name']
+    chapters_xml = ET.parse(os.path.join(inputdir, chapters_xml_file))
+    chapters_root = chapters_xml.getroot()
+    num_skip_chapters = app.args.num_skip_chapters
+    for eEditionEntry in chapters_root.findall('EditionEntry'):
+        # TODO EditionFlagHidden ==? 0
+        # TODO EditionFlagDefault ==? 1
+        leChapterAtoms = list(enumerate(eEditionEntry.findall('ChapterAtom'), start=1))
+        leChapterAtoms = leChapterAtoms[num_skip_chapters:]
+        tracks_total = len(leChapterAtoms)
+        for track_no, (chapter_no, eChapterAtom) in enumerate(leChapterAtoms, start=1):
+            # <ChapterAtom>                                                                                               
+            #   <ChapterUID>6524138974649683444</ChapterUID>                                                              
+            #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>                                                   
+            #   <ChapterFlagHidden>0</ChapterFlagHidden>                                                                  
+            #   <ChapterFlagEnabled>1</ChapterFlagEnabled>                                                                
+            #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>                                                       
+            #   <ChapterDisplay>
+            #     <ChapterString>Chapter 01</ChapterString>                                                               
+            #     <ChapterLanguage>eng</ChapterLanguage>                                                                  
+            #   </ChapterDisplay>
+            # </ChapterAtom>                                                                                              
+
+            chapter_time_start = eChapterAtom.find('ChapterTimeStart').text
+            chapter_time_end = eChapterAtom.find('ChapterTimeEnd').text
+            chapter_string = eChapterAtom.find('ChapterDisplay').find('ChapterString').text
+            app.log.verbose('Chapter %d [%s..%s] %s -> track %d/%d',
+                            chapter_no,
+                            chapter_time_start,
+                            chapter_time_end,
+                            chapter_string,
+                            track_no,
+                            tracks_total)
+
+            src_picture = None
+            picture = None
+
+            for stream_dict in mux_dict['streams']:
+                if stream_dict.get('skip', False):
+                    continue
+                stream_index = stream_dict['index']
+                stream_codec_type = stream_dict['codec_type']
+                orig_stream_file_name = stream_file_name = \
+                        stream_dict.get('original_file_name', stream_dict['file_name'])
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_language = stream_dict.get('language', 'und')
+
+                if stream_codec_type == 'video':
+                    pass
+                elif stream_codec_type == 'audio':
+                    snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+                    ffprobe_json = snd_file.extract_ffprobe_json()
+                    app.log.debug(ffprobe_json['streams'][0])
+                    channels = ffprobe_json['streams'][0]['channels']
+                    channel_layout = ffprobe_json['streams'][0].get('channel_layout', None)
+
+                    force_format = None
+                    try:
+                        force_format = ext_to_container(stream_file_ext)
+                    except ValueError:
+                        pass
+
+                    stream_chapter_tmp_file = SoundFile(
+                            os.path.join(inputdir, '%s-%02d%s' % (
+                                stream_file_base,
+                                chapter_no,
+                                stream_file_ext)))
+
+                    cmd = [
+                        'ffmpeg',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        '-codec', 'copy',
+                        '-ss', chapter_time_start,
+                        '-to', chapter_time_end,
+                        ]
+                    if app.args.yes:
+                        cmd += ['-y']
+                    if force_format:
+                        cmd += [
+                            '-f', force_format,
+                            ]
+                    cmd += [
+                        stream_chapter_tmp_file.file_name,
+                        ]
+                    do_spawn_cmd(cmd)
+
+                    m4a = M4aFile(os.path.splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
+                    m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
+                    m4a.tags.track = track_no  # Since a copy was taken and not fully connected to album_tags anymore
+                    m4a.tags.tracks = tracks_total
+                    m4a.tags.title = chapter_string
+
+                    if src_picture != m4a.tags.picture:
+                        src_picture = m4a.tags.picture
+                        picture = m4a.prep_picture(src_picture,
+                                                   yes=app.args.yes)
+                    m4a.tags.picture = None  # Not supported by taged
+
+                    if stream_chapter_tmp_file.file_name != m4a.file_name:
+                        audio_bitrate = 640000 if channels >= 4 else 384000
+                        audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                        audio_bitrate = audio_bitrate // 1000
+
+                        with perfcontext('Convert %s -> %s w/ ffmpeg/qaac' % (stream_chapter_tmp_file.file_name, '.m4a')):
+                            m4a.encode(inputfiles=[stream_chapter_tmp_file],
+                                       target_bitrate=audio_bitrate,
+                                       yes=app.args.yes,
+                                       channels=getattr(app.args, 'channels', None),
+                                       picture=picture,
+                                       )
+                    else:
+                        m4a.write_tags(
+                                dry_run=app.args.dry_run,
+                                run_func=do_exec_cmd)
+
+                elif stream_codec_type == 'subtitle':
+                    pass
+                else:
+                    raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+def action_optimize(inputdir, in_tags):
+    app.log.info('Optimizing %s...', inputdir)
+    outputdir = inputdir
+    if app.args.chain:
+        app.args.demux_dirs += (outputdir,)
+
+    input_mux_file_name = os.path.join(inputdir, 'mux.json')
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+
+    for stream_dict in mux_dict['streams']:
+        if stream_dict.get('skip', False):
+            continue
+        stream_index = stream_dict['index']
+        stream_codec_type = stream_dict['codec_type']
+        orig_stream_file_name = stream_file_name = stream_dict['file_name']
+        stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+        stream_language = stream_dict.get('language', 'und')
+
+        if stream_codec_type == 'video':
+            if stream_file_ext in ('.vp9', '.vp8'):
+                app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+            else:
+                new_stream_file_ext = '.vp9'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+                ffprobe_json = snd_file.extract_ffprobe_json()
+                ffprobe_stream_json = ffprobe_json['streams'][0]
+                app.log.debug(ffprobe_stream_json)
+
+                extra_args = []
+                video_filter_specs = []
+
+                if app.args.crop:
+                    stream_crop = stream_dict.pop('crop', None)
+                    if not stream_crop and 'original_crop' not in stream_dict:
+                        with perfcontext('Cropdetect w/ ffmpeg'):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-t', str(app.args.cropdetect_duration),
+                                '-filter:v', 'cropdetect=24:2:0:0',
+                                '-f', 'null', '-',
+                                ]
+                            out = do_spawn_cmd(cmd)
+                        if not app.args.dry_run:
+                            stream_crop = None
+                            parser = lines_parser(out.split('\n'))
+                            while parser.advance():
+                                parser.line = parser.line.strip()
+                                app.log.debug('line=%r', parser.line)
+                                m = re.match(r'.*Parsed_cropdetect.* crop=(\d+):(\d+):(\d+):(\d+)$', parser.line)
+                                if m:
+                                    stream_crop = (int(m.group(1)),
+                                            int(m.group(2)),
+                                            int(m.group(3)),
+                                            int(m.group(4)))
+                            if not stream_crop:
+                                raise ValueError('Crop detection failed')
+                    if stream_crop:
+                        stream_dict.setdefault('original_crop', stream_crop)
+                        w, h, l, t = stream_crop
+                        video_filter_specs.append('crop={w}:{h}:{l}:{t}'.format(
+                                    w=w, h=h, l=l, t=t))
+                        # extra_args += ['-aspect', XXX]
+
+                deint_filter_args = []
+                field_order = ffprobe_stream_json.get('field_order', None)
+                if field_order is not None:
+                    if field_order == 'progressive':
+                        pass
+                    elif field_order == 'tt':
+                        stream_dict.setdefault('original_field_order', field_order)
+                        # https://ffmpeg.org/ffmpeg-filters.html#yadif
+                        video_filter_specs.append('yadif=parity=tff')
+                        stream_dict['field_order'] = field_order = 'progressive'
+                    else:
+                        raise ValueError(field_order)
+
+                if video_filter_specs:
+                    extra_args += ['-filter:v', ','.join(video_filter_specs)]
+
+                if False:
+                    video_target_bit_rate = get_vp9_target_bitrate(
+                        width=ffprobe_stream_json['width'],
+                        height=ffprobe_stream_json['height'],
+                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        )[1]
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 1/2)' % (stream_file_ext, new_stream_file_ext)):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-c:v', 'vp9',  # 'libvpx-vp9',
+                                '-b:v', '%dk' % (video_target_bit_rate,),
+                                '-pass', '1', '-threads', '8', '-speed', '4',
+                                '-tile-columns', '6', '-frame-parallel', '1',
+                                '-auto-alt-ref', '1', '-lag-in-frames', '25',
+                                '-map', '0:v',
+                                ] + extra_args + [
+                                '-f', 'ivf', '/dev/null',
+                                ]
+                            do_spawn_cmd(cmd)
+                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 2/2)' % (stream_file_ext, new_stream_file_ext)):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-c:v', 'vp9',  # 'libvpx-vp9',
+                                '-b:v', '%dk' % (video_target_bit_rate,),
+                                '-pass', '2', '-threads', '8', '-speed', '1',
+                                '-tile-columns', '6', '-frame-parallel', '1',
+                                '-auto-alt-ref', '1', '-lag-in-frames', '25',
+                                '-map', '0:v',
+                                ] + extra_args + [
+                                '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                                ]
+                            do_spawn_cmd(cmd)
+                else:
+                    # https://developers.google.com/media/vp9/settings/vod/
+                    video_target_bit_rate = get_vp9_target_bitrate(
+                        width=ffprobe_stream_json['width'],
+                        height=ffprobe_stream_json['height'],
+                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        )
+                    # video_target_bit_rate = int(video_target_bit_rate * 1.2)  # 1800 * 1.2 = 2160
+                    video_target_bit_rate = int(video_target_bit_rate * 1.5)  # 1800 * 1.5 = 2700
+                    video_target_quality = get_vp9_target_quality(
+                        width=ffprobe_stream_json['width'],
+                        height=ffprobe_stream_json['height'],
+                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        )
+                    vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
+                        width=ffprobe_stream_json['width'],
+                        height=ffprobe_stream_json['height'],
+                        )
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 1/2)' % (stream_file_ext, new_stream_file_ext)):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-b:v', '%dk' % (video_target_bit_rate,),
+                                '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                                '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
+                                '-g', '240',
+                                '-tile-columns', str(vp9_tile_columns),
+                                '-threads', str(vp9_threads),
+                                '-quality', 'good',
+                                '-crf', str(video_target_quality),
+                                '-c:v', 'libvpx-vp9',
+                                '-pass', '1',
+                                '-speed', '4',
+                                ] + extra_args + [
+                                '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                                ]
+                            do_spawn_cmd(cmd)
+                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 2/2)' % (stream_file_ext, new_stream_file_ext)):
+                            cmd = [
+                                'ffmpeg',
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-b:v', '%dk' % (video_target_bit_rate,),
+                                '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                                '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
+                                '-g', '240',
+                                '-tile-columns', str(vp9_tile_columns),
+                                '-threads', str(vp9_threads),
+                                '-quality', 'good',
+                                '-crf', str(video_target_quality),
+                                '-c:v', 'libvpx-vp9',
+                                '-pass', '2',
+                                '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
+                                ] + extra_args + [
+                                '-y', '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                                ]
+                            do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+        elif stream_codec_type == 'audio':
+
+            if stream_file_ext not in ('.opus',):
+                snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+                ffprobe_json = snd_file.extract_ffprobe_json()
+                app.log.debug(ffprobe_json['streams'][0])
+                channels = ffprobe_json['streams'][0]['channels']
+                channel_layout = ffprobe_json['streams'][0].get('channel_layout', None)
+            else:
+                ffprobe_json = {}
+
+            if stream_file_ext not in ('.opus', '.wav', '.flac', '.ogg', '.pcm'):
+                # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
+                new_stream_file_ext = '.wav'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                    cmd = [
+                        'ffmpeg',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        # '-channel_layout', channel_layout,
+                        os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            if stream_file_ext in ('.wav', '.flac', '.ogg', '.pcm'):
+                # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
+                new_stream_file_ext = '.opus'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                audio_bitrate = 640000 if channels >= 4 else 384000
+                audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                audio_bitrate = audio_bitrate // 1000
+
+                with perfcontext('Convert %s -> %s w/ opusenc' % (stream_file_ext, new_stream_file_ext)):
+                    cmd = [
+                        'opusenc',
+                        '--vbr',
+                        '--bitrate', str(audio_bitrate),
+                        os.path.join(inputdir, stream_file_name),
+                        os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            if stream_file_ext in ('.opus',):
+                if stream_file_name == orig_stream_file_name:
+                    app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+            else:
+                new_stream_file_ext = '.opus'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                audio_bitrate = 640000 if channels >= 4 else 384000
+                audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                audio_bitrate = audio_bitrate // 1000
+                if channels > 2:
+                    raise NotImplementedError('Conversion not supported as ffmpeg does not respect the number of channels and channel mapping')
+
+                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                    cmd = [
+                        'ffmpeg',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        '-c:a', 'opus',
+                        '-strict', 'experimental',  # for libopus
+                        '-b:a', '%dk' % (audio_bitrate,),
+                        # '-vbr', 'on', '-compression_level', '10',  # defaults
+                        #'-channel', str(channels), '-channel_layout', channel_layout,
+                        #'-channel', str(channels), '-mapping_family', '1', '-af', 'aformat=channel_layouts=%s' % (channel_layout,),
+                        '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+        elif stream_codec_type == 'subtitle':
+            if False and stream_file_ext in ('.sup',):
+                new_stream_file_ext = '.sub'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                if False:
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                        cmd = [
+                            'ffmpeg',
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-scodec', 'dvdsub',
+                            '-map', '0',
+                            '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
+                            ]
+                        do_spawn_cmd(cmd)
+                else:
+                    with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream_file_ext)):
+                        # https://www.videohelp.com/software/BDSup2Sub
+                        # https://github.com/mjuhasz/BDSup2Sub/wiki/Command-line-Interface
+                        cmd = [
+                            'bdsup2sub',
+                            # TODO --forced-only
+                            '--language', isolang(stream_language).code2,
+                            '--output', os.path.join(inputdir, new_stream_file_name),
+                            os.path.join(inputdir, stream_file_name),
+                            ]
+                        out = do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            if stream_file_ext in ('.sup', '.sub',):
+                new_stream_file_ext = '.srt'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                if False:
+                    subrip_matrix = app.args.subrip_matrix
+                    if not subrip_matrix:
+                        subrip_matrix_dir = os.path.expanduser('~/.cache/SubRip/Matrices')
+                        if not app.args.dry_run:
+                            os.makedirs(subrip_matrix_dir, exist_ok=True)
+
+                        subrip_matrix = 'dry_run_matrix.sum' if app.args.dry_run else None
+                        # ~/tools/installs/SubRip/CLI.txt
+                        cmd = [
+                            'SubRip', '/FINDMATRIX',
+                            '--use-idx-file-offsets',
+                            '--',
+                            os.path.join(inputdir, stream_file_name),
+                            subrip_matrix_dir,
+                            ]
+                        try:
+                            with perfcontext('SubRip /FINDMATRIX'):
+                                out = do_spawn_cmd(cmd)
+                        except subprocess.CalledProcessError:
+                            raise  # Seen errors before
+                        else:
+                            if not app.args.dry_run:
+                                m = re.search(r'^([A-Z]:\\.*\.sum)\r*$', out, re.MULTILINE)
+                                if m:
+                                    subrip_matrix = m.group(1)
+                                    cmd = [
+                                        'winepath', '-u', subrip_matrix,
+                                    ]
+                                    subrip_matrix = do_exec_cmd(cmd)
+                                    subrip_matrix = byte_decode(subrip_matrix)
+                                    subrip_matrix = subrip_matrix.strip()
+                                m = re.search(r'^FindMatrix: no \'good\' matrix files found\.', out, re.MULTILINE)
+                                if m:
+                                    pass  # Ok
+                                else:
+                                    raise ValueError(out)
+                        if not subrip_matrix:
+                            for i in range(1000):
+                                subrip_matrix = os.path.join(subrip_matrix_dir, '%03d.sum' % (i,))
+                                if not os.path.exists(subrip_matrix):
+                                    break
+                            else:
+                                raise ValueError('Can\'t determine a new matrix name under %s' % (subrip_matrix_dir,))
+
+                    with perfcontext('SubRip /AUTOTEXT'):
+                        # ~/tools/installs/SubRip/CLI.txt
+                        cmd = [
+                            'SubRip', '/AUTOTEXT',
+                            '--subtitle-language', isolang(stream_language).code3,
+                            '--',
+                            os.path.join(inputdir, stream_file_name),
+                            os.path.join(inputdir, new_stream_file_name),
+                            subrip_matrix,
+                            ]
+                        do_spawn_cmd(cmd)
+
+                else:
+                    with perfcontext('Convert %s -> %s w/ SubtitleEdit' % (stream_file_ext, new_stream_file_ext)):
+                        if False:
+                            cmd = [
+                                'SubtitleEdit', '/convert',
+                                os.path.join(inputdir, stream_file_name),
+                                'subrip',  # format
+                                ]
+                        else:
+                            app.log.warn('Run OCR and save as SubRip (.srt) format')
+                            cmd = [
+                                'SubtitleEdit',
+                                os.path.join(inputdir, stream_file_name),
+                                ]
+                        do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            # NOTE:
+            #  WebVTT format exported by SubtitleEdit is same as ffmpeg .srt->.vtt except ffmpeg's timestamps have more 0-padding
+            if stream_file_ext in ('.srt',):
+                new_stream_file_ext = '.vtt'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                    cmd = [
+                        'ffmpeg',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    do_spawn_cmd(cmd)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+            if stream_file_ext in ('.vtt',):
+                if stream_file_name == orig_stream_file_name:
+                    app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+            else:
+                raise ValueError('Unsupported subtitle extension %r' % (stream_file_ext,))
+
+        else:
+            raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+def action_demux(inputdir, in_tags):
+    app.log.info('Demuxing %s...', inputdir)
+    outputdir = inputdir
+
+    input_mux_file_name = os.path.join(inputdir, 'mux.json')
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+
+    output_file = MkvFile(
+            app.args.output_file or '%s.demux.mkv' % (inputdir.rstrip('/\\'),))
+
+    post_process_subtitles = False
+    cmd = ['mkvmerge',
+        '-o', output_file.file_name,
+        ]
+    new_stream_index = -1
+    for stream_index, stream_dict in sorted((stream_dict['index'], stream_dict)
+                                            for stream_dict in mux_dict['streams']):
+        if stream_dict.get('skip', False):
+            continue
+        stream_codec_type = stream_dict['codec_type']
+        if stream_codec_type == 'subtitle':
+            post_process_subtitles = True
+            continue
+        new_stream_index += 1
+        stream_dict['index'] = new_stream_index
+        if stream_codec_type == 'video':
+            display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
+            if display_aspect_ratio:
+                cmd += ['--aspect-ratio', '%d:%s' % (0, re.sub(':', '/', display_aspect_ratio))]
+        stream_default = stream_dict['disposition'].get('default', None)
+        cmd += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
+        stream_language = stream_dict.get('language', None)
+        if stream_language:
+            cmd += ['--language', '0:%s' % (stream_language,)]
+        stream_forced = stream_dict['disposition'].get('forced', None)
+        cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
+        # TODO --tags
+        if stream_codec_type == 'subtitle' and os.path.splitext(stream_dict['file_name'])[1] == '.sub':
+            cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_dict['file_name'])[0],))]
+        cmd += [os.path.join(inputdir, stream_dict['file_name'])]
+    if mux_dict['chapters']:
+        cmd += ['--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])]
+    with perfcontext('mkvmerge'):
+        do_spawn_cmd(cmd)
+
+    if post_process_subtitles:
+        num_inputs = 0
+        noss_file_name = output_file.file_name + '.noss.mkv'
+        if not app.args.dry_run:
+            shutil.move(output_file.file_name, noss_file_name)
+        num_inputs += 1
+        cmd = ['ffmpeg',
+            '-i', noss_file_name,
+            ]
+        option_args = [
+            '-map', str(num_inputs-1),
+            ]
+        for stream_dict in mux_dict['streams']:
+            if stream_dict.get('skip', False):
+                continue
+            stream_index = stream_dict['index']
+            stream_codec_type = stream_dict['codec_type']
+            if stream_codec_type != 'subtitle':
+                continue
+            new_stream_index += 1
+            stream_dict['index'] = new_stream_index
+            num_inputs += 1
+            cmd += [
+                '-i', os.path.join(inputdir, stream_dict['file_name']),
+                ]
+            option_args += [
+                '-map', str(num_inputs-1),
+                ]
+            stream_default = stream_dict['disposition'].get('default', None)
+            if stream_default:
+                option_args += ['-disposition:%d' % (new_stream_index,), 'default',]
+            stream_language = stream_dict.get('language', None)
+            if stream_language:
+                #cmd += ['--language', '%d:%s' % (track_id, stream_language)]
+                option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (isolang(stream_language).code3,),]
+            stream_forced = stream_dict['disposition'].get('forced', None)
+            if stream_forced:
+                option_args += ['-disposition:%d' % (new_stream_index,), 'forced',]
+            # TODO --tags
+        option_args += [
+            '-codec', 'copy',
+            ]
+        cmd += option_args
+        cmd += [
+            output_file.file_name,
+            ]
+        with perfcontext('merge subtitles w/ ffmpeg'):
+            do_spawn_cmd(cmd)
+        if not app.args.dry_run:
+            os.unlink(noss_file_name)
+
+    output_file.write_tags(tags=mux_dict['tags'],
+            dry_run=app.args.dry_run,
+            run_func=do_exec_cmd)
+    app.log.info('DONE writing %s', output_file.file_name)
+    return True
+
+if __name__ == "__main__":
+    main()
+
+# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
