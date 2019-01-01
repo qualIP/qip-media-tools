@@ -35,65 +35,6 @@ import qip.snd
 
 # https://www.ffmpeg.org/ffmpeg.html
 
-def dbg_spawn_cmd(cmd, hidden_args=[], no_status=False, yes=False):
-    if app.log.isEnabledFor(logging.DEBUG):
-        app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
-    out = ''
-    p = pexpect.spawn(cmd[0], args=cmd[1:] + hidden_args, timeout=None, logfile=sys.stdout.buffer)
-    while True:
-        index = p.expect([
-            r'.*[\r\n]',  # 0
-            r'File \'.*\' already exists\. Overwrite \? \[y/N\] $',  # 1
-            pexpect.EOF,
-            ])
-        if index == 0:
-            #app.log.debug('<<< %s%s', byte_decode(p.before), byte_decode(p.match.group(0)))
-            out += byte_decode(p.before) + byte_decode(p.match.group(0))
-        elif index == 1:
-            #app.log.debug('<<< %s%s', byte_decode(p.before), p.match.group(0))
-            #puts [list <<< $expect_out(buffer)]
-            out += byte_decode(p.before) + byte_decode(p.match.group(0))
-            logfile = p.logfile
-            logfile_send = p.logfile_send
-            try:
-                if yes:
-                    s = "y"
-                else:
-                    print('<interact>', end='', flush=True)
-                    s = input()
-                    print('</interact>', end='', flush=True)
-                    p.logfile = None
-                    p.logfile_send = None
-                #app.log.debug('>>> sending %r', s)
-                p.send(s)
-                #puts [list >>> sending eol]
-                p.send('\r')
-            finally:
-                p.logfile_send = logfile_send
-                p.logfile = logfile
-        elif index == 2:
-            #app.log.debug('<<< %s%s', byte_decode(p.before))
-            out += byte_decode(p.before)
-            break
-    try:
-        p.wait()
-    except pexpect.ExceptionPexpect as err:
-        if err.value != 'Cannot wait for dead child process.':
-            raise
-    p.close()
-    if p.signalstatus is not None:
-        raise Exception('Command exited due to signal %r' % (p.signalstatus,))
-    if not no_status and p.exitstatus:
-        raise Exception('Command returned status %r' % (p.exitstatus,))
-    return out
-
-def do_spawn_cmd(cmd, **kwargs):
-    if app.args.dry_run:
-        app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
-        return ''
-    else:
-        return dbg_spawn_cmd(cmd, **kwargs)
-
 # times_1000 {{{
 
 def times_1000(v):
