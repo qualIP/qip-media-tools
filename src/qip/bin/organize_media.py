@@ -242,7 +242,7 @@ def organize_music(inputfile, *, suggest_tags):
 
     # ARTIST
     if not inputfile.tags.artist:
-        raise MissingTagError(SoundTagEnum.artist, file=inputfile)
+        raise MissingSoundTagError(SoundTagEnum.artist, file=inputfile)
 
     # ALBUMARTIST
     if not inputfile.tags.albumartist and inputfile.tags.artist:
@@ -250,7 +250,7 @@ def organize_music(inputfile, *, suggest_tags):
 
     # TITLE
     if not inputfile.tags.title:
-        raise MissingTagError(SoundTagEnum.title, file=inputfile)
+        raise MissingSoundTagError(SoundTagEnum.title, file=inputfile)
 
     if not inputfile.tags.sorttitle:
         v = make_sort_tag(inputfile.tags.title)
@@ -275,7 +275,7 @@ def organize_music(inputfile, *, suggest_tags):
             'title',
             ):
         if tag and not getattr(inputfile.tags, tag):
-            raise MissingTagError(tag, file=inputfile)
+            raise MissingSoundTagError(tag, file=inputfile)
 
     dst_dir = ''
 
@@ -321,7 +321,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     # ARTIST
     if not inputfile.tags.artist:
-        raise MissingTagError(SoundTagEnum.artist, file=inputfile)
+        raise MissingSoundTagError(SoundTagEnum.artist, file=inputfile)
 
     # ALBUMARTIST
     if not inputfile.tags.albumartist and inputfile.tags.artist:
@@ -329,7 +329,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     # TITLE
     if not inputfile.tags.title:
-        raise MissingTagError(SoundTagEnum.title, file=inputfile)
+        raise MissingSoundTagError(SoundTagEnum.title, file=inputfile)
 
     if not inputfile.tags.sorttitle:
         v = make_sort_tag(inputfile.tags.title)
@@ -344,7 +344,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
             'title',
             ):
         if tag and not getattr(inputfile.tags, tag):
-            raise MissingTagError(tag, file=inputfile)
+            raise MissingSoundTagError(tag, file=inputfile)
 
     dst_dir = ''
 
@@ -408,7 +408,7 @@ def organize_movie(inputfile, *, suggest_tags):
 
     # TITLE
     if not inputfile.tags.title:
-        raise MissingTagError(SoundTagEnum.title, file=inputfile)
+        raise MissingSoundTagError(SoundTagEnum.title, file=inputfile)
 
     if not inputfile.tags.sorttitle:
         v = make_sort_tag(inputfile.tags.title)
@@ -422,7 +422,7 @@ def organize_movie(inputfile, *, suggest_tags):
             'title',
             ):
         if tag and not getattr(inputfile.tags, tag):
-            raise MissingTagError(tag, file=inputfile)
+            raise MissingSoundTagError(tag, file=inputfile)
 
     dst_dir = ''
 
@@ -483,7 +483,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
     if not inputfile.tags.tvshow and inputfile.tags.albumtitle:
         suggest_tags.tvshow = inputfile.tags.tvshow = inputfile.tags.albumtitle
     if not inputfile.tags.tvshow:
-        raise MissingTagError(SoundTagEnum.tvshow, file=inputfile)
+        raise MissingSoundTagError(SoundTagEnum.tvshow, file=inputfile)
 
     if not inputfile.tags.sorttvshow:
         v = make_sort_tag(inputfile.tags.tvshow)
@@ -502,7 +502,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
             'episode',
             ):
         if tag and not getattr(inputfile.tags, tag):
-            raise MissingTagError(tag, file=inputfile)
+            raise MissingSoundTagError(tag, file=inputfile)
 
     dst_dir = ''
 
@@ -608,7 +608,7 @@ def organize(inputfile):
             else:
                 inputfile.tags.type = 'movie'
         else:
-            raise MissingTagError(SoundTagEnum.type, file=inputfile)
+            raise MissingSoundTagError(SoundTagEnum.type, file=inputfile)
     app.log.debug('type = %r', inputfile.tags.type)
 
     # PEOPLE

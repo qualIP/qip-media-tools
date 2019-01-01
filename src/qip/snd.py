@@ -9,10 +9,11 @@ __all__ = (
     'id3v2',
     'operon',
     'AudioType',
-    'MissingTagError',
+    'MissingSoundTagError',
 )
 
 import collections
+import copy
 import datetime
 import decimal
 import enum
@@ -83,7 +84,7 @@ class _tReMatchTest(object):
         )
 
 
-class MissingTagError(Exception):
+class MissingSoundTagError(Exception):
 
     def __init__(self, tag, file=None):
         tag = SoundTagEnum(tag)
