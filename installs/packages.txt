@@ -21,3 +21,4 @@ id3v2
 sox
 cuetools
 python3-libdiscid
+mkvtoolnix
