@@ -343,6 +343,7 @@ def get_vp9_target_quality(width, height, frame_rate):  # CQ
 
 def get_vp9_tile_columns_and_threads(width, height):
     if True:
+        # Minimum tile width is 256...
         # Google
         #     Frame Size      Number of tile-columns  Number of threads
         if height <= 240:
@@ -784,7 +785,10 @@ def action_optimize(inputdir, in_tags):
                                 '-i', os.path.join(inputdir, stream_file_name),
                                 '-c:v', 'vp9',  # 'libvpx-vp9',
                                 '-b:v', '%dk' % (video_target_bit_rate,),
-                                '-pass', '1', '-threads', '8', '-speed', '4',
+                                '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
+                                '-speed', '4',
+                                '-threads', '8',
+                                '-row-mt', '1',
                                 '-tile-columns', '6', '-frame-parallel', '1',
                                 '-auto-alt-ref', '1', '-lag-in-frames', '25',
                                 '-map', '0:v',
@@ -798,7 +802,10 @@ def action_optimize(inputdir, in_tags):
                                 '-i', os.path.join(inputdir, stream_file_name),
                                 '-c:v', 'vp9',  # 'libvpx-vp9',
                                 '-b:v', '%dk' % (video_target_bit_rate,),
-                                '-pass', '2', '-threads', '8', '-speed', '1',
+                                '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
+                                '-speed', '1',
+                                '-threads', '8',
+                                '-row-mt', '1',
                                 '-tile-columns', '6', '-frame-parallel', '1',
                                 '-auto-alt-ref', '1', '-lag-in-frames', '25',
                                 '-map', '0:v',
@@ -835,10 +842,11 @@ def action_optimize(inputdir, in_tags):
                                 '-g', '240',
                                 '-tile-columns', str(vp9_tile_columns),
                                 '-threads', str(vp9_threads),
+                                '-row-mt', '1',
                                 '-quality', 'good',
                                 '-crf', str(video_target_quality),
                                 '-c:v', 'libvpx-vp9',
-                                '-pass', '1',
+                                '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '4',
                                 ] + extra_args + [
                                 '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
@@ -854,10 +862,11 @@ def action_optimize(inputdir, in_tags):
                                 '-g', '240',
                                 '-tile-columns', str(vp9_tile_columns),
                                 '-threads', str(vp9_threads),
+                                '-row-mt', '1',
                                 '-quality', 'good',
                                 '-crf', str(video_target_quality),
                                 '-c:v', 'libvpx-vp9',
-                                '-pass', '2',
+                                '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
                                 ] + extra_args + [
                                 '-y', '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
@@ -1348,7 +1357,10 @@ def action_optimize(inputdir, in_tags):
                                 '-i', os.path.join(inputdir, stream_file_name),
                                 '-c:v', 'vp9',  # 'libvpx-vp9',
                                 '-b:v', '%dk' % (video_target_bit_rate,),
-                                '-pass', '1', '-threads', '8', '-speed', '4',
+                                '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
+                                '-speed', '4',
+                                '-threads', '8',
+                                '-row-mt', '1',
                                 '-tile-columns', '6', '-frame-parallel', '1',
                                 '-auto-alt-ref', '1', '-lag-in-frames', '25',
                                 '-map', '0:v',
@@ -1362,7 +1374,10 @@ def action_optimize(inputdir, in_tags):
                                 '-i', os.path.join(inputdir, stream_file_name),
                                 '-c:v', 'vp9',  # 'libvpx-vp9',
                                 '-b:v', '%dk' % (video_target_bit_rate,),
-                                '-pass', '2', '-threads', '8', '-speed', '1',
+                                '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
+                                '-speed', '1',
+                                '-threads', '8',
+                                '-row-mt', '1',
                                 '-tile-columns', '6', '-frame-parallel', '1',
                                 '-auto-alt-ref', '1', '-lag-in-frames', '25',
                                 '-map', '0:v',
@@ -1399,10 +1414,11 @@ def action_optimize(inputdir, in_tags):
                                 '-g', '240',
                                 '-tile-columns', str(vp9_tile_columns),
                                 '-threads', str(vp9_threads),
+                                '-row-mt', '1',
                                 '-quality', 'good',
                                 '-crf', str(video_target_quality),
                                 '-c:v', 'libvpx-vp9',
-                                '-pass', '1',
+                                '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '4',
                                 ] + extra_args + [
                                 '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
@@ -1418,10 +1434,11 @@ def action_optimize(inputdir, in_tags):
                                 '-g', '240',
                                 '-tile-columns', str(vp9_tile_columns),
                                 '-threads', str(vp9_threads),
+                                '-row-mt', '1',
                                 '-quality', 'good',
                                 '-crf', str(video_target_quality),
                                 '-c:v', 'libvpx-vp9',
-                                '-pass', '2',
+                                '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
                                 ] + extra_args + [
                                 '-y', '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
