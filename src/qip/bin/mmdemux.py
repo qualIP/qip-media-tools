@@ -675,6 +675,10 @@ def action_chop(inputdir, in_tags):
                         '-ss', chapter_time_start,
                         '-to', chapter_time_end,
                         ]
+                    if not app.log.isEnabledFor(logging.VERBOSE):
+                        cmd += ['-loglevel', 'info']
+                    if yes:
+                        cmd += ['-y']
                     if force_format:
                         cmd += [
                             '-f', force_format,
@@ -732,6 +736,10 @@ def action_optimize(inputdir, in_tags):
                                 '-i', os.path.join(inputdir, stream_file_name),
                                 '-t', str(app.args.cropdetect_duration),
                                 '-filter:v', 'cropdetect=24:2:0:0',
+                                ]
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            cmd += [
                                 '-f', 'null', '-',
                                 ]
                             out = do_spawn_cmd(cmd)
@@ -792,7 +800,11 @@ def action_optimize(inputdir, in_tags):
                                 '-tile-columns', '6', '-frame-parallel', '1',
                                 '-auto-alt-ref', '1', '-lag-in-frames', '25',
                                 '-map', '0:v',
-                                ] + extra_args + [
+                                ]
+                            cmd += extra_args
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            cmd += [
                                 '-f', 'ivf', '/dev/null',
                                 ]
                             do_spawn_cmd(cmd)
@@ -809,7 +821,13 @@ def action_optimize(inputdir, in_tags):
                                 '-tile-columns', '6', '-frame-parallel', '1',
                                 '-auto-alt-ref', '1', '-lag-in-frames', '25',
                                 '-map', '0:v',
-                                ] + extra_args + [
+                                ]
+                            cmd += extra_args
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            if yes:
+                                cmd += ['-y']
+                            cmd += [
                                 '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
                                 ]
                             do_spawn_cmd(cmd)
@@ -848,7 +866,13 @@ def action_optimize(inputdir, in_tags):
                                 '-c:v', 'libvpx-vp9',
                                 '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '4',
-                                ] + extra_args + [
+                                ]
+                            cmd += extra_args
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            if yes:
+                                cmd += ['-y']
+                            cmd += [
                                 '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
                                 ]
                             do_spawn_cmd(cmd)
@@ -868,7 +892,13 @@ def action_optimize(inputdir, in_tags):
                                 '-c:v', 'libvpx-vp9',
                                 '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
-                                ] + extra_args + [
+                                ]
+                            cmd += extra_args
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            if yes:
+                                cmd += ['-y']
+                            cmd += [
                                 '-y', '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
                                 ]
                             do_spawn_cmd(cmd)
@@ -903,6 +933,12 @@ def action_optimize(inputdir, in_tags):
                         'ffmpeg',
                         '-i', os.path.join(inputdir, stream_file_name),
                         # '-channel_layout', channel_layout,
+                        ]
+                    if not app.log.isEnabledFor(logging.VERBOSE):
+                        cmd += ['-loglevel', 'info']
+                    if yes:
+                        cmd += ['-y']
+                    cmd += [
                         os.path.join(inputdir, new_stream_file_name),
                         ]
                     do_spawn_cmd(cmd)
@@ -967,6 +1003,12 @@ def action_optimize(inputdir, in_tags):
                         # '-vbr', 'on', '-compression_level', '10',  # defaults
                         #'-channel', str(channels), '-channel_layout', channel_layout,
                         #'-channel', str(channels), '-mapping_family', '1', '-af', 'aformat=channel_layouts=%s' % (channel_layout,),
+                        ]
+                    if not app.log.isEnabledFor(logging.VERBOSE):
+                        cmd += ['-loglevel', 'info']
+                    if yes:
+                        cmd += ['-y']
+                    cmd += [
                         '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
                         ]
                     do_spawn_cmd(cmd)
@@ -992,6 +1034,12 @@ def action_optimize(inputdir, in_tags):
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-scodec', 'dvdsub',
                             '-map', '0',
+                            ]
+                        if not app.log.isEnabledFor(logging.VERBOSE):
+                            cmd += ['-loglevel', 'info']
+                        if yes:
+                            cmd += ['-y']
+                        cmd += [
                             '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
                             ]
                         do_spawn_cmd(cmd)
@@ -1113,6 +1161,12 @@ def action_optimize(inputdir, in_tags):
                     cmd = [
                         'ffmpeg',
                         '-i', os.path.join(inputdir, stream_file_name),
+                        ]
+                    if not app.log.isEnabledFor(logging.VERBOSE):
+                        cmd += ['-loglevel', 'info']
+                    if yes:
+                        cmd += ['-y']
+                    cmd += [
                         os.path.join(inputdir, new_stream_file_name),
                         ]
                     do_spawn_cmd(cmd)
@@ -1216,6 +1270,8 @@ def action_extract_music(inputdir, in_tags):
                         '-ss', chapter_time_start,
                         '-to', chapter_time_end,
                         ]
+                    if not app.log.isEnabledFor(logging.VERBOSE):
+                        cmd += ['-loglevel', 'info']
                     if app.args.yes:
                         cmd += ['-y']
                     if force_format:
@@ -1244,7 +1300,7 @@ def action_extract_music(inputdir, in_tags):
                         audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
                         audio_bitrate = audio_bitrate // 1000
 
-                        with perfcontext('Convert %s -> %s w/ ffmpeg/qaac' % (stream_chapter_tmp_file.file_name, '.m4a')):
+                        with perfcontext('Convert %s -> %s w/ qip.m4a' % (stream_chapter_tmp_file.file_name, '.m4a')):
                             m4a.encode(inputfiles=[stream_chapter_tmp_file],
                                        target_bitrate=audio_bitrate,
                                        yes=app.args.yes,
@@ -1304,6 +1360,10 @@ def action_optimize(inputdir, in_tags):
                                 '-i', os.path.join(inputdir, stream_file_name),
                                 '-t', str(app.args.cropdetect_duration),
                                 '-filter:v', 'cropdetect=24:2:0:0',
+                                ]
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            cmd += [
                                 '-f', 'null', '-',
                                 ]
                             out = do_spawn_cmd(cmd)
@@ -1364,7 +1424,11 @@ def action_optimize(inputdir, in_tags):
                                 '-tile-columns', '6', '-frame-parallel', '1',
                                 '-auto-alt-ref', '1', '-lag-in-frames', '25',
                                 '-map', '0:v',
-                                ] + extra_args + [
+                                ]
+                            cmd += extra_args
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            cmd += [
                                 '-f', 'ivf', '/dev/null',
                                 ]
                             do_spawn_cmd(cmd)
@@ -1381,7 +1445,13 @@ def action_optimize(inputdir, in_tags):
                                 '-tile-columns', '6', '-frame-parallel', '1',
                                 '-auto-alt-ref', '1', '-lag-in-frames', '25',
                                 '-map', '0:v',
-                                ] + extra_args + [
+                                ]
+                            cmd += extra_args
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            if app.args.yes:
+                                cmd += ['-y']
+                            cmd += [
                                 '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
                                 ]
                             do_spawn_cmd(cmd)
@@ -1420,7 +1490,13 @@ def action_optimize(inputdir, in_tags):
                                 '-c:v', 'libvpx-vp9',
                                 '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '4',
-                                ] + extra_args + [
+                                ]
+                            cmd += extra_args
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            if app.args.yes:
+                                cmd += ['-y']
+                            cmd += [
                                 '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
                                 ]
                             do_spawn_cmd(cmd)
@@ -1440,7 +1516,13 @@ def action_optimize(inputdir, in_tags):
                                 '-c:v', 'libvpx-vp9',
                                 '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
-                                ] + extra_args + [
+                                ]
+                            cmd += extra_args
+                            if not app.log.isEnabledFor(logging.VERBOSE):
+                                cmd += ['-loglevel', 'info']
+                            if app.args.yes:
+                                cmd += ['-y']
+                            cmd += [
                                 '-y', '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
                                 ]
                             do_spawn_cmd(cmd)
@@ -1475,6 +1557,12 @@ def action_optimize(inputdir, in_tags):
                         'ffmpeg',
                         '-i', os.path.join(inputdir, stream_file_name),
                         # '-channel_layout', channel_layout,
+                        ]
+                    if not app.log.isEnabledFor(logging.VERBOSE):
+                        cmd += ['-loglevel', 'info']
+                    if app.args.yes:
+                        cmd += ['-y']
+                    cmd += [
                         os.path.join(inputdir, new_stream_file_name),
                         ]
                     do_spawn_cmd(cmd)
@@ -1539,6 +1627,12 @@ def action_optimize(inputdir, in_tags):
                         # '-vbr', 'on', '-compression_level', '10',  # defaults
                         #'-channel', str(channels), '-channel_layout', channel_layout,
                         #'-channel', str(channels), '-mapping_family', '1', '-af', 'aformat=channel_layouts=%s' % (channel_layout,),
+                        ]
+                    if not app.log.isEnabledFor(logging.VERBOSE):
+                        cmd += ['-loglevel', 'info']
+                    if app.args.yes:
+                        cmd += ['-y']
+                    cmd += [
                         '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
                         ]
                     do_spawn_cmd(cmd)
@@ -1564,6 +1658,12 @@ def action_optimize(inputdir, in_tags):
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-scodec', 'dvdsub',
                             '-map', '0',
+                            ]
+                        if not app.log.isEnabledFor(logging.VERBOSE):
+                            cmd += ['-loglevel', 'info']
+                        if app.args.yes:
+                            cmd += ['-y']
+                        cmd += [
                             '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
                             ]
                         do_spawn_cmd(cmd)
@@ -1685,6 +1785,12 @@ def action_optimize(inputdir, in_tags):
                     cmd = [
                         'ffmpeg',
                         '-i', os.path.join(inputdir, stream_file_name),
+                        ]
+                    if not app.log.isEnabledFor(logging.VERBOSE):
+                        cmd += ['-loglevel', 'info']
+                    if app.args.yes:
+                        cmd += ['-y']
+                    cmd += [
                         os.path.join(inputdir, new_stream_file_name),
                         ]
                     do_spawn_cmd(cmd)
@@ -1794,6 +1900,10 @@ def action_demux(inputdir, in_tags):
             '-codec', 'copy',
             ]
         cmd += option_args
+        if not app.log.isEnabledFor(logging.VERBOSE):
+            cmd += ['-loglevel', 'info']
+        if app.args.yes:
+            cmd += ['-y']
         cmd += [
             output_file.file_name,
             ]
