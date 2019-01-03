@@ -92,6 +92,7 @@ def main():
     pgroup = app.parser.add_argument_group('Compatibility')
 
     pgroup = app.parser.add_argument_group('Encoding')
+    pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
 
     pgroup = app.parser.add_argument_group('Tags')
     pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
@@ -780,11 +781,13 @@ def action_optimize(inputdir, in_tags):
                 if video_filter_specs:
                     extra_args += ['-filter:v', ','.join(video_filter_specs)]
 
+                frame_rate = ffprobe_stream_json['r_frame_rate']
+
                 if False:
                     video_target_bit_rate = get_vp9_target_bitrate(
                         width=ffprobe_stream_json['width'],
                         height=ffprobe_stream_json['height'],
-                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        frame_rate=frame_rate,
                         )[1]
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
                         with perfcontext('Convert %s -> %s w/ ffmpeg (pass 1/2)' % (stream_file_ext, new_stream_file_ext)):
@@ -795,6 +798,7 @@ def action_optimize(inputdir, in_tags):
                                 '-b:v', '%dk' % (video_target_bit_rate,),
                                 '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '4',
+                                '-g', str(int(app.args.keyint * frame_rate)),
                                 '-threads', '8',
                                 '-row-mt', '1',
                                 '-tile-columns', '6', '-frame-parallel', '1',
@@ -816,6 +820,7 @@ def action_optimize(inputdir, in_tags):
                                 '-b:v', '%dk' % (video_target_bit_rate,),
                                 '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '1',
+                                '-g', str(int(app.args.keyint * frame_rate)),
                                 '-threads', '8',
                                 '-row-mt', '1',
                                 '-tile-columns', '6', '-frame-parallel', '1',
@@ -866,6 +871,7 @@ def action_optimize(inputdir, in_tags):
                                 '-c:v', 'libvpx-vp9',
                                 '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '4',
+                                '-g', str(int(app.args.keyint * frame_rate)),
                                 ]
                             cmd += extra_args
                             if not app.log.isEnabledFor(logging.VERBOSE):
@@ -892,6 +898,7 @@ def action_optimize(inputdir, in_tags):
                                 '-c:v', 'libvpx-vp9',
                                 '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log')
                                 '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
+                                '-g', str(int(app.args.keyint * frame_rate)),
                                 ]
                             cmd += extra_args
                             if not app.log.isEnabledFor(logging.VERBOSE):
