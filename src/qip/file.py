@@ -114,9 +114,9 @@ class File(object):
             tmp_file.delete = False
         return True
 
-    def move(self, dst, src_dir_fd=None, dst_dir_fd=None, update_file_name=True):
+    def move(self, dst, update_file_name=True):
         dst = str(dst)
-        shutil.move(self.file_name, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+        shutil.move(self.file_name, dst)
         if update_file_name:
             self.file_name = dst
 
