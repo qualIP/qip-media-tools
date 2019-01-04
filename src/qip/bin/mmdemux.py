@@ -224,13 +224,17 @@ def ext_to_container(ext):
         raise ValueError('Unsupported extension %r' % (ext,)) from err
     return ext_container
 
-def get_vp9_target_bitrate(width, height, frame_rate, mq=True):
+def float_frame_rate(frame_rate):
     if type(frame_rate) is str:
         m = re.match(r'^([0-9]+)/([1-9][0-9]*)$', frame_rate)
         if m:
             frame_rate = int(m.group(1)) / int(m.group(2))
         else:
-            frame_rate = int(frame_rate)
+            frame_rate = float(frame_rate)
+    return frame_rate
+
+def get_vp9_target_bitrate(width, height, frame_rate, mq=True):
+    frame_rate = float_frame_rate(frame_rate)
     # https://sites.google.com/a/webmproject.org/wiki/ffmpeg/vp9-encoding-guide
     # https://headjack.io/blog/hevc-vp9-vp10-dalaa-thor-netvc-future-video-codecs/
     if False:
@@ -781,13 +785,13 @@ def action_optimize(inputdir, in_tags):
                 if video_filter_specs:
                     extra_args += ['-filter:v', ','.join(video_filter_specs)]
 
-                frame_rate = ffprobe_stream_json['r_frame_rate']
+                r_frame_rate = ffprobe_stream_json['r_frame_rate']
 
                 if False:
                     video_target_bit_rate = get_vp9_target_bitrate(
                         width=ffprobe_stream_json['width'],
                         height=ffprobe_stream_json['height'],
-                        frame_rate=frame_rate,
+                        frame_rate=r_frame_rate,
                         )[1]
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
                         with perfcontext('Convert %s -> %s w/ ffmpeg (pass 1/2)' % (stream_file_ext, new_stream_file_ext)):
@@ -798,7 +802,7 @@ def action_optimize(inputdir, in_tags):
                                 '-b:v', '%dk' % (video_target_bit_rate,),
                                 '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log'),
                                 '-speed', '4',
-                                '-g', str(int(app.args.keyint * frame_rate)),
+                                '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
                                 '-threads', '8',
                                 '-row-mt', '1',
                                 '-tile-columns', '6', '-frame-parallel', '1',
@@ -820,7 +824,7 @@ def action_optimize(inputdir, in_tags):
                                 '-b:v', '%dk' % (video_target_bit_rate,),
                                 '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log'),
                                 '-speed', '1',
-                                '-g', str(int(app.args.keyint * frame_rate)),
+                                '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
                                 '-threads', '8',
                                 '-row-mt', '1',
                                 '-tile-columns', '6', '-frame-parallel', '1',
@@ -841,14 +845,14 @@ def action_optimize(inputdir, in_tags):
                     video_target_bit_rate = get_vp9_target_bitrate(
                         width=ffprobe_stream_json['width'],
                         height=ffprobe_stream_json['height'],
-                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        frame_rate=r_frame_rate,
                         )
                     # video_target_bit_rate = int(video_target_bit_rate * 1.2)  # 1800 * 1.2 = 2160
                     video_target_bit_rate = int(video_target_bit_rate * 1.5)  # 1800 * 1.5 = 2700
                     video_target_quality = get_vp9_target_quality(
                         width=ffprobe_stream_json['width'],
                         height=ffprobe_stream_json['height'],
-                        frame_rate=ffprobe_stream_json['r_frame_rate'],
+                        frame_rate=r_frame_rate,
                         )
                     vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
                         width=ffprobe_stream_json['width'],
@@ -871,7 +875,7 @@ def action_optimize(inputdir, in_tags):
                                 '-c:v', 'libvpx-vp9',
                                 '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log'),
                                 '-speed', '4',
-                                '-g', str(int(app.args.keyint * frame_rate)),
+                                '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
                                 ]
                             cmd += extra_args
                             if not app.log.isEnabledFor(logging.VERBOSE):
@@ -898,7 +902,7 @@ def action_optimize(inputdir, in_tags):
                                 '-c:v', 'libvpx-vp9',
                                 '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log'),
                                 '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
-                                '-g', str(int(app.args.keyint * frame_rate)),
+                                '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
                                 ]
                             cmd += extra_args
                             if not app.log.isEnabledFor(logging.VERBOSE):
