@@ -206,7 +206,7 @@ class Executable(metaclass=abc.ABCMeta):
                 run_func = self.run_func
             if run_func is None:
                 t0 = time.time()
-                d.out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+                d.out = do_exec_cmd(cmd, stderr=subprocess.STDOUT)
                 #d.subprocess_info = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 t1 = time.time()
                 #d.out = d.subprocess_info.stdout
