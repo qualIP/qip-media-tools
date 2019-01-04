@@ -20,6 +20,7 @@ import reprlib
 import shutil
 import subprocess
 import sys
+import tempfile
 import unidecode
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
@@ -32,8 +33,15 @@ from qip.file import *
 from qip.parser import *
 from qip.perf import perfcontext
 from qip.snd import *
+from qip.img import *
 from qip.utils import byte_decode
 import qip.snd
+
+import mutagen.mp4
+mutagen.mp4.MP4Tags._MP4Tags__atoms[b'idx'] = (
+    mutagen.mp4.MP4Tags._MP4Tags__parse_text,
+    mutagen.mp4.MP4Tags._MP4Tags__render_text,
+)
 
 # replace_html_entities {{{
 
@@ -71,6 +79,12 @@ def main():
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
 
+    pgroup = app.parser.add_argument_group('Compatibility')
+    pgroup.add_argument('--prep-picture', dest='prep_picture', action='store_true', help='prepare picture')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--ipod-compat', dest='ipod_compat', default=True, action='store_true', help='iPod compatibility (default)')
+    xgroup.add_argument('--no-ipod-compat', dest='ipod_compat', default=argparse.SUPPRESS, action='store_false', help='iPod compatibility (disable)')
+
     pgroup = app.parser.add_argument_group('Tags')
     pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
@@ -86,6 +100,8 @@ def main():
     pgroup.add_argument('--tvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--season', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--episode', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
@@ -167,26 +183,58 @@ def taged_mf_MP4Tags(file_name, mf, tags):
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('Old tags: %r', list(mf.tags.keys()))
     tags_to_set = set(tags.keys())
+    #app.log.debug('tags %r, tags_to_set: %r', type(tags), tags_to_set)
     if SoundTagEnum.disk in tags_to_set:
         tags_to_set.remove(SoundTagEnum.disks)
     if SoundTagEnum.track in tags_to_set:
         tags_to_set.remove(SoundTagEnum.tracks)
+    for tag in (
+            SoundTagEnum.barcode,
+            SoundTagEnum.isrc,
+            SoundTagEnum.asin,
+            SoundTagEnum.isrc,
+            SoundTagEnum.musicbrainz_discid,
+            SoundTagEnum.cddb_discid,
+            SoundTagEnum.accuraterip_discid,
+    ):
+        if tag in tags_to_set:
+            tags_to_set.remove(tag)
+            tags_to_set.add(SoundTagEnum.xid)
     for tag in tags_to_set:
+        if tag in (
+                SoundTagEnum.musicbrainz_releaseid,
+        ):
+            continue
         tag = tag.name
         value = tags[tag]
+        mapped_tag = qip.snd.tag_info['map'][tag]
         try:
-            mp4_tag = qip.snd.tag_info['tags'][tag]['mp4v2_tag']
-            mp4v2_data_type = qip.snd.tag_info['tags'][tag]['mp4v2_data_type']
+            mp4_tag = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_tag']
+            mp4v2_data_type = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_data_type']
         except KeyError:
             raise NotImplementedError(tag)
+        if mp4_tag == 'xid':
+            value = tags.xids or None
         if value is None:
             if mf.tags.pop(mp4_tag, None) is not None:
                 app.log.verbose(' Removed %s (%s)', tag, mp4_tag)
         else:
             if mp4v2_data_type == 'utf-8':
-                mp4_value = str(value)
+                if mp4_tag == 'xid':
+                    mp4_value = [str(v) for v in value]
+                else:
+                    mp4_value = str(value)
+                    if mp4_tag.startswith('----:'):
+                        # freeform tags are expected in bytes
+                        mp4_value = mp4_value.encode('utf-8')
             elif mp4v2_data_type == 'bool8':
                 mp4_value = 1 if value else 0
+            elif mp4v2_data_type in ('int8', 'int16', 'int32', 'int64'):
+                if mp4_tag == 'sfID':
+                    # raise ValueError('value %r = %r -> %s' % (type(value), value, value))
+                    mp4_value = [qip.snd.mp4_country_map[value]]
+                else:
+                    mp4_value = int(value)
             elif mp4v2_data_type in ('binary',):
                 if mp4_tag == 'disk':  # disk
                     # arg must be a list of 1(or more) tuple of (track, total)
@@ -196,16 +244,40 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                     mp4_value = [(int(tags.track), int(tags.tracks))]
                 else:
                     raise NotImplementedError((tag, mp4v2_data_type))
-            elif mp4v2_data_type in ('int8', 'intf16', 'intf32', 'int64'):
-                mp4_value = int(value)
+            elif mp4v2_data_type in ('picture',):
+                assert mp4_tag == 'covr'
+                mp4_value = []
+                from qip.file import cache_url
+                value = cache_url(str(value))
+                if getattr(app.args, 'prep_picture', False):
+                    from qip.m4a import M4aFile
+                    m4a = M4aFile(file_name)
+                    value = m4a.prep_picture(value)
+                img_file = ImageFile(str(value))
+                img_type = img_file.image_type
+                if img_type is ImageType.jpg:
+                    img_type = mutagen.mp4.MP4Cover.FORMAT_JPEG
+                elif img_type is ImageType.png:
+                    img_type = mutagen.mp4.MP4Cover.FORMAT_PNG
+                else:
+                    raise ValueError('Unsupported image type: %s' % (img_type,))
+                with img_file.open('rb') as fp:
+                    v = fp.read()
+                    mp4_value.append(mutagen.mp4.MP4Cover(v, img_type))
             else:
                 raise NotImplementedError(mp4v2_data_type)
             try:
                 mf.tags[mp4_tag] = mp4_value
             except:
-                app.log.debug('ERROR! mf.tags[%r] = %r', mp4_tag, mp4_value)
+                if mp4_tag in ('covr',):
+                    app.log.debug('ERROR! mf.tags[%r] = ...', mp4_tag)
+                else:
+                    app.log.debug('ERROR! mf.tags[%r] = %r', mp4_tag, mp4_value)
                 raise
-            app.log.verbose(' Set %s (%s): %r', tag, mp4_tag, mp4_value)
+            if mp4_tag in ('covr',):
+                app.log.verbose(' Set %s (%s)', tag, mp4_tag)
+            else:
+                app.log.verbose(' Set %s (%s): %r', tag, mp4_tag, mp4_value)
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('New tags: %r', list(mf.tags.keys()))
     return True
