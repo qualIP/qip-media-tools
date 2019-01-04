@@ -47,7 +47,11 @@ class M4aFile(snd.SoundFile):
         if not src_picture:
             return None
         picture = src_picture
-        if os.path.splitext(str(src_picture))[1] not in ('.gif', '.png', '.jpg', '.jpeg'):
+        if os.path.splitext(str(src_picture))[1] not in (
+                #'.gif',
+                '.png',
+                '.jpg',
+                '.jpeg'):
             if keep_picture_file_name:
                 picture = ImageFile(keep_picture_file_name)
             else:
