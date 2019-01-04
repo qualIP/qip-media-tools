@@ -834,7 +834,7 @@ def action_optimize(inputdir, in_tags):
                             cmd += extra_args
                             if not app.log.isEnabledFor(logging.VERBOSE):
                                 cmd += ['-loglevel', 'info']
-                            if yes:
+                            if app.args.yes:
                                 cmd += ['-y']
                             cmd += [
                                 '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
@@ -880,7 +880,7 @@ def action_optimize(inputdir, in_tags):
                             cmd += extra_args
                             if not app.log.isEnabledFor(logging.VERBOSE):
                                 cmd += ['-loglevel', 'info']
-                            if yes:
+                            if app.args.yes:
                                 cmd += ['-y']
                             cmd += [
                                 '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
@@ -907,7 +907,7 @@ def action_optimize(inputdir, in_tags):
                             cmd += extra_args
                             if not app.log.isEnabledFor(logging.VERBOSE):
                                 cmd += ['-loglevel', 'info']
-                            if yes:
+                            if app.args.yes:
                                 cmd += ['-y']
                             cmd += [
                                 '-y', '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
@@ -947,7 +947,7 @@ def action_optimize(inputdir, in_tags):
                         ]
                     if not app.log.isEnabledFor(logging.VERBOSE):
                         cmd += ['-loglevel', 'info']
-                    if yes:
+                    if app.args.yes:
                         cmd += ['-y']
                     cmd += [
                         os.path.join(inputdir, new_stream_file_name),
@@ -1017,7 +1017,7 @@ def action_optimize(inputdir, in_tags):
                         ]
                     if not app.log.isEnabledFor(logging.VERBOSE):
                         cmd += ['-loglevel', 'info']
-                    if yes:
+                    if app.args.yes:
                         cmd += ['-y']
                     cmd += [
                         '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
@@ -1048,7 +1048,7 @@ def action_optimize(inputdir, in_tags):
                             ]
                         if not app.log.isEnabledFor(logging.VERBOSE):
                             cmd += ['-loglevel', 'info']
-                        if yes:
+                        if app.args.yes:
                             cmd += ['-y']
                         cmd += [
                             '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
@@ -1175,7 +1175,7 @@ def action_optimize(inputdir, in_tags):
                         ]
                     if not app.log.isEnabledFor(logging.VERBOSE):
                         cmd += ['-loglevel', 'info']
-                    if yes:
+                    if app.args.yes:
                         cmd += ['-y']
                     cmd += [
                         os.path.join(inputdir, new_stream_file_name),
