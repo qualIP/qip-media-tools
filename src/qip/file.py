@@ -97,10 +97,10 @@ class File(object):
     def md5(self):
         return self.hash(hashlib.md5())
 
-    def download(self, url, md5=None):
+    def download(self, url, md5=None, overwrite=False):
         if not self.file_name:
             raise ValueError('%r: file_name not defined' % (self,))
-        if self.exists():
+        if not overwrite and self.exists():
             return False
         log.info('Downloading %s...' % (url,))
         #log.info('Downloading %s to %s...' % (url, self))
@@ -195,6 +195,7 @@ class TempFile(File):
             self.unlink(force=True)
 
 def cache_url(url, cache_dict={}):
+    assert isinstance(url, str)
     purl = urllib.parse.urlparse(url)
     if purl.scheme == 'file':
         return os.path.normpath(purl.path)
