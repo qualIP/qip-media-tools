@@ -39,6 +39,7 @@ from qip.cmp import *
 from qip.exec import *
 import qip.file
 from qip.isolang import isolang
+from qip.isocountry import isocountry
 from qip.file import *
 from qip.parser import *
 from qip.propex import propex
@@ -311,7 +312,7 @@ class SoundTagEnum(enum.Enum):
 
     date = 'date'  # None|SoundTagDate
     year = 'year'  # NUM  Set the release date (*from date)
-    country = 'country'
+    country = 'country'  # STR  None|IsoCountry
 
     disk = 'disk'  # NUM  Set the disk number
     disks = 'disks'  # NUM  Set the number of disks
@@ -363,6 +364,7 @@ class SoundTagEnum(enum.Enum):
 
     purchasedate = 'purchasedate'
     itunesaccount = 'itunesaccount'
+    itunescountry = 'itunescountry'
 
     xid = 'xid'  # ITunesXid  Set the globally-unique xid (vendor:scheme:id)
     cddb_discid = 'cddb_discid'
@@ -601,6 +603,10 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         type=(None, int),
         gettype=(None, operator.attrgetter('year')))
 
+    country = propex(
+        name='country',
+        type=(None, isocountry))
+
     artistid = propex(
         name='artistid',
         type=(_tNullTag, int))
@@ -667,25 +673,37 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     # TODO itunesaccount = propex(name='itunesaccount', type=(_tNullDate, email))
 
+    itunescountry = propex(
+        name='itunescountry',
+        type=(None, isocountry))
+
     xid = propex(
         name='xid',
         type=(_tNullTag, ITunesXid))
 
     @xid.defaulter
     def xid(self):
-        for tag_enum, prefix, scheme in (
-                (SoundTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
-                (SoundTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
-                (SoundTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
-                (SoundTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
-                (SoundTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
-                (SoundTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
-                (SoundTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
-        ):
-            identifier = self[tag_enum]
-            if identifier is not None:
-                return ITunesXid(prefix, scheme, identifier)
+        for xid in self.xids:
+            return xid
         raise AttributeError
+
+    @property
+    def xids(self):
+        try:
+            yield getattr(self, '_xid')
+        except AttributeError:
+            for tag_enum, prefix, scheme in (
+                    (SoundTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
+                    (SoundTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
+                    (SoundTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
+                    (SoundTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
+                    (SoundTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
+                    (SoundTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
+                    (SoundTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
+            ):
+                identifier = self[tag_enum]
+                if identifier is not None:
+                    yield ITunesXid(prefix, scheme, identifier)
 
     def __setitem__(self, key, value):
         key = self._sanitize_key(key)
@@ -909,6 +927,7 @@ class TrackTags(SoundTagDict):
         if deep and self.album_tags is not None:
             keys = set(keys)
             keys.add(SoundTagEnum.track)  # Implicit
+            keys.add(SoundTagEnum.tracks)  # Implicit
             album_keys = set(self.album_tags.keys())
             if SoundTagEnum.title in album_keys:
                 keys.add(SoundTagEnum.albumtitle)
@@ -2401,6 +2420,37 @@ for cat_id, cat_name, genres_info in [
                     }
 
 # }}}
+# mp4_country_map -- sfID {{{
+
+# TODO More here: https://sno.phy.queensu.ca/~phil/exiftool/TagNames/QuickTime.html
+
+mp4_country_map = {
+    isocountry('usa'): 143442,
+    isocountry('fra'): 143442,
+    isocountry('deu'): 143443,
+    isocountry('gbr'): 143444,
+    isocountry('aut'): 143445,
+    isocountry('bel'): 143446,
+    isocountry('fin'): 143447,
+    isocountry('grc'): 143448,
+    isocountry('irl'): 143449,
+    isocountry('ita'): 143450,
+    isocountry('lux'): 143451,
+    isocountry('nld'): 143452,
+    isocountry('prt'): 143453,
+    isocountry('esp'): 143454,
+    isocountry('can'): 143455,
+    isocountry('swe'): 143456,
+    isocountry('nor'): 143457,
+    isocountry('dnk'): 143458,
+    isocountry('che'): 143459,
+    isocountry('aus'): 143460,
+    isocountry('nzl'): 143461,
+    isocountry('jpn'): 143462,
+    None: 0,
+}
+
+# }}}
 # tag_stik_info (iTunes Media Type) {{{
 
 tag_stik_info = {
@@ -2659,14 +2709,37 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Media Type",             "stik",                     "enum8",                    "type",                     "TMT",                      "TMED",           ["mediaType", "media_type"]],
     ["Content Rating",         "rtng",                     "int8",                     "contentRating",                   None,                       None,             ['rating']],
     ["Gapless Playback",       "pgap",                     "bool8",                    "gapless",                  None,                       None,             ['gapless_playback']],
-    ["Purchase Account",       "apID",                     "utf-8",                    "iTunesAccount",            None,                       None,             ['account_id']],
-    ["Account Type",           "akID",                     "int8",                     "iTunesAccountType",        None,                       None,             []],
-    ["Catalog ID",             "cnID",                     "int32",                    "iTunesCatalogID",          None,                       None,             []],
-    ["Country Code",           "sfID",                     "int32",                    "iTunesCountry",            None,                       None,             []],
+    ["iTunes Purchase Account", "apID",                    "utf-8",                    "iTunesAccount",            None,                       None,             ['account_id']],
+    ["iTunes Account Type",    "akID",                     "int8",                     "iTunesAccountType",        None,                       None,             []],
+    ["iTunes Catalog ID",      "cnID",                     "int32",                    "iTunesCatalogID",          None,                       None,             []],
+    ["iTunes Store Country",   "sfID",                     "int32",                    "iTunesCountry",            None,                       None,             []],
     ["Artist ID",              "atID",                     "int32",                    "artistID",                 None,                       None,             []],
     ["Album ID",               "plID",                     "int64",                    "plID",                     None,                       None,             []],
     ["x-Genre ID",             "geID",                     "int32",                    "geID",                     None,                       None,             []],
     ["Subtitle",               "©st3",                     "utf-8",                    "subtitle",                 "TT3",                      "TIT3",           []],
+    ["xid",                    "xid",                      "utf-8",                    "xid",                      None,                       None,             []],
+    # As per operon {{{
+    ["Release Country",        "----:com.apple.iTunes:MusicBrainz Album Release Country", "utf-8", None,           None,                       None,             ['country']],
+    ["Language",               "----:com.apple.iTunes:LANGUAGE"                         , "utf-8", None,           None,                       None,             ['language']],
+    # "----:com.apple.iTunes:CONDUCTOR": "conductor",
+    # "----:com.apple.iTunes:DISCSUBTITLE": "discsubtitle",
+    # "----:com.apple.iTunes:MOOD": "mood",
+    # "----:com.apple.iTunes:MusicBrainz Artist Id": "musicbrainz_artistid",
+    # "----:com.apple.iTunes:MusicBrainz Track Id": "musicbrainz_trackid",
+    # "----:com.apple.iTunes:MusicBrainz Release Track Id": "musicbrainz_releasetrackid",
+    # "----:com.apple.iTunes:MusicBrainz Album Id": "musicbrainz_albumid",
+    # "----:com.apple.iTunes:MusicBrainz Album Artist Id": "musicbrainz_albumartistid",
+    # "----:com.apple.iTunes:MusicIP PUID": "musicip_puid",
+    # "----:com.apple.iTunes:MusicBrainz Album Status": "musicbrainz_albumstatus",
+    # "----:com.apple.iTunes:MusicBrainz Album Type": "musicbrainz_albumtype",
+    # "----:com.apple.iTunes:MusicBrainz Album Release Country": "releasecountry",
+    # '----:com.apple.iTunes:MusicBrainz Release Group Id': 'musicbrainz_releasegroupid',
+    # '----:com.apple.iTunes:replaygain_album_gain': 'replaygain_album_gain',
+    # '----:com.apple.iTunes:replaygain_album_peak': 'replaygain_album_peak',
+    # '----:com.apple.iTunes:replaygain_track_gain': 'replaygain_track_gain',
+    # '----:com.apple.iTunes:replaygain_track_peak': 'replaygain_track_peak',
+    # '----:com.apple.iTunes:replaygain_reference_loudness':
+    # }}}
     ]:
     tag = (mp4v2_name or element).lower()
     for v in ["element", "mp4v2_tag", "mp4v2_data_type", "mp4v2_name", "id3v2_20_tag", "id3v2_30_tag", "aliases"]:
@@ -3154,7 +3227,7 @@ class SoundFile(BinaryFile):
                             self.set_tag(tag, value, tag_type)
 
                     elif (
-                            parser.re_search(r'^(?:=== )?(TPA|TPOS) \(.*?\): (.+)$') or 
+                            parser.re_search(r'^(?:=== )?(TPA|TPOS) \(.*?\): (.+)$') or
                             parser.re_search(r'^(?:=== )?(TRK|TRCK) \(.*?\): (.+)$')
                             ):
                         # ("===" version is id3info, else id3v2)
@@ -3561,7 +3634,7 @@ def get_audio_file_ffmpeg_stats(d):
             pass
         elif parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
             # size=N/A time=00:02:17.71 bitrate=N/A
-            # size=N/A time=00:12:32.03 bitrate=N/A speed= 309x    
+            # size=N/A time=00:12:32.03 bitrate=N/A speed= 309x
             # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
             # There will be multiple; Only the last one is relevant.
             d.actual_duration = parse_time_duration(parser.match.group('out_time'))
@@ -3919,7 +3992,7 @@ class Operon(Executable):
             #TagArgInfo('performer', SoundTagEnum.XXXJST, STR, 'Performer'),
             #TagArgInfo('performersort', SoundTagEnum.XXXJST, STR, 'Performer (Sort)'),
             #TagArgInfo('recordingdate', SoundTagEnum.XXXJST, STR, 'Recording Date'),
-            TagArgInfo('releasecountry', SoundTagEnum.country, STR, 'Release Country'),
+            TagArgInfo('releasecountry', SoundTagEnum.country, isocountry, 'Release Country'),
             TagArgInfo('title', SoundTagEnum.title, STR, 'Title'),
             TagArgInfo('tracknumber', SoundTagEnum.track_slash_tracks, STR, 'Track'),
             #TagArgInfo('version', SoundTagEnum.XXXJST, STR, 'Version'),
