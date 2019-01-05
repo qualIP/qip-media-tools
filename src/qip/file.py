@@ -138,6 +138,12 @@ class File(object):
                   tempfile._TemporaryFileWrapper,
               ))))
 
+    def fileno(self):
+        fp = self.fp
+        if fp:
+            return fp.fileno()
+        raise ValueError('I/O operation on closed file')  # like file objects
+
     def open(self, mode='r', encoding=None):
         assert not self.fp
         if not self.file_name:
@@ -146,9 +152,21 @@ class File(object):
             mode += self.open_mode
         return open(self.file_name, mode=mode, encoding=encoding)
 
+    def fdopen(self, fd, mode='r', encoding=None):
+        assert not self.fp
+        if 't' not in mode and 'b' not in mode:
+            mode += self.open_mode
+        return open(self.file_name, mode=mode, encoding=encoding)
+
     def read(self):
         fp = self.fp or self.open()
         return fp.read()
+
+    def close(self):
+        fp = self.fp
+        if fp:
+            fp.close()
+        # No exception if no fp, like file objects
 
 class TextFile(File):
 
@@ -193,6 +211,17 @@ class TempFile(File):
     def __del__(self):
         if self.delete:
             self.unlink(force=True)
+
+    @classmethod
+    def mkstemp(cls, *, open=False, text=False, **kwargs):
+        tmpfile = cls(file_name=None,
+                      open_mode='t' if text else 'b')
+        fd, tmpfile.file_name = tempfile.mkstemp(text=text, **kwargs)
+        if open:
+            tmpfile.fp = tmpfile.fdopen(fd, mode='w')
+        else:
+            os.close(fd)
+        return tmpfile
 
 def cache_url(url, cache_dict={}):
     assert isinstance(url, str)

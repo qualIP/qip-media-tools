@@ -55,9 +55,7 @@ class M4aFile(snd.SoundFile):
             if keep_picture_file_name:
                 picture = ImageFile(keep_picture_file_name)
             else:
-                picture = TempFile(file_name=None)
-                fd, picture.file_name = tempfile.mkstemp(suffix='.png', text=False)
-                os.close(fd)
+                picture = TempFile.mkstemp(suffix='.png')
             if str(src_picture) != str(picture):
                 app.log.info('Writing new picture %s...', picture)
             cmd = [shutil.which('ffmpeg')]
@@ -71,9 +69,7 @@ class M4aFile(snd.SoundFile):
             if keep_picture_file_name:
                 picture = ImageFile(keep_picture_file_name)
             else:
-                picture = TempFile(file_name=None)
-                fd, picture.file_name = tempfile.mkstemp(suffix='.png', text=False)
-                os.close(fd)
+                picture = TempFile.mkstemp(suffix='.png')
             app.log.info('Writing iPod-compatible picture %s...', picture)
             cmd = [shutil.which('gm'),
                     'convert', str(src_picture),
