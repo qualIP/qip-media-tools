@@ -35,6 +35,7 @@ from qip.snd import *
 from qip.mkv import *
 from qip.m4a import *
 from qip.utils import byte_decode
+from qip.ffmpeg import ffmpeg
 
 # https://www.ffmpeg.org/ffmpeg.html
 
@@ -184,12 +185,14 @@ def codec_name_to_ext(codec_name):
         codec_ext = {
             # video
             'mpeg2video': '.mpeg2',
+            'msmpeg4v3': '.msmpeg4v3.avi',
             'h264': '.h264',
             'h265': '.h265',
             'vp8': '.vp8',
             'vp9': '.vp9',
             # audio
             'ac3': '.ac3',
+            'mp3': '.mp3',
             'dts': '.dts',
             'opus': '.opus',
             'aac': '.aac',
@@ -673,25 +676,23 @@ def action_chop(inputdir, in_tags):
                         chapter_no,
                         stream_file_ext)
 
-                    cmd = [
-                        'ffmpeg',
-                        '-i', os.path.join(inputdir, stream_file_name),
-                        '-codec', 'copy',
-                        '-ss', chapter_time_start,
-                        '-to', chapter_time_end,
-                        ]
-                    if not app.log.isEnabledFor(logging.VERBOSE):
-                        cmd += ['-loglevel', 'info']
-                    if yes:
-                        cmd += ['-y']
-                    if force_format:
-                        cmd += [
-                            '-f', force_format,
+                    with perfcontext('Chop w/ ffmpeg'):
+                        ffmpeg_args = [
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-codec', 'copy',
+                            '-ss', chapter_time_start,
+                            '-to', chapter_time_end,
                             ]
-                    cmd += [
-                        os.path.join(inputdir, stream_chapter_file_name),
-                        ]
-                    do_spawn_cmd(cmd)
+                        if force_format:
+                            ffmpeg_args += [
+                                '-f', force_format,
+                                ]
+                        ffmpeg_args += [
+                            os.path.join(inputdir, stream_chapter_file_name),
+                            ]
+                        ffmpeg(*ffmpeg_args,
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
 
                 elif stream_codec_type == 'subtitle':
                     pass
@@ -736,18 +737,16 @@ def action_optimize(inputdir, in_tags):
                     stream_crop = stream_dict.pop('crop', None)
                     if not stream_crop and 'original_crop' not in stream_dict:
                         with perfcontext('Cropdetect w/ ffmpeg'):
-                            cmd = [
-                                'ffmpeg',
+                            ffmpeg_args = [
                                 '-i', os.path.join(inputdir, stream_file_name),
                                 '-t', str(app.args.cropdetect_duration),
                                 '-filter:v', 'cropdetect=24:2:0:0',
                                 ]
-                            if not app.log.isEnabledFor(logging.VERBOSE):
-                                cmd += ['-loglevel', 'info']
-                            cmd += [
+                            ffmpeg_args += [
                                 '-f', 'null', '-',
                                 ]
-                            out = do_spawn_cmd(cmd)
+                            out = ffmpeg(*ffmpeg_args,
+                                         dry_run=app.args.dry_run)
                         if not app.args.dry_run:
                             stream_crop = None
                             parser = lines_parser(out.split('\n'))
@@ -787,130 +786,44 @@ def action_optimize(inputdir, in_tags):
 
                 r_frame_rate = ffprobe_stream_json['r_frame_rate']
 
-                if False:
-                    video_target_bit_rate = get_vp9_target_bitrate(
-                        width=ffprobe_stream_json['width'],
-                        height=ffprobe_stream_json['height'],
-                        frame_rate=r_frame_rate,
-                        )[1]
-                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
-                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 1/2)' % (stream_file_ext, new_stream_file_ext)):
-                            cmd = [
-                                'ffmpeg',
-                                '-i', os.path.join(inputdir, stream_file_name),
-                                '-c:v', 'vp9',  # 'libvpx-vp9',
-                                '-b:v', '%dk' % (video_target_bit_rate,),
-                                '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log'),
-                                '-speed', '4',
-                                '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
-                                '-threads', '8',
-                                '-row-mt', '1',
-                                '-tile-columns', '6', '-frame-parallel', '1',
-                                '-auto-alt-ref', '1', '-lag-in-frames', '25',
-                                '-map', '0:v',
-                                ]
-                            cmd += extra_args
-                            if not app.log.isEnabledFor(logging.VERBOSE):
-                                cmd += ['-loglevel', 'info']
-                            cmd += [
-                                '-f', 'ivf', '/dev/null',
-                                ]
-                            do_spawn_cmd(cmd)
-                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 2/2)' % (stream_file_ext, new_stream_file_ext)):
-                            cmd = [
-                                'ffmpeg',
-                                '-i', os.path.join(inputdir, stream_file_name),
-                                '-c:v', 'vp9',  # 'libvpx-vp9',
-                                '-b:v', '%dk' % (video_target_bit_rate,),
-                                '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log'),
-                                '-speed', '1',
-                                '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
-                                '-threads', '8',
-                                '-row-mt', '1',
-                                '-tile-columns', '6', '-frame-parallel', '1',
-                                '-auto-alt-ref', '1', '-lag-in-frames', '25',
-                                '-map', '0:v',
-                                ]
-                            cmd += extra_args
-                            if not app.log.isEnabledFor(logging.VERBOSE):
-                                cmd += ['-loglevel', 'info']
-                            if app.args.yes:
-                                cmd += ['-y']
-                            cmd += [
-                                '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
-                                ]
-                            do_spawn_cmd(cmd)
-                else:
-                    # https://developers.google.com/media/vp9/settings/vod/
-                    video_target_bit_rate = get_vp9_target_bitrate(
-                        width=ffprobe_stream_json['width'],
-                        height=ffprobe_stream_json['height'],
-                        frame_rate=r_frame_rate,
-                        )
-                    # video_target_bit_rate = int(video_target_bit_rate * 1.2)  # 1800 * 1.2 = 2160
-                    video_target_bit_rate = int(video_target_bit_rate * 1.5)  # 1800 * 1.5 = 2700
-                    video_target_quality = get_vp9_target_quality(
-                        width=ffprobe_stream_json['width'],
-                        height=ffprobe_stream_json['height'],
-                        frame_rate=r_frame_rate,
-                        )
-                    vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
-                        width=ffprobe_stream_json['width'],
-                        height=ffprobe_stream_json['height'],
-                        )
-                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
-                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 1/2)' % (stream_file_ext, new_stream_file_ext)):
-                            cmd = [
-                                'ffmpeg',
-                                '-i', os.path.join(inputdir, stream_file_name),
-                                '-b:v', '%dk' % (video_target_bit_rate,),
-                                '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
-                                '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
-                                '-tile-columns', str(vp9_tile_columns),
-                                '-threads', str(vp9_threads),
-                                '-row-mt', '1',
-                                '-quality', 'good',
-                                '-crf', str(video_target_quality),
-                                '-c:v', 'libvpx-vp9',
-                                '-pass', '1', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log'),
-                                '-speed', '4',
-                                '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
-                                ]
-                            cmd += extra_args
-                            if not app.log.isEnabledFor(logging.VERBOSE):
-                                cmd += ['-loglevel', 'info']
-                            if app.args.yes:
-                                cmd += ['-y']
-                            cmd += [
-                                '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
-                                ]
-                            do_spawn_cmd(cmd)
-                        with perfcontext('Convert %s -> %s w/ ffmpeg (pass 2/2)' % (stream_file_ext, new_stream_file_ext)):
-                            cmd = [
-                                'ffmpeg',
-                                '-i', os.path.join(inputdir, stream_file_name),
-                                '-b:v', '%dk' % (video_target_bit_rate,),
-                                '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
-                                '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
-                                '-tile-columns', str(vp9_tile_columns),
-                                '-threads', str(vp9_threads),
-                                '-row-mt', '1',
-                                '-quality', 'good',
-                                '-crf', str(video_target_quality),
-                                '-c:v', 'libvpx-vp9',
-                                '-pass', '2', '-passlogfile', os.path.join(inputdir, new_stream_file_name + '.ffmpeg2pass.log'),
-                                '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
-                                '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
-                                ]
-                            cmd += extra_args
-                            if not app.log.isEnabledFor(logging.VERBOSE):
-                                cmd += ['-loglevel', 'info']
-                            if app.args.yes:
-                                cmd += ['-y']
-                            cmd += [
-                                '-y', '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
-                                ]
-                            do_spawn_cmd(cmd)
+                # https://developers.google.com/media/vp9/settings/vod/
+                video_target_bit_rate = get_vp9_target_bitrate(
+                    width=ffprobe_stream_json['width'],
+                    height=ffprobe_stream_json['height'],
+                    frame_rate=r_frame_rate,
+                    )
+                # video_target_bit_rate = int(video_target_bit_rate * 1.2)  # 1800 * 1.2 = 2160
+                video_target_bit_rate = int(video_target_bit_rate * 1.5)  # 1800 * 1.5 = 2700
+                video_target_quality = get_vp9_target_quality(
+                    width=ffprobe_stream_json['width'],
+                    height=ffprobe_stream_json['height'],
+                    frame_rate=r_frame_rate,
+                    )
+                vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
+                    width=ffprobe_stream_json['width'],
+                    height=ffprobe_stream_json['height'],
+                    )
+
+                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                    ffmpeg_args = [
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        '-b:v', '%dk' % (video_target_bit_rate,),
+                        '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                        '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
+                        '-tile-columns', str(vp9_tile_columns),
+                        '-threads', str(vp9_threads),
+                        '-row-mt', '1',
+                        '-quality', 'good',
+                        '-crf', str(video_target_quality),
+                        '-c:v', 'libvpx-vp9',
+                        '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
+                        '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
+                        ] + extra_args + [
+                        '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    ffmpeg.run2pass(*ffmpeg_args,
+                                    dry_run=app.args.dry_run,
+                                    y=app.args.yes)
 
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
@@ -922,7 +835,12 @@ def action_optimize(inputdir, in_tags):
 
         elif stream_codec_type == 'audio':
 
-            if stream_file_ext not in ('.opus',):
+            ok_formats = (
+                    '.opus',
+                    #'.mp3',
+                    )
+
+            if stream_file_ext not in ok_formats:
                 snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
                 ffprobe_json = snd_file.extract_ffprobe_json()
                 app.log.debug(ffprobe_json['streams'][0])
@@ -931,26 +849,24 @@ def action_optimize(inputdir, in_tags):
             else:
                 ffprobe_json = {}
 
-            if stream_file_ext not in ('.opus', '.wav', '.flac', '.ogg', '.pcm'):
-                # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
+            # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
+            opusenc_formats = ('.wav', '.aiff', '.flac', '.ogg', '.pcm')
+            if stream_file_ext not in ok_formats + opusenc_formats:
                 new_stream_file_ext = '.wav'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
                 app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
 
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
-                    cmd = [
-                        'ffmpeg',
+                    ffmpeg_args = [
                         '-i', os.path.join(inputdir, stream_file_name),
                         # '-channel_layout', channel_layout,
                         ]
-                    if not app.log.isEnabledFor(logging.VERBOSE):
-                        cmd += ['-loglevel', 'info']
-                    if app.args.yes:
-                        cmd += ['-y']
-                    cmd += [
+                    ffmpeg_args += [
                         os.path.join(inputdir, new_stream_file_name),
                         ]
-                    do_spawn_cmd(cmd)
+                    ffmpeg(*ffmpeg_args,
+                           dry_run=app.args.dry_run,
+                           y=app.args.yes)
 
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
@@ -960,7 +876,7 @@ def action_optimize(inputdir, in_tags):
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
 
-            if stream_file_ext in ('.wav', '.flac', '.ogg', '.pcm'):
+            if stream_file_ext not in ok_formats and stream_file_ext in opusenc_formats:
                 # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
                 new_stream_file_ext = '.opus'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
@@ -988,7 +904,7 @@ def action_optimize(inputdir, in_tags):
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
 
-            if stream_file_ext in ('.opus',):
+            if stream_file_ext in ok_formats:
                 if stream_file_name == orig_stream_file_name:
                     app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
             else:
@@ -1003,8 +919,7 @@ def action_optimize(inputdir, in_tags):
                     raise NotImplementedError('Conversion not supported as ffmpeg does not respect the number of channels and channel mapping')
 
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
-                    cmd = [
-                        'ffmpeg',
+                    ffmpeg_args = [
                         '-i', os.path.join(inputdir, stream_file_name),
                         '-c:a', 'opus',
                         '-strict', 'experimental',  # for libopus
@@ -1013,14 +928,12 @@ def action_optimize(inputdir, in_tags):
                         #'-channel', str(channels), '-channel_layout', channel_layout,
                         #'-channel', str(channels), '-mapping_family', '1', '-af', 'aformat=channel_layouts=%s' % (channel_layout,),
                         ]
-                    if not app.log.isEnabledFor(logging.VERBOSE):
-                        cmd += ['-loglevel', 'info']
-                    if app.args.yes:
-                        cmd += ['-y']
-                    cmd += [
+                    ffmpeg_args += [
                         '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
                         ]
-                    do_spawn_cmd(cmd)
+                    ffmpeg(*ffmpeg_args,
+                           dry_run=app.args.dry_run,
+                           y=app.args.yes)
 
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
@@ -1038,20 +951,17 @@ def action_optimize(inputdir, in_tags):
 
                 if False:
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
-                        cmd = [
-                            'ffmpeg',
+                        ffmpeg_args = [
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-scodec', 'dvdsub',
                             '-map', '0',
                             ]
-                        if not app.log.isEnabledFor(logging.VERBOSE):
-                            cmd += ['-loglevel', 'info']
-                        if app.args.yes:
-                            cmd += ['-y']
-                        cmd += [
+                        ffmpeg_args += [
                             '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
                             ]
-                        do_spawn_cmd(cmd)
+                        ffmpeg(*ffmpeg_args,
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
                 else:
                     with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream_file_ext)):
                         # https://www.videohelp.com/software/BDSup2Sub
@@ -1167,18 +1077,13 @@ def action_optimize(inputdir, in_tags):
                 app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
 
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
-                    cmd = [
-                        'ffmpeg',
+                    ffmpeg_args = [
                         '-i', os.path.join(inputdir, stream_file_name),
-                        ]
-                    if not app.log.isEnabledFor(logging.VERBOSE):
-                        cmd += ['-loglevel', 'info']
-                    if app.args.yes:
-                        cmd += ['-y']
-                    cmd += [
                         os.path.join(inputdir, new_stream_file_name),
                         ]
-                    do_spawn_cmd(cmd)
+                    ffmpeg(*ffmpeg_args,
+                           dry_run=app.args.dry_run,
+                           y=app.args.yes)
 
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
@@ -1272,25 +1177,23 @@ def action_extract_music(inputdir, in_tags):
                                 chapter_no,
                                 stream_file_ext)))
 
-                    cmd = [
-                        'ffmpeg',
-                        '-i', os.path.join(inputdir, stream_file_name),
-                        '-codec', 'copy',
-                        '-ss', chapter_time_start,
-                        '-to', chapter_time_end,
-                        ]
-                    if not app.log.isEnabledFor(logging.VERBOSE):
-                        cmd += ['-loglevel', 'info']
-                    if app.args.yes:
-                        cmd += ['-y']
-                    if force_format:
-                        cmd += [
-                            '-f', force_format,
+                    with perfcontext('Chop w/ ffmpeg'):
+                        ffmpeg_args = [
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-codec', 'copy',
+                            '-ss', chapter_time_start,
+                            '-to', chapter_time_end,
                             ]
-                    cmd += [
-                        stream_chapter_tmp_file.file_name,
-                        ]
-                    do_spawn_cmd(cmd)
+                        if force_format:
+                            ffmpeg_args += [
+                                '-f', force_format,
+                                ]
+                        ffmpeg_args += [
+                            stream_chapter_tmp_file.file_name,
+                            ]
+                        ffmpeg(*ffmpeg_args,
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
 
                     m4a = M4aFile(os.path.splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
                     m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
@@ -1377,7 +1280,7 @@ def action_demux(inputdir, in_tags):
         if not app.args.dry_run:
             shutil.move(output_file.file_name, noss_file_name)
         num_inputs += 1
-        cmd = ['ffmpeg',
+        ffmpeg_args = [
             '-i', noss_file_name,
             ]
         option_args = [
@@ -1393,7 +1296,7 @@ def action_demux(inputdir, in_tags):
             new_stream_index += 1
             stream_dict['index'] = new_stream_index
             num_inputs += 1
-            cmd += [
+            ffmpeg_args += [
                 '-i', os.path.join(inputdir, stream_dict['file_name']),
                 ]
             option_args += [
@@ -1404,7 +1307,7 @@ def action_demux(inputdir, in_tags):
                 option_args += ['-disposition:%d' % (new_stream_index,), 'default',]
             stream_language = stream_dict.get('language', None)
             if stream_language:
-                #cmd += ['--language', '%d:%s' % (track_id, stream_language)]
+                #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_language)]
                 option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (isolang(stream_language).code3,),]
             stream_forced = stream_dict['disposition'].get('forced', None)
             if stream_forced:
@@ -1413,16 +1316,14 @@ def action_demux(inputdir, in_tags):
         option_args += [
             '-codec', 'copy',
             ]
-        cmd += option_args
-        if not app.log.isEnabledFor(logging.VERBOSE):
-            cmd += ['-loglevel', 'info']
-        if app.args.yes:
-            cmd += ['-y']
-        cmd += [
+        ffmpeg_args += option_args
+        ffmpeg_args += [
             output_file.file_name,
             ]
         with perfcontext('merge subtitles w/ ffmpeg'):
-            do_spawn_cmd(cmd)
+            ffmpeg(*ffmpeg_args,
+                   dry_run=app.args.dry_run,
+                   y=app.args.yes)
         if not app.args.dry_run:
             os.unlink(noss_file_name)
 
