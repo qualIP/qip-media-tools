@@ -191,11 +191,14 @@ class Executable(metaclass=abc.ABCMeta):
             raise ValueError('Unsupported keyword arguments: %r' % (kwargs,))
         return []
 
-    def _run(self, *args, **kwargs):
+    def build_cmd(self, *args, **kwargs):
+        return [self.which()] \
+                + list(str(e) for e in args) \
+                + self.kwargs_to_cmdargs(**kwargs)
+
+    def _run(self, *args, run_func=None, dry_run=False, **kwargs):
         d = types.SimpleNamespace()
-        run_func = kwargs.pop('run_func', None)
-        dry_run = kwargs.pop('dry_run', False)
-        cmd = [self.which()] + list(args) + self.kwargs_to_cmdargs(**kwargs)
+        cmd = self.build_cmd(*args, **kwargs)
         if dry_run:
             log.verbose('CMD (dry-run): %s',
                         subprocess.list2cmdline(cmd))
@@ -217,8 +220,7 @@ class Executable(metaclass=abc.ABCMeta):
             d.elapsed_time = t1 - t0
         return d
 
-    def __call__(self, *args, **kwargs):
-        return self._run(*args, **kwargs)
+    run = __call__ = _run
 
 class Editor(Executable):
 
