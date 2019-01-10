@@ -43,8 +43,8 @@ class Ffmpeg(Executable):
         out_file = args.pop(-1)
 
         try:
-            idx = args.find("-passlogfile")
-        except IndexError:
+            idx = args.index("-passlogfile")
+        except ValueError:
             passlogfile = None
         else:
             args.pop(idx)
