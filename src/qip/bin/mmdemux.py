@@ -1320,6 +1320,11 @@ def action_demux(inputdir, in_tags):
             dry_run=app.args.dry_run,
             run_func=do_exec_cmd)
     app.log.info('DONE writing %s', output_file.file_name)
+
+    if app.args.cleanup:
+        app.log.info('Cleaning up %s', inputdir)
+        shutil.rmtree(inputdir)
+
     return True
 
 if __name__ == "__main__":
