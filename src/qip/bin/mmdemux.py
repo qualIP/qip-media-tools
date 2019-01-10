@@ -113,37 +113,25 @@ def main():
     pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--sort-writer', '--sort-composer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
 
-    subparsers = app.parser.add_subparsers(help='commands')
+    pgroup = app.parser.add_argument_group('Options')
+    pgroup.add_argument('--project', default=None, help='project name')
+    pgroup.add_argument('--chain', action='store_true', help='chain hb->mux->optimize->demux')
+    pgroup.add_argument('--cleanup', action='store_true', help='cleanup when done')
 
-    hb_parser = subparsers.add_parser('hb', help='pre-process movies with handbrake')
-    hb_parser.add_argument('--project', default=None, help='project name')
-    hb_parser.add_argument('--chain', action='store_true', help='chain hb->mux->optimize->demux')
-    hb_parser.add_argument('hb_files', nargs='+', default=(), help='files to run through HandBrake')
+    pgroup = app.parser.add_argument_group('Music extraction')
+    pgroup.add_argument('--skip-chapters', dest='num_skip_chapters', type=int, default=0, help='number of chapters to skip')
+    pgroup.add_argument('--bitrate', type=int, default=argparse.SUPPRESS, help='force the encoding bitrate')  # TODO support <int>k
+    pgroup.add_argument('--target-bitrate', dest='target_bitrate', type=int, default=argparse.SUPPRESS, help='specify the resampling target bitrate')
+    pgroup.add_argument('--channels', type=int, default=argparse.SUPPRESS, help='force the number of audio channels')
 
-    mux_parser = subparsers.add_parser('mux', help='split movies into tracks')
-    mux_parser.add_argument('--project', default=None, help='project name')
-    mux_parser.add_argument('--chain', action='store_true', help='chain mux->optimize->demux')
-    mux_parser.add_argument('mux_files', nargs='+', default=(), help='files to mux')
-
-    chop_parser = subparsers.add_parser('update', help='update mux parameters')
-    chop_parser.add_argument('update_dirs', nargs='+', default=(), help='directories to update mux parameters for')
-
-    chop_parser = subparsers.add_parser('chop', help='split tracks into chapters')
-    chop_parser.add_argument('chop_dirs', nargs='+', default=(), help='directories to chop into chapters')
-
-    exmusic_parser = subparsers.add_parser('extract-music', help='extract music tracks')
-    exmusic_parser.add_argument('--skip-chapters', dest='num_skip_chapters', type=int, default=0, help='number of chapters to skip')
-    exmusic_parser.add_argument('--bitrate', type=int, default=argparse.SUPPRESS, help='force the encoding bitrate')  # TODO support <int>k
-    exmusic_parser.add_argument('--target-bitrate', dest='target_bitrate', type=int, default=argparse.SUPPRESS, help='specify the resampling target bitrate')
-    exmusic_parser.add_argument('--channels', type=int, default=argparse.SUPPRESS, help='force the number of audio channels')
-    exmusic_parser.add_argument('extract_music_dirs', nargs='+', default=(), help='directories to extract music from')
-
-    optimize_parser = subparsers.add_parser('optimize', help='optimize files for size and compatibility')
-    optimize_parser.add_argument('--chain', action='store_true', help='chain optimize->demux')
-    optimize_parser.add_argument('optimize_dirs', nargs='+', default=(), help='directories to optimize')
-
-    demux_parser = subparsers.add_parser('demux', help='join tracks into movies')
-    demux_parser.add_argument('demux_dirs', nargs='+', default=(), help='directories to demux')
+    pgroup = app.parser.add_argument_group('Actions')
+    pgroup.add_argument('--hb', dest='hb_files', nargs='+', default=(), help='files to run through HandBrake')
+    pgroup.add_argument('--mux', dest='mux_files', nargs='+', default=(), help='files to mux')
+    pgroup.add_argument('--update', dest='update_dirs', nargs='+', default=(), help='directories to update mux parameters for')
+    pgroup.add_argument('--chop', dest='chop_dirs', nargs='+', default=(), help='directories to chop into chapters')
+    pgroup.add_argument('--extract-music', dest='extract_music_dirs', nargs='+', default=(), help='directories to extract music from')
+    pgroup.add_argument('--optimize', dest='optimize_dirs', nargs='+', default=(), help='directories to optimize')
+    pgroup.add_argument('--demux', dest='demux_dirs', nargs='+', default=(), help='directories to demux')
 
     app.parse_args()
 
