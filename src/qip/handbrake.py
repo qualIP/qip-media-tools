@@ -16,6 +16,8 @@ class CHandBrake(Executable):
 
     name = 'HandBrakeCLI'
 
+    run_func = classmethod(do_spawn_cmd)
+
     @classmethod
     def kwargs_to_cmdargs(cls, **kwargs):
         cmdargs = []
@@ -32,8 +34,7 @@ class CHandBrake(Executable):
         return cmdargs
 
     def parse_json_output(self, out, sections={'JSON Title Set'}, load=True):
-        if type(out) is bytes:
-            out = byte_decode(out)
+        out = byte_decode(out)
         parser = lines_parser(out.split('\n'))
         while parser.advance():
             if parser.line == '':

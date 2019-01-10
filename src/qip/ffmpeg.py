@@ -3,15 +3,19 @@ __all__ = [
         'ffmpeg',
         ]
 
+import types
 import logging
 log = logging.getLogger(__name__)
 
 from .perf import perfcontext
 from .exec import *
+from qip.file import *
 
 class Ffmpeg(Executable):
 
     name = 'ffmpeg'
+
+    run_func = classmethod(do_spawn_cmd)
 
     @classmethod
     def kwargs_to_cmdargs(cls, **kwargs):

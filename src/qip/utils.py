@@ -70,6 +70,8 @@ class TypedValueDict(abc.ABC):
         return NotImplemented
 
 def byte_decode(b, encodings=('utf-8', 'iso-8859-1', 'us-ascii')):
+    if isinstance(b, str):
+        return b
     last_e = None
     for encoding in encodings:
         try:

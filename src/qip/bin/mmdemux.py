@@ -738,7 +738,7 @@ def action_optimize(inputdir, in_tags):
                                          dry_run=app.args.dry_run)
                         if not app.args.dry_run:
                             stream_crop = None
-                            parser = lines_parser(out.split('\n'))
+                            parser = lines_parser(byte_decode(out.out).split('\n'))
                             while parser.advance():
                                 parser.line = parser.line.strip()
                                 app.log.debug('line=%r', parser.line)
