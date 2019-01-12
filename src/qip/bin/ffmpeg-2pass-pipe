@@ -1,0 +1,34 @@
+#!/bin/sh
+
+set -e
+
+set -x
+
+prog=$(basename "$0")
+
+prog_tmp_dir="${TMPDIR:-/tmp}/$prog.$$.tmp"
+
+cleanup() {
+    set +u
+    rm -Rf "$prog_tmp_dir"
+    return 0
+}
+trap "cleanup" 0
+trap "exit 255" 1 2 9 15
+
+mkdir "$prog_tmp_dir"
+tmp_input_file="$prog_tmp_dir/input"
+tmp_pass1output_file="$prog_tmp_dir/pass1output"
+passlogfile_file="$prog_tmp_dir/passlogfile"
+
+tee "$tmp_input_file" | \
+ffmpeg -i pipe:0 \
+    -pass 1 -passlogfile "$passlogfile_file" \
+    -speed 4 \
+    "$@" \
+    -- pipe: > /dev/null
+    #-- "$tmp_pass1output_file" > /dev/null
+ffmpeg -i "$tmp_input_file" \
+    -pass 2 -passlogfile "$passlogfile_file" \
+    "$@" \
+    -- pipe: < /dev/null
