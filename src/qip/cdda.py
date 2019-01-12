@@ -6,6 +6,7 @@ __all__ = [
         ]
 
 import enum
+import functools
 import os
 import re
 import logging
@@ -29,14 +30,15 @@ from .snd import *
 
 # class MSF {{{
 
+@functools.total_ordering
 class MSF(object):
     '''mm:ss:ff (minute-second-frame) format'''
 
     def __init__(self, value):
-        if isinstance(value, int):
-            frames = value
-        elif isinstance(value, MSF):
+        if isinstance(value, MSF):
             frames = value.frames
+        elif isinstance(value, int):
+            frames = value
         elif isinstance(value, str):
             m = re.search('^(?P<mm>\d\d):(?P<ss>\d\d):(?P<ff>\d\d)$', value)
             if m:
@@ -83,14 +85,49 @@ class MSF(object):
         return '%s(%s)' % (self.__class__.__name__, self.msf)
 
     def __add__(self, other):
-        if not isinstance(other, MSF):
-            return NotImplemented
-        return MSF(self.frames + other.frames)
+        if isinstance(other, MSF):
+            return MSF(self.frames + other.frames)
+        if isinstance(other, int):
+            return MSF(self.frames + other)
+        return NotImplemented
 
     def __sub__(self, other):
-        if not isinstance(other, MSF):
-            return NotImplemented
-        return MSF(self.frames - other.frames)
+        if isinstance(other, MSF):
+            return MSF(self.frames - other.frames)
+        if isinstance(other, int):
+            return MSF(self.frames - other)
+        return NotImplemented
+
+    def __int__(self):
+        return self.frames
+
+    def __add__(self, other):
+        if isinstance(other, Timestamp):
+            return Timestamp(self.frames + other.frames)
+        if isinstance(other, int):
+            return Timestamp(self.frames + other)
+        return NotImplemented
+
+    def __sub__(self, other):
+        if isinstance(other, Timestamp):
+            return Timestamp(self.frames - other.frames)
+        if isinstance(other, int):
+            return Timestamp(self.frames - other)
+        return NotImplemented
+
+    def __eq__(self, other):
+        if isinstance(other, Timestamp):
+            return self.frames == other.frames
+        if isinstance(other, int):
+            return self.frames == other
+        return NotImplemented
+
+    def __lt__(self, other):
+        if isinstance(other, Timestamp):
+            return self.frames < other.frames
+        if isinstance(other, int):
+            return self.frames < other
+        return NotImplemented
 
 # }}}
 
