@@ -156,7 +156,7 @@ class File(object):
         assert not self.fp
         if 't' not in mode and 'b' not in mode:
             mode += self.open_mode
-        return open(self.file_name, mode=mode, encoding=encoding)
+        return os.fdopen(fd, mode=mode, encoding=encoding)
 
     def read(self):
         fp = self.fp or self.open()
@@ -166,6 +166,7 @@ class File(object):
         fp = self.fp
         if fp:
             fp.close()
+            self.fp = None
         # No exception if no fp, like file objects
 
 class TextFile(File):
