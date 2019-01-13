@@ -534,7 +534,7 @@ def mkm4b(inputfiles, default_tags):
         else:
             src_picture = new_picture
             app.log.info('Using picture from %s...', src_picture)
-            picture = m4a.prep_picture(src_picture,
+            picture = m4b.prep_picture(src_picture,
                     yes=app.args.yes,
                     ipod_compat=app.args.ipod_compat,
                     keep_picture_file_name=os.path.splitext(m4b.file_name)[0] + '.png')
@@ -554,10 +554,15 @@ def mkm4b(inputfiles, default_tags):
                     m4b.tags[sorttag] = '{b} #{n!d:%02} - {a}'.format(m.groupdict())
 
     print("Tags:")
-    for tag_info in mp4tags.tag_args_info:
+    for tag in set(SoundTagEnum) - set(SoundTagEnum.iTunesInternalTags):
+        try:
+            mapped_tag = qip.snd.tag_info['map'][tag.name]
+            mp4_tag = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_tag']
+        except KeyError:
+            continue
         # Force None values to actually exist
-        if m4b.tags[tag_info.tag_enum] is None:
-            m4b.tags[tag_info.tag_enum] = None
+        if m4b.tags[tag] is None:
+            m4b.tags[tag] = None
     for tag in sorted(m4b.tags.keys(), key=functools.cmp_to_key(dictionarycmp)):
         value = m4b.tags[tag]
         if isinstance(value, str):
