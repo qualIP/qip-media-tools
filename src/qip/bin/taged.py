@@ -163,7 +163,8 @@ def taged_mf_id3(file_name, mf, tags):
             tag = 'disk_slash_disks'
             value = tags[tag]
         try:
-            id3_tag = qip.snd.tag_info['tags'][tag]['id3v2_30_tag']
+            mapped_tag = qip.snd.tag_info['map'][tag]
+            id3_tag = qip.snd.tag_info['tags'][mapped_tag]['id3v2_30_tag']
         except KeyError:
             raise NotImplementedError(tag)
         if id3_tag == 'TPE2':  # albumartist
@@ -207,8 +208,8 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             continue
         tag = tag.name
         value = tags[tag]
-        mapped_tag = qip.snd.tag_info['map'][tag]
         try:
+            mapped_tag = qip.snd.tag_info['map'][tag]
             mp4_tag = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_tag']
             mp4v2_data_type = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_data_type']
         except KeyError:
