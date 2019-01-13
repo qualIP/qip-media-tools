@@ -302,12 +302,10 @@ class SoundTagEnum(enum.Enum):
 
     albumartist = 'albumartist'  # STR  Set the album artist
     artist = 'artist'  # STR  Set the artist information
-    artistid = 'artistid'  # NUM  Set the artist ID
     albumtitle = 'albumtitle'  # STR  Set the album title (album)
     title = 'title'  # STR  Set the song title
     subtitle = 'subtitle'  # STR
     composer = 'composer'  # STR  Set the composer information (writer)
-    composerid = 'composerid'  # NUM  Set the composer ID
     # TODO originalartist = 'originalartist'
 
     date = 'date'  # None|SoundTagDate
@@ -325,7 +323,6 @@ class SoundTagEnum(enum.Enum):
     tvshow = 'tvshow'  # STR  Set the TV show
     season = 'season'  # NUM  Set the season number
     episode = 'episode'  # NUM  Set the episode number
-    episodeid = 'episodeid'  # STR  Set the TV episode ID
 
     description = 'description'  # STR  Set the short description
     longdescription = 'longdescription'  # STR  Set the long description
@@ -335,7 +332,6 @@ class SoundTagEnum(enum.Enum):
     hdvideo = 'hdvideo'  # NUM  Set the HD flag (1\0)
 
     genre = 'genre'  # STR  Set the genre name
-    genreid = 'genreid'  # NUM  Set the genre ID
     type = 'type'  # STR  Set the Media Type(tvshow, movie, music, ...)
     category = 'category'  # STR  Set the category
     grouping = 'grouping'  # STR  Set the grouping name
@@ -344,8 +340,6 @@ class SoundTagEnum(enum.Enum):
     copyright = 'copyright'  # STR  Set the copyright information
     encodedby = 'encodedby'  # STR  Set the name of the person or company who encoded the file
     tool = 'tool'  # STR  Set the software used for encoding
-
-    contentid = 'contentid'  # NUM  Set the content ID
 
     picture = 'picture'  # PTH  Set the picture as a .png
 
@@ -376,8 +370,14 @@ class SoundTagEnum(enum.Enum):
     barcode = 'barcode'
     asin = 'asin'
 
-    playlistid = 'playlistid'  # NUM  Set the playlist ID
     contentrating = 'contentrating'  # None|SoundTagRating  Set the Rating(none, clean, explicit)
+
+    artistid = 'artistid'  # NUM  Set the artist ID
+    composerid = 'composerid'  # NUM  Set the composer ID
+    episodeid = 'episodeid'  # STR  Set the TV episode ID
+    genreid = 'genreid'  # NUM  Set the genre ID
+    contentid = 'contentid'  # NUM  Set the content ID (Catalog ID)
+    playlistid = 'playlistid'  # NUM  Set the playlist ID
 
     def __repr__(self):
         return self.value
@@ -395,6 +395,15 @@ class SoundTagEnum(enum.Enum):
 
     def __json_encode__(self):
         return self.value
+
+SoundTagEnum.iTunesInternalTags = frozenset((
+    SoundTagEnum.artistid,
+    SoundTagEnum.composerid,
+    SoundTagEnum.episodeid,
+    SoundTagEnum.genreid,
+    SoundTagEnum.contentid,
+    SoundTagEnum.playlistid,
+))
 
 def _tNullTag(value):
     if value is None:
@@ -2681,7 +2690,7 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Tempo (bpm)",            "tmpo",                     "int16",                    "tempo",                    None,                       None,             []],
     ["Compilation",            "cpil",                     "bool8",                    "compilation",              None,                       "TCMP",           []],
     ["TV Show Name",           "tvsh",                     "utf-8",                    "tvShow",                   None,                       None,             ['COLLECTION/TITLE']],
-    ["TV Episode ID",          "tven",                     "utf-8",                    "tvEpisodeID",              None,                       None,             []],
+    ["TV Episode ID",          "tven",                     "utf-8",                    "EpisodeID",                None,                       None,             []],
     ["TV Season",              "tvsn",                     "int32",                    "season",                   None,                       None,             ['SEASON/PART_NUMBER']],
     ["TV Episode",             "tves",                     "int32",                    "episode",                  None,                       None,             ['EPISODE/PART_NUMBER']],
     ["TV Network",             "tvnn",                     "utf-8",                    "tvNetwork",                None,                       None,             []],
@@ -2707,14 +2716,15 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Category",               "catg",                     "utf-8",                    "category",                 None,                       None,             []],
     ["HD Video",               "hdvd",                     "bool8",                    "hdVideo",                  None,                       None,             ['hd_video']],
     ["Media Type",             "stik",                     "enum8",                    "type",                     "TMT",                      "TMED",           ["mediaType", "media_type"]],
-    ["Content Rating",         "rtng",                     "int8",                     "contentRating",                   None,                       None,             ['rating']],
+    ["Content Rating",         "rtng",                     "int8",                     "contentRating",            None,                       None,             ['rating']],
     ["Gapless Playback",       "pgap",                     "bool8",                    "gapless",                  None,                       None,             ['gapless_playback']],
     ["iTunes Purchase Account", "apID",                    "utf-8",                    "iTunesAccount",            None,                       None,             ['account_id']],
     ["iTunes Account Type",    "akID",                     "int8",                     "iTunesAccountType",        None,                       None,             []],
-    ["iTunes Catalog ID",      "cnID",                     "int32",                    "iTunesCatalogID",          None,                       None,             []],
+    ["iTunes Catalog ID",      "cnID",                     "int32",                    "iTunesCatalogID",          None,                       None,             ['contentid']],
+    ["iTunes Composer ID",     "cmID",                     "int32",                    "iTunesComposerID",         None,                       None,             ['composerid']],
     ["iTunes Store Country",   "sfID",                     "int32",                    "iTunesCountry",            None,                       None,             []],
     ["Artist ID",              "atID",                     "int32",                    "artistID",                 None,                       None,             []],
-    ["Album ID",               "plID",                     "int64",                    "plID",                     None,                       None,             []],
+    ["iTunes Playlist ID",     "plID",                     "int64",                    "playlistID",               None,                       None,             []],
     ["x-Genre ID",             "geID",                     "int32",                    "geID",                     None,                       None,             []],
     ["Subtitle",               "©st3",                     "utf-8",                    "subtitle",                 "TT3",                      "TIT3",           []],
     ["xid",                    "xid",                      "utf-8",                    "xid",                      None,                       None,             []],
