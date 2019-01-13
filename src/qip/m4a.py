@@ -4,15 +4,17 @@ __all__ = (
 )
 
 import os
+import re
+import shutil
 import struct
 import tempfile
-import shutil
 import logging
 log = logging.getLogger(__name__)
 
 import qip.snd as snd
 import qip.wav as wav
 import qip.cdda as cdda
+from .img import ImageFile
 
 class M4aFile(snd.SoundFile):
 
@@ -95,13 +97,15 @@ class M4aFile(snd.SoundFile):
         from qip.exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
         from qip.parser import lines_parser
         from qip.qaac import qaac
+        from qip.ffmpeg import ffmpeg
+        from qip.file import TempFile, safe_write_file_eval, safe_read_file
         import qip.snd
         m4b = self
 
         app.log.info('Writing %s...', m4b)
         use_qaac_cmd = False
         use_qaac_intermediate = False
-        ffmpeg_cmd = [shutil.which('ffmpeg')]
+        ffmpeg_cmd = []
         ffmpeg_input_cmd = []
         ffmpeg_output_cmd = []
         qaac_cmd = [qaac.which()]
@@ -208,6 +212,19 @@ class M4aFile(snd.SoundFile):
                 pass
         inputfiles_names = [inputfile.file_name for inputfile in inputfiles]
         if len(inputfiles_names) > 1:
+            filesfile = TempFile.mkstemp(suffix='.files.txt')
+            app.log.info('Writing %s...', filesfile)
+            def body(fp):
+                print('ffconcat version 1.0', file=fp)
+                for inputfile in inputfiles:
+                    print('file \'%s\'' % (
+                        inputfile.file_name.replace('\\', '\\\\').replace('\'', '\'\\\'\''),
+                        ), file=fp)
+                    if hasattr(inputfile, 'duration'):
+                        print('duration %.3f' % (inputfile.duration,), file=fp)
+            safe_write_file_eval(filesfile, body)
+            app.log.info('Files:\n' +
+                         re.sub(r'^', '    ', safe_read_file(filesfile), flags=re.MULTILINE))
             ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', filesfile]
         else:
             ffmpeg_input_cmd += ['-i', inputfiles_names[0]]
@@ -221,7 +238,7 @@ class M4aFile(snd.SoundFile):
                 assert use_qaac_cmd
                 new_inputfiles_names = []
                 for inputfile_name in inputfiles_names:
-                    intermediate_wav_file = SoundFile(file_name=os.path.splitext(inputfile_name)[0] + '.tmp.wav')
+                    intermediate_wav_file = snd.SoundFile(file_name=os.path.splitext(inputfile_name)[0] + '.tmp.wav')
                     intermediate_wav_files.append(intermediate_wav_file)
                     new_inputfiles_names.append(intermediate_wav_file.file_name)
                     out = do_spawn_cmd([shutil.which('ffmpeg'), '-i', inputfile_name, intermediate_wav_file.file_name])
@@ -245,7 +262,7 @@ class M4aFile(snd.SoundFile):
             if use_qaac_cmd:
                 out = do_spawn_cmd(qaac_cmd)
             else:
-                out = do_spawn_cmd(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd)
+                out = ffmpeg(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd)
             out_time = None
             # {{{
             out = clean_cmd_output(out)
