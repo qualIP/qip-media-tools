@@ -4,18 +4,57 @@ __all__ = [
         ]
 
 import types
+import re
 import logging
 log = logging.getLogger(__name__)
 
 from .perf import perfcontext
 from .exec import *
+from .utils import Timestamp as _BaseTimestamp
 from qip.file import *
+
+class Timestamp(_BaseTimestamp):
+    '''hh:mm:ss.sssssssss format'''
+
+    def __init__(self, value):
+        if isinstance(value, float):
+            seconds = value
+        elif isinstance(value, int):
+            seconds = float(value)
+        elif isinstance(value, _BaseTimestamp):
+            seconds = value.seconds
+        elif isinstance(value, str):
+            match = re.search(r'^(?P<sign>-)?(((?P<h>\d+):)?(?P<m>\d+):)?(?P<s>\d+(?:\.\d+)?)$', value)
+            if match:
+                h = match.group('h')
+                m = match.group('m')
+                s = match.group('s')
+                sign = match.group('sign')
+                seconds = int(h or 0) * 60 * 60 + int(m or 0) * 60 + float(s)
+                if sign:
+                    seconds = -seconds
+            else:
+                raise ValueError('Invalid hh:mm:ss.ss format: %r' % (value,))
+        else:
+            raise ValueError(value)
+        super().__init__(seconds)
+
+    def __str__(self):
+        s = self.seconds
+        m = s // 60
+        s = s - m * 60
+        h = m // 60
+        m = m - h * 60
+        return '%02d:%02d:%s' % (h, m, ('%.8f' % (s + 100.0))[1:])
+
 
 class Ffmpeg(Executable):
 
     name = 'ffmpeg'
 
     run_func = classmethod(do_spawn_cmd)
+
+    Timestamp = Timestamp
 
     @classmethod
     def kwargs_to_cmdargs(cls, **kwargs):
