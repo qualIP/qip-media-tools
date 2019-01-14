@@ -364,7 +364,10 @@ def taged_MKV(file_name, tags):
                 ]
                 do_exec_cmd(cmd)
             else:
-                mkv_value = str(value)
+                if type(value) is tuple:
+                    mkv_value = tuple(str(e) for e in value)
+                else:
+                    mkv_value = str(value)
                 TargetType = None
                 TargetTypeValue = 50
                 if tag == 'track':
@@ -425,13 +428,15 @@ def taged_MKV(file_name, tags):
                 for eSimple in find_all_Simple_element(eTag, Name=mkv_tag):
                     app.log.debug('Remove %r', ET.tostring(eSimple))
                     eTag.remove(eSimple)
-                eSimple = ET.SubElement(eTag, 'Simple')
-                eName = ET.SubElement(eSimple, 'Name')
-                eName.text = mkv_tag
-                eString = ET.SubElement(eSimple, 'String')
-                eString.text = mkv_value
-                if app.log.isEnabledFor(logging.DEBUG):
-                    app.log.debug('Add %r', ET.tostring(eSimple))
+                tup_mkv_value = mkv_value if mkv_value is tuple else tuple(mkv_value)
+                for one_mkv_value in tup_mkv_value:
+                    eSimple = ET.SubElement(eTag, 'Simple')
+                    eName = ET.SubElement(eSimple, 'Name')
+                    eName.text = mkv_tag
+                    eString = ET.SubElement(eSimple, 'String')
+                    eString.text = one_mkv_value
+                    if app.log.isEnabledFor(logging.DEBUG):
+                        app.log.debug('Add %r', ET.tostring(eSimple))
         if tags_xml is not None:
             tags_xml.write(tmp_tags_xml_file.file_name,
                 #encoding='unicode',

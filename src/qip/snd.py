@@ -322,7 +322,7 @@ class SoundTagEnum(enum.Enum):
     tvnetwork = 'tvnetwork'  # STR  Set the TV network
     tvshow = 'tvshow'  # STR  Set the TV show
     season = 'season'  # NUM  Set the season number
-    episode = 'episode'  # NUM  Set the episode number
+    episode = 'episode'  # NUM  Set the episode number (or list)
 
     description = 'description'  # STR  Set the short description
     longdescription = 'longdescription'  # STR  Set the long description
@@ -461,6 +461,17 @@ def _tCommentTag(value):
         return (value,)
     else:
         return tuple(value)
+
+def _tIntOrList(value):
+    if type(value) is int:
+        return (value,)
+    if type(value) is str:
+        value = value.split()
+    if isinstance(value, (tuple, list)):
+        if not value:
+            return None
+        return tuple(int(e) for e in value)
+    raise ValueError('Not a valid integer or list of: %r' % (value,))
 
 class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMapping):
 
@@ -630,7 +641,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     episode = propex(
         name='episode',
-        type=(_tNullTag, int))
+        type=(_tNullTag, _tIntOrList))
 
     compilation = propex(
         name='compilation',

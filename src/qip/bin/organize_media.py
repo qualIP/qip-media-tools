@@ -526,10 +526,11 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
     # TVSHOW S01E01 [TITLE]
     dst_file_base += inputfile.tags.tvshow
-    dst_file_base += ' S%02dE%02d' % (
+    dst_file_base += ' S%02dE' % (
         inputfile.tags.season,
-        inputfile.tags.episode,
         )
+    for episode in inputfile.tags.episode:
+        dst_file_base += '%02d' % (episode,)
     if inputfile.tags.title and inputfile.tags.title != inputfile.tags.tvshow:
         dst_file_base += ' %s' % (inputfile.tags.title,)
 
