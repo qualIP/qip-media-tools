@@ -19,6 +19,7 @@ import reprlib
 import shutil
 import subprocess
 import sys
+import types
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
 
@@ -36,6 +37,7 @@ from qip.mkv import *
 from qip.m4a import *
 from qip.utils import byte_decode
 from qip.ffmpeg import ffmpeg
+from qip.threading import *
 
 # https://www.ffmpeg.org/ffmpeg.html
 
@@ -82,6 +84,8 @@ def main():
     pgroup = app.parser.add_argument_group('Video Control')
     pgroup.add_argument('--crop', default=True, action='store_true', help='enable cropping video (default)')
     pgroup.add_argument('--no-crop', dest='crop', default=argparse.SUPPRESS, action='store_false', help='disable cropping video')
+    pgroup.add_argument('--parallel-chapters', dest='parallel_chapters', default=True, action='store_true', help='enable per-chapter parallel processing (default)')
+    pgroup.add_argument('--no-parallel-chapters', dest='parallel_chapters', default=argparse.SUPPRESS, action='store_false', help='disable per-chapter parallel processing')
     pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=int, default=60, help='cropdetect duration (seconds)')
     pgroup.add_argument('--video-language', '--vlang', dest='video_language', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
 
@@ -229,7 +233,7 @@ def ext_to_container(ext):
         raise ValueError('Unsupported extension %r' % (ext,)) from err
     return ext_container
 
-def float_frame_rate(frame_rate):
+def float_ratio(frame_rate):
     if type(frame_rate) is str:
         m = re.match(r'^([0-9]+)/([1-9][0-9]*)$', frame_rate)
         if m:
@@ -239,7 +243,7 @@ def float_frame_rate(frame_rate):
     return frame_rate
 
 def get_vp9_target_bitrate(width, height, frame_rate, mq=True):
-    frame_rate = float_frame_rate(frame_rate)
+    frame_rate = float_ratio(frame_rate)
     # https://sites.google.com/a/webmproject.org/wiki/ffmpeg/vp9-encoding-guide
     # https://headjack.io/blog/hevc-vp9-vp10-dalaa-thor-netvc-future-video-codecs/
     if False:
@@ -626,6 +630,38 @@ def action_update(inputdir, in_tags):
         with open(output_mux_file_name, 'w') as fp:
             json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
 
+def get_chapters(inputdir, mux_dict):
+    chapters_xml_file = mux_dict['chapters']['file_name']
+    chapters_xml = ET.parse(os.path.join(inputdir, chapters_xml_file))
+    chapters_root = chapters_xml.getroot()
+    for eEditionEntry in chapters_root.findall('EditionEntry'):
+        # TODO EditionFlagHidden ==? 0
+        # TODO EditionFlagDefault ==? 1
+        for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
+            chap = types.SimpleNamespace()
+            chap.no = chapter_no
+            # <ChapterAtom>                                                                                               
+            #   <ChapterUID>6524138974649683444</ChapterUID>                                                              
+            #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>                                                   
+            chap.time_start = ffmpeg.Timestamp(eChapterAtom.find('ChapterTimeStart').text)
+            #   <ChapterFlagHidden>0</ChapterFlagHidden>                                                                  
+            #   <ChapterFlagEnabled>1</ChapterFlagEnabled>                                                                
+            #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>                                                       
+            chap.time_end = ffmpeg.Timestamp(eChapterAtom.find('ChapterTimeEnd').text)
+            #   <ChapterDisplay>
+            #     <ChapterString>Chapter 01</ChapterString>                                                               
+            chap.string = eChapterAtom.find('ChapterDisplay').find('ChapterString').text
+            #     <ChapterLanguage>eng</ChapterLanguage>                                                                  
+            #   </ChapterDisplay>
+            # </ChapterAtom>                                                                                              
+            if chap.no == 1 and chap.time_start > 0:
+                chapX = types.SimpleNamespace()
+                chapX.no = 0
+                chapX.time_start = ffmpeg.Timestamp(0)
+                chapX.time_end = ffmpeg.Timestamp(chap.time_start)
+                chapX.string = 'pre-gap'
+                yield chapX
+            yield chap
 
 def action_chop(inputdir, in_tags):
     app.log.info('Chopping %s...', inputdir)
@@ -636,77 +672,61 @@ def action_chop(inputdir, in_tags):
     input_mux_file_name = os.path.join(inputdir, 'mux.json')
     mux_dict = load_mux_dict(input_mux_file_name, in_tags)
 
-    chapters_xml_file = mux_dict['chapters']['file_name']
-    chapters_xml = ET.parse(os.path.join(inputdir, chapters_xml_file))
-    chapters_root = chapters_xml.getroot()
-    for eEditionEntry in chapters_root.findall('EditionEntry'):
-        # TODO EditionFlagHidden ==? 0
-        # TODO EditionFlagDefault ==? 1
-        for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
-            # <ChapterAtom>                                                                                               
-            #   <ChapterUID>6524138974649683444</ChapterUID>                                                              
-            #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>                                                   
-            #   <ChapterFlagHidden>0</ChapterFlagHidden>                                                                  
-            #   <ChapterFlagEnabled>1</ChapterFlagEnabled>                                                                
-            #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>                                                       
-            #   <ChapterDisplay>
-            #     <ChapterString>Chapter 01</ChapterString>                                                               
-            #     <ChapterLanguage>eng</ChapterLanguage>                                                                  
-            #   </ChapterDisplay>
-            # </ChapterAtom>                                                                                              
+    for chap in get_chapters(inputdir, mux_dict):
+        app.log.verbose('Chapter %d [%s..%s]',
+                        chap.no,
+                        chap.time_start,
+                        chap.time_end)
 
-            chapter_time_start = eChapterAtom.find('ChapterTimeStart').text
-            chapter_time_end = eChapterAtom.find('ChapterTimeEnd').text
-            app.log.verbose('Chapter %d [%s..%s]',
-                            chapter_no,
-                            chapter_time_start,
-                            chapter_time_end)
+        for stream_dict in mux_dict['streams']:
+            if stream_dict.get('skip', False):
+                continue
+            stream_index = stream_dict['index']
+            stream_codec_type = stream_dict['codec_type']
+            orig_stream_file_name = stream_file_name = stream_dict['file_name']
+            stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+            stream_language = stream_dict.get('language', 'und')
 
-            for stream_dict in mux_dict['streams']:
-                if stream_dict.get('skip', False):
-                    continue
-                stream_index = stream_dict['index']
-                stream_codec_type = stream_dict['codec_type']
-                orig_stream_file_name = stream_file_name = stream_dict['file_name']
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
-                stream_language = stream_dict.get('language', 'und')
+            snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+            ffprobe_json = snd_file.extract_ffprobe_json()
 
-                if (stream_codec_type == 'video'
-                    or stream_codec_type == 'audio'):
+            if (stream_codec_type == 'video'
+                or stream_codec_type == 'audio'):
 
-                    force_format = None
-                    try:
-                        force_format = ext_to_container(stream_file_ext)
-                    except ValueError:
-                        pass
-
-                    stream_chapter_file_name = '%s-%02d%s' % (
-                        stream_file_base,
-                        chapter_no,
-                        stream_file_ext)
-
-                    with perfcontext('Chop w/ ffmpeg'):
-                        ffmpeg_args = [
-                            '-i', os.path.join(inputdir, stream_file_name),
-                            '-codec', 'copy',
-                            '-ss', chapter_time_start,
-                            '-to', chapter_time_end,
-                            ]
-                        if force_format:
-                            ffmpeg_args += [
-                                '-f', force_format,
-                                ]
-                        ffmpeg_args += [
-                            os.path.join(inputdir, stream_chapter_file_name),
-                            ]
-                        ffmpeg(*ffmpeg_args,
-                               dry_run=app.args.dry_run,
-                               y=app.args.yes)
-
-                elif stream_codec_type == 'subtitle':
+                force_format = None
+                try:
+                    force_format = ext_to_container(stream_file_ext)
+                except ValueError:
                     pass
-                else:
-                    raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+                stream_chapter_file_name = '%s-%02d%s' % (
+                    stream_file_base,
+                    chap.no,
+                    stream_file_ext)
+
+                with perfcontext('Chop w/ ffmpeg'):
+                    ffmpeg_args = [
+                        '-start_at_zero', '-copyts',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        '-codec', 'copy',
+                        '-ss', chap.time_start,
+                        '-to', chap.time_end,
+                        ]
+                    if force_format:
+                        ffmpeg_args += [
+                            '-f', force_format,
+                            ]
+                    ffmpeg_args += [
+                        os.path.join(inputdir, stream_chapter_file_name),
+                        ]
+                    ffmpeg(*ffmpeg_args,
+                           dry_run=app.args.dry_run,
+                           y=app.args.yes)
+
+            elif stream_codec_type == 'subtitle':
+                pass
+            else:
+                raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
 def action_optimize(inputdir, in_tags):
     app.log.info('Optimizing %s...', inputdir)
@@ -745,31 +765,10 @@ def action_optimize(inputdir, in_tags):
                 if app.args.crop:
                     stream_crop = stream_dict.pop('crop', None)
                     if not stream_crop and 'original_crop' not in stream_dict:
-                        with perfcontext('Cropdetect w/ ffmpeg'):
-                            ffmpeg_args = [
-                                '-i', os.path.join(inputdir, stream_file_name),
-                                '-t', str(app.args.cropdetect_duration),
-                                '-filter:v', 'cropdetect=24:2:0:0',
-                                ]
-                            ffmpeg_args += [
-                                '-f', 'null', '-',
-                                ]
-                            out = ffmpeg(*ffmpeg_args,
-                                         dry_run=app.args.dry_run)
-                        if not app.args.dry_run:
-                            stream_crop = None
-                            parser = lines_parser(byte_decode(out.out).split('\n'))
-                            while parser.advance():
-                                parser.line = parser.line.strip()
-                                app.log.debug('line=%r', parser.line)
-                                m = re.match(r'.*Parsed_cropdetect.* crop=(\d+):(\d+):(\d+):(\d+)$', parser.line)
-                                if m:
-                                    stream_crop = (int(m.group(1)),
-                                            int(m.group(2)),
-                                            int(m.group(3)),
-                                            int(m.group(4)))
-                            if not stream_crop:
-                                raise ValueError('Crop detection failed')
+                        stream_crop = ffmpeg.cropdetect(
+                            input_file=os.path.join(inputdir, stream_file_name),
+                            cropdetect_duration=app.args.cropdetect_duration,
+                            dry_run=app.args.dry_run)
                     if stream_crop:
                         stream_dict.setdefault('original_crop', stream_crop)
                         w, h, l, t = stream_crop
@@ -813,26 +812,114 @@ def action_optimize(inputdir, in_tags):
                     height=ffprobe_stream_json['height'],
                     )
 
-                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
-                    ffmpeg_args = [
-                        '-i', os.path.join(inputdir, stream_file_name),
-                        '-b:v', '%dk' % (video_target_bit_rate,),
-                        '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
-                        '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
-                        '-tile-columns', str(vp9_tile_columns),
-                        '-threads', str(vp9_threads),
-                        '-row-mt', '1',
-                        '-quality', 'good',
-                        '-crf', str(video_target_quality),
-                        '-c:v', 'libvpx-vp9',
-                        '-g', str(int(app.args.keyint * float_frame_rate(r_frame_rate))),
-                        '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
-                        ] + extra_args + [
-                        '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
-                        ]
-                    ffmpeg.run2pass(*ffmpeg_args,
-                                    dry_run=app.args.dry_run,
-                                    y=app.args.yes)
+                ffmpeg_conv_args = [
+                    '-b:v', '%dk' % (video_target_bit_rate,),
+                    '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                    '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
+                    '-tile-columns', str(vp9_tile_columns),
+                    '-threads', str(vp9_threads),
+                    '-row-mt', '1',
+                    '-quality', 'good',
+                    '-crf', str(video_target_quality),
+                    '-c:v', 'libvpx-vp9',
+                    '-g', str(int(app.args.keyint * float_ratio(r_frame_rate))),
+                    '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
+                    ] + extra_args + [
+                    ]
+                if app.args.parallel_chapters:
+                    concat_list_file = TempFile.mkstemp(suffix='.concat.txt', open=True, text=True)
+                    chaps = list(get_chapters(inputdir, mux_dict))
+                    with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_name, new_stream_file_ext)):
+                        threads = []
+                        for chap in chaps:
+                            app.log.verbose('Chapter %d [%s..%s]',
+                                            chap.no,
+                                            chap.time_start,
+                                            chap.time_end)
+                            stream_chapter_file_name = '%s-chap%02d%s' % (stream_file_base, chap.no, stream_file_ext)
+                            if app.args._continue and os.path.exists(stream_chapter_file_name):
+                                app.log.warning('%s exists: continue...')
+                            else:
+                                with perfcontext('Chop w/ ffmpeg'):
+                                    ffmpeg_args = [
+                                        '-start_at_zero', '-copyts',
+                                        '-i', os.path.join(inputdir, stream_file_name),
+                                        '-codec', 'copy',
+                                        '-ss', chap.time_start,
+                                        '-to', chap.time_end,
+                                        ]
+                                    force_format = None
+                                    try:
+                                        force_format = ext_to_container(stream_file_ext)
+                                    except ValueError:
+                                        pass
+                                    if force_format:
+                                        ffmpeg_args += [
+                                            '-f', force_format,
+                                            ]
+                                    ffmpeg_args += [
+                                        os.path.join(inputdir, stream_chapter_file_name),
+                                        ]
+                                    ffmpeg(*ffmpeg_args,
+                                           dry_run=app.args.dry_run,
+                                           y=app.args.yes)
+
+                            new_stream_chapter_file_name = '%s-chap%02d%s' % (stream_file_base, chap.no, new_stream_file_ext)
+                            print('file \'%s\'' % (os.path.abspath(os.path.join(inputdir, new_stream_chapter_file_name)),), file=concat_list_file.fp)
+
+                            if app.args._continue and os.path.exists(new_stream_chapter_file_name):
+                                app.log.warning('%s exists: continue...')
+                            else:
+                                ffmpeg_args = [
+                                    '-i', os.path.join(inputdir, stream_chapter_file_name),
+                                    ] + ffmpeg_conv_args + [
+                                    '-f', 'ivf', os.path.join(inputdir, new_stream_chapter_file_name),
+                                    ]
+                                thread = ExcThread(
+                                        target=ffmpeg.run2pass,
+                                        args=ffmpeg_args,
+                                        kwargs={
+                                            'dry_run': app.args.dry_run,
+                                            'y': app.args.yes,
+                                            })
+                                if shutil.which('srun') is None:
+                                    thread.start()
+                                    thread.join()
+                                else:
+                                    app.log.verbose('Start background processing of %s', stream_chapter_file_name)
+                                    thread.start()
+                                    threads.append(thread)
+
+                        concat_list_file.close()
+                        print(concat_list_file.read())
+                        exc = None
+                        while threads:
+                            thread = threads.pop()
+                            try:
+                                thread.join()
+                            except BaseException as e:
+                                exc = e
+                        if exc:
+                            raise exc
+                    with perfcontext('Concat %s w/ ffmpeg' % (new_stream_file_name,)):
+                        ffmpeg_args = [
+                            '-f', 'concat', '-safe', '0', '-i', concat_list_file,
+                            '-codec', 'copy',
+                            '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                            ]
+                        ffmpeg(*ffmpeg_args,
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
+                else:
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                        ffmpeg_args = [
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            ] + ffmpeg_conv_args + [
+                            '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                            ]
+                        ffmpeg.run2pass(*ffmpeg_args,
+                                        dry_run=app.args.dry_run,
+                                        y=app.args.yes)
 
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
@@ -1118,125 +1205,108 @@ def action_extract_music(inputdir, in_tags):
     input_mux_file_name = os.path.join(inputdir, 'mux.json')
     mux_dict = load_mux_dict(input_mux_file_name, in_tags)
 
-    chapters_xml_file = mux_dict['chapters']['file_name']
-    chapters_xml = ET.parse(os.path.join(inputdir, chapters_xml_file))
-    chapters_root = chapters_xml.getroot()
     num_skip_chapters = app.args.num_skip_chapters
-    for eEditionEntry in chapters_root.findall('EditionEntry'):
-        # TODO EditionFlagHidden ==? 0
-        # TODO EditionFlagDefault ==? 1
-        leChapterAtoms = list(enumerate(eEditionEntry.findall('ChapterAtom'), start=1))
-        leChapterAtoms = leChapterAtoms[num_skip_chapters:]
-        tracks_total = len(leChapterAtoms)
-        for track_no, (chapter_no, eChapterAtom) in enumerate(leChapterAtoms, start=1):
-            # <ChapterAtom>                                                                                               
-            #   <ChapterUID>6524138974649683444</ChapterUID>                                                              
-            #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>                                                   
-            #   <ChapterFlagHidden>0</ChapterFlagHidden>                                                                  
-            #   <ChapterFlagEnabled>1</ChapterFlagEnabled>                                                                
-            #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>                                                       
-            #   <ChapterDisplay>
-            #     <ChapterString>Chapter 01</ChapterString>                                                               
-            #     <ChapterLanguage>eng</ChapterLanguage>                                                                  
-            #   </ChapterDisplay>
-            # </ChapterAtom>                                                                                              
 
-            chapter_time_start = eChapterAtom.find('ChapterTimeStart').text
-            chapter_time_end = eChapterAtom.find('ChapterTimeEnd').text
-            chapter_string = eChapterAtom.find('ChapterDisplay').find('ChapterString').text
-            app.log.verbose('Chapter %d [%s..%s] %s -> track %d/%d',
-                            chapter_no,
-                            chapter_time_start,
-                            chapter_time_end,
-                            chapter_string,
-                            track_no,
-                            tracks_total)
+    chaps = list(get_chapters(inputdir, mux_dict))
+    while chaps and chaps[0].no < num_skip_chapters:
+        chaps.pop(0)
+    tracks_total = len(chaps)
 
-            src_picture = None
-            picture = None
+    for track_no, chap in enumerate(chaps, start=1):
+        app.log.verbose('Chapter %d [%s..%s] %s -> track %d/%d',
+                        chap.no,
+                        chap.time_start,
+                        chap.time_end,
+                        chap.string,
+                        track_no,
+                        tracks_total)
 
-            for stream_dict in mux_dict['streams']:
-                if stream_dict.get('skip', False):
-                    continue
-                stream_index = stream_dict['index']
-                stream_codec_type = stream_dict['codec_type']
-                orig_stream_file_name = stream_file_name = \
-                        stream_dict.get('original_file_name', stream_dict['file_name'])
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
-                stream_language = stream_dict.get('language', 'und')
+        src_picture = None
+        picture = None
 
-                if stream_codec_type == 'video':
+        for stream_dict in mux_dict['streams']:
+            if stream_dict.get('skip', False):
+                continue
+            stream_index = stream_dict['index']
+            stream_codec_type = stream_dict['codec_type']
+            orig_stream_file_name = stream_file_name = \
+                    stream_dict.get('original_file_name', stream_dict['file_name'])
+            stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+            stream_language = stream_dict.get('language', 'und')
+
+            if stream_codec_type == 'video':
+                pass
+            elif stream_codec_type == 'audio':
+                snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+                ffprobe_json = snd_file.extract_ffprobe_json()
+                app.log.debug(ffprobe_json['streams'][0])
+                channels = ffprobe_json['streams'][0]['channels']
+                channel_layout = ffprobe_json['streams'][0].get('channel_layout', None)
+
+                force_format = None
+                try:
+                    force_format = ext_to_container(stream_file_ext)
+                except ValueError:
                     pass
-                elif stream_codec_type == 'audio':
-                    snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
-                    ffprobe_json = snd_file.extract_ffprobe_json()
-                    app.log.debug(ffprobe_json['streams'][0])
-                    channels = ffprobe_json['streams'][0]['channels']
-                    channel_layout = ffprobe_json['streams'][0].get('channel_layout', None)
 
-                    force_format = None
-                    try:
-                        force_format = ext_to_container(stream_file_ext)
-                    except ValueError:
-                        pass
+                stream_chapter_tmp_file = SoundFile(
+                        os.path.join(inputdir, '%s-%02d%s' % (
+                            stream_file_base,
+                            chap.no,
+                            stream_file_ext)))
 
-                    stream_chapter_tmp_file = SoundFile(
-                            os.path.join(inputdir, '%s-%02d%s' % (
-                                stream_file_base,
-                                chapter_no,
-                                stream_file_ext)))
-
-                    with perfcontext('Chop w/ ffmpeg'):
-                        ffmpeg_args = [
-                            '-i', os.path.join(inputdir, stream_file_name),
-                            '-codec', 'copy',
-                            '-ss', chapter_time_start,
-                            '-to', chapter_time_end,
-                            ]
-                        if force_format:
-                            ffmpeg_args += [
-                                '-f', force_format,
-                                ]
+                with perfcontext('Chop w/ ffmpeg'):
+                    ffmpeg_args = [
+                        '-start_at_zero', '-copyts',
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        '-codec', 'copy',
+                        '-ss', chap.time_start,
+                        '-to', chap.time_end,
+                        ]
+                    if force_format:
                         ffmpeg_args += [
-                            stream_chapter_tmp_file.file_name,
+                            '-f', force_format,
                             ]
-                        ffmpeg(*ffmpeg_args,
-                               dry_run=app.args.dry_run,
-                               y=app.args.yes)
+                    ffmpeg_args += [
+                        stream_chapter_tmp_file.file_name,
+                        ]
+                    ffmpeg(*ffmpeg_args,
+                           dry_run=app.args.dry_run,
+                           y=app.args.yes)
 
-                    m4a = M4aFile(os.path.splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
-                    m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
-                    m4a.tags.track = track_no  # Since a copy was taken and not fully connected to album_tags anymore
-                    m4a.tags.tracks = tracks_total
-                    m4a.tags.title = chapter_string
+                m4a = M4aFile(os.path.splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
+                m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
+                m4a.tags.track = track_no  # Since a copy was taken and not fully connected to album_tags anymore
+                m4a.tags.tracks = tracks_total
+                m4a.tags.title = chap.string
 
-                    if src_picture != m4a.tags.picture:
-                        src_picture = m4a.tags.picture
-                        picture = m4a.prep_picture(src_picture,
-                                                   yes=app.args.yes)
-                    m4a.tags.picture = None  # Not supported by taged
+                if src_picture != m4a.tags.picture:
+                    src_picture = m4a.tags.picture
+                    picture = m4a.prep_picture(src_picture,
+                                               yes=app.args.yes)
+                m4a.tags.picture = None  # Not supported by taged
 
-                    if stream_chapter_tmp_file.file_name != m4a.file_name:
-                        audio_bitrate = 640000 if channels >= 4 else 384000
-                        audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
-                        audio_bitrate = audio_bitrate // 1000
+                if stream_chapter_tmp_file.file_name != m4a.file_name:
+                    audio_bitrate = 640000 if channels >= 4 else 384000
+                    audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                    audio_bitrate = audio_bitrate // 1000
 
-                        with perfcontext('Convert %s -> %s w/ qip.m4a' % (stream_chapter_tmp_file.file_name, '.m4a')):
-                            m4a.encode(inputfiles=[stream_chapter_tmp_file],
-                                       target_bitrate=audio_bitrate,
-                                       yes=app.args.yes,
-                                       channels=getattr(app.args, 'channels', None),
-                                       picture=picture,
-                                       )
-                    else:
-                        m4a.write_tags(
-                                dry_run=app.args.dry_run,
-                                run_func=do_exec_cmd)
-
-                elif stream_codec_type == 'subtitle':
-                    pass
+                    with perfcontext('Convert %s -> %s w/ qip.m4a' % (stream_chapter_tmp_file.file_name, '.m4a')):
+                        m4a.encode(inputfiles=[stream_chapter_tmp_file],
+                                   target_bitrate=audio_bitrate,
+                                   yes=app.args.yes,
+                                   channels=getattr(app.args, 'channels', None),
+                                   picture=picture,
+                                   )
                 else:
-                    raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+                    m4a.write_tags(
+                            dry_run=app.args.dry_run,
+                            run_func=do_exec_cmd)
+
+            elif stream_codec_type == 'subtitle':
+                pass
+            else:
+                raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
 def action_demux(inputdir, in_tags):
     app.log.info('Demuxing %s...', inputdir)
