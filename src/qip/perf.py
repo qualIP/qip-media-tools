@@ -5,7 +5,8 @@ __all__ = (
 import time
 from contextlib import contextmanager
 
-from qip.app import app
+from .app import app
+from .utils import Timestamp
 
 @contextmanager
 def perfcontext(name):
@@ -15,4 +16,4 @@ def perfcontext(name):
     finally:
         t1 = time.perf_counter()
         td = t1 - t0
-        app.log.debug("PERF: %s: %.6fs", name, td)
+        app.log.debug("PERF: %s: %s", name, Timestamp(td))

@@ -3,10 +3,97 @@ __all__ = (
         'TypedValueDict',
         'byte_decode',
         'pairwise',
+        'Timestamp',
         )
 
 import abc
+import functools
 import collections
+
+@functools.total_ordering
+class Timestamp(object):
+    '''xxhxxmxx.xxxxxxxxxs format'''
+
+    def __init__(self, value):
+        if isinstance(value, float):
+            seconds = value
+        elif isinstance(value, int):
+            seconds = float(value)
+        elif isinstance(value, Timestamp):
+            seconds = value.seconds
+        elif isinstance(value, str):
+            match = value and re.search(
+                    r'^(?P<sign>-)'
+                    r'(?:(?P<h>\d+)h)?'
+                    r'(?:(?P<m>\d+)m)?'
+                    r'(?:(?P<s>\d+\(?:\.\d+))s)?', value)
+            if match:
+                h = match.group('h')
+                m = match.group('m')
+                s = match.group('s')
+                sign = match.group('sign')
+                seconds = int(h or 0) * 60 * 60 + int(m or 0) * 60 + float(s)
+                if sign:
+                    seconds = -seconds
+            else:
+                raise ValueError('Invalid xxhxxmxx.xxxxxxxxs format: %r' % (value,))
+        else:
+            raise ValueError(value)
+        self.seconds = seconds
+
+    def __str__(self):
+        s = self.seconds
+        m = s // 60
+        s = s - m * 60
+        h = m // 60
+        m = m - h * 60
+        if h:
+            string = '%dh%02dm%s' % (h, m, ('%.9f' % (s + 100.0,))[1:])
+        elif m:
+            string = '%dm%s' % (m, ('%.9f' % (s + 100.0,))[1:])
+        else:
+            string = '%.9f' % (s,)
+        if string.endswith('000'):
+            if string.endswith('000000'):
+                string = string[:-6]
+            else:
+                string = string[:-3]
+        return string + 's'
+
+    def __repr__(self):
+        return '%s(%r)' % (self.__class__.__name__, str(self))
+
+    def __float__(self):
+        return self.seconds
+
+    def __add__(self, other):
+        if isinstance(other, Timestamp):
+            return self.__class__(self.seconds + other.seconds)
+        if isinstance(other, (int, float)):
+            return self.__class__(self.seconds + other)
+        return NotImplemented
+
+    def __sub__(self, other):
+        if isinstance(other, Timestamp):
+            return self.__class__(self.seconds - other.seconds)
+        if isinstance(other, (int, float)):
+            return self.__class__(self.seconds - other)
+        return NotImplemented
+
+    def __eq__(self, other):
+        if isinstance(other, Timestamp):
+            return self.seconds == other.seconds
+        if isinstance(other, (int, float)):
+            return self.seconds == other
+        return NotImplemented
+
+    def __lt__(self, other):
+        if isinstance(other, Timestamp):
+            return self.seconds < other.seconds
+        if isinstance(other, (int, float)):
+            return self.seconds < other
+        return NotImplemented
+
 
 class TypedKeyDict(abc.ABC):
 
