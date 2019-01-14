@@ -7,6 +7,11 @@ __all__ = [
         'do_spawn_cmd',
         'clean_cmd_output',
         'Executable',
+        'PipedExecutable',
+        'PipedScript',
+        'PipedPortableScript',
+        'do_srun_cmd',
+        'do_sbatch_cmd',
         'EDITOR',
         'edfile',
         'edvar',
@@ -205,22 +210,99 @@ class Executable(metaclass=abc.ABCMeta):
             d.out = ''
             d.elapsed_time = 0
         else:
-            if run_func is None:
-                run_func = self.run_func
-            if run_func is None:
-                t0 = time.time()
-                d.out = do_exec_cmd(cmd, stderr=subprocess.STDOUT)
-                #d.subprocess_info = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                t1 = time.time()
-                #d.out = d.subprocess_info.stdout
-            else:
-                t0 = time.time()
-                d.out = run_func(cmd)
-                t1 = time.time()
+            run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
+            t0 = time.time()
+            d.out = run_func(cmd)
+            t1 = time.time()
             d.elapsed_time = t1 - t0
         return d
 
-    run = __call__ = _run
+    def run(self, *args, **kwargs):
+        return self._run(*args, **kwargs)
+
+    __call__ = run
+
+class PipedExecutable(Executable):
+    pass
+
+class PipedScript(PipedExecutable):
+    pass
+
+class PipedPortableScript(PipedScript):
+    pass
+
+def do_srun_cmd(cmd,
+        stdin=None, stdin_file=None,
+        stdout=None, stdout_file=None,
+        stderr=None, stderr_file=None,
+        slurm_cpus_per_task=None,
+        slurm_mem=None,
+        slurm_cpu_freq=None,
+        chdir=None,
+        uid=None,
+        ):
+    slurm_args = [
+        'srun',
+        ]
+
+    if stdin_file is not None:
+        slurm_args += ['--input', stdin_file]
+    if stdout_file is not None:
+        slurm_args += ['--output', stdout_file]
+    if stderr_file is not None:
+        slurm_args += ['--error', stderr_file]
+    if slurm_cpus_per_task is not None:
+        slurm_args += ['--cpus-per-task', slurm_cpus_per_task]
+    if slurm_mem is not None:
+        slurm_args += ['--mem', slurm_mem]
+    if slurm_cpu_freq is not None:
+        slurm_args += ['--cpu-freq', slurm_cpu_freq]
+    if chdir is not None:
+        slurm_args += ['--chdir', chdir]
+    if uid is not None:
+        slurm_args += ['--uid', uid]
+
+    slurm_args.extend(cmd)
+    slurm_args = [str(e) for e in slurm_args]
+    do_exec_cmd(slurm_args)
+
+def do_sbatch_cmd(cmd,
+        stdin=None, stdin_file=None,
+        stdout=None, stdout_file=None,
+        stderr=None, stderr_file=None,
+        slurm_cpus_per_task=None,
+        slurm_mem=None,
+        slurm_cpu_freq=None,
+        chdir=None,
+        uid=None,
+        wait=False,
+        ):
+    slurm_args = [
+        'sbatch',
+        ]
+
+    if stdin_file is not None:
+        slurm_args += ['--input', stdin_file]
+    if stdout_file is not None:
+        slurm_args += ['--output', stdout_file]
+    if stderr_file is not None:
+        slurm_args += ['--error', stderr_file]
+    if slurm_cpus_per_task is not None:
+        slurm_args += ['--cpus-per-task', slurm_cpus_per_task]
+    if slurm_mem is not None:
+        slurm_args += ['--mem', slurm_mem]
+    if slurm_cpu_freq is not None:
+        slurm_args += ['--cpu-freq', slurm_cpu_freq]
+    if chdir is not None:
+        slurm_args += ['--chdir', chdir]
+    if uid is not None:
+        slurm_args += ['--uid', uid]
+    if wait:
+        slurm_args += ['--wait']
+
+    slurm_args.extend(cmd)
+    slurm_args = [str(e) for e in slurm_args]
+    do_exec_cmd(slurm_args)
 
 class Editor(Executable):
 

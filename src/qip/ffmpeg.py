@@ -3,13 +3,17 @@ __all__ = [
         'ffmpeg',
         ]
 
+import functools
 import types
 import re
+import os
 import logging
 log = logging.getLogger(__name__)
 
 from .perf import perfcontext
 from .exec import *
+from .parser import lines_parser
+from .utils import byte_decode
 from .utils import Timestamp as _BaseTimestamp
 from qip.file import *
 
@@ -48,11 +52,9 @@ class Timestamp(_BaseTimestamp):
         return '%02d:%02d:%s' % (h, m, ('%.8f' % (s + 100.0))[1:])
 
 
-class Ffmpeg(Executable):
+class _Ffmpeg(Executable):
 
-    name = 'ffmpeg'
-
-    run_func = classmethod(do_spawn_cmd)
+    run_func = staticmethod(do_spawn_cmd)
 
     Timestamp = Timestamp
 
@@ -71,15 +73,49 @@ class Ffmpeg(Executable):
         return cmdargs
 
     def build_cmd(self, *args, **kwargs):
-        # out_file is always last
         args = list(args)
+
+        # out_file is always last
         out_file = args.pop(-1)
+
+        if 'loglevel' not in kwargs and '-loglevel' not in args:
+            if not log.isEnabledFor(logging.VERBOSE):
+                kwargs['loglevel'] = 'info'
+
         return super().build_cmd(*args, **kwargs) + [out_file]
 
-    def run2pass(self, *args, run_func=None, dry_run=False, distribute=False, **kwargs):
-        # out_file is always last
+class Ffmpeg(_Ffmpeg):
+
+    name = 'ffmpeg'
+
+    run_func = staticmethod(do_spawn_cmd)
+
+    Timestamp = Timestamp
+
+    def run2pass(self, *args, **kwargs):
         args = list(args)
+
+        # out_file is always last
         out_file = args.pop(-1)
+
+        try:
+            idx = args.index("-i")
+        except ValueError:
+            raise ValueError('no input file specified')
+        else:
+            args.pop(idx)
+            in_file = args.pop(idx)
+
+        pipe = True
+        if in_file == '-':
+            assert pipe, "input file is stdin but piping is not possible"
+
+        if pipe:
+            return ffmpeg_2pass_pipe.run(
+                    *args,
+                    stdin_file=in_file,
+                    stdout_file=out_file,
+                    **kwargs)
 
         try:
             idx = args.index("-passlogfile")
@@ -88,15 +124,8 @@ class Ffmpeg(Executable):
         else:
             args.pop(idx)
             passlogfile = args.pop(idx)
-
-        if distribute and not dry_run and not passlogfile:
-            pass
-
-        passlogfile = passlogfile or TempFile.mkstemp(suffix='.passlogfile')
-
-        if 'loglevel' not in kwargs and '-loglevel' not in args:
-            if not log.isEnabledFor(logging.VERBOSE):
-                kwargs['loglevel'] = 'info'
+        if not passlogfile:
+            passlogfile = TempFile.mkstemp(suffix='.passlogfile')
 
         d = types.SimpleNamespace()
         with perfcontext('%s pass 1/2' % (self.name,)):
@@ -104,13 +133,11 @@ class Ffmpeg(Executable):
                     "-pass", 1, "-passlogfile", passlogfile,
                     "-speed", 4,
                     "-y", '/dev/null',
-                    run_func=run_func, dry_run=dry_run,
                     **kwargs)
         with perfcontext('%s pass 2/2' % (self.name,)):
             d.pass2 = self.run(*args,
                     "-pass", 2, "-passlogfile", passlogfile,
                     out_file,
-                    run_func=run_func, dry_run=dry_run,
                     **kwargs)
         d.out = d.pass2.out
         try:
@@ -120,6 +147,98 @@ class Ffmpeg(Executable):
         except AttributeError:
             pass
 
+    def cropdetect(self, input_file, cropdetect_duration=60, dry_run=False):
+        stream_crop = None
+        with perfcontext('Cropdetect w/ ffmpeg'):
+            ffmpeg_args = [
+                '-i', input_file,
+                '-t', cropdetect_duration,
+                '-filter:v', 'cropdetect=24:2:0:0',
+                ]
+            ffmpeg_args += [
+                '-f', 'null', '-',
+                ]
+            out = self(*ffmpeg_args,
+                       dry_run=dry_run)
+        if not dry_run:
+            parser = lines_parser(byte_decode(out.out).split('\n'))
+            while parser.advance():
+                parser.line = parser.line.strip()
+                m = re.match(r'.*Parsed_cropdetect.* crop=(\d+):(\d+):(\d+):(\d+)$', parser.line)
+                if m:
+                    stream_crop = (int(m.group(1)),
+                            int(m.group(2)),
+                            int(m.group(3)),
+                            int(m.group(4)))
+            if not stream_crop:
+                raise ValueError('Crop detection failed')
+        return stream_crop
+
 ffmpeg = Ffmpeg()
+
+class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
+
+    name = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg-2pass-pipe')
+
+    def build_cmd(self, *args, **kwargs):
+        args = list(args)
+
+        args.append('-')  # dummy output
+
+        cmd = super().build_cmd(*args, **kwargs)
+        assert cmd.pop(-1) == '-'
+        return cmd
+
+    def _run(self, *args, stdin_file, stdout_file, run_func=None, dry_run=False, **kwargs):
+        args = list(args)
+
+        slurm = True
+        if run_func or dry_run:
+            slurm = False
+
+        try:
+            idx = args.index("-passlogfile")
+        except ValueError:
+            pass
+        else:
+            slurm = False
+
+        run_kwargs = {}
+        if slurm:
+            run_func = do_srun_cmd
+            run_kwargs['chdir'] = '/'
+            run_kwargs['stdin_file'] = os.path.abspath(stdin_file)
+            run_kwargs['stdout_file'] = os.path.abspath(stdout_file)
+            run_kwargs['stderr_file'] = '/dev/stderr'
+            # import getpass ; run_kwargs['uid'] = getpass.getuser()
+            threads = None
+            try:
+                threads = kwargs['threads']
+            except KeyError:
+                try:
+                    idx = args.index("-threads")
+                except ValueError:
+                    pass
+                else:
+                    threads = args[idx + 1]
+            if threads:
+                run_kwargs['slurm_cpus_per_task'] = max(round(int(threads) * 0.75), 1)
+            run_kwargs['slurm_mem'] = '500M'
+            run_kwargs['slurm_cpu_freq'] = 'high'
+        else:
+            run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
+            run_kwargs['stdin'] = open(str(stdin_file), "rb")
+            run_kwargs['stdout'] = open(str(stdout_file), "w")
+        if run_kwargs:
+            run_func = functools.partial(run_func, **run_kwargs)
+
+        return super()._run(
+                *args,
+                dry_run=dry_run,
+                run_func=run_func,
+                **kwargs)
+
+
+ffmpeg_2pass_pipe = Ffmpeg2passPipe()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
