@@ -77,6 +77,7 @@ def main():
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
+    pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue mode')
 
     pgroup = app.parser.add_argument_group('Video Control')
     pgroup.add_argument('--crop', default=True, action='store_true', help='enable cropping video (default)')
@@ -443,7 +444,14 @@ def action_mux(inputfile, in_tags):
     if app.args.dry_run:
         app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
     else:
-        os.mkdir(outputdir)
+        try:
+            os.mkdir(outputdir)
+        except FileExistsError as e:
+            if app.args._continue:
+                app.log.warning('%s: ignoring', e)
+                return True
+            else:
+                raise
 
     mux_dict = {
         'streams': [],
