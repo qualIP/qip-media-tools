@@ -202,6 +202,7 @@ def codec_name_to_ext(codec_name):
             # subtitles
             'dvd_subtitle': '.sub',  # and .idx
             'hdmv_pgs_subtitle': '.sup',
+            'webvtt': '.vtt',
         }[codec_name]
     except KeyError as err:
         raise ValueError('Unsupported codec %r' % (codec_name,)) from err
@@ -544,14 +545,30 @@ def action_mux(inputfile, in_tags):
                 except KeyError:
                     pass
 
-                with perfcontext('mkvextract track %d' % (stream_index,)):
-                    cmd = [
-                        'mkvextract', 'tracks', inputfile.file_name,
-                        '%d:%s' % (
-                            stream_index,
+                if stream_ext == '.vtt':
+                    # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
+                    # (mkvextract expects S_TEXT/WEBVTT)
+                    with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
+                        ffmpeg_args = [
+                            '-i', inputfile.file_name,
+                            '-map_metadata', '-1',
+                            '-map_chapters', '-1',
+                            '-map', '0:%d' % (stream_index,),
+                            '-codec', 'copy',
                             output_track_file_name,
-                        )]
-                    do_spawn_cmd(cmd)
+                            ]
+                        ffmpeg(*ffmpeg_args,
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
+                else:
+                    with perfcontext('extract track %d w/ mkvextract' % (stream_index,)):
+                        cmd = [
+                            'mkvextract', 'tracks', inputfile.file_name,
+                            '%d:%s' % (
+                                stream_index,
+                                output_track_file_name,
+                            )]
+                        do_spawn_cmd(cmd)
 
                 if not app.args.dry_run:
                     if stream_codec_type == 'subtitle':
