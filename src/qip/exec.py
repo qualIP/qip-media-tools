@@ -236,9 +236,10 @@ def do_srun_cmd(cmd,
         stdin=None, stdin_file=None,
         stdout=None, stdout_file=None,
         stderr=None, stderr_file=None,
+        slurm_priority=100,
         slurm_cpus_per_task=None,
         slurm_mem=None,
-        slurm_cpu_freq=None,
+        slurm_tmp=None,
         chdir=None,
         uid=None,
         ):
@@ -252,12 +253,14 @@ def do_srun_cmd(cmd,
         slurm_args += ['--output', stdout_file]
     if stderr_file is not None:
         slurm_args += ['--error', stderr_file]
+    if slurm_priority is not None:
+        slurm_args += ['--priority', slurm_priority]
     if slurm_cpus_per_task is not None:
         slurm_args += ['--cpus-per-task', slurm_cpus_per_task]
     if slurm_mem is not None:
         slurm_args += ['--mem', slurm_mem]
-    if slurm_cpu_freq is not None:
-        slurm_args += ['--cpu-freq', slurm_cpu_freq]
+    if slurm_tmp is not None:
+        slurm_args += ['--tmp', slurm_tmp]
     if chdir is not None:
         slurm_args += ['--chdir', chdir]
     if uid is not None:
@@ -271,9 +274,10 @@ def do_sbatch_cmd(cmd,
         stdin=None, stdin_file=None,
         stdout=None, stdout_file=None,
         stderr=None, stderr_file=None,
+        slurm_priority=100,
         slurm_cpus_per_task=None,
         slurm_mem=None,
-        slurm_cpu_freq=None,
+        slurm_tmp=None,
         chdir=None,
         uid=None,
         wait=False,
@@ -288,12 +292,14 @@ def do_sbatch_cmd(cmd,
         slurm_args += ['--output', stdout_file]
     if stderr_file is not None:
         slurm_args += ['--error', stderr_file]
+    if slurm_priority is not None:
+        slurm_args += ['--priority', slurm_priority]
     if slurm_cpus_per_task is not None:
         slurm_args += ['--cpus-per-task', slurm_cpus_per_task]
     if slurm_mem is not None:
         slurm_args += ['--mem', slurm_mem]
-    if slurm_cpu_freq is not None:
-        slurm_args += ['--cpu-freq', slurm_cpu_freq]
+    if slurm_tmp is not None:
+        slurm_args += ['--tmp', slurm_tmp]
     if chdir is not None:
         slurm_args += ['--chdir', chdir]
     if uid is not None:
