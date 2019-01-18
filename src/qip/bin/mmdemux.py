@@ -80,6 +80,7 @@ def main():
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
     pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue mode')
+    pgroup.add_argument('--batch', '-B', action='store_true', help='batch mode')
 
     pgroup = app.parser.add_argument_group('Video Control')
     pgroup.add_argument('--crop', default=True, action='store_true', help='enable cropping video (default)')
@@ -731,8 +732,7 @@ def action_chop(inputdir, in_tags):
 def action_optimize(inputdir, in_tags):
     app.log.info('Optimizing %s...', inputdir)
     outputdir = inputdir
-    if app.args.chain:
-        app.args.demux_dirs += (outputdir,)
+    do_chain = app.args.chain
 
     input_mux_file_name = os.path.join(inputdir, 'mux.json')
     mux_dict = load_mux_dict(input_mux_file_name, in_tags)
@@ -1082,6 +1082,10 @@ def action_optimize(inputdir, in_tags):
             if stream_file_ext in ('.sup', '.sub',):
                 new_stream_file_ext = '.srt'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
+                if app.args.batch:
+                    app.log.warning('BATCH MODE SKIP: Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+                    do_chain = False
+                    continue
                 app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
 
                 if False:
@@ -1197,6 +1201,9 @@ def action_optimize(inputdir, in_tags):
 
         else:
             raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+    if do_chain:
+        app.args.demux_dirs += (outputdir,)
 
 def action_extract_music(inputdir, in_tags):
     app.log.info('Extracting music from %s...', inputdir)
