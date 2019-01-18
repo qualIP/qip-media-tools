@@ -3291,7 +3291,6 @@ class SoundFile(BinaryFile):
                         'minor_version',
                         'compatible_brands',
                         'Encoding Params',
-                        'iTunSMPB',
                         'creation_time',
                         'CREATION_TIME',
                     ):
