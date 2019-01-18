@@ -493,6 +493,15 @@ def _tIntOrList(value):
         return tuple(int(e) for e in value)
     raise ValueError('Not a valid integer or list of: %r' % (value,))
 
+def _tPicture(value, accept_iterable=True):
+    if accept_iterable and isinstance(value, (tuple, list)):
+        return tuple(_tPicture(e, accept_iterable=False) for e in value)
+    if type(value) is str:
+        return value
+    if isinstance(value, File):
+        return value
+    raise ValueError('Not a valid string or file: %r' % (value,))
+
 # ContentType {{{
 
 class ContentType(enum.Enum):
@@ -741,6 +750,10 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     language = propex(
         name='language',
         type=(None, isolang))
+
+    picture = propex(
+        name='picture',
+        type=(_tNullTag, _tPicture))
 
     tempo = propex(
         name='tempo',
