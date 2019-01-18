@@ -186,9 +186,9 @@ def taged_mf_MP4Tags(file_name, mf, tags):
     tags_to_set = set(tags.keys())
     #app.log.debug('tags %r, tags_to_set: %r', type(tags), tags_to_set)
     if SoundTagEnum.disk in tags_to_set:
-        tags_to_set.remove(SoundTagEnum.disks)
+        tags_to_set.discard(SoundTagEnum.disks)
     if SoundTagEnum.track in tags_to_set:
-        tags_to_set.remove(SoundTagEnum.tracks)
+        tags_to_set.discard(SoundTagEnum.tracks)
     for tag in (
             SoundTagEnum.barcode,
             SoundTagEnum.isrc,
@@ -239,10 +239,10 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             elif mp4v2_data_type in ('binary',):
                 if mp4_tag == 'disk':  # disk
                     # arg must be a list of 1(or more) tuple of (track, total)
-                    mp4_value = [(int(tags.disk), int(tags.disks))]
+                    mp4_value = [(int(tags.disk), int(tags.disks or 0))]
                 elif mp4_tag == 'trkn':  # track
                     # arg must be a list of 1(or more) tuple of (track, total)
-                    mp4_value = [(int(tags.track), int(tags.tracks))]
+                    mp4_value = [(int(tags.track), int(tags.tracks or 0))]
                 else:
                     raise NotImplementedError((tag, mp4v2_data_type))
             elif mp4v2_data_type in ('picture',):
