@@ -973,11 +973,15 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 self.pop('genreID', None)
 
         elif tag in ('disk', 'track'):
-            m = re.search(r'^0*(?P<value>\d*)(?:(?: of |/)0*(?P<n>\d*))?$', value)
-            if m:
-                value = m.group('value')
-                if m.group('n') is not None:
-                    self[tag + 's'] = m.group('n')
+            if isinstance(value, (list, tuple)):
+                value, n = value
+                self[tag + 's'] = n
+            else:
+                m = re.search(r'^0*(?P<value>\d*)(?:(?: of |/)0*(?P<n>\d*))?$', value)
+                if m:
+                    value = m.group('value')
+                    if m.group('n') is not None:
+                        self[tag + 's'] = m.group('n')
 
         elif tag == 'comment':
             if value == '<p>':
