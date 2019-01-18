@@ -224,11 +224,13 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
             if threads:
                 run_kwargs['slurm_cpus_per_task'] = max(round(int(threads) * 0.75), 1)
             run_kwargs['slurm_mem'] = '500M'
-            run_kwargs['slurm_cpu_freq'] = 'high'
+            if not dry_run:
+                run_kwargs['slurm_tmp'] = '%dK' % (os.path.getsize(stdin_file) * 1.5 / 1024,)
         else:
             run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
-            run_kwargs['stdin'] = open(str(stdin_file), "rb")
-            run_kwargs['stdout'] = open(str(stdout_file), "w")
+            if not dry_run:
+                run_kwargs['stdin'] = open(str(stdin_file), "rb")
+                run_kwargs['stdout'] = open(str(stdout_file), "w")
         if run_kwargs:
             run_func = functools.partial(run_func, **run_kwargs)
 
