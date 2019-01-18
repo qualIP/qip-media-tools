@@ -19,6 +19,7 @@ __all__ = [
 
 import abc
 import errno
+import functools
 import os
 import pexpect
 import re
