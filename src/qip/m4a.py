@@ -15,6 +15,7 @@ import qip.snd as snd
 import qip.wav as wav
 import qip.cdda as cdda
 from .img import ImageFile
+from .utils import byte_decode
 
 class M4aFile(snd.SoundFile):
 
@@ -218,14 +219,15 @@ class M4aFile(snd.SoundFile):
                 print('ffconcat version 1.0', file=fp)
                 for inputfile in inputfiles:
                     print('file \'%s\'' % (
-                        inputfile.file_name.replace('\\', '\\\\').replace('\'', '\'\\\'\''),
+                        os.path.join(os.getcwd(), inputfile.file_name) \
+                            .replace('\\', '\\\\').replace('\'', '\'\\\'\''),
                         ), file=fp)
                     if hasattr(inputfile, 'duration'):
                         print('duration %.3f' % (inputfile.duration,), file=fp)
             safe_write_file_eval(filesfile, body)
             app.log.info('Files:\n' +
                          re.sub(r'^', '    ', safe_read_file(filesfile), flags=re.MULTILINE))
-            ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', filesfile]
+            ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', filesfile.file_name]
         else:
             ffmpeg_input_cmd += ['-i', inputfiles_names[0]]
 
@@ -262,7 +264,8 @@ class M4aFile(snd.SoundFile):
             if use_qaac_cmd:
                 out = do_spawn_cmd(qaac_cmd)
             else:
-                out = ffmpeg(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd)
+                out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd))
+                out = out.out
             out_time = None
             # {{{
             out = clean_cmd_output(out)
