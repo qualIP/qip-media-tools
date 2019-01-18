@@ -4,6 +4,7 @@ __all__ = (
     'SoundTagEnum',
     'TrackTags',
     'AlbumTags',
+    'ContentType',
     'mp4tags',
     'mp4info',
     'id3v2',
@@ -333,6 +334,7 @@ class SoundTagEnum(enum.Enum):
 
     genre = 'genre'  # STR  Set the genre name
     type = 'type'  # STR  Set the Media Type(tvshow, movie, music, ...)
+    contenttype = 'contenttype'  # STR  Set the Content Type(Documentary, Feature Film, Cartoon, Music Video, Music, Sound FX, ...)
     category = 'category'  # STR  Set the category
     grouping = 'grouping'  # STR  Set the grouping name
     language = 'language'  # STR  None|IsoLang
@@ -472,6 +474,52 @@ def _tIntOrList(value):
             return None
         return tuple(int(e) for e in value)
     raise ValueError('Not a valid integer or list of: %r' % (value,))
+
+# ContentType {{{
+
+class ContentType(enum.Enum):
+    # https://matroska.org/technical/specs/tagging/index.html
+    # http://wiki.webmproject.org/webm-metadata/global-metadata
+    # https://support.plex.tv/articles/205568377-adding-local-artist-and-music-videos/
+    behind_the_scenes = 'Behind The Scenes'
+    cartoon = 'Cartoon'
+    concert = 'Concert Performance'
+    documentary = 'Documentary'
+    feature_film = 'Feature Film'
+    interview = 'Artist Interview'
+    live_music_video = 'Live Music Video'
+    lyrics_music_video = 'Lyrics Music Video'
+    music = 'Music'
+    music_video = 'Music Video'
+    sound_fx = 'Sound FX'
+
+    def __hash__(self):
+        return hash(id(self))
+
+    def __str__(self):
+        return self.value
+
+    def __new(cls, value):
+        if type(value) is str:
+            value = value.strip().lower()
+            for pattern, new_value in (
+                ):
+                m = re.search(pattern, value)
+                if m:
+                    value = new_value
+                    break
+        return super().__new__(cls, value)
+
+ContentType.__new__ = ContentType._ContentType__new
+for _e in ContentType:
+    ContentType._value2member_map_[_e.value.lower()] = _e
+    ContentType._value2member_map_[_e.name.lower()] = _e
+    ContentType._value2member_map_[_e.name.lower().replace('_', '')] = _e
+ContentType._value2member_map_['live'] = ContentType.live_music_video
+ContentType._value2member_map_['lyrics'] = ContentType.lyrics_music_video
+ContentType._value2member_map_['sfx'] = ContentType.sound_fx
+
+# }}}
 
 class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMapping):
 
@@ -683,6 +731,9 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     contentid = propex(
         name='contentid',
         type=(_tNullTag, int))
+    contenttype = propex(
+        name='contenttype',
+        type=(None, ContentType))
 
     language = propex(
         name='language',
@@ -2761,6 +2812,9 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Subtitle",               "©st3",                     "utf-8",                    "subtitle",                 "TT3",                      "TIT3",           []],
     ["xid",                    "xid",                      "utf-8",                    "xid",                      None,                       None,             []],
     ["MusicBrainz CD Stub Id", "----:com.apple.iTunes:MusicBrainz CD Stub Id", "utf-8", None,                      None,                       None,             ['musicbrainz_cdstubid']],
+    # Non-mp4v2 {{{
+    ["Content Type",           None,                       None,                       "contentType",              None,                       None,             ["CONTENT_TYPE"]],
+    # }}}
     # As per operon {{{
     ["Release Country",        "----:com.apple.iTunes:MusicBrainz Album Release Country", "utf-8", None,           None,                       None,             ['country']],
     ["Language",               "----:com.apple.iTunes:LANGUAGE"                         , "utf-8", None,           None,                       None,             ['language']],
