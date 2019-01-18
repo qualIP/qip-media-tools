@@ -362,6 +362,7 @@ class SoundTagEnum(enum.Enum):
 
     tempo = 'tempo'  # NUM  Set the tempo (beats per minute)
     gapless = 'gapless'  # NUM  Set the gapless flag (1\0)
+    itunesgaplessinfo = 'itunesgaplessinfo'
 
     comment = 'comment'  # STR  Set a general comment
     lyrics = 'lyrics'  # NUM  Set the lyrics  # TODO STR!
@@ -375,7 +376,6 @@ class SoundTagEnum(enum.Enum):
 
     purchasedate = 'purchasedate'
     itunesaccount = 'itunesaccount'
-    itunescountry = 'itunescountry'
 
     xid = 'xid'  # ITunesXid  Set the globally-unique xid (vendor:scheme:id)
     cddb_discid = 'cddb_discid'
@@ -389,12 +389,13 @@ class SoundTagEnum(enum.Enum):
 
     contentrating = 'contentrating'  # None|SoundTagRating  Set the Rating(none, clean, explicit)
 
-    artistid = 'artistid'  # NUM  Set the artist ID
-    composerid = 'composerid'  # NUM  Set the composer ID
-    episodeid = 'episodeid'  # STR  Set the TV episode ID
-    genreid = 'genreid'  # NUM  Set the genre ID
-    contentid = 'contentid'  # NUM  Set the content ID (Catalog ID)
-    playlistid = 'playlistid'  # NUM  Set the playlist ID
+    itunescountryid = 'itunescountryid'
+    itunesartistid = 'itunesartistid'  # NUM  Set the artist ID
+    itunescomposerid = 'itunescomposerid'  # NUM  Set the composer ID
+    itunesepisodeid = 'itunesepisodeid'  # STR  Set the TV episode ID
+    itunesgenreid = 'itunesgenreid'  # NUM  Set the genre ID
+    itunescatalogid = 'itunescatalogid'  # NUM  Set the content ID (Catalog ID)
+    itunesplaylistid = 'itunesplaylistid'  # NUM  Set the playlist ID
 
     def __repr__(self):
         return self.value
@@ -414,12 +415,13 @@ class SoundTagEnum(enum.Enum):
         return self.value
 
 SoundTagEnum.iTunesInternalTags = frozenset((
-    SoundTagEnum.artistid,
-    SoundTagEnum.composerid,
-    SoundTagEnum.episodeid,
-    SoundTagEnum.genreid,
-    SoundTagEnum.contentid,
-    SoundTagEnum.playlistid,
+    SoundTagEnum.itunescountryid,
+    SoundTagEnum.itunesartistid,
+    SoundTagEnum.itunescomposerid,
+    SoundTagEnum.itunesepisodeid,
+    SoundTagEnum.itunesgenreid,
+    SoundTagEnum.itunescatalogid,
+    SoundTagEnum.itunesplaylistid,
 ))
 
 def _tNullTag(value):
@@ -711,14 +713,6 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         name='country',
         type=(None, isocountry))
 
-    artistid = propex(
-        name='artistid',
-        type=(_tNullTag, int))
-
-    composerid = propex(
-        name='composerid',
-        type=(_tNullTag, int))
-
     season = propex(
         name='season',
         type=(_tNullTag, int))
@@ -739,13 +733,6 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         name='hdvideo',
         type=(_tNullTag, _tBool))
 
-    genreid = propex(
-        name='genreid',
-        type=(_tNullTag, int))
-
-    contentid = propex(
-        name='contentid',
-        type=(_tNullTag, int))
     contenttype = propex(
         name='contenttype',
         type=(None, ContentType))
@@ -762,10 +749,6 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         name='gapless',
         type=(_tNullTag, _tBool))
 
-    playlistid = propex(
-        name='playlistid',
-        type=(_tNullTag, int))
-
     comment = propex(
         name='comment',
         type=(_tNullTag, _tCommentTag))
@@ -779,10 +762,6 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         type=(_tNullDate, SoundTagDate))
 
     # TODO itunesaccount = propex(name='itunesaccount', type=(_tNullDate, email))
-
-    itunescountry = propex(
-        name='itunescountry',
-        type=(None, isocountry))
 
     xid = propex(
         name='xid',
@@ -811,6 +790,34 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 identifier = self[tag_enum]
                 if identifier is not None:
                     yield ITunesXid(prefix, scheme, identifier)
+
+    itunescountryid = propex(
+        name='itunescountryid',
+        type=(_tNullTag, int))
+
+    itunesartistid = propex(
+        name='itunesartistid',
+        type=(_tNullTag, int))
+
+    itunescomposerid = propex(
+        name='itunescomposerid',
+        type=(_tNullTag, int))
+
+    itunesepisodeid = propex(
+        name='itunesepisodeid',
+        type=(_tNullTag, int))  # TODO STR??
+
+    itunesgenreid = propex(
+        name='itunesgenreid',
+        type=(_tNullTag, int))
+
+    itunescatalogid = propex(
+        name='itunescatalogid',
+        type=(_tNullTag, int))
+
+    itunesplaylistid = propex(
+        name='itunesplaylistid',
+        type=(_tNullTag, int))
 
     def __setitem__(self, key, value):
         key = self._sanitize_key(key)
@@ -2816,14 +2823,15 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Media Type",             "stik",                     "enum8",                    "type",                     "TMT",                      "TMED",           ["mediaType", "media_type"]],
     ["Content Rating",         "rtng",                     "int8",                     "contentRating",            None,                       None,             ['rating']],
     ["Gapless Playback",       "pgap",                     "bool8",                    "gapless",                  None,                       None,             ['gapless_playback']],
+    ["iTunes Gapless Info",    "----:com.apple.iTunes:iTunSMPB", "binary",             "iTunesGaplessInfo",        None,                       None,             ['iTunSMPB']],
     ["iTunes Purchase Account", "apID",                    "utf-8",                    "iTunesAccount",            None,                       None,             ['account_id']],
     ["iTunes Account Type",    "akID",                     "int8",                     "iTunesAccountType",        None,                       None,             []],
     ["iTunes Catalog ID",      "cnID",                     "int32",                    "iTunesCatalogID",          None,                       None,             ['contentid']],
     ["iTunes Composer ID",     "cmID",                     "int32",                    "iTunesComposerID",         None,                       None,             ['composerid']],
-    ["iTunes Store Country",   "sfID",                     "int32",                    "iTunesCountry",            None,                       None,             []],
-    ["Artist ID",              "atID",                     "int32",                    "artistID",                 None,                       None,             []],
-    ["iTunes Playlist ID",     "plID",                     "int64",                    "playlistID",               None,                       None,             []],
-    ["x-Genre ID",             "geID",                     "int32",                    "geID",                     None,                       None,             []],
+    ["iTunes Store Country",   "sfID",                     "int32",                    "iTunesCountryID",          None,                       None,             []],
+    ["iTunes Artist ID",       "atID",                     "int32",                    "iTunesArtistID",           None,                       None,             ['artistid']],
+    ["iTunes Playlist ID",     "plID",                     "int64",                    "iTunesPlaylistID",         None,                       None,             ['playlistid']],
+    ["iTunes Genre ID",        "geID",                     "int32",                    "iTunesGenreID",            None,                       None,             []],
     ["Subtitle",               "©st3",                     "utf-8",                    "subtitle",                 "TT3",                      "TIT3",           []],
     ["xid",                    "xid",                      "utf-8",                    "xid",                      None,                       None,             []],
     ["MusicBrainz CD Stub Id", "----:com.apple.iTunes:MusicBrainz CD Stub Id", "utf-8", None,                      None,                       None,             ['musicbrainz_cdstubid']],
@@ -3884,17 +3892,17 @@ class Mp4tags(Executable):
         TagArgInfo('-G', '-grouping', SoundTagEnum.grouping, STR, 'Set the grouping name'),
         TagArgInfo('-H', '-hdvideo', SoundTagEnum.hdvideo, NUM, 'Set the HD flag (1\\0)'),
         TagArgInfo('-i', '-type', SoundTagEnum.type, STR, 'Set the Media Type(tvshow, movie, music, ...)'),
-        TagArgInfo('-I', '-contentid', SoundTagEnum.contentid, NUM, 'Set the content ID'),
-        TagArgInfo('-j', '-genreid', SoundTagEnum.genreid, NUM, 'Set the genre ID'),
+        TagArgInfo('-I', '-contentid', SoundTagEnum.itunescatalogid, NUM, 'Set the content ID'),
+        TagArgInfo('-j', '-genreid', SoundTagEnum.itunesgenreid, NUM, 'Set the genre ID'),
         TagArgInfo('-l', '-longdesc', SoundTagEnum.longdescription, STR, 'Set the long description'),
         TagArgInfo('-L', '-lyrics', SoundTagEnum.lyrics, NUM, 'Set the lyrics'),  # TODO NUM?
         TagArgInfo('-m', '-description', SoundTagEnum.description, STR, 'Set the short description'),
         TagArgInfo('-M', '-episode', SoundTagEnum.episode, NUM, 'Set the episode number'),
         TagArgInfo('-n', '-season', SoundTagEnum.season, NUM, 'Set the season number'),
         TagArgInfo('-N', '-network', SoundTagEnum.tvnetwork, STR, 'Set the TV network'),
-        TagArgInfo('-o', '-episodeid', SoundTagEnum.episodeid, STR, 'Set the TV episode ID'),
+        TagArgInfo('-o', '-episodeid', SoundTagEnum.itunesepisodeid, STR, 'Set the TV episode ID'),
         TagArgInfo('-O', '-category', SoundTagEnum.category, STR, 'Set the category'),
-        TagArgInfo('-p', '-playlistid', SoundTagEnum.playlistid, NUM, 'Set the playlist ID'),
+        TagArgInfo('-p', '-playlistid', SoundTagEnum.itunesplaylistid, NUM, 'Set the playlist ID'),
         TagArgInfo('-P', '-picture', SoundTagEnum.picture, PTH, 'Set the picture as a .png'),
         TagArgInfo('-B', '-podcast', SoundTagEnum.podcast, NUM, 'Set the podcast flag.'),
         TagArgInfo('-R', '-albumartist', SoundTagEnum.albumartist, STR, 'Set the album artist'),
@@ -3906,11 +3914,11 @@ class Mp4tags(Executable):
         TagArgInfo('-X', '-rating', SoundTagEnum.contentrating, STR, 'Set the Rating(none, clean, explicit)'),
         TagArgInfo('-w', '-writer', SoundTagEnum.composer, STR, 'Set the composer information'),
         TagArgInfo('-y', '-year', SoundTagEnum.year, NUM, 'Set the release date'),
-        TagArgInfo('-z', '-artistid', SoundTagEnum.artistid, NUM, 'Set the artist ID'),
-        TagArgInfo('-Z', '-composerid', SoundTagEnum.composerid, NUM, 'Set the composer ID'),
+        TagArgInfo('-z', '-artistid', SoundTagEnum.itunesartistid, NUM, 'Set the artist ID'),
+        TagArgInfo('-Z', '-composerid', SoundTagEnum.itunescomposerid, NUM, 'Set the composer ID'),
         # Custom: https://code.google.com/archive/p/mp4v2/issues/170
         TagArgInfo('-Q', '-gapless', SoundTagEnum.gapless, NUM, 'Set gapless flag (0 false, non-zero true)'),
-        #TagArgInfo('-J', '-genretype', SoundTagEnum.genreid, NUM, 'Set the genre type'),
+        #TagArgInfo('-J', '-genretype', SoundTagEnum.itunesgenreid, NUM, 'Set the genre type'),
         TagArgInfo('-K', '-compilation', SoundTagEnum.compilation, NUM, 'Set the compilation flag (0 false, non-zero true)'),
     )
 
