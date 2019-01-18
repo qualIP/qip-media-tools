@@ -102,28 +102,28 @@ class MSF(object):
         return self.frames
 
     def __add__(self, other):
-        if isinstance(other, Timestamp):
-            return Timestamp(self.frames + other.frames)
+        if isinstance(other, MSF):
+            return self.__class__(self.frames + other.frames)
         if isinstance(other, int):
-            return Timestamp(self.frames + other)
+            return self.__class__(self.frames + other)
         return NotImplemented
 
     def __sub__(self, other):
-        if isinstance(other, Timestamp):
-            return Timestamp(self.frames - other.frames)
+        if isinstance(other, MSF):
+            return self.__class__(self.frames - other.frames)
         if isinstance(other, int):
-            return Timestamp(self.frames - other)
+            return self.__class__(self.frames - other)
         return NotImplemented
 
     def __eq__(self, other):
-        if isinstance(other, Timestamp):
+        if isinstance(other, MSF):
             return self.frames == other.frames
         if isinstance(other, int):
             return self.frames == other
         return NotImplemented
 
     def __lt__(self, other):
-        if isinstance(other, Timestamp):
+        if isinstance(other, MSF):
             return self.frames < other.frames
         if isinstance(other, int):
             return self.frames < other
