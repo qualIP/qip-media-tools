@@ -21,12 +21,14 @@ class IsoCountry(object):
             self.__class__.__name__,
             self.iso3166_1_alpha2)
 
-    def __init__(self, iso3166_1_alpha2, iso3166_1_alpha3, iso3166_1_num, name, *, independent=None):
+    def __init__(self, iso3166_1_alpha2, iso3166_1_alpha3, iso3166_1_num, name, *, independent=None, user_assigned=None):
         self.iso3166_1_alpha2 = iso3166_1_alpha2 or None
         self.iso3166_1_alpha3 = iso3166_1_alpha3 or None
         self.iso3166_1_num = iso3166_1_num or None
-        self.name = name or iso3166_1_alpha3 or ''
+        self.name = name or iso3166_1_alpha3 or iso3166_1_alpha2 or None
+        assert self.name
         self.independent = independent
+        self.user_assigned = user_assigned
         super().__init__()
 
     @property
@@ -45,14 +47,23 @@ class IsoCountry(object):
     @property
     def map_keys(self):
         map_keys = set()
-        for v in (self.code2.lower(), self.code3.lower(), int(self)):
+        for v in (
+            self.name,
+            self.code2,
+            self.code3,
+        ):
+            if type(v) is str:
+                v = v.lower()
             if v:
                 map_keys.add(v)
-        map_keys.add(self.name.lower())
+        try:
+            map_keys.add(int(self))
+        except TypeError:
+            pass
         return map_keys
 
-def init_iso_country(iso3166_1_alpha2, iso3166_1_alpha3, iso3166_1_num, name, independent=None):
-    country = IsoCountry(iso3166_1_alpha2, iso3166_1_alpha3, iso3166_1_num, name, independent=independent)
+def init_iso_country(iso3166_1_alpha2, iso3166_1_alpha3, iso3166_1_num, name, independent=None, user_assigned=None):
+    country = IsoCountry(iso3166_1_alpha2, iso3166_1_alpha3, iso3166_1_num, name, independent=independent, user_assigned=user_assigned)
     for map_key in country.map_keys:
         iso_country_map[map_key] = country
     return country
@@ -306,6 +317,85 @@ init_iso_country('YT', 'MYT', 175, 'Mayotte Mayotte', False)
 init_iso_country('ZA', 'ZAF', 710, 'South Africa South Africa', True)
 init_iso_country('ZM', 'ZMB', 894, 'Zambia Zambia', True)
 init_iso_country('ZW', 'ZWE', 716, 'Zimbabwe Zimbabwe', True)
+
+# https://musicbrainz.org/doc/Release_Country
+init_iso_country('XE', None, None, 'Europe (Specific country unknown)', user_assigned='MusicBrainz')
+init_iso_country('XW', None, None, 'Worldwide', user_assigned='MusicBrainz')
+init_iso_country('XU', None, None, 'Unknown', user_assigned='MusicBrainz')
+#AN	Netherlands Antilles	
+#CS	Serbia and Montenegro	Historical, February 2003 - June 2006 (3166-3 CSXX)
+#SU	Soviet Union	Historical, 1922 - 1991 (3166-3 SUHH)
+#SZ	Swaziland	
+#XC	Czechoslovakia	Historical, October 1918 - January 1992 (3166-3 CSHH)
+#XG	East Germany	Historical, 1949 - 1990 (3166-3 DDDE)
+
+# https://en.wikipedia.org/wiki/ISO_3166-3
+# Former country name	Former codes	Period of validity	ISO 3166-3 code	New country names and codes
+# British Antarctic Territory	BQ, ATB,  -	19741979	BQAQ	Merged into Antarctica (AQ, ATA, 010)
+# Burma	BU, BUR, 104	19741989	BUMM	Name changed to Myanmar (MM, MMR, 104)
+# Byelorussian SSR	BY, BYS, 112	19741992	BYAA	Name changed to Belarus (BY, BLR, 112)
+# Canton and Enderbury Islands	CT, CTE, 128	19741984	CTKI	Merged into Kiribati (KI, KIR, 296)
+# Czechoslovakia	CS, CSK, 200	19741993	CSHH
+# 	Divided into:
+# Czech Republic (CZ, CZE, 203)
+# Slovakia (SK, SVK, 703)
+# Dahomey	DY, DHY, 204	19741977	DYBJ	Name changed to Benin (BJ, BEN, 204)
+# Dronning Maud Land	NQ, ATN, 216	19741983	NQAQ	Merged into Antarctica (AQ, ATA, 010)
+# East Timor [note 1]	TP, TMP, 626	19742002	TPTL	Name changed to Timor-Leste (TL, TLS, 626)
+# France, Metropolitan	FX, FXX, 249	19931997	FXFR	Merged into France (FR, FRA, 250)
+# French Afars and Issas	AI, AFI, 262	19741977	AIDJ	Name changed to Djibouti (DJ, DJI, 262)
+# French Southern and Antarctic Territories	FQ, ATF,  -	19741979	FQHH	Divided into:
+# Part of Antarctica (AQ, ATA, 010) (i.e., Adélie Land)
+# French Southern Territories (TF, ATF, 260)
+# German Democratic Republic	DD, DDR, 278	19741990	DDDE	Merged into Germany (DE, DEU, 276)
+# Gilbert and Ellice Islands	GE, GEL, 296	19741979	GEHH	Divided into:
+# Kiribati (KI, KIR, 296)
+# Tuvalu (TV, TUV, 798)
+# Johnston Island	JT, JTN, 396	19741986	JTUM	Merged into United States Minor Outlying Islands (UM, UMI, 581)
+# Midway Islands	MI, MID, 488	19741986	MIUM	Merged into United States Minor Outlying Islands (UM, UMI, 581)
+# Netherlands Antilles	AN, ANT, 530
+# [note 2]	19742010 [note 3]	ANHH	Divided into:
+# Bonaire, Sint Eustatius and Saba (BQ, BES, 535) [note 4]
+# Curaçao (CW, CUW, 531)
+# Sint Maarten (Dutch part) (SX, SXM, 534)
+# Neutral Zone	NT, NTZ, 536	19741993	NTHH	Divided into:
+# Part of Iraq (IQ, IRQ, 368)
+# Part of Saudi Arabia (SA, SAU, 682)
+# New Hebrides	NH, NHB, 548	19741980	NHVU	Name changed to Vanuatu (VU, VUT, 548)
+# Pacific Islands (Trust Territory)	PC, PCI, 582	19741986	PCHH	Divided into:
+# Marshall Islands (MH, MHL, 584)
+# Micronesia, Federated States of (FM, FSM, 583)
+# Northern Mariana Islands (MP, MNP, 580)
+# Palau (PW, PLW, 585)
+# Panama Canal Zone	PZ, PCZ,  -	19741980	PZPA	Merged into Panama (PA, PAN, 591)
+# Serbia and Montenegro	CS, SCG, 891	20032006	CSXX
+# [note 5]	Divided into:
+# Montenegro (ME, MNE, 499)
+# Serbia (RS, SRB, 688)
+# Sikkim	SK, SKM,  -	19741975	SKIN	Merged into India (IN, IND, 356)
+# Southern Rhodesia	RH, RHO, 716	19741980	RHZW	Name changed to Zimbabwe (ZW, ZWE, 716)
+# United States Miscellaneous Pacific Islands	PU, PUS, 849	19741986	PUUM	Merged into United States Minor Outlying Islands (UM, UMI, 581)
+# Upper Volta	HV, HVO, 854	19741984	HVBF	Name changed to Burkina Faso (BF, BFA, 854)
+# USSR	SU, SUN, 810	19741992	SUHH	Divided into: [note 6]
+# Armenia (AM, ARM, 051)
+# Azerbaijan (AZ, AZE, 031)
+# Estonia (EE, EST, 233)
+# Georgia (GE, GEO, 268)
+# Kazakhstan (KZ, KAZ, 398)
+# Kyrgyzstan (KG, KGZ, 417)
+# Latvia (LV, LVA, 428)
+# Lithuania (LT, LTU, 440)
+# Moldova, Republic of (MD, MDA, 498)
+# Russian Federation (RU, RUS, 643)
+# Tajikistan (TJ, TJK, 762)
+# Turkmenistan (TM, TKM, 795)
+# Uzbekistan (UZ, UZB, 860)
+# Viet-Nam, Democratic Republic of	VD, VDR,  -	19741977	VDVN	Merged into Viet Nam (VN, VNM, 704)
+# Wake Island	WK, WAK, 872	19741986	WKUM	Merged into United States Minor Outlying Islands (UM, UMI, 581)
+# Yemen, Democratic	YD, YMD, 720	19741990	YDYE	Merged into Yemen (YE, YEM, 887)
+# Yugoslavia	YU, YUG, 891
+# [note 7]	19742003	YUCS	Name changed to Serbia and Montenegro (CS, SCG, 891)
+# Zaire	ZR, ZAR, 180	19741997	ZRCD	Name changed to Congo, the Democratic Republic of the (CD, COD, 180)
 
 def isocountry(v):
     if type(v) is str:
