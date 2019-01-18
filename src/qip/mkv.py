@@ -3,6 +3,9 @@ __all__ = (
     'MkvFile',
 )
 
+# https://matroska.org/technical/specs/tagging/index.html
+# http://wiki.webmproject.org/webm-metadata/global-metadata
+
 import logging
 log = logging.getLogger(__name__)
 
