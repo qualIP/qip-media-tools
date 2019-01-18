@@ -38,8 +38,8 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 import qip.file
-from qip.isolang import isolang
-from qip.isocountry import isocountry
+from qip.isolang import isolang, IsoLang
+from qip.isocountry import isocountry, IsoCountry
 from qip.file import *
 from qip.parser import *
 from qip.propex import propex
@@ -499,6 +499,27 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         else:
             if v is not None and type(v) not in (int,):
                 d['date'] = str(v)
+        try:
+            v = d['language']
+        except KeyError:
+            pass
+        else:
+            if isinstance(v, IsoLang):
+                d['language'] = str(v)
+        try:
+            v = d['country']
+        except KeyError:
+            pass
+        else:
+            if isinstance(v, IsoCountry):
+                d['country'] = str(v)
+        try:
+            v = d['itunescountry']
+        except KeyError:
+            pass
+        else:
+            if isinstance(v, IsoCountry):
+                d['itunescountry'] = str(v)
         return d
 
     artist = propex(
