@@ -2879,6 +2879,7 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     # '----:com.apple.iTunes:replaygain_track_peak': 'replaygain_track_peak',
     # '----:com.apple.iTunes:replaygain_reference_loudness':
     # }}}
+    ["Language",               "----:com.apple.iTunes:LANGUAGE"                         , "utf-8", None,           None,                       None,             ['language']],
     ]:
     tag = (mp4v2_name or element).lower()
     for v in ["element", "mp4v2_tag", "mp4v2_data_type", "mp4v2_name", "id3v2_20_tag", "id3v2_30_tag", "aliases"]:
