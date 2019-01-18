@@ -78,6 +78,11 @@ def main():
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
 
+    pgroup = app.parser.add_argument_group('Actions')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    pgroup.add_argument('--edit', dest='action', default='edit', action='store_const', const='edit', help='edit tags (default)')
+    pgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
+
     pgroup = app.parser.add_argument_group('Compatibility')
     pgroup.add_argument('--prep-picture', dest='prep_picture', action='store_true', help='prepare picture')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -115,7 +120,7 @@ def main():
     app.parse_args()
 
     if getattr(app.args, 'action', None) is None:
-        app.args.action = 'taged'
+        app.args.action = 'edit'
     if not hasattr(app.args, 'logging_level'):
         app.args.logging_level = logging.INFO
     app.set_logging_level(app.args.logging_level)
@@ -131,7 +136,7 @@ def main():
         if not shutil.which(prog):
             app.log.warning('%s: command not found; Functionality may be limited.', prog)
 
-    if app.args.action == 'taged':
+    if app.args.action == 'edit':
         # {{{
 
         if not app.args.files:
@@ -139,6 +144,16 @@ def main():
         for file_name in app.args.files:
             with perfcontext('taged'):
                 taged(file_name, in_tags)
+
+        # }}}
+    elif app.args.action == 'list':
+        # {{{
+
+        if not app.args.files:
+            raise Exception('No files provided')
+        for file_name in app.args.files:
+            with perfcontext('list'):
+                taglist(file_name)
 
         # }}}
     else:
@@ -471,6 +486,207 @@ def taged(file_name, tags):
     if file_ext == '.mkv':
         return taged_MKV(file_name, tags)
     raise NotImplementedError(file_ext)
+    return True
+
+def taglist_mf(file_name, mf, tags):
+    if isinstance(mf.tags, mutagen.id3.ID3):
+        return taglist_mf_id3(file_name, mf, tags)
+    if isinstance(mf.tags, mutagen.mp4.MP4Tags):
+        return taglist_mf_MP4Tags(file_name, mf, tags)
+    raise NotImplementedError(mf.tags.__class__.__name__)
+
+def taglist_mf_id3(file_name, mf, tags):
+    for id3_tag, tag_value in mf.items():
+        id3_tag = {
+            'APIC:': 'APIC',
+            }.get(id3_tag, id3_tag)
+        if id3_tag in (
+                'COMM:iTunNORM:eng',  # TODO
+                'COMM:iTunPGAP:eng',  # TODO
+                'COMM:iTunSMPB:eng',  # TODO
+                'COMM:iTunes_CDDB_IDs:eng',  # TODO
+                'TDRC',  # TODO
+                'UFID:http://www.cddb.com/id3/taginfo1.html',  # TODO
+                ):
+            continue
+        try:
+            mapped_tag = qip.snd.tag_info['map'][id3_tag]
+        except:
+            app.log.debug('id3_tag=%r, tag_value=%r', id3_tag, tag_value)
+            raise
+        if mapped_tag in ('picture',):
+            app.log.debug('id3_tag/mapped_tag=%r/%r, tag_value=...', id3_tag, mapped_tag)
+        else:
+            app.log.debug('id3_tag/mapped_tag=%r/%r, tag_value=%r', id3_tag, mapped_tag, tag_value)
+        if mapped_tag == 'picture':
+            assert isinstance(tag_value, mutagen.id3.APIC)
+            # tag_value=APIC(encoding=<Encoding.LATIN1: 0>, mime='image/jpeg', type=<PictureType.OTHER: 0>, desc='', data=b'...')
+            file_desc = byte_decode(dbg_exec_cmd(['file', '-b', '-'], input=tag_value.data)).strip()
+            tag_value = '(%s: %s: %s)' % (tag_value.mime, tag_value.desc, file_desc)
+        if isinstance(tag_value, mutagen.id3.TextFrame):
+            tag_value = tag_value.text
+        if isinstance(tag_value, list) and len(tag_value) == 1:
+            tag_value = tag_value[0]
+        old_value = tags[mapped_tag] if mapped_tag in ('episode',) else None
+        if old_value is not None:
+            if not isinstance(old_value, tuple):
+                old_value = (old_value,)
+            if not isinstance(tag_value, tuple):
+                tag_value = (tag_value,)
+            tag_value = old_value + tag_value
+        tags.set_tag(mapped_tag, tag_value)
+    return True
+
+def taglist_mf_MP4Tags(file_name, mf, tags):
+    for mp4_tag, tag_value in mf.items():
+        if mp4_tag in (
+                '----:com.apple.iTunes:Encoding Params',  # TODO
+                '----:com.apple.iTunes:iTunNORM',  # TODO
+                '----:com.apple.iTunes:iTunes_CDDB_1',  # TODO
+                '----:com.apple.iTunes:iTunes_CDDB_TrackNumber',  # TODO
+                ):
+            continue
+        try:
+            mapped_tag = qip.snd.tag_info['map'][mp4_tag]
+        except:
+            app.log.debug('mp4_tag=%r, tag_value=%r', mp4_tag, tag_value)
+            raise
+        if mapped_tag in ('picture',):
+            app.log.debug('mp4_tag/mapped_tag=%r/%r, tag_value=...', mp4_tag, mapped_tag)
+        else:
+            app.log.debug('mp4_tag/mapped_tag=%r/%r, tag_value=%r', mp4_tag, mapped_tag, tag_value)
+        if mapped_tag == 'picture':
+            new_tag_value = []
+            for cover in tag_value:
+                assert isinstance(cover, mutagen.mp4.MP4Cover)
+                imageformat = {
+                        mutagen.mp4.MP4Cover.FORMAT_JPEG: 'JPEG',
+                        mutagen.mp4.MP4Cover.FORMAT_PNG: 'PNG',
+                        }.get(cover.imageformat, repr(cover.imageformat))
+                file_desc = byte_decode(dbg_exec_cmd(['file', '-b', '-'], input=bytes(cover))).strip()
+                new_tag_value.append('(%s: %s)' % (imageformat, file_desc))
+            tag_value = new_tag_value
+        if isinstance(tag_value, list) and len(tag_value) == 1:
+            tag_value = tag_value[0]
+        if isinstance(tag_value, mutagen.mp4.MP4FreeForm):
+            if tag_value.dataformat == mutagen.mp4.AtomDataType.UTF8:
+                tag_value = tag_value.decode('utf-8')
+            else:
+                raise NotImplementedError(tag_value.dataformat)
+        old_value = tags[mapped_tag] if mapped_tag in ('episode',) else None
+        if old_value is not None:
+            if not isinstance(old_value, tuple):
+                old_value = (old_value,)
+            if not isinstance(tag_value, tuple):
+                tag_value = (tag_value,)
+            tag_value = old_value + tag_value
+        tags.set_tag(mapped_tag, tag_value)
+    return True
+
+mkv_tag_map = {
+    (50, 'EPISODE', 'PART_NUMBER'): 'episode',
+    (50, None, 'ARTIST'): 'artist',
+    (50, None, 'CONTENT_TYPE'): 'contenttype',
+    (50, None, 'DATE_RELEASED'): 'date',
+    (50, None, 'ENCODER'): 'tool',
+    (50, None, 'GENRE'): 'genre',
+    (50, None, 'PART_NUMBER'): 'track',
+    (50, None, 'TITLE'): 'title',
+    (50, None, 'TOTAL_PARTS'): 'tracks',
+    (60, 'SEASON', 'PART_NUMBER'): 'season',
+    (70, 'COLLECTION', 'TITLE'): 'tvshow',
+    }
+
+def taglist_MKV(file_name, tags):
+    tags_xml_txt = dbg_exec_cmd(['mkvextract', file_name, 'tags', '-'])
+    tags_xml = ET.fromstring(tags_xml_txt)
+    root = tags_xml  # tags_xml.getroot()
+    for eTag in root.findall('Tag'):
+        eTargets = eTag.find('Targets')
+        # <Targets>
+        #   <TargetTypeValue>50</TargetTypeValue>
+        #   <TrackUID>9427439434839936200</TrackUID>
+        #   <TargetType>MOVIE</TargetType>
+        # </Targets>
+        eTargetTypeValue = eTargets and eTargets.find('TargetTypeValue')
+        vTargetTypeValue = int(eTargetTypeValue.text) if eTargetTypeValue is not None else 50
+        eTargetType = eTargets and eTargets.find('TargetType')
+        vTargetType = eTargetType.text if eTargetType is not None else None
+        eTrackUID = eTargets and eTargets.find('TrackUID')
+        vTrackUID = eTrackUID.text if eTrackUID is not None else '0'
+        app.log.debug('Target: TargetType=%r/%s, TrackUID=%r', vTargetTypeValue, vTargetType, vTrackUID)
+        target_tags = tags if vTrackUID == '0' else tags.tracks_tags[int(vTrackUID)]
+        #if vTrackUID != '0':
+        #    continue
+        for eSimple in eTag.findall('Simple'):
+            # <Simple>
+            #   <Name>BPS</Name>
+            #   <String>325282</String>
+            #   <TagLanguage>eng</TagLanguage>
+            # </Simple>
+            mkv_tag = eSimple.find('Name').text
+            if mkv_tag in (
+                    'BPS',  # TODO
+                    'DURATION',  # TODO
+                    'NUMBER_OF_FRAMES',  # TODO
+                    'NUMBER_OF_BYTES',  # TODO
+                    '_STATISTICS_WRITING_APP',  # TODO
+                    '_STATISTICS_WRITING_DATE_UTC',  # TODO
+                    '_STATISTICS_TAGS',  # TODO
+                    ):
+                continue
+            tag_value = eSimple.find('String').text
+            app.log.debug('Simple: name=%r, value=%r', mkv_tag, tag_value)
+            try:
+                mapped_tag = mkv_tag_map[(vTargetTypeValue, vTargetType, mkv_tag)]
+            except KeyError:
+                raise
+                # mapped_tag = mkv_tag_map[(vTargetTypeValue, None, mkv_tag)]
+            old_value = tags[mapped_tag] if mapped_tag in ('episode',) else None
+            if old_value is not None:
+                if not isinstance(old_value, tuple):
+                    old_value = (old_value,)
+                if not isinstance(tag_value, tuple):
+                    tag_value = (tag_value,)
+                tag_value = old_value + tag_value
+            target_tags.set_tag(mapped_tag, tag_value)
+    return True
+
+def dump_tags(tags, *, deep=True, heading='Tags:'):
+    if heading:
+        print(heading)
+    for tag_info in mp4tags.tag_args_info:
+        # Force None values to actually exist
+        if tags[tag_info.tag_enum] is None:
+            tags[tag_info.tag_enum] = None
+    tags_keys = tags.keys() if deep else tags.keys(deep=False)
+    for tag in sorted(tags_keys, key=functools.cmp_to_key(dictionarycmp)):
+        value = tags[tag]
+        if isinstance(value, str):
+            tags[tag] = value = replace_html_entities(tags[tag])
+        if value is not None:
+            if type(value) not in (int, str, bool, tuple):
+                value = str(value)
+            print('    %-13s = %r' % (tag.value, value))
+    for track_no, track_tags in tags.tracks_tags.items() if isinstance(tags, AlbumTags) else ():
+        dump_tags(track_tags, deep=False, heading='- Track %d' % (track_no,))
+
+def taglist(file_name):
+    app.log.info('Listing %s...', file_name)
+    tags = AlbumTags()
+    done = False
+    if not done:
+        with perfcontext('mf.load'):
+            mf = mutagen.File(file_name)
+    if not done and mf:
+        done = taglist_mf(file_name, mf, tags)
+    if not done:
+        file_base, file_ext = os.path.splitext(file_name)
+        if file_ext == '.mkv':
+            done = taglist_MKV(file_name, tags)
+    if not done:
+        raise NotImplementedError(file_ext)
+    dump_tags(tags)
     return True
 
 if __name__ == "__main__":
