@@ -165,21 +165,24 @@ def clean_file_name(file_name, keep_ext=True, extra=''):
 
 # }}}
 
-def debug_tags(inputfile):
-    app.log.debug(inputfile)
-    print("Tags:")
+def dump_tags(tags, *, deep=True, heading='Tags:'):
+    if heading:
+        print(heading)
     for tag_info in mp4tags.tag_args_info:
         # Force None values to actually exist
-        if inputfile.tags[tag_info.tag_enum] is None:
-            inputfile.tags[tag_info.tag_enum] = None
-    for tag in sorted(inputfile.tags.keys(), key=functools.cmp_to_key(dictionarycmp)):
-        value = inputfile.tags[tag]
+        if tags[tag_info.tag_enum] is None:
+            tags[tag_info.tag_enum] = None
+    tags_keys = tags.keys() if deep else tags.keys(deep=False)
+    for tag in sorted(tags_keys, key=functools.cmp_to_key(dictionarycmp)):
+        value = tags[tag]
         if isinstance(value, str):
-            inputfile.tags[tag] = value = replace_html_entities(inputfile.tags[tag])
+            tags[tag] = value = replace_html_entities(tags[tag])
         if value is not None:
-            if type(value) not in (int, str):
+            if type(value) not in (int, str, bool, tuple):
                 value = str(value)
             print('    %-13s = %r' % (tag.value, value))
+    for track_no, track_tags in tags.tracks_tags.items() if isinstance(tags, AlbumTags) else ():
+        dump_tags(track_tags, deep=False, heading='- Track %d' % (track_no,))
 
 supported_audio_exts = \
         set(qip.snd.get_mp4v2_app_support().extensions_can_read) | \
@@ -599,7 +602,7 @@ def organize(inputfile):
     app.log.info('Organizing %s...', inputfile)
     inputfile.extract_info(need_actual_duration=False)
     if app.log.isEnabledFor(logging.DEBUG):
-        debug_tags(inputfile)
+        dump_tags(inputfile.tags)
 
     suggest_tags = TrackTags()
 
