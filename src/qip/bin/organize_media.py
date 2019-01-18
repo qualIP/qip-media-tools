@@ -73,6 +73,7 @@ def main():
     pgroup.add_argument('--musicvideo', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='musicvideo', help='Music Video mode (Plex: <albumartist>/<albumartist>/<track> - <comment>-video; Emby: same as music)')
     pgroup.add_argument('--movie', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='movie', help='Movie mode (<title>/<file>)')
     pgroup.add_argument('--tvshow', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='tvshow', help='TV show mode (<title>/<file>)')
+    pgroup.add_argument('--contenttype', help='Content Type (%s)' % (', '.join((str(e) for e in qip.snd.ContentType)),))
     pgroup.add_argument('--app', default='plex', choices=['emby', 'plex'], help='App compatibility mode')
 
     pgroup = app.parser.add_argument_group('Files')
@@ -393,7 +394,14 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
         dst_file_base += ' - %s' % (inputfile.tags.comment[0],)
 
     # -video
-    dst_file_base += '-video'
+    dst_file_base += {
+        qip.snd.ContentType.behind_the_scenes: '-behindthescenes',
+        qip.snd.ContentType.concert: '-concert',
+        qip.snd.ContentType.interview: '-interview',
+        qip.snd.ContentType.live_music_video: '-live',
+        qip.snd.ContentType.lyrics_music_video: '-lyrics',
+        qip.snd.ContentType.music_video: '-video',
+    }.get(inputfile.tags.contenttype, '-video')
 
     dst_file_base += dst_file_base_ext
 
@@ -595,6 +603,8 @@ def organize(inputfile):
 
     suggest_tags = TrackTags()
 
+    if app.args.contenttype:
+        inputfile.tags.contenttype = app.args.contenttype
     if app.args.library_mode:
         inputfile.tags.type = app.args.library_mode
     if not inputfile.tags.type:
@@ -604,7 +614,10 @@ def organize(inputfile):
         elif ext in ('.m4b'):
             inputfile.tags.type = 'audiobook'
         elif ext in ('.mkv', '.avi', '.mp4', '.m4v'):
-            if inputfile.tags.tvshow is not None:
+            contenttype = inputfile.tags.contenttype
+            if 'Music Video' in str(inputfile.tags.contenttype):
+                inputfile.tags.type = 'musicvideo'
+            elif inputfile.tags.tvshow is not None:
                 inputfile.tags.type = 'tvshow'
             else:
                 inputfile.tags.type = 'movie'
