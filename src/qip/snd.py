@@ -374,6 +374,7 @@ class SoundTagEnum(enum.Enum):
     sortcomposer = 'sortcomposer'
     sorttvshow = 'sorttvshow'
 
+    owner = 'owner'
     purchasedate = 'purchasedate'
     itunesaccount = 'itunesaccount'
 
@@ -2835,6 +2836,7 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Subtitle",               "©st3",                     "utf-8",                    "subtitle",                 "TT3",                      "TIT3",           []],
     ["xid",                    "xid",                      "utf-8",                    "xid",                      None,                       None,             []],
     ["MusicBrainz CD Stub Id", "----:com.apple.iTunes:MusicBrainz CD Stub Id", "utf-8", None,                      None,                       None,             ['musicbrainz_cdstubid']],
+    ["Owner",                  "ownr",                     "utf-8",                    "owner",                    None,                       None,             []],
     # Non-mp4v2 {{{
     ["Content Type",           None,                       None,                       "contentType",              None,                       None,             ["CONTENT_TYPE"]],
     # }}}
