@@ -21,7 +21,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import unidecode
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
 
@@ -94,6 +93,7 @@ def main():
     pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--date', '--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--type', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--contenttype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.snd.ContentType)),))
     pgroup.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--track', dest='track_slash_tracks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
@@ -102,18 +102,13 @@ def main():
     pgroup.add_argument('--episode', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-composer', '--sort-writer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--compilation', '-K', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sortcomposer', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
 
     app.parser.add_argument('files', nargs='*', default=None, help='sound files')
 
@@ -214,7 +209,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             mp4v2_data_type = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_data_type']
         except KeyError:
             raise NotImplementedError(tag)
-        if mp4_tag == 'xid':
+        if mp4_tag in 'xid':
             value = tags.xids or None
         if value is None:
             if mf.tags.pop(mp4_tag, None) is not None:
@@ -381,6 +376,9 @@ def taged_MKV(file_name, tags):
                     mkv_tag = 'DATE_RELEASED'
                 elif tag == 'genre':
                     mkv_tag = 'GENRE'
+                # albumartist should be 50/ARTIST while artist should be on individual tracks
+                #elif tag == 'albumartist':
+                #    mkv_tag = 'ARTIST'
                 elif tag == 'artist':
                     mkv_tag = 'ARTIST'
                 elif tag == 'tvshow':
@@ -393,6 +391,8 @@ def taged_MKV(file_name, tags):
                     mkv_tag = 'PART_NUMBER'
                 elif tag == 'title':
                     mkv_tag = 'TITLE'
+                elif tag == 'contenttype':
+                    mkv_tag = 'CONTENT_TYPE'
                 else:
                     raise NotImplementedError(tag)
                 if tag == 'title':
@@ -428,7 +428,8 @@ def taged_MKV(file_name, tags):
                 for eSimple in find_all_Simple_element(eTag, Name=mkv_tag):
                     app.log.debug('Remove %r', ET.tostring(eSimple))
                     eTag.remove(eSimple)
-                tup_mkv_value = mkv_value if mkv_value is tuple else tuple(mkv_value)
+                tup_mkv_value = mkv_value if type(mkv_value) is tuple else (mkv_value,)
+                #app.log.debug('value=%r, mkv_value=%r, tup_mkv_value=%r', value, mkv_value, tup_mkv_value)
                 for one_mkv_value in tup_mkv_value:
                     eSimple = ET.SubElement(eTag, 'Simple')
                     eName = ET.SubElement(eSimple, 'Name')
