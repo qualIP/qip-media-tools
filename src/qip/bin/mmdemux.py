@@ -213,10 +213,11 @@ def ext_to_container(ext):
         ext_container = {
             # video
             '.mpeg2': 'mpeg2video',
-            #'.h264': 'h264',
+            '.mpegts': 'mpegts',
+            '.h264': 'h264',
             #'.h265': 'h265',
             #'.vp8': 'vp8',
-            #'.vp9': 'vp9',
+            '.vp9': 'ivf',
             # audio
             #'.ac3': 'ac3',
             #'.dts': 'dts',
@@ -839,45 +840,30 @@ def action_optimize(inputdir, in_tags):
                     '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
                     ] + extra_args + [
                     ]
-                if app.args.parallel_chapters:
-                    concat_list_file = TempFile.mkstemp(suffix='.concat.txt', open=True, text=True)
-                    chaps = list(get_chapters(inputdir, mux_dict))
+
+                ffmpeg_concat_args = []
+
+                chaps = list(get_chapters(inputdir, mux_dict))
+                if (app.args.parallel_chapters
+                        and len(chaps) > 1
+                        and stream_file_ext == '.mpeg2'):  # Chopping using segment muxer is reliable (tested with mpeg2)
                     with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_name, new_stream_file_ext)):
+                        chapter_stream_file_ext = {
+                                '.mpeg2': '.mpegts',
+                            }.get(stream_file_ext, stream_file_ext)
+                        stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, chapter_stream_file_ext)
+                        new_stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, new_stream_file_ext)
+
+                        concat_list_file = TempFile.mkstemp(suffix='.concat.txt', open=True, text=True)
                         threads = []
-                        for chap in chaps:
+
+                        def encode_chap():
                             app.log.verbose('Chapter %d [%s..%s]',
                                             chap.no,
                                             chap.time_start,
                                             chap.time_end)
-                            stream_chapter_file_name = '%s-chap%02d%s' % (stream_file_base, chap.no, stream_file_ext)
-                            if app.args._continue and os.path.exists(stream_chapter_file_name):
-                                app.log.warning('%s exists: continue...')
-                            else:
-                                with perfcontext('Chop w/ ffmpeg'):
-                                    ffmpeg_args = [
-                                        '-start_at_zero', '-copyts',
-                                        '-i', os.path.join(inputdir, stream_file_name),
-                                        '-codec', 'copy',
-                                        '-ss', chap.time_start,
-                                        '-to', chap.time_end,
-                                        ]
-                                    force_format = None
-                                    try:
-                                        force_format = ext_to_container(stream_file_ext)
-                                    except ValueError:
-                                        pass
-                                    if force_format:
-                                        ffmpeg_args += [
-                                            '-f', force_format,
-                                            ]
-                                    ffmpeg_args += [
-                                        os.path.join(inputdir, stream_chapter_file_name),
-                                        ]
-                                    ffmpeg(*ffmpeg_args,
-                                           dry_run=app.args.dry_run,
-                                           y=app.args.yes)
-
-                            new_stream_chapter_file_name = '%s-chap%02d%s' % (stream_file_base, chap.no, new_stream_file_ext)
+                            stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
+                            new_stream_chapter_file_name = new_stream_chapter_file_name_pat % (chap.no,)
                             print('file \'%s\'' % (os.path.abspath(os.path.join(inputdir, new_stream_chapter_file_name)),), file=concat_list_file.fp)
 
                             if app.args._continue and os.path.exists(new_stream_chapter_file_name):
@@ -886,7 +872,7 @@ def action_optimize(inputdir, in_tags):
                                 ffmpeg_args = [
                                     '-i', os.path.join(inputdir, stream_chapter_file_name),
                                     ] + ffmpeg_conv_args + [
-                                    '-f', 'ivf', os.path.join(inputdir, new_stream_chapter_file_name),
+                                    '-f', ext_to_container(new_stream_file_ext), os.path.join(inputdir, new_stream_chapter_file_name),
                                     ]
                                 thread = ExcThread(
                                         target=ffmpeg.run2pass,
@@ -903,6 +889,73 @@ def action_optimize(inputdir, in_tags):
                                     thread.start()
                                     threads.append(thread)
 
+                        # Chop
+                        if stream_file_ext in ('.h264',):
+                            # "ffmpeg cannot always read correct timestamps from H264 streams"
+                            # So split manually instead of using the segment muxer
+                            assert NotImplementedError  # This is not an accurate split!!
+                            ffmpeg_concat_args += [
+                                '-vsync', 'drop',
+                                ]
+                            for chap in chaps:
+                                app.log.verbose('Chapter %d [%s..%s]',
+                                                chap.no,
+                                                chap.time_start,
+                                                chap.time_end)
+                                stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
+                                if app.args._continue and os.path.exists(stream_chapter_file_name):
+                                    app.log.warning('%s exists: continue...')
+                                else:
+                                    with perfcontext('Chop w/ ffmpeg'):
+                                        ffmpeg_args = [
+                                            '-fflags', '+genpts',
+                                            '-start_at_zero', '-copyts',
+                                            '-i', os.path.join(inputdir, stream_file_name),
+                                            '-codec', 'copy',
+                                            '-ss', chap.time_start,
+                                            '-to', chap.time_end,
+                                            ]
+                                        force_format = None
+                                        try:
+                                            force_format = ext_to_container(stream_file_ext)
+                                        except ValueError:
+                                            pass
+                                        if force_format:
+                                            ffmpeg_args += [
+                                                '-f', force_format,
+                                                ]
+                                        ffmpeg_args += [
+                                            os.path.join(inputdir, stream_chapter_file_name),
+                                            ]
+                                        ffmpeg(*ffmpeg_args,
+                                               dry_run=app.args.dry_run,
+                                               y=app.args.yes)
+                                encode_chap()
+                        else:
+                            app.log.verbose('All chapters...')
+                            with perfcontext('Chop w/ ffmpeg segment muxer'):
+                                ffmpeg_args = [
+                                    '-fflags', '+genpts',
+                                    '-i', os.path.join(inputdir, stream_file_name),
+                                    '-segment_times', ','.join(str(chap.time_end) for chap in chaps),
+                                    '-segment_start_number', chaps[0].no,
+                                    '-codec', 'copy',
+                                    '-map', '0',
+                                    ]
+                                ffmpeg_args += [
+                                    '-f', 'segment',
+                                    '-segment_format', ext_to_container(chapter_stream_file_ext),
+                                    os.path.join(inputdir, stream_chapter_file_name_pat),
+                                    ]
+                                ffmpeg(*ffmpeg_args,
+                                       dry_run=app.args.dry_run,
+                                       y=app.args.yes)
+
+                            # Encode
+                            for chap in chaps:
+                                encode_chap()
+
+                        # Join
                         concat_list_file.close()
                         print(concat_list_file.read())
                         exc = None
@@ -914,10 +967,13 @@ def action_optimize(inputdir, in_tags):
                                 exc = e
                         if exc:
                             raise exc
+
+                    # Concat
                     with perfcontext('Concat %s w/ ffmpeg' % (new_stream_file_name,)):
                         ffmpeg_args = [
                             '-f', 'concat', '-safe', '0', '-i', concat_list_file,
                             '-codec', 'copy',
+                            ] + ffmpeg_concat_args + [
                             '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
