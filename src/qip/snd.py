@@ -206,16 +206,6 @@ class ITunesXid(object):
             raise TypeError('{}(xid | prefix, scheme, identifier)'.format(self.__class__.__name__))
         super().__init__()
 
-def _tSoundTagRating(value):
-    if type(value) is str:
-        value = value.strip()
-        value = {
-            '0': 'None',
-            '1': 'Clean',
-            '2': 'Explicit',
-            }.get(value, value)
-    return SoundTagRating(value)
-
 class SoundTagRating(enum.Enum):
     none = 'None'          # 0
     clean = 'Clean'        # 2
@@ -223,6 +213,28 @@ class SoundTagRating(enum.Enum):
 
     def __str__(self):
         return self.value
+
+    def __new(cls, value):
+        if type(value) is int:
+            value = str(value)
+        if type(value) is str:
+            value = value.strip().lower()
+            for pattern, new_value in (
+                ):
+                m = re.search(pattern, value)
+                if m:
+                    value = new_value
+                    break
+        return super().__new__(cls, value)
+
+SoundTagRating.__new__ = SoundTagRating._SoundTagRating__new
+SoundTagRating._value2member_map_.update({
+    '0': SoundTagRating.none,
+    '2': SoundTagRating.clean,
+    '3': SoundTagRating.explicit,
+    })
+for _e in SoundTagRating:
+    SoundTagRating._value2member_map_[_e.value.lower()] = _e
 
 @functools.total_ordering
 class SoundTagDate(object):
@@ -285,6 +297,9 @@ class SoundTagDate(object):
             if self.day is not None:
                 v += '-{:02}'.format(self.day)
         return v
+
+    def __repr__(self):
+        return '%s(%r)' % (self.__class__.__name__, str(self))
 
     __json_encode__ = __str__
 
@@ -757,7 +772,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     contentrating = propex(
         name='contentrating',
-        type=(_tNullTag, _tSoundTagRating))
+        type=(_tNullTag, SoundTagRating))
 
     purchasedate = propex(
         name='purchasedate',
