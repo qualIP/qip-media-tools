@@ -655,7 +655,10 @@ def organize(inputfile):
     elif inputfile.tags.type == 'audiobook':
         ores = organize_audiobook(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'musicvideo':
-        ores = organize_inline_musicvideo(inputfile, suggest_tags=suggest_tags)
+        if app.args.app == 'emby':
+            ores = organize_music(inputfile, suggest_tags=suggest_tags)
+        else:
+            ores = organize_inline_musicvideo(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'movie':
         ores = organize_movie(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'tvshow':
