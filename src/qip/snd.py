@@ -996,7 +996,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             value = l
 
         elif tag == 'type':
-            if value.isdigit():
+            if type(value) is int or value.isdigit():
                 value = int(value)
             else:
                 try:
