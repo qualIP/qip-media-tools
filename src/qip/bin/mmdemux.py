@@ -672,20 +672,20 @@ def get_chapters(inputdir, mux_dict):
         for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
             chap = types.SimpleNamespace()
             chap.no = chapter_no
-            # <ChapterAtom>                                                                                               
-            #   <ChapterUID>6524138974649683444</ChapterUID>                                                              
-            #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>                                                   
+            # <ChapterAtom>
+            #   <ChapterUID>6524138974649683444</ChapterUID>
+            #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>
             chap.time_start = ffmpeg.Timestamp(eChapterAtom.find('ChapterTimeStart').text)
-            #   <ChapterFlagHidden>0</ChapterFlagHidden>                                                                  
-            #   <ChapterFlagEnabled>1</ChapterFlagEnabled>                                                                
-            #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>                                                       
+            #   <ChapterFlagHidden>0</ChapterFlagHidden>
+            #   <ChapterFlagEnabled>1</ChapterFlagEnabled>
+            #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>
             chap.time_end = ffmpeg.Timestamp(eChapterAtom.find('ChapterTimeEnd').text)
             #   <ChapterDisplay>
-            #     <ChapterString>Chapter 01</ChapterString>                                                               
+            #     <ChapterString>Chapter 01</ChapterString>
             chap.string = eChapterAtom.find('ChapterDisplay').find('ChapterString').text
-            #     <ChapterLanguage>eng</ChapterLanguage>                                                                  
+            #     <ChapterLanguage>eng</ChapterLanguage>
             #   </ChapterDisplay>
-            # </ChapterAtom>                                                                                              
+            # </ChapterAtom>
             if chap.no == 1 and chap.time_start > 0:
                 chapX = types.SimpleNamespace()
                 chapX.no = 0
