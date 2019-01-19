@@ -37,6 +37,7 @@ from qip.mkv import *
 from qip.m4a import *
 from qip.utils import byte_decode
 from qip.ffmpeg import ffmpeg
+from qip.opusenc import opusenc
 from qip.threading import *
 
 # https://www.ffmpeg.org/ffmpeg.html
@@ -1058,14 +1059,15 @@ def action_optimize(inputdir, in_tags):
                 audio_bitrate = audio_bitrate // 1000
 
                 with perfcontext('Convert %s -> %s w/ opusenc' % (stream_file_ext, new_stream_file_ext)):
-                    cmd = [
-                        'opusenc',
+                    opusenc_args = [
                         '--vbr',
                         '--bitrate', str(audio_bitrate),
                         os.path.join(inputdir, stream_file_name),
                         os.path.join(inputdir, new_stream_file_name),
                         ]
-                    do_spawn_cmd(cmd)
+                    opusenc(*opusenc_args,
+                            slurm=True,
+                            dry_run=app.args.dry_run)
 
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
