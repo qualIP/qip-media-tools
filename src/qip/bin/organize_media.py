@@ -666,12 +666,12 @@ def organize(inputfile):
     else:
         raise ValueError('type = %r' % (inputfile.tags.type,))
     dst_dir, dst_file_base = ores
+    dst_dir = os.path.join(app.args.outputdir, dst_dir)
 
     src_stat = os.lstat(inputfile.file_name)
     skip = False
     for n in range(1,10):
-        dst_file_name = os.path.join(app.args.outputdir,
-                                     dst_dir,
+        dst_file_name = os.path.join(dst_dir,
                                      clean_file_name(dst_file_base,
                                          extra='-%d' % (n,) if n > 1 else ''))
         if os.path.exists(dst_file_name):
