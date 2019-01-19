@@ -1255,13 +1255,18 @@ def action_optimize(inputdir, in_tags):
                                 os.path.join(inputdir, stream_file_name),
                                 'subrip',  # format
                                 ]
+                            do_spawn_cmd(cmd)
                         else:
-                            app.log.warn('Run OCR and save as SubRip (.srt) format')
+                            app.log.warn('Run OCR and save as SubRip (.srt) format: %s' % (
+                                byte_decode(dbg_exec_cmd(['winepath', '-w', os.path.join(inputdir, new_stream_file_name)])).strip(),
+                                ))
                             cmd = [
                                 'SubtitleEdit',
                                 os.path.join(inputdir, stream_file_name),
                                 ]
-                        do_spawn_cmd(cmd)
+                            do_spawn_cmd(cmd)
+                            assert os.path.isfile(os.path.join(inputdir, new_stream_file_name)), \
+                                    'File not found: %r' % (os.path.join(inputdir, new_stream_file_name),)
 
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
