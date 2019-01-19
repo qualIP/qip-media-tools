@@ -566,35 +566,9 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     def __json_encode_vars__(self):
         d = collections.OrderedDict()
         for k, v in self.items():
+            if not isinstance(v, (str, int, list, tuple, collections.Mapping, json.JSONEncodable)):
+                v = str(v)
             d[k.value] = v
-        try:
-            v = d['date']
-        except KeyError:
-            pass
-        else:
-            if v is not None and type(v) not in (int,):
-                d['date'] = str(v)
-        try:
-            v = d['language']
-        except KeyError:
-            pass
-        else:
-            if isinstance(v, IsoLang):
-                d['language'] = str(v)
-        try:
-            v = d['country']
-        except KeyError:
-            pass
-        else:
-            if isinstance(v, IsoCountry):
-                d['country'] = str(v)
-        try:
-            v = d['itunescountry']
-        except KeyError:
-            pass
-        else:
-            if isinstance(v, IsoCountry):
-                d['itunescountry'] = str(v)
         return d
 
     artist = propex(
