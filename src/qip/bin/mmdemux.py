@@ -460,23 +460,36 @@ def action_mux(inputfile, in_tags):
     if app.args.chain:
         app.args.optimize_dirs += (outputdir,)
 
-    if app.args.dry_run:
-        app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
-    else:
-        try:
-            os.mkdir(outputdir)
-        except FileExistsError as e:
-            if app.args._continue:
-                app.log.warning('%s: ignoring', e)
-                return True
-            else:
-                raise
+    if app.args._continue and os.path.isdir(outputdir):
+        app.log.warning('Directory exists: %r: ignoring', outputdir)
+        return True
 
     mux_dict = {
         'streams': [],
         'chapters': {},
-        'tags': in_tags,
+        'tags': AlbumTags(),
     }
+    m = (
+            re.match(r'^(?P<tvshow>.+) S(?P<season>\d\d)(?P<str_episodes>(?:E\d\d)+) (?P<title>.+)$', os.path.basename(inputfile_base))
+         or re.match(r'^(?P<title>.+)$', os.path.basename(inputfile_base))
+        )
+    if m:
+        d = m.groupdict()
+        try:
+            str_episodes = d.pop('str_episodes')
+        except KeyError:
+            pass
+        else:
+            d['episode'] = [int(e) for e in str_episodes.split('E') if e]
+        mux_dict['tags'].update(d)
+    mux_dict['tags'].update(in_tags)
+    if app.args.interactive:
+        mux_dict['tags'] = edvar(mux_dict['tags'])[1]
+
+    if app.args.dry_run:
+        app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
+    else:
+        os.mkdir(outputdir)
 
     if inputfile_ext in (
             '.mkv',
