@@ -240,6 +240,7 @@ def do_srun_cmd(cmd,
         slurm_cpus_per_task=None,
         slurm_mem=None,
         slurm_tmp=None,
+        slurm_job_name=None,
         chdir=None,
         uid=None,
         ):
@@ -261,6 +262,8 @@ def do_srun_cmd(cmd,
         slurm_args += ['--mem', slurm_mem]
     if slurm_tmp is not None:
         slurm_args += ['--tmp', slurm_tmp]
+    if slurm_job_name is not None:
+        slurm_args += ['--job-name', slurm_job_name]
     if chdir is not None:
         slurm_args += ['--chdir', chdir]
     if uid is not None:
@@ -278,6 +281,7 @@ def do_sbatch_cmd(cmd,
         slurm_cpus_per_task=None,
         slurm_mem=None,
         slurm_tmp=None,
+        slurm_job_name=None,
         chdir=None,
         uid=None,
         wait=False,
@@ -300,6 +304,8 @@ def do_sbatch_cmd(cmd,
         slurm_args += ['--mem', slurm_mem]
     if slurm_tmp is not None:
         slurm_args += ['--tmp', slurm_tmp]
+    if slurm_job_name is not None:
+        slurm_args += ['--job-name', slurm_job_name]
     if chdir is not None:
         slurm_args += ['--chdir', chdir]
     if uid is not None:

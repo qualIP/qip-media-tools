@@ -226,6 +226,7 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
             run_kwargs['slurm_mem'] = '500M'
             if not dry_run:
                 run_kwargs['slurm_tmp'] = '%dK' % (os.path.getsize(stdin_file) * 1.5 / 1024,)
+            run_kwargs.setdefault('slurm_job_name', '_'.join(os.path.basename(stdout_file).split()))
         else:
             run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
             if not dry_run:
