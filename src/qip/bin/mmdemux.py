@@ -811,11 +811,21 @@ def action_optimize(inputdir, in_tags):
                 field_order = ffprobe_stream_json.get('field_order', None)
                 if field_order is not None:
                     if field_order == 'progressive':
+                        # ‘progressive’ Progressive video
                         pass
-                    elif field_order == 'tt':
+                    elif field_order in ('tt', 'tb'):
+                        # ‘tt’ Interlaced video, top field coded and displayed first
+                        # ‘tb’ Interlaced video, top coded first, bottom displayed first
                         stream_dict.setdefault('original_field_order', field_order)
                         # https://ffmpeg.org/ffmpeg-filters.html#yadif
                         video_filter_specs.append('yadif=parity=tff')
+                        stream_dict['field_order'] = field_order = 'progressive'
+                    elif field_order in ('bb', 'bt'):
+                        # ‘bb’ Interlaced video, bottom field coded and displayed first
+                        # ‘bt’ Interlaced video, bottom coded first, top displayed first
+                        stream_dict.setdefault('original_field_order', field_order)
+                        # https://ffmpeg.org/ffmpeg-filters.html#yadif
+                        video_filter_specs.append('yadif=parity=bff')
                         stream_dict['field_order'] = field_order = 'progressive'
                     else:
                         raise ValueError(field_order)
