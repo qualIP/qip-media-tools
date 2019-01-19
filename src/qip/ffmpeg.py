@@ -76,13 +76,15 @@ class _Ffmpeg(Executable):
         args = list(args)
 
         # out_file is always last
-        out_file = args.pop(-1)
+        out_file_args = [args.pop(-1)]
+        if args and args[-1] == '--':
+            out_file_args = [args.pop(-1)] + out_file_args
 
         if 'loglevel' not in kwargs and '-loglevel' not in args:
             if not log.isEnabledFor(logging.VERBOSE):
                 kwargs['loglevel'] = 'info'
 
-        return super().build_cmd(*args, **kwargs) + [out_file]
+        return super().build_cmd(*args, **kwargs) + out_file_args
 
 class Ffmpeg(_Ffmpeg):
 
@@ -91,6 +93,80 @@ class Ffmpeg(_Ffmpeg):
     run_func = staticmethod(do_spawn_cmd)
 
     Timestamp = Timestamp
+
+    def _run(self, *args, run_func=None, dry_run=False, slurm=False, **kwargs):
+        args = list(args)
+
+        if run_func or dry_run:
+            slurm = False
+
+        if slurm:
+            try:
+                idx = args.index("-passlogfile")
+            except ValueError:
+                pass
+            else:
+                slurm = False
+            try:
+                idx = args.index("-f")
+            except ValueError:
+                slurm = False
+
+        run_kwargs = {}
+
+        if slurm:
+            # args = <options...> [--] <out_file>
+            # out_file is always last
+            if args[-2] != '--':
+                args.insert(-1, '--')
+            out_file = args[-1]
+            args[-1] = 'pipe:'
+            # args = <options...> -- pipe:
+
+            try:
+                idx = args.index("-i")
+            except ValueError:
+                raise ValueError('no input file specified')
+            else:
+                # args = <options...> -i <in_file> <options...>
+                in_file = args[idx + 1]
+                args[idx + 1] = 'pipe:0'
+                # args = <options...> -i pipe:0 <options...>
+
+            run_func = do_srun_cmd
+            run_kwargs['chdir'] = '/'
+            run_kwargs['stdin_file'] = os.path.abspath(in_file)
+            run_kwargs['stdout_file'] = os.path.abspath(out_file)
+            run_kwargs['stderr_file'] = '/dev/stderr'
+            threads = None
+            try:
+                threads = kwargs['threads']
+            except KeyError:
+                try:
+                    idx = args.index("-threads")
+                except ValueError:
+                    pass
+                else:
+                    threads = args[idx + 1]
+            if threads:
+                run_kwargs['slurm_cpus_per_task'] = max(round(int(threads) * 0.75), 1)
+            run_kwargs['slurm_mem'] = '500M'
+            run_kwargs.setdefault('slurm_job_name', '_'.join(os.path.basename(out_file).split()))
+
+        else:
+            run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
+            #if not dry_run:
+            #    run_kwargs['stdin'] = open(str(in_file), "rb")
+            #    run_kwargs['stdout'] = open(str(out_file), "w")
+
+        if run_kwargs:
+            run_func = functools.partial(run_func, **run_kwargs)
+
+        return super()._run(
+                *args,
+                dry_run=dry_run,
+                run_func=run_func,
+                **kwargs)
 
     def run2pass(self, *args, **kwargs):
         args = list(args)
@@ -111,7 +187,7 @@ class Ffmpeg(_Ffmpeg):
             assert pipe, "input file is stdin but piping is not possible"
 
         if pipe:
-            return ffmpeg_2pass_pipe.run(
+            return ffmpeg_2pass_pipe(
                     *args,
                     stdin_file=in_file,
                     stdout_file=out_file,
@@ -180,6 +256,8 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
 
     name = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg-2pass-pipe')
 
+    run_func = staticmethod(do_exec_cmd)
+
     def build_cmd(self, *args, **kwargs):
         args = list(args)
 
@@ -189,10 +267,9 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
         assert cmd.pop(-1) == '-'
         return cmd
 
-    def _run(self, *args, stdin_file, stdout_file, run_func=None, dry_run=False, **kwargs):
+    def _run(self, *args, stdin_file, stdout_file, run_func=None, dry_run=False, slurm=False, **kwargs):
         args = list(args)
 
-        slurm = True
         if run_func or dry_run:
             slurm = False
 
@@ -210,7 +287,6 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
             run_kwargs['stdin_file'] = os.path.abspath(stdin_file)
             run_kwargs['stdout_file'] = os.path.abspath(stdout_file)
             run_kwargs['stderr_file'] = '/dev/stderr'
-            # import getpass ; run_kwargs['uid'] = getpass.getuser()
             threads = None
             try:
                 threads = kwargs['threads']

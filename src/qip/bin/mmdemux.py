@@ -199,6 +199,7 @@ def codec_name_to_ext(codec_name):
             'dts': '.dts',
             'opus': '.opus',
             'aac': '.aac',
+            'wav': '.wav',
             # subtitles
             'dvd_subtitle': '.sub',  # and .idx
             'hdmv_pgs_subtitle': '.sup',
@@ -223,10 +224,12 @@ def ext_to_container(ext):
             #'.dts': 'dts',
             #'.opus': 'opus',
             #'.aac': 'aac',
+            '.wav': 'wav',
             # subtitles
             #'.sub': 'dvd_subtitle',
             #'.idx': 'dvd_subtitle',
             #'.sup': 'hdmv_pgs_subtitle',
+            '.vtt': 'webvtt',
         }[ext]
     except KeyError as err:
         raise ValueError('Unsupported extension %r' % (ext,)) from err
@@ -878,6 +881,7 @@ def action_optimize(inputdir, in_tags):
                                         target=ffmpeg.run2pass,
                                         args=ffmpeg_args,
                                         kwargs={
+                                            'slurm': True,
                                             'dry_run': app.args.dry_run,
                                             'y': app.args.yes,
                                             })
@@ -987,6 +991,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg.run2pass(*ffmpeg_args,
+                                        slurm=True,
                                         dry_run=app.args.dry_run,
                                         y=app.args.yes)
 
@@ -1027,9 +1032,10 @@ def action_optimize(inputdir, in_tags):
                         # '-channel_layout', channel_layout,
                         ]
                     ffmpeg_args += [
-                        os.path.join(inputdir, new_stream_file_name),
+                        '-f', 'wav', os.path.join(inputdir, new_stream_file_name),
                         ]
                     ffmpeg(*ffmpeg_args,
+                           slurm=True,
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
@@ -1097,6 +1103,7 @@ def action_optimize(inputdir, in_tags):
                         '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
                         ]
                     ffmpeg(*ffmpeg_args,
+                           slurm=True,
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
@@ -1125,6 +1132,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
+                               slurm=True,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
                 else:
@@ -1248,9 +1256,10 @@ def action_optimize(inputdir, in_tags):
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
                     ffmpeg_args = [
                         '-i', os.path.join(inputdir, stream_file_name),
-                        os.path.join(inputdir, new_stream_file_name),
+                        '-f', 'webvtt', os.path.join(inputdir, new_stream_file_name),
                         ]
                     ffmpeg(*ffmpeg_args,
+                           #slurm=True,
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
