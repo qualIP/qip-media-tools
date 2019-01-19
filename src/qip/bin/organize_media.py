@@ -618,7 +618,8 @@ def organize(inputfile):
             inputfile.tags.type = 'audiobook'
         elif ext in ('.mkv', '.avi', '.mp4', '.m4v'):
             contenttype = inputfile.tags.contenttype
-            if 'Music Video' in str(inputfile.tags.contenttype):
+            if 'Music Video' in str(inputfile.tags.contenttype) \
+                    or 'Concert' in str(inputfile.tags.contenttype):
                 inputfile.tags.type = 'musicvideo'
             elif inputfile.tags.tvshow is not None:
                 inputfile.tags.type = 'tvshow'
