@@ -1,0 +1,17 @@
+<ReplaceList>
+  <WholeWords>
+    <Word from="I'II" to="I'll" />
+    <Word from="fonlvard" to="forward" />
+    <Word from="AII" to="All" />
+    <Word from="l'm" to="I’m" />
+  </WholeWords>
+  <PartialLines />
+  <BeginLines />
+  <EndLines />
+  <WholeLines />
+  <RemovedWholeWords />
+  <RemovedPartialLines />
+  <RemovedBeginLines />
+  <RemovedEndLines />
+  <RemovedWholeLines />
+</ReplaceList>

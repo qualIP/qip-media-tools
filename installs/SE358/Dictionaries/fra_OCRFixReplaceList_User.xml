@@ -1,0 +1,16 @@
+<ReplaceList>
+  <WholeWords>
+    <Word from="Désafiecté" to="Désaffecté" />
+    <Word from="l'afiecte" to="l’affecte" />
+    <Word from="réaligner0nt" to="réaligneront" />
+  </WholeWords>
+  <PartialLines />
+  <BeginLines />
+  <EndLines />
+  <WholeLines />
+  <RemovedWholeWords />
+  <RemovedPartialLines />
+  <RemovedBeginLines />
+  <RemovedEndLines />
+  <RemovedWholeLines />
+</ReplaceList>
