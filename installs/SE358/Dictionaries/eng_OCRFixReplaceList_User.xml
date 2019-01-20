@@ -1,9 +1,11 @@
 <ReplaceList>
   <WholeWords>
     <Word from="I'II" to="I'll" />
-    <Word from="fonlvard" to="forward" />
-    <Word from="AII" to="All" />
+    <Word from="It'II" to="It'll" />
+    <Word from="ourjob" to="our job" />
     <Word from="l'm" to="I’m" />
+    <Word from="Ijust" to="I just" />
+    <Word from="orjust" to="or just" />
   </WholeWords>
   <PartialLines />
   <BeginLines />

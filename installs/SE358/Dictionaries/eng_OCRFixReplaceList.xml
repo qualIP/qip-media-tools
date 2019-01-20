@@ -1,10 +1,16 @@
 <ReplaceList>
-  <WholeWords />
+  <WholeWords>
+    <Word from="I'II" to="I'll" />
+    <Word from="It'II" to="It'll" />
+    <Word from="ourjob" to="our job" />
+    <Word from="l'm" to="I’m" />
+    <Word from="Ijust" to="I just" />
+    <Word from="orjust" to="or just" />
+  </WholeWords>
   <PartialLines />
   <BeginLines />
   <EndLines />
   <WholeLines>
-    <Line from="&lt;i&gt;TRENPCL:&#xD;&#xA;Captain Archer?&lt;/i&gt;" to="&lt;i&gt;TRENA'L:&#xD;&#xA;Captain Archer?&lt;/i&gt;" />
   </WholeLines>
   <RemovedWholeWords />
   <RemovedPartialLines />
