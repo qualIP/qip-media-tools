@@ -204,6 +204,7 @@ def codec_name_to_ext(codec_name):
             # subtitles
             'dvd_subtitle': '.sub',  # and .idx
             'hdmv_pgs_subtitle': '.sup',
+            'subrip': '.srt',
             'webvtt': '.vtt',
         }[codec_name]
     except KeyError as err:
