@@ -27,3 +27,7 @@ sox
 cuetools
 python3-libdiscid
 mkvtoolnix
+
+tesseract-ocr-eng
+tesseract-ocr-fra
+libtesseract-dev
