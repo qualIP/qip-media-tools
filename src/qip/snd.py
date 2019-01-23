@@ -566,7 +566,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     def __json_encode_vars__(self):
         d = collections.OrderedDict()
         for k, v in self.items():
-            if not isinstance(v, (str, int, list, tuple, collections.Mapping, json.JSONEncodable)):
+            if v is not None and not isinstance(v, (str, int, list, tuple, collections.Mapping, json.JSONEncodable)):
                 v = str(v)
             d[k.value] = v
         return d
@@ -695,7 +695,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     country = propex(
         name='country',
-        type=(None, isocountry))
+        type=(_tNullTag, isocountry))
 
     season = propex(
         name='season',
@@ -719,11 +719,11 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     contenttype = propex(
         name='contenttype',
-        type=(None, ContentType))
+        type=(_tNullTag, ContentType))
 
     language = propex(
         name='language',
-        type=(None, isolang))
+        type=(_tNullTag, isolang))
 
     picture = propex(
         name='picture',
