@@ -514,7 +514,23 @@ def action_mux(inputfile, in_tags):
         mux_dict['tags'].update(d)
     mux_dict['tags'].update(in_tags)
     if app.args.interactive:
+        # for tag in set(SoundTagEnum) - set(SoundTagEnum.iTunesInternalTags):
+        for tag in (
+                SoundTagEnum.artist,
+                SoundTagEnum.contenttype,
+                SoundTagEnum.episode,
+                SoundTagEnum.genre,
+                SoundTagEnum.title,
+                SoundTagEnum.tvshow,
+                SoundTagEnum.year,
+            ):
+            # Force None values to actually exist
+            if mux_dict['tags'][tag] is None:
+                mux_dict['tags'][tag] = None
         mux_dict['tags'] = edvar(mux_dict['tags'])[1]
+        for tag, value in mux_dict['tags'].items():
+            if value is None:
+                del mux_dict['tags'][tag]
 
     if app.args.dry_run:
         app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
