@@ -131,6 +131,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Options')
     pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
+    pgroup.add_argument('--eject', default=False, action='store_true', help='eject cdrom when done')
     pgroup.add_argument('--project', default=None, help='project name')
     pgroup.add_argument('--chain', action='store_true', help='chain hb->mux->optimize->demux')
     pgroup.add_argument('--cleanup', action='store_true', help='cleanup when done')
@@ -392,6 +393,15 @@ def action_rip(rip_dir, device):
         rip_dir,
     ]
     out = do_spawn_cmd(cmd)
+
+    if app.args.eject:
+        app.log.info('Ejecting...')
+        cmd = [
+            shutil.which('eject'),
+            device,
+        ]
+        out = do_spawn_cmd(cmd)
+
     if app.args.chain:
         with os.scandir(rip_dir) as it:
             for entry in it:
