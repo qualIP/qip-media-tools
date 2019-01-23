@@ -129,6 +129,7 @@ def main():
     pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
 
     pgroup = app.parser.add_argument_group('Options')
+    pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
     pgroup.add_argument('--project', default=None, help='project name')
     pgroup.add_argument('--chain', action='store_true', help='chain hb->mux->optimize->demux')
     pgroup.add_argument('--cleanup', action='store_true', help='cleanup when done')
@@ -140,6 +141,7 @@ def main():
     pgroup.add_argument('--channels', type=int, default=argparse.SUPPRESS, help='force the number of audio channels')
 
     pgroup = app.parser.add_argument_group('Actions')
+    pgroup.add_argument('--rip', dest='rip_dir', help='directory to rip device to')
     pgroup.add_argument('--hb', dest='hb_files', nargs='+', default=(), help='files to run through HandBrake')
     pgroup.add_argument('--mux', dest='mux_files', nargs='+', default=(), help='files to mux')
     pgroup.add_argument('--update', dest='update_dirs', nargs='+', default=(), help='directories to update mux parameters for')
@@ -159,6 +161,9 @@ def main():
         reprlib.aRepr.maxdict = 100
 
     did_something = False
+    if app.args.rip_dir:
+        action_rip(app.args.rip_dir, app.args.device)
+        did_something = True
     for inputfile in getattr(app.args, 'hb_files', ()):
         action_hb(inputfile, in_tags=in_tags)
         did_something = True
@@ -386,6 +391,27 @@ def get_vp9_tile_columns_and_threads(width, height):
             # 3840x2160       16 (-tile-columns 4)    24
             return 4, 24
     raise NotImplementedError
+
+def action_rip(rip_dir, device):
+    device = os.path.realpath(device)  # makemkv is picky!
+    if app.args.dry_run:
+        app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', rip_dir]))
+    else:
+        os.mkdir(rip_dir)
+    cmd = [
+        'makemkvcon',
+        '--minlength=%d' % (3600,),
+        'mkv', 'dev:%s' % (device,),
+        'all',
+        rip_dir,
+    ]
+    out = do_spawn_cmd(cmd)
+    if app.args.chain:
+        with os.scandir(rip_dir) as it:
+            for entry in it:
+                assert entry.name.endswith('.mkv')
+                assert entry.is_file()
+                app.args.mux_files += (os.path.join(rip_dir, entry.name),)
 
 def action_hb(inputfile, in_tags):
     app.log.info('HandBrake %s...', inputfile)
