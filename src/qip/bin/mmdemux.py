@@ -1313,6 +1313,8 @@ def action_optimize(inputdir, in_tags):
                             do_spawn_cmd(cmd)
                             assert os.path.isfile(os.path.join(inputdir, new_stream_file_name)), \
                                     'File not found: %r' % (os.path.join(inputdir, new_stream_file_name),)
+                if app.args.interactive:
+                    edfile(os.path.join(inputdir, new_stream_file_name))
 
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
