@@ -114,6 +114,7 @@ def main():
     pgroup.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--xid', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
 
     app.parser.add_argument('files', nargs='*', default=None, help='sound files')
 
