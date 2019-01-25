@@ -7,6 +7,7 @@ __all__ = (
         )
 
 import abc
+import fractions
 import functools
 import collections
 
@@ -172,3 +173,82 @@ def pairwise(iterable):
     "s -> (s0, s1), (s2, s3), (s4, s5), ..."
     a = iter(iterable)
     return zip(a, a)
+
+
+class Ratio(fractions.Fraction):
+
+    def __new__(cls, numerator=0, denominator=None, **kwargs):
+        if isinstance(numerator, str):
+            numerator = numerator.replace(':', '/')
+        return super().__new__(cls, numerator, denominator, **kwargs)
+
+    def to_str(self, *, separator=':', force_denominator=True):
+        if not force_denominator and self._denominator == 1:
+            return str(self._numerator)
+        else:
+            return '%s%s%s' % (self._numerator, separator, self._denominator)
+
+    def __str__(self):
+        """str(self)"""
+        return self.to_str()
+
+    def __add__(a, b):
+        return a.__class__(super().__add__(b))
+
+    def __radd__(a, b):
+        return a.__class__(super().__radd__(b))
+
+    def __sub__(a, b):
+        return a.__class__(super().__sub__(b))
+
+    def __rsub__(a, b):
+        return a.__class__(super().__rsub__(b))
+
+    def __mul__(a, b):
+        return a.__class__(super().__mul__(b))
+
+    def __rmul__(a, b):
+        return a.__class__(super().__rmul__(b))
+
+    def __truediv__(a, b):
+        return a.__class__(super().__truediv__(b))
+
+    def __rtruediv__(a, b):
+        return a.__class__(super().__rtruediv__(b))
+
+    def __pow__(a, b):
+        v = a.__class__(super().__pow__(b))
+        if isinstance(v, fractions.Fraction):
+            v = a.__class__(v)
+        return v
+
+    def __rpow__(b, a):
+        v = b.__class__(super().__rpow__(a))
+        if isinstance(v, fractions.Fraction):
+            v = b.__class__(v)
+        return v
+
+    def __pos__(a):
+        return a.__class__(super().__pos__())
+
+    def __neg__(a):
+        return a.__class__(super().__neg__())
+
+    def __abs__(a):
+        return a.__class__(super().__abs__())
+
+    def __round__(self, **kwargs):
+        v = self.__class__(super().__round__(**kwargs))
+        if isinstance(v, fractions.Fraction):
+            v = self.__class__(v)
+        return v
+
+    def __copy__(self):
+        if type(self) == Ratio:
+            return self     # I'm immutable; therefore I am my own clone
+        return super().__copy__()
+
+    def __deepcopy__(self, memo):
+        if type(self) == Ratio:
+            return self     # My components are also immutable
+        return super().__deepcopy__()
