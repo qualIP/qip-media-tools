@@ -674,7 +674,10 @@ def dump_tags(tags, *, deep=True, heading='Tags:'):
 
 def taglist(file_name):
     app.log.info('Listing %s...', file_name)
-    tags = AlbumTags()
+    if True:
+        tags = TrackTags(album_tags=AlbumTags())
+    else:
+        tags = AlbumTags()
     done = False
     if not done:
         with perfcontext('mf.load'):
