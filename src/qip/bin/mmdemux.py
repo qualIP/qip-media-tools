@@ -35,10 +35,11 @@ import qip.snd
 from qip.snd import *
 from qip.mkv import *
 from qip.m4a import *
-from qip.utils import byte_decode
+from qip.utils import byte_decode, Ratio
 from qip.ffmpeg import ffmpeg
 from qip.opusenc import opusenc
 from qip.threading import *
+
 
 # https://www.ffmpeg.org/ffmpeg.html
 
@@ -242,17 +243,7 @@ def ext_to_container(ext):
         raise ValueError('Unsupported extension %r' % (ext,)) from err
     return ext_container
 
-def float_ratio(frame_rate):
-    if type(frame_rate) is str:
-        m = re.match(r'^([0-9]+)/([1-9][0-9]*)$', frame_rate)
-        if m:
-            frame_rate = int(m.group(1)) / int(m.group(2))
-        else:
-            frame_rate = float(frame_rate)
-    return frame_rate
-
 def get_vp9_target_bitrate(width, height, frame_rate, mq=True):
-    frame_rate = float_ratio(frame_rate)
     # https://sites.google.com/a/webmproject.org/wiki/ffmpeg/vp9-encoding-guide
     # https://headjack.io/blog/hevc-vp9-vp10-dalaa-thor-netvc-future-video-codecs/
     if False:
@@ -332,12 +323,6 @@ def get_vp9_target_bitrate(width, height, frame_rate, mq=True):
     raise NotImplementedError
 
 def get_vp9_target_quality(width, height, frame_rate):  # CQ
-    if type(frame_rate) is str:
-        m = re.match(r'^([0-9]+)/([1-9][0-9]*)$', frame_rate)
-        if m:
-            frame_rate = int(m.group(1)) / int(m.group(2))
-        else:
-            frame_rate = int(frame_rate)
     if True:
         # Google
         #     Frame Height      Target Quality (CQ)
@@ -437,15 +422,17 @@ def action_hb(inputfile, in_tags):
         else:
             raise ValueError('No video stream found!')
 
+        r_frame_rate = Ratio(stream_dict['r_frame_rate'])
+
         video_target_bit_rate = get_vp9_target_bitrate(
             width=stream_dict['width'],
             height=stream_dict['height'],
-            frame_rate=stream_dict['r_frame_rate'],
+            frame_rate=r_frame_rate,
             )
         video_target_quality = get_vp9_target_quality(
             width=stream_dict['width'],
             height=stream_dict['height'],
-            frame_rate=stream_dict['r_frame_rate'],
+            frame_rate=r_frame_rate,
             )
 
         with perfcontext('Convert w/ HandBrake'):
@@ -852,6 +839,11 @@ def action_optimize(inputdir, in_tags):
                         video_filter_specs.append('crop={w}:{h}:{l}:{t}'.format(
                                     w=w, h=h, l=l, t=t))
                         # extra_args += ['-aspect', XXX]
+                        stream_dict.setdefault('original_display_aspect_ratio', stream_dict['display_aspect_ratio'])
+                        frame_aspect_ratio = Ratio(w, h)
+                        sample_aspect_ratio = Ratio(stream_dict['sample_aspect_ratio'])
+                        display_aspect_ratio = frame_aspect_ratio * sample_aspect_ratio
+                        stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
 
                 deint_filter_args = []
                 field_order = ffprobe_stream_json.get('field_order', None)
@@ -879,7 +871,7 @@ def action_optimize(inputdir, in_tags):
                 if video_filter_specs:
                     extra_args += ['-filter:v', ','.join(video_filter_specs)]
 
-                r_frame_rate = ffprobe_stream_json['r_frame_rate']
+                r_frame_rate = Ratio(ffprobe_stream_json['r_frame_rate'])
 
                 # https://developers.google.com/media/vp9/settings/vod/
                 video_target_bit_rate = get_vp9_target_bitrate(
@@ -909,7 +901,7 @@ def action_optimize(inputdir, in_tags):
                     '-quality', 'good',
                     '-crf', str(video_target_quality),
                     '-c:v', 'libvpx-vp9',
-                    '-g', str(int(app.args.keyint * float_ratio(r_frame_rate))),
+                    '-g', int(app.args.keyint * r_frame_rate),
                     '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
                     ] + extra_args + [
                     ]
