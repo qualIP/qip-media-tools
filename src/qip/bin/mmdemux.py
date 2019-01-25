@@ -194,6 +194,7 @@ def codec_name_to_ext(codec_name):
         codec_ext = {
             # video
             'mpeg2video': '.mpeg2',
+            #'mjpeg': '.mjpeg',
             'msmpeg4v3': '.msmpeg4v3.avi',
             'mpeg4': '.mp4',
             'h264': '.h264',
@@ -532,6 +533,7 @@ def action_mux(inputfile, in_tags):
         has_forced_subtitle = False
         subtitle_sizes = []
 
+        attachment_index = 0  # First attachment is index 1
         for stream_dict in ffprobe_dict['streams']:
             if stream_dict.get('skip', False):
                 continue
@@ -541,14 +543,14 @@ def action_mux(inputfile, in_tags):
             stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
             if stream_codec_type in ('video', 'audio', 'subtitle'):
                 stream_codec_name = stream_dict['codec_name']
-                stream_ext = codec_name_to_ext(stream_codec_name)
-                output_track_file_name = '%s/track-%02d-%s%s' % (
-                        outputdir,
-                        stream_index,
-                        stream_codec_type,
-                        stream_ext,
-                        )
-                stream_out_dict['file_name'] = os.path.basename(output_track_file_name)
+                if (
+                        stream_codec_type == 'video'
+                        and stream_codec_name == 'mjpeg'
+                        and stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
+                    stream_codec_type = stream_out_dict['codec_type'] = 'image'
+                    stream_ext = '.jpg'
+                else:
+                    stream_ext = codec_name_to_ext(stream_codec_name)
 
                 if stream_codec_type == 'video':
 
@@ -587,6 +589,24 @@ def action_mux(inputfile, in_tags):
                     stream_out_dict['display_aspect_ratio'] = stream_dict['display_aspect_ratio']
 
                 stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
+
+                if stream_disposition_dict['attached_pic']:
+                    attachment_index += 1
+                    output_track_file_name = '%s/attachment-%02d-%s%s' % (
+                            outputdir,
+                            attachment_index,
+                            stream_codec_type,
+                            stream_ext,
+                            )
+                else:
+                    output_track_file_name = '%s/track-%02d-%s%s' % (
+                            outputdir,
+                            stream_index,
+                            stream_codec_type,
+                            stream_ext,
+                            )
+                stream_out_dict['file_name'] = os.path.basename(output_track_file_name)
+
                 try:
                     stream_title = stream_out_dict['title'] = stream_dict['tags']['title']
                 except KeyError:
@@ -611,6 +631,15 @@ def action_mux(inputfile, in_tags):
                         ffmpeg(*ffmpeg_args,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
+                elif stream_disposition_dict['attached_pic']:
+                    with perfcontext('extract attachment %d w/ mkvextract' % (attachment_index,)):
+                        cmd = [
+                            'mkvextract', 'attachments', inputfile.file_name,
+                            '%d:%s' % (
+                                attachment_index,
+                                output_track_file_name,
+                            )]
+                        do_spawn_cmd(cmd)
                 else:
                     with perfcontext('extract track %d w/ mkvextract' % (stream_index,)):
                         cmd = [
@@ -789,6 +818,8 @@ def action_chop(inputdir, in_tags):
                            y=app.args.yes)
 
             elif stream_codec_type == 'subtitle':
+                pass
+            elif stream_codec_type == 'image':
                 pass
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
@@ -1347,6 +1378,42 @@ def action_optimize(inputdir, in_tags):
             else:
                 raise ValueError('Unsupported subtitle extension %r' % (stream_file_ext,))
 
+        elif stream_codec_type == 'image':
+
+            # https://matroska.org/technical/cover_art/index.html
+            ok_formats = (
+                    '.png',
+                    '.jpg',
+                    )
+
+            if stream_file_ext in ok_formats:
+                if stream_file_name == orig_stream_file_name:
+                    app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+            else:
+                new_stream_file_ext = '.png'
+                new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_ext)
+
+                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
+                    ffmpeg_args = [
+                        '-i', os.path.join(inputdir, stream_file_name),
+                        ]
+                    ffmpeg_args += [
+                        '-f', 'png', os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    ffmpeg(*ffmpeg_args,
+                           #slurm=True,
+                           dry_run=app.args.dry_run,
+                           y=app.args.yes)
+
+                stream_dict.setdefault('original_file_name', stream_file_name)
+                stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                if not app.args.dry_run:
+                    output_mux_file_name = '%s/mux.json' % (outputdir,)
+                    with open(output_mux_file_name, 'w') as fp:
+                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
         else:
             raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
@@ -1460,6 +1527,9 @@ def action_extract_music(inputdir, in_tags):
 
             elif stream_codec_type == 'subtitle':
                 pass
+            elif stream_codec_type == 'image':
+                # TODO image -> picture
+                pass
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
@@ -1488,21 +1558,29 @@ def action_demux(inputdir, in_tags):
             continue
         new_stream_index += 1
         stream_dict['index'] = new_stream_index
-        if stream_codec_type == 'video':
-            display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
-            if display_aspect_ratio:
-                cmd += ['--aspect-ratio', '%d:%s' % (0, re.sub(':', '/', display_aspect_ratio))]
-        stream_default = stream_dict['disposition'].get('default', None)
-        cmd += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
-        stream_language = stream_dict.get('language', None)
-        if stream_language:
-            cmd += ['--language', '0:%s' % (stream_language,)]
-        stream_forced = stream_dict['disposition'].get('forced', None)
-        cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
-        # TODO --tags
-        if stream_codec_type == 'subtitle' and os.path.splitext(stream_dict['file_name'])[1] == '.sub':
-            cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_dict['file_name'])[0],))]
-        cmd += [os.path.join(inputdir, stream_dict['file_name'])]
+        if stream_codec_type == 'image':
+            cmd += [
+                # '--attachment-description', <desc>
+                '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', os.path.join(inputdir, stream_dict['file_name'])])).strip(),
+                '--attachment-name', 'cover%s' % (os.path.splitext(stream_dict['file_name'])[1],),
+                '--attach-file', os.path.join(inputdir, stream_dict['file_name']),
+                ]
+        else:
+            if stream_codec_type == 'video':
+                display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
+                if display_aspect_ratio:
+                    cmd += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
+            stream_default = stream_dict['disposition'].get('default', None)
+            cmd += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
+            stream_language = stream_dict.get('language', None)
+            if stream_language:
+                cmd += ['--language', '0:%s' % (stream_language,)]
+            stream_forced = stream_dict['disposition'].get('forced', None)
+            cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
+            # TODO --tags
+            if stream_codec_type == 'subtitle' and os.path.splitext(stream_dict['file_name'])[1] == '.sub':
+                cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_dict['file_name'])[0],))]
+            cmd += [os.path.join(inputdir, stream_dict['file_name'])]
     if mux_dict['chapters']:
         cmd += ['--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])]
     with perfcontext('mkvmerge'):
