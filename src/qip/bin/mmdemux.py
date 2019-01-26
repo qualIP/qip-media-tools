@@ -1562,7 +1562,7 @@ def action_demux(inputdir, in_tags):
 
     webm = True
     output_file = MkvFile(
-            app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'),), '.webm' if webm else '.mkv')
+            app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'), '.webm' if webm else '.mkv'))
 
     post_process_subtitles = False
     cmd = [

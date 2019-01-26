@@ -689,7 +689,7 @@ def taglist(file_name):
         tags = taglist_mf(file_name, mf)
     if tags is None:
         file_base, file_ext = os.path.splitext(file_name)
-        if file_ext in ('.mkv', '.webm')
+        if file_ext in ('.mkv', '.webm'):
             tags = taglist_MKV(file_name)
     if tags is None:
         raise NotImplementedError(file_ext)
