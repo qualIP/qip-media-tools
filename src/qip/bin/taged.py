@@ -308,11 +308,11 @@ def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):
     for eTag in root.findall('Tag'):
         eTargets = eTag.find('Targets')
         eTrackUID = eTargets.find('TrackUID')
-        vTrackUID = eTrackUID.text if eTrackUID is not None else '0'
+        vTrackUID = eTrackUID.text if (eTrackUID is not None and eTrackUID.text is not None) else '0'
         if vTrackUID != TrackUID:
             continue
         eTargetTypeValue = eTargets.find('TargetTypeValue')
-        vTargetTypeValue = eTargetTypeValue.text if eTargetTypeValue is not None else '50'
+        vTargetTypeValue = eTargetTypeValue.text if (eTargetTypeValue is not None and eTargetTypeValue.text is not None) else '50'
         if vTargetTypeValue != TargetTypeValue:
             continue
         eTargetType = eTargets.find('TargetType')
@@ -489,14 +489,15 @@ def taged(file_name, tags):
     raise NotImplementedError(file_ext)
     return True
 
-def taglist_mf(file_name, mf, tags):
+def taglist_mf(file_name, mf):
     if isinstance(mf.tags, mutagen.id3.ID3):
-        return taglist_mf_id3(file_name, mf, tags)
+        return taglist_mf_id3(file_name, mf)
     if isinstance(mf.tags, mutagen.mp4.MP4Tags):
-        return taglist_mf_MP4Tags(file_name, mf, tags)
+        return taglist_mf_MP4Tags(file_name, mf)
     raise NotImplementedError(mf.tags.__class__.__name__)
 
-def taglist_mf_id3(file_name, mf, tags):
+def taglist_mf_id3(file_name, mf):
+    tags = TrackTags(album_tags=AlbumTags())
     for id3_tag, tag_value in mf.items():
         id3_tag = {
             'APIC:': 'APIC',
@@ -536,9 +537,10 @@ def taglist_mf_id3(file_name, mf, tags):
                 tag_value = (tag_value,)
             tag_value = old_value + tag_value
         tags.set_tag(mapped_tag, tag_value)
-    return True
+    return tags
 
-def taglist_mf_MP4Tags(file_name, mf, tags):
+def taglist_mf_MP4Tags(file_name, mf):
+    tags = TrackTags(album_tags=AlbumTags())
     for mp4_tag, tag_value in mf.items():
         if mp4_tag in (
                 '----:com.apple.iTunes:Encoding Params',  # TODO
@@ -582,7 +584,7 @@ def taglist_mf_MP4Tags(file_name, mf, tags):
                 tag_value = (tag_value,)
             tag_value = old_value + tag_value
         tags.set_tag(mapped_tag, tag_value)
-    return True
+    return tags
 
 mkv_tag_map = {
     (50, 'EPISODE', 'PART_NUMBER'): 'episode',
@@ -598,7 +600,8 @@ mkv_tag_map = {
     (70, 'COLLECTION', 'TITLE'): 'tvshow',
     }
 
-def taglist_MKV(file_name, tags):
+def taglist_MKV(file_name):
+    tags = AlbumTags()
     tags_xml_txt = dbg_exec_cmd(['mkvextract', file_name, 'tags', '-'])
     tags_xml = ET.fromstring(tags_xml_txt)
     root = tags_xml  # tags_xml.getroot()
@@ -610,11 +613,11 @@ def taglist_MKV(file_name, tags):
         #   <TargetType>MOVIE</TargetType>
         # </Targets>
         eTargetTypeValue = eTargets and eTargets.find('TargetTypeValue')
-        vTargetTypeValue = int(eTargetTypeValue.text) if eTargetTypeValue is not None else 50
+        vTargetTypeValue = int(eTargetTypeValue.text) if (eTargetTypeValue is not None and eTargetTypeValue.text is not None) else 50
         eTargetType = eTargets and eTargets.find('TargetType')
         vTargetType = eTargetType.text if eTargetType is not None else None
         eTrackUID = eTargets and eTargets.find('TrackUID')
-        vTrackUID = eTrackUID.text if eTrackUID is not None else '0'
+        vTrackUID = eTrackUID.text if (eTrackUID is not None and eTrackUID.text is not None) else '0'
         app.log.debug('Target: TargetType=%r/%s, TrackUID=%r', vTargetTypeValue, vTargetType, vTrackUID)
         target_tags = tags if vTrackUID == '0' else tags.tracks_tags[int(vTrackUID)]
         #if vTrackUID != '0':
@@ -651,7 +654,7 @@ def taglist_MKV(file_name, tags):
                     tag_value = (tag_value,)
                 tag_value = old_value + tag_value
             target_tags.set_tag(mapped_tag, tag_value)
-    return True
+    return tags
 
 def dump_tags(tags, *, deep=True, heading='Tags:'):
     if heading:
@@ -678,17 +681,17 @@ def taglist(file_name):
         tags = TrackTags(album_tags=AlbumTags())
     else:
         tags = AlbumTags()
-    done = False
-    if not done:
+    tags = None
+    if tags is None:
         with perfcontext('mf.load'):
             mf = mutagen.File(file_name)
-    if not done and mf:
-        done = taglist_mf(file_name, mf, tags)
-    if not done:
+    if tags is None and mf:
+        tags = taglist_mf(file_name, mf)
+    if tags is None:
         file_base, file_ext = os.path.splitext(file_name)
         if file_ext == '.mkv':
-            done = taglist_MKV(file_name, tags)
-    if not done:
+            tags = taglist_MKV(file_name)
+    if tags is None:
         raise NotImplementedError(file_ext)
     dump_tags(tags)
     return True
