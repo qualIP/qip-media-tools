@@ -381,12 +381,17 @@ def get_vp9_tile_columns_and_threads(width, height):
 
 def action_rip(rip_dir, device):
     device = os.path.realpath(device)  # makemkv is picky!
+
     if app.args.dry_run:
         app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', rip_dir]))
     else:
         os.mkdir(rip_dir)
+
+    # http://www.makemkv.com/developers/usage.txt
     cmd = [
         'makemkvcon',
+        '--messages', '-stdout',
+        '--progress', '-stdout',
         '--minlength=%d' % (3600,),
         'mkv', 'dev:%s' % (device,),
         'all',
@@ -503,6 +508,8 @@ def action_mux(inputfile, in_tags):
         )
     if m:
         d = m.groupdict()
+        if d.get('title', None) == 'title':
+            del d['title']
         try:
             str_episodes = d.pop('str_episodes')
         except KeyError:

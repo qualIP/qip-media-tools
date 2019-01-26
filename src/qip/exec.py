@@ -153,7 +153,7 @@ def dbg_spawn_cmd(cmd, hidden_args=[], no_status=False, yes=False, logfile=True)
     return out
 
 def do_spawn_cmd(cmd, **kwargs):
-    if app.args.dry_run:
+    if getattr(app.args, 'dry_run', False):
         app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
         return ''
     else:
