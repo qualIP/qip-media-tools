@@ -410,7 +410,7 @@ def action_rip(rip_dir, device):
     if app.args.chain:
         with os.scandir(rip_dir) as it:
             for entry in it:
-                assert entry.name.endswith('.mkv')
+                assert os.path.splitext(entry.name)[1] in ('.mkv', '.webm')
                 assert entry.is_file()
                 app.args.mux_files += (os.path.join(rip_dir, entry.name),)
 
@@ -424,6 +424,7 @@ def action_hb(inputfile, in_tags):
 
     if inputfile_ext in (
             '.mkv',
+            '.webm',
             '.mpeg2',
             ):
         ffprobe_dict = inputfile.extract_ffprobe_json()
@@ -544,6 +545,7 @@ def action_mux(inputfile, in_tags):
 
     if inputfile_ext in (
             '.mkv',
+            '.webm',
             ):
         ffprobe_dict = inputfile.extract_ffprobe_json()
 
@@ -1558,13 +1560,19 @@ def action_demux(inputdir, in_tags):
     input_mux_file_name = os.path.join(inputdir, 'mux.json')
     mux_dict = load_mux_dict(input_mux_file_name, in_tags)
 
+    webm = True
     output_file = MkvFile(
-            app.args.output_file or '%s.demux.mkv' % (inputdir.rstrip('/\\'),))
+            app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'),), '.webm' if webm else '.mkv')
 
     post_process_subtitles = False
     cmd = [
         'mkvmerge',
-        '--webm',
+        ]
+    if webm:
+        cmd += [
+            '--webm',
+        ]
+    cmd += [
         '-o', output_file.file_name,
         '--no-track-tags',
         '--no-global-tags',
@@ -1613,7 +1621,7 @@ def action_demux(inputdir, in_tags):
 
     if post_process_subtitles:
         num_inputs = 0
-        noss_file_name = output_file.file_name + '.noss.mkv'
+        noss_file_name = output_file.file_name + '.noss%s' % ('.webm' if webm else '.mkv',)
         if not app.args.dry_run:
             shutil.move(output_file.file_name, noss_file_name)
         num_inputs += 1
@@ -1659,8 +1667,11 @@ def action_demux(inputdir, in_tags):
         #  be used instead of of aspect ratio with DisplayUnits=3 in mkv
         #  headers (see mkvinfo). Some players, like VLC, exhibit playback
         #  issues with images stretched vertically, a lot.
+        if webm:
+            ffmpeg_args += [
+                '-f', 'webm',
+                ]
         ffmpeg_args += [
-            '-f', 'webm',
             output_file.file_name,
             ]
         with perfcontext('merge subtitles w/ ffmpeg'):
