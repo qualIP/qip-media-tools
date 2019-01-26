@@ -94,7 +94,9 @@ class Ffmpeg(_Ffmpeg):
 
     Timestamp = Timestamp
 
-    def _run(self, *args, run_func=None, dry_run=False, slurm=False, **kwargs):
+    def _run(self, *args, run_func=None, dry_run=False,
+            slurm=False, slurm_cpus_per_task=None,
+            **kwargs):
         args = list(args)
 
         if run_func or dry_run:
@@ -138,18 +140,21 @@ class Ffmpeg(_Ffmpeg):
             run_kwargs['stdin_file'] = os.path.abspath(in_file)
             run_kwargs['stdout_file'] = os.path.abspath(out_file)
             run_kwargs['stderr_file'] = '/dev/stderr'
-            threads = None
-            try:
-                threads = kwargs['threads']
-            except KeyError:
+            if slurm_cpus_per_task is None:
+                threads = None
                 try:
-                    idx = args.index("-threads")
-                except ValueError:
-                    pass
-                else:
-                    threads = args[idx + 1]
-            if threads:
-                run_kwargs['slurm_cpus_per_task'] = max(round(int(threads) * 0.75), 1)
+                    threads = kwargs['threads']
+                except KeyError:
+                    try:
+                        idx = args.index("-threads")
+                    except ValueError:
+                        pass
+                    else:
+                        threads = args[idx + 1]
+                if threads:
+                    slurm_cpus_per_task = max(round(int(threads) * 0.75), 1)
+            if slurm_cpus_per_task is not None:
+                run_kwargs['slurm_cpus_per_task'] = slurm_cpus_per_task
             run_kwargs['slurm_mem'] = '500M'
             run_kwargs.setdefault('slurm_job_name', '_'.join(os.path.basename(out_file).split()))
 
