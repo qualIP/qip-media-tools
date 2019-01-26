@@ -1129,6 +1129,7 @@ def action_optimize(inputdir, in_tags):
                         ]
                     ffmpeg(*ffmpeg_args,
                            slurm=True,
+                           slurm_cpus_per_task=2, # ~230-240%
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
