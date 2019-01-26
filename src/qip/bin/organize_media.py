@@ -189,7 +189,7 @@ supported_audio_exts = \
         set(qip.snd.get_sox_app_support().extensions_can_read) | \
         set(('.ogg', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v')) | \
         set(('.mp3', '.wav')) | \
-        set(('.avi', '.mkv'))
+        set(('.avi', '.mkv', '.webm'))
 
 def dir_empty(d):
     if not os.path.isdir(d):
@@ -588,7 +588,7 @@ def organize(inputfile):
         elif os.path.splitext(inputfile)[1] in {'.wav',}:
             from qip.wav import WaveFile
             inputfile = WaveFile(file_name=inputfile)
-        elif os.path.splitext(inputfile)[1] in {'.mkv',}:
+        elif os.path.splitext(inputfile)[1] in {'.mkv', '.webm'}:
             from qip.mkv import MkvFile
             inputfile = MkvFile(file_name=inputfile)
         elif os.path.splitext(inputfile)[1] in qip.snd.get_mp4v2_app_support().extensions_can_write:
@@ -616,7 +616,7 @@ def organize(inputfile):
             inputfile.tags.type = 'normal'
         elif ext in ('.m4b'):
             inputfile.tags.type = 'audiobook'
-        elif ext in ('.mkv', '.avi', '.mp4', '.m4v'):
+        elif ext in ('.mkv', '.webm', '.avi', '.mp4', '.m4v'):
             contenttype = inputfile.tags.contenttype
             if 'Music Video' in str(inputfile.tags.contenttype) \
                     or 'Concert' in str(inputfile.tags.contenttype):
