@@ -64,11 +64,13 @@ class App(object):
     descripton = None
     version = None
     contact = None
+    args = None
     cache_dir = None
     _user_agent = None
     _ureg = None
 
     def __init__(self):
+        self.args = argparse.Namespace()
         pass
 
     def init(
