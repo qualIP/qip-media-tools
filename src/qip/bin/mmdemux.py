@@ -1544,9 +1544,14 @@ def action_demux(inputdir, in_tags):
             app.args.output_file or '%s.demux.mkv' % (inputdir.rstrip('/\\'),))
 
     post_process_subtitles = False
-    cmd = ['mkvmerge',
+    cmd = [
+        'mkvmerge',
+        '--webm',
         '-o', output_file.file_name,
+        '--no-track-tags',
+        '--no-global-tags',
         ]
+    # --title handled with write_tags
     new_stream_index = -1
     for stream_index, stream_dict in sorted((stream_dict['index'], stream_dict)
                                             for stream_dict in mux_dict['streams']):
@@ -1583,6 +1588,8 @@ def action_demux(inputdir, in_tags):
             cmd += [os.path.join(inputdir, stream_dict['file_name'])]
     if mux_dict['chapters']:
         cmd += ['--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])]
+    else:
+        cmd += ['--no-chapters']
     with perfcontext('mkvmerge'):
         do_spawn_cmd(cmd)
 
@@ -1629,7 +1636,13 @@ def action_demux(inputdir, in_tags):
             '-codec', 'copy',
             ]
         ffmpeg_args += option_args
+        # Note on -f webm:
+        #  By forcing webm format, encoding of target display width/height will
+        #  be used instead of of aspect ratio with DisplayUnits=3 in mkv
+        #  headers (see mkvinfo). Some players, like VLC, exhibit playback
+        #  issues with images stretched vertically, a lot.
         ffmpeg_args += [
+            '-f', 'webm',
             output_file.file_name,
             ]
         with perfcontext('merge subtitles w/ ffmpeg'):
