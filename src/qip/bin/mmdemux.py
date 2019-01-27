@@ -201,6 +201,7 @@ def codec_name_to_ext(codec_name):
             #'mjpeg': '.mjpeg',
             'msmpeg4v3': '.msmpeg4v3.avi',
             'mpeg4': '.mp4',
+            'vc1': '.vc1',
             'h264': '.h264',
             'h265': '.h265',
             'vp8': '.vp8',
