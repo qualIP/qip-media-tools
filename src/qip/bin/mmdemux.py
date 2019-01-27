@@ -87,6 +87,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Video Control')
     pgroup.add_argument('--crop', default=True, action='store_true', help='enable cropping video (default)')
+    pgroup.add_argument('--crop-whlt', dest="crop_whlt", default=None, type=int, nargs=4, help='force cropping dimensions')
     pgroup.add_argument('--no-crop', dest='crop', default=argparse.SUPPRESS, action='store_false', help='disable cropping video')
     pgroup.add_argument('--parallel-chapters', dest='parallel_chapters', default=True, action='store_true', help='enable per-chapter parallel processing (default)')
     pgroup.add_argument('--no-parallel-chapters', dest='parallel_chapters', default=argparse.SUPPRESS, action='store_false', help='disable per-chapter parallel processing')
@@ -880,7 +881,7 @@ def action_optimize(inputdir, in_tags):
                 video_filter_specs = []
 
                 if app.args.crop:
-                    stream_crop = stream_dict.pop('crop', None)
+                    stream_crop = app.args.crop_whlt or stream_dict.pop('crop', None)
                     if not stream_crop and 'original_crop' not in stream_dict:
                         stream_crop = ffmpeg.cropdetect(
                             input_file=os.path.join(inputdir, stream_file_name),
