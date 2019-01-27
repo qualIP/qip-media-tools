@@ -114,6 +114,7 @@ def main():
     pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--date', '--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--type', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--mediatype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Physical Media Type (%s)' % (', '.join((str(e) for e in qip.snd.MediaType)),))
     pgroup.add_argument('--contenttype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.snd.ContentType)),))
     pgroup.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--track', dest='track_slash_tracks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
@@ -525,6 +526,7 @@ def action_mux(inputfile, in_tags):
         # for tag in set(SoundTagEnum) - set(SoundTagEnum.iTunesInternalTags):
         for tag in (
                 SoundTagEnum.artist,
+                SoundTagEnum.mediatype,
                 SoundTagEnum.contenttype,
                 SoundTagEnum.episode,
                 SoundTagEnum.genre,

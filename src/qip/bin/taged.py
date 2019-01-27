@@ -98,6 +98,7 @@ def main():
     pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--date', '--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--type', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--mediatype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Physical Media Type (%s)' % (', '.join((str(e) for e in qip.snd.MediaType)),))
     pgroup.add_argument('--contenttype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.snd.ContentType)),))
     pgroup.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
     pgroup.add_argument('--track', dest='track_slash_tracks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
@@ -407,6 +408,8 @@ def taged_MKV(file_name, tags):
                     mkv_tag = 'PART_NUMBER'
                 elif tag == 'title':
                     mkv_tag = 'TITLE'
+                elif tag == 'mediatype':
+                    mkv_tag = 'ORIGNAL_MEDIA_TYPE'
                 elif tag == 'contenttype':
                     mkv_tag = 'CONTENT_TYPE'
                 else:
@@ -589,6 +592,7 @@ def taglist_mf_MP4Tags(file_name, mf):
 mkv_tag_map = {
     (50, 'EPISODE', 'PART_NUMBER'): 'episode',
     (50, None, 'ARTIST'): 'artist',
+    (50, None, 'ORIGNAL_MEDIA_TYPE'): 'contenttype',
     (50, None, 'CONTENT_TYPE'): 'contenttype',
     (50, None, 'DATE_RELEASED'): 'date',
     (50, None, 'ENCODER'): 'tool',

@@ -4,6 +4,7 @@ __all__ = (
     'SoundTagEnum',
     'TrackTags',
     'AlbumTags',
+    'MediaType',
     'ContentType',
     'mp4tags',
     'mp4info',
@@ -349,6 +350,7 @@ class SoundTagEnum(enum.Enum):
 
     genre = 'genre'  # STR  Set the genre name
     type = 'type'  # STR  Set the Media Type(tvshow, movie, music, ...)
+    mediatype = 'mediatype'  # STR  Physical media type
     contenttype = 'contenttype'  # STR  Set the Content Type(Documentary, Feature Film, Cartoon, Music Video, Music, Sound FX, ...)
     category = 'category'  # STR  Set the category
     grouping = 'grouping'  # STR  Set the grouping name
@@ -501,6 +503,40 @@ def _tPicture(value, accept_iterable=True):
     if isinstance(value, File):
         return value
     raise ValueError('Not a valid string or file: %r' % (value,))
+
+# MediaType {{{
+
+class MediaType(enum.Enum):
+    # TMED: http://id3.org/id3v2.3.0#TMED
+    # ORIGINAL_MEDIA_TYPE: https://matroska.org/technical/specs/tagging/index.html
+    CD = 'CD'
+    DVD = 'DVD'
+    BD = 'BD'
+
+    def __hash__(self):
+        return hash(id(self))
+
+    def __str__(self):
+        return self.value
+
+    def __new(cls, value):
+        if type(value) is str:
+            value = value.strip().lower()
+            for pattern, new_value in (
+                ):
+                m = re.search(pattern, value)
+                if m:
+                    value = new_value
+                    break
+        return super().__new__(cls, value)
+
+MediaType.__new__ = MediaType._MediaType__new
+for _e in MediaType:
+    MediaType._value2member_map_[_e.value.lower()] = _e
+    MediaType._value2member_map_[_e.name.lower()] = _e
+    MediaType._value2member_map_[_e.name.lower().replace('_', '')] = _e
+
+# }}}
 
 # ContentType {{{
 
@@ -716,6 +752,10 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     hdvideo = propex(
         name='hdvideo',
         type=(_tNullTag, _tBool))
+
+    mediatype = propex(
+        name='mediatype',
+        type=(_tNullTag, MediaType))
 
     contenttype = propex(
         name='contenttype',
@@ -2812,7 +2852,8 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Keywords",               "keyw",                     "utf-8",                    "keywords",                 None,                       None,             []],
     ["Category",               "catg",                     "utf-8",                    "category",                 None,                       None,             []],
     ["HD Video",               "hdvd",                     "bool8",                    "hdVideo",                  None,                       None,             ['hd_video']],
-    ["Media Type",             "stik",                     "enum8",                    "type",                     "TMT",                      "TMED",           ["mediaType", "media_type"]],
+    ["Media Type",             "stik",                     "enum8",                    "type",                     None,                       None,             []],
+    ["Physical Media Type",    None,                       None,                       "mediatype",                "TMT",                      "TMED",           []],  # ["mediaType", "media_type"]],
     ["Content Rating",         "rtng",                     "int8",                     "contentRating",            None,                       None,             ['rating']],
     ["Gapless Playback",       "pgap",                     "bool8",                    "gapless",                  None,                       None,             ['gapless_playback']],
     ["iTunes Gapless Info",    "----:com.apple.iTunes:iTunSMPB", "binary",             "iTunesGaplessInfo",        None,                       None,             ['iTunSMPB']],
