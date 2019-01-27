@@ -76,6 +76,7 @@ def main():
     pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
     pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
     pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
+    pgroup.add_argument('--save-temps', dest='save_temps', default=False, action='store_true', help='do not delete intermediate files')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
@@ -848,6 +849,8 @@ def action_optimize(inputdir, in_tags):
     outputdir = inputdir
     do_chain = app.args.chain
 
+    temp_files = []
+
     input_mux_file_name = os.path.join(inputdir, 'mux.json')
     mux_dict = load_mux_dict(input_mux_file_name, in_tags)
 
@@ -1047,6 +1050,7 @@ def action_optimize(inputdir, in_tags):
                                                dry_run=app.args.dry_run,
                                                y=app.args.yes)
                                 encode_chap()
+                                temp_files.append(os.path.join(inputdir, stream_chapter_file_name))
                         else:
                             app.log.verbose('All chapters...')
                             with perfcontext('Chop w/ ffmpeg segment muxer'):
@@ -1069,11 +1073,12 @@ def action_optimize(inputdir, in_tags):
 
                             # Encode
                             for chap in chaps:
+                                stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
                                 encode_chap()
+                                temp_files.append(os.path.join(inputdir, stream_chapter_file_name))
 
                         # Join
                         concat_list_file.close()
-                        print(concat_list_file.read())
                         exc = None
                         while threads:
                             thread = threads.pop()
@@ -1095,6 +1100,9 @@ def action_optimize(inputdir, in_tags):
                         ffmpeg(*ffmpeg_args,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
+                        for chap in chaps:
+                            new_stream_chapter_file_name = new_stream_chapter_file_name_pat % (chap.no,)
+                            temp_files.append(os.path.join(inputdir, new_stream_chapter_file_name))
                 else:
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_ext)):
                         ffmpeg_args = [
@@ -1107,6 +1115,7 @@ def action_optimize(inputdir, in_tags):
                                         dry_run=app.args.dry_run,
                                         y=app.args.yes)
 
+                temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
                 stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
@@ -1114,6 +1123,10 @@ def action_optimize(inputdir, in_tags):
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                    if not app.args.save_temps:
+                        for file_name in temp_files:
+                            os.unlink(file_name)
+                        temp_files = []
 
         elif stream_codec_type == 'audio':
 
@@ -1152,6 +1165,7 @@ def action_optimize(inputdir, in_tags):
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
+                temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
                 stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
@@ -1159,6 +1173,10 @@ def action_optimize(inputdir, in_tags):
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                    if not app.args.save_temps:
+                        for file_name in temp_files:
+                            os.unlink(file_name)
+                        temp_files = []
 
             if stream_file_ext not in ok_formats and stream_file_ext in opusenc_formats:
                 # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
@@ -1181,6 +1199,7 @@ def action_optimize(inputdir, in_tags):
                             slurm=True,
                             dry_run=app.args.dry_run)
 
+                temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
                 stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
@@ -1188,6 +1207,10 @@ def action_optimize(inputdir, in_tags):
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                    if not app.args.save_temps:
+                        for file_name in temp_files:
+                            os.unlink(file_name)
+                        temp_files = []
 
             if stream_file_ext in ok_formats:
                 if stream_file_name == orig_stream_file_name:
@@ -1221,6 +1244,7 @@ def action_optimize(inputdir, in_tags):
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
+                temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
                 stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
@@ -1228,6 +1252,10 @@ def action_optimize(inputdir, in_tags):
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                    if not app.args.save_temps:
+                        for file_name in temp_files:
+                            os.unlink(file_name)
+                        temp_files = []
 
         elif stream_codec_type == 'subtitle':
             if False and stream_file_ext in ('.sup',):
@@ -1262,6 +1290,7 @@ def action_optimize(inputdir, in_tags):
                             ]
                         out = do_spawn_cmd(cmd)
 
+                temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
                 stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
@@ -1269,6 +1298,10 @@ def action_optimize(inputdir, in_tags):
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                    if not app.args.save_temps:
+                        for file_name in temp_files:
+                            os.unlink(file_name)
+                        temp_files = []
 
             if stream_file_ext in ('.sup', '.sub',):
                 new_stream_file_ext = '.srt'
@@ -1359,6 +1392,7 @@ def action_optimize(inputdir, in_tags):
                 if app.args.interactive:
                     edfile(os.path.join(inputdir, new_stream_file_name))
 
+                temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
                 stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
@@ -1366,6 +1400,10 @@ def action_optimize(inputdir, in_tags):
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                    if not app.args.save_temps:
+                        for file_name in temp_files:
+                            os.unlink(file_name)
+                        temp_files = []
 
             # NOTE:
             #  WebVTT format exported by SubtitleEdit is same as ffmpeg .srt->.vtt except ffmpeg's timestamps have more 0-padding
@@ -1384,6 +1422,7 @@ def action_optimize(inputdir, in_tags):
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
+                temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
                 stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
@@ -1391,6 +1430,10 @@ def action_optimize(inputdir, in_tags):
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                    if not app.args.save_temps:
+                        for file_name in temp_files:
+                            os.unlink(file_name)
+                        temp_files = []
 
             if stream_file_ext in ('.vtt',):
                 if stream_file_name == orig_stream_file_name:
@@ -1426,6 +1469,7 @@ def action_optimize(inputdir, in_tags):
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
+                temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
                 stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
@@ -1433,6 +1477,10 @@ def action_optimize(inputdir, in_tags):
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
                         json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                    if not app.args.save_temps:
+                        for file_name in temp_files:
+                            os.unlink(file_name)
+                        temp_files = []
 
         else:
             raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
