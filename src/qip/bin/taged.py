@@ -430,9 +430,19 @@ def taged_MKV(file_name, tags):
                         tmp_tags_xml_file.file_name,
                     ]
                     dbg_exec_cmd(cmd)
-                    tags_xml = ET.parse(tmp_tags_xml_file.file_name)
-                    clean_Tag_elements(tags_xml.getroot())
+                    # https://mkvtoolnix.download/doc/mkvextract.html
+                    # If no tags are found in the file, the output file is not created.
+                    if tmp_tags_xml_file.exists():
+                        tags_xml = ET.parse(tmp_tags_xml_file.file_name)
+                    else:
+                        tags_xml = ET.ElementTree(ET.fromstring(
+                            '''<?xml version="1.0"?>
+                            <!-- <!DOCTYPE Tags SYSTEM "matroskatags.dtd"> -->
+                            <Tags>
+                            </Tags>
+                            '''))
                 root = tags_xml.getroot()
+                clean_Tag_elements(root)
                 eTag = find_Tag_element(root, TargetTypeValue=TargetTypeValue, TargetType=TargetType)
                 if not eTag:
                     eTag = ET.SubElement(root, 'Tag')
