@@ -80,8 +80,8 @@ def main():
 
     pgroup = app.parser.add_argument_group('Actions')
     xgroup = pgroup.add_mutually_exclusive_group()
-    pgroup.add_argument('--edit', dest='action', default='edit', action='store_const', const='edit', help='edit tags (default)')
-    pgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
+    xgroup.add_argument('--edit', dest='action', default='edit', action='store_const', const='edit', help='edit tags (default)')
+    xgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     pgroup.add_argument('--prep-picture', dest='prep_picture', action='store_true', help='prepare picture')
