@@ -68,6 +68,7 @@ def main():
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
+
     pgroup.add_argument('--apply-suggestions', dest='apply_suggestions', default=False, action='store_true', help='apply suggestions')
     pgroup.add_argument('--music', '--normal', dest='library_mode', default=None, action='store_const', const='normal', help='Normal (Music) mode (<albumartist>/<albumtitle>/<track>)')
     pgroup.add_argument('--musicvideo', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='musicvideo', help='Music Video mode (Plex: <albumartist>/<albumartist>/<track> - <comment>-video; Emby: same as music)')
@@ -75,6 +76,8 @@ def main():
     pgroup.add_argument('--tvshow', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='tvshow', help='TV show mode (<title>/<file>)')
     pgroup.add_argument('--contenttype', help='Content Type (%s)' % (', '.join((str(e) for e in qip.snd.ContentType)),))
     pgroup.add_argument('--app', default='plex', choices=['emby', 'plex'], help='App compatibility mode')
+    pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files (default)')
+    pgroup.add_argument('--no-aux', dest='aux', default=argparse.SUPPRESS, action='store_false', help='Do not handle auxiliary files')
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='outputdir', default=argparse.SUPPRESS, help='specify the output directory')
@@ -569,13 +572,13 @@ def organize(inputfile):
 
     if type(inputfile) is str and os.path.isdir(inputfile):
         inputdir = inputfile
-        glob_pattern = os.path.join(glob.escape(inputdir), '**')
-        app.log.verbose('Recursing info %s...', glob_pattern)
-        for inputfile in sorted(glob.iglob(glob_pattern, recursive=True)):
-            inputext = os.path.splitext(inputfile)[1]
+        inputfile_glob_pattern = os.path.join(glob.escape(inputdir), '**')
+        app.log.verbose('Recursing info %s...', inputfile_glob_pattern)
+        for inputfile_path in sorted(glob.glob(inputfile_glob_pattern, recursive=True)):
+            inputext = os.path.splitext(inputfile_path)[1]
             if inputext in supported_audio_exts and \
-                    os.path.isfile(inputfile):
-                organize(inputfile)
+                    os.path.isfile(inputfile_path):
+                organize(inputfile_path)
         return True
 
     if not isinstance(inputfile, SoundFile):
@@ -672,9 +675,9 @@ def organize(inputfile):
     src_stat = os.lstat(inputfile.file_name)
     skip = False
     for n in range(1,10):
-        dst_file_name = os.path.join(dst_dir,
-                                     clean_file_name(dst_file_base,
-                                         extra='-%d' % (n,) if n > 1 else ''))
+        dst_file_tail = clean_file_name(dst_file_base,
+                                        extra='-%d' % (n,) if n > 1 else '')
+        dst_file_name = os.path.join(dst_dir, dst_file_tail)
         if os.path.exists(dst_file_name):
             dst_stat = os.lstat(dst_file_name)
             if dst_stat.st_ino == src_stat.st_ino:
@@ -690,11 +693,34 @@ def organize(inputfile):
             else:
                 app.log.info('  Create %s.', dst_dir)
                 os.makedirs(dst_dir)
+        aux_moves = []
+        if app.args.aux:
+            dst_file_base, dst_file_ext = os.path.splitext(dst_file_tail)
+            inputfile_dir, inputfile_tail = os.path.split(inputfile.file_name)
+            inputfile_base, inputfile_ext = os.path.splitext(inputfile_tail)
+            aux_file_pattern = glob.escape(os.path.join(inputfile_dir, inputfile_base)) + '.*'
+            app.log.verbose('Looking for %s...', aux_file_pattern)
+            for aux_file_name in sorted(glob.glob(aux_file_pattern)):
+                aux_file_tail = os.path.split(aux_file_name)[1]
+                if aux_file_tail == inputfile_tail:
+                    continue
+                assert aux_file_tail.startswith(inputfile_base), (aux_file_tail, inputfile_base)
+                aux_file_suffix = aux_file_tail[len(inputfile_base):]
+                dst_aux_file_tail = dst_file_base + aux_file_suffix
+                dst_aux_file_name = os.path.join(dst_dir, dst_aux_file_tail)
+                if os.path.exists(dst_aux_file_name):
+                    raise OSError(errno.EEXIST, dst_aux_file_name)
+                aux_moves.append((aux_file_name, dst_aux_file_name))
         if app.args.dry_run:
             app.log.info('  Rename to %s. (dry-run)', dst_file_name)
+            for aux_file_name, dst_aux_file_name in aux_moves:
+                app.log.info('  Rename aux %s. (dry-run)', dst_aux_file_name)
         else:
             app.log.info('  Rename to %s.', dst_file_name)
             shutil.move(inputfile.file_name, dst_file_name)
+            for aux_file_name, dst_aux_file_name in aux_moves:
+                app.log.info('  Rename aux %s.', dst_aux_file_name)
+                shutil.move(aux_file_name, dst_aux_file_name)
             inputdir = os.path.dirname(inputfile.file_name)
             if inputdir not in ('.', '') and dir_empty(inputdir):
                 app.log.info('Remove %s.', inputdir)
