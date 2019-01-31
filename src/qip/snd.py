@@ -350,7 +350,7 @@ class SoundTagEnum(enum.Enum):
 
     genre = 'genre'  # STR  Set the genre name
     type = 'type'  # STR  Set the Media Type(tvshow, movie, music, ...)
-    mediatype = 'mediatype'  # STR  Physical media type
+    mediatype = 'mediatype'  # STR  Set the Physical Media Type(CD, DVD, BD, ...)
     contenttype = 'contenttype'  # STR  Set the Content Type(Documentary, Feature Film, Cartoon, Music Video, Music, Sound FX, ...)
     category = 'category'  # STR  Set the category
     grouping = 'grouping'  # STR  Set the grouping name
