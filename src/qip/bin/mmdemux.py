@@ -1665,16 +1665,20 @@ def action_demux(inputdir, in_tags):
         stream_codec_type = stream_dict['codec_type']
         if stream_codec_type == 'subtitle':
             if app.args.external_subtitles and os.path.splitext(stream_dict['file_name'])[1] != '.vtt':
-                external_stream_file_name = '{base}{language}{forced}{ext}'.format(
-                    base=os.path.splitext(str(output_file))[0],
-                    language='.%s' % (isolang(stream_dict['language']).code3,),
-                    forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
-                    ext=os.path.splitext(stream_file_name)[1],
-                )
-                app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
-                shutil.copyfile(os.path.join(inputdir, stream_file_name),
-                                external_stream_file_name,
-                                follow_symlinks=True)
+                stream_file_names = [stream_file_name]
+                if os.path.splitext(stream_dict['file_name'])[1] == '.sub':
+                    stream_file_names.append(os.path.splitext(stream_file_name)[0] + '.idx')
+                for stream_file_name in stream_file_names:
+                    external_stream_file_name = '{base}{language}{forced}{ext}'.format(
+                        base=os.path.splitext(str(output_file))[0],
+                        language='.%s' % (isolang(stream_dict['language']).code3,),
+                        forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
+                        ext=os.path.splitext(stream_file_name)[1],
+                    )
+                    app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                    shutil.copyfile(os.path.join(inputdir, stream_file_name),
+                                    external_stream_file_name,
+                                    follow_symlinks=True)
                 continue
             post_process_subtitles.append(stream_dict)
             continue
