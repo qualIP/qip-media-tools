@@ -42,6 +42,8 @@ mutagen.mp4.MP4Tags._MP4Tags__atoms[b'idx'] = (
     mutagen.mp4.MP4Tags._MP4Tags__render_text,
 )
 
+m4a_prepped_picture = None
+
 # replace_html_entities {{{
 
 def replace_html_entities(s):
@@ -263,9 +265,12 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                 from qip.file import cache_url
                 value = cache_url(str(value))
                 if getattr(app.args, 'prep_picture', False):
-                    from qip.m4a import M4aFile
-                    m4a = M4aFile(file_name)
-                    value = m4a.prep_picture(value)
+                    global m4a_prepped_picture
+                    if not m4a_prepped_picture:
+                        from qip.m4a import M4aFile
+                        m4a = M4aFile(file_name)
+                        m4a_prepped_picture = m4a.prep_picture(value)
+                    value = m4a_prepped_picture
                 img_file = ImageFile(str(value))
                 img_type = img_file.image_type
                 if img_type is ImageType.jpg:
