@@ -101,6 +101,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=None, help='SubRip OCR matrix file')
+    pgroup.add_argument('--external-subtitles', dest='external_subtitles', action='store_true', help='Keep unoptimized subtitles as external files')
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='output_file', default=None, help='specify the output (demuxed) file name')
@@ -1312,6 +1313,10 @@ def action_optimize(inputdir, in_tags):
                         temp_files = []
 
             if stream_file_ext in ('.sup', '.sub',):
+                if app.args.external_subtitles and not stream_dict['disposition'].get('forced', None):
+                    app.log.warning('Stream #%d %s -> [external]', stream_index, stream_file_ext)
+                    continue
+
                 new_stream_file_ext = '.srt'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
                 if app.args.batch:
@@ -1620,7 +1625,7 @@ def action_demux(inputdir, in_tags):
     output_file = MkvFile(
             app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'), '.webm' if webm else '.mkv'))
 
-    post_process_subtitles = False
+    post_process_subtitles = []
     cmd = [
         'mkvmerge',
         ]
@@ -1639,18 +1644,31 @@ def action_demux(inputdir, in_tags):
                                             for stream_dict in mux_dict['streams']):
         if stream_dict.get('skip', False):
             continue
+        stream_file_name = stream_dict['file_name']
         stream_codec_type = stream_dict['codec_type']
         if stream_codec_type == 'subtitle':
-            post_process_subtitles = True
+            if app.args.external_subtitles and os.path.splitext(stream_dict['file_name'])[1] != '.vtt':
+                external_stream_file_name = '{base}{language}{forced}{ext}'.format(
+                    base=os.path.splitext(str(output_file))[0],
+                    language='.%s' % (isolang(stream_dict['language']).code3,),
+                    forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
+                    ext=os.path.splitext(stream_file_name)[1],
+                )
+                app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                shutil.copyfile(os.path.join(inputdir, stream_file_name),
+                                external_stream_file_name,
+                                follow_symlinks=True)
+                continue
+            post_process_subtitles.append(stream_dict)
             continue
         new_stream_index += 1
         stream_dict['index'] = new_stream_index
         if stream_codec_type == 'image':
             cmd += [
                 # '--attachment-description', <desc>
-                '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', os.path.join(inputdir, stream_dict['file_name'])])).strip(),
-                '--attachment-name', 'cover%s' % (os.path.splitext(stream_dict['file_name'])[1],),
-                '--attach-file', os.path.join(inputdir, stream_dict['file_name']),
+                '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', os.path.join(inputdir, stream_file_name)])).strip(),
+                '--attachment-name', 'cover%s' % (os.path.splitext(stream_file_name)[1],),
+                '--attach-file', os.path.join(inputdir, stream_file_name),
                 ]
         else:
             if stream_codec_type == 'video':
@@ -1665,9 +1683,9 @@ def action_demux(inputdir, in_tags):
             stream_forced = stream_dict['disposition'].get('forced', None)
             cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
             # TODO --tags
-            if stream_codec_type == 'subtitle' and os.path.splitext(stream_dict['file_name'])[1] == '.sub':
-                cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_dict['file_name'])[0],))]
-            cmd += [os.path.join(inputdir, stream_dict['file_name'])]
+            if stream_codec_type == 'subtitle' and os.path.splitext(stream_file_name)[1] == '.sub':
+                cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_file_name)[0],))]
+            cmd += [os.path.join(inputdir, stream_file_name)]
     if mux_dict['chapters']:
         cmd += ['--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])]
     else:
@@ -1687,18 +1705,17 @@ def action_demux(inputdir, in_tags):
         option_args = [
             '-map', str(num_inputs-1),
             ]
-        for stream_dict in mux_dict['streams']:
-            if stream_dict.get('skip', False):
-                continue
+        for stream_dict in post_process_subtitles:
+            assert not stream_dict.get('skip', False)
+            stream_file_name = stream_dict['file_name']
             stream_index = stream_dict['index']
             stream_codec_type = stream_dict['codec_type']
-            if stream_codec_type != 'subtitle':
-                continue
+            assert stream_codec_type == 'subtitle'
             new_stream_index += 1
             stream_dict['index'] = new_stream_index
             num_inputs += 1
             ffmpeg_args += [
-                '-i', os.path.join(inputdir, stream_dict['file_name']),
+                '-i', os.path.join(inputdir, stream_file_name),
                 ]
             option_args += [
                 '-map', str(num_inputs-1),
