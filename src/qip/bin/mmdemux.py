@@ -532,10 +532,11 @@ def action_mux(inputfile, in_tags):
         # for tag in set(SoundTagEnum) - set(SoundTagEnum.iTunesInternalTags):
         for tag in (
                 SoundTagEnum.artist,
-                SoundTagEnum.mediatype,
                 SoundTagEnum.contenttype,
                 SoundTagEnum.episode,
                 SoundTagEnum.genre,
+                SoundTagEnum.mediatype,
+                SoundTagEnum.season,
                 SoundTagEnum.title,
                 SoundTagEnum.tvshow,
                 SoundTagEnum.year,
