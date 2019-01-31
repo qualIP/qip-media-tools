@@ -35,6 +35,7 @@ import qip.snd
 from qip.snd import *
 from qip.mkv import *
 from qip.m4a import *
+import qip.utils
 from qip.utils import byte_decode, Ratio
 from qip.ffmpeg import ffmpeg
 from qip.opusenc import opusenc
@@ -85,6 +86,10 @@ def main():
     pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue mode')
     pgroup.add_argument('--batch', '-B', action='store_true', help='batch mode')
 
+    pgroup = app.parser.add_argument_group('Ripping Control')
+    pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
+    pgroup.add_argument('--minlength', default=3600, type=qip.utils.Timestamp, help='minimum title length for ripping (default 3600s)')
+
     pgroup = app.parser.add_argument_group('Video Control')
     pgroup.add_argument('--crop', default=True, action='store_true', help='enable cropping video (default)')
     pgroup.add_argument('--crop-whlt', dest="crop_whlt", default=None, type=int, nargs=4, help='force cropping dimensions')
@@ -133,7 +138,6 @@ def main():
     pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
 
     pgroup = app.parser.add_argument_group('Options')
-    pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
     pgroup.add_argument('--eject', default=False, action='store_true', help='eject cdrom when done')
     pgroup.add_argument('--project', default=None, help='project name')
     pgroup.add_argument('--chain', action='store_true', help='chain hb->mux->optimize->demux')
@@ -396,7 +400,7 @@ def action_rip(rip_dir, device):
         'makemkvcon',
         '--messages', '-stdout',
         '--progress', '-stdout',
-        '--minlength=%d' % (3600,),
+        '--minlength=%d' % (app.args.minlength,),
         'mkv', 'dev:%s' % (device,),
         'all',
         rip_dir,
