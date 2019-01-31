@@ -7,9 +7,10 @@ __all__ = (
         )
 
 import abc
+import collections
 import fractions
 import functools
-import collections
+import re
 
 @functools.total_ordering
 class Timestamp(object):
@@ -24,15 +25,17 @@ class Timestamp(object):
             seconds = value.seconds
         elif isinstance(value, str):
             match = value and re.search(
-                    r'^(?P<sign>-)'
-                    r'(?:(?P<h>\d+)h)?'
-                    r'(?:(?P<m>\d+)m)?'
-                    r'(?:(?P<s>\d+\(?:\.\d+))s)?', value)
+                r'^'
+                r'(?P<sign>-)?'
+                r'(?:(?P<h>\d+)h)?'
+                r'(?:(?P<m>\d+)m)?'
+                r'(?:(?P<s>\d+(?:\.\d+)?)s?)?'
+                r'$', value)
             if match:
-                h = match.group('h')
-                m = match.group('m')
-                s = match.group('s')
-                sign = match.group('sign')
+                h = match.group('h') or 0
+                m = match.group('m') or 0
+                s = match.group('s') or 0
+                sign = bool(match.group('sign'))
                 seconds = int(h or 0) * 60 * 60 + int(m or 0) * 60 + float(s)
                 if sign:
                     seconds = -seconds
@@ -66,6 +69,9 @@ class Timestamp(object):
 
     def __float__(self):
         return self.seconds
+
+    def __int__(self):
+        return int(self.seconds)
 
     def __add__(self, other):
         if isinstance(other, Timestamp):

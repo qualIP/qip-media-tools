@@ -28,12 +28,17 @@ class Timestamp(_BaseTimestamp):
         elif isinstance(value, _BaseTimestamp):
             seconds = value.seconds
         elif isinstance(value, str):
-            match = re.search(r'^(?P<sign>-)?(((?P<h>\d+):)?(?P<m>\d+):)?(?P<s>\d+(?:\.\d+)?)$', value)
+            match = value and re.search(
+                r'^'
+                r'(?P<sign>-)?'
+                r'(((?P<h>\d+):)?(?P<m>\d+):)?'
+                r'(?P<s>\d+(?:\.\d+)?)'
+                r'$', value)
             if match:
-                h = match.group('h')
-                m = match.group('m')
-                s = match.group('s')
-                sign = match.group('sign')
+                h = match.group('h') or 0
+                m = match.group('m') or 0
+                s = match.group('s') or 0
+                sign = bool(match.group('sign'))
                 seconds = int(h or 0) * 60 * 60 + int(m or 0) * 60 + float(s)
                 if sign:
                     seconds = -seconds
