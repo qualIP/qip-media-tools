@@ -561,7 +561,7 @@ def action_mux(inputfile, in_tags):
         ffprobe_dict = inputfile.extract_ffprobe_json()
 
         has_forced_subtitle = False
-        subtitle_sizes = []
+        subtitle_counts = []
 
         attachment_index = 0  # First attachment is index 1
         for stream_dict in ffprobe_dict['streams']:
@@ -685,18 +685,32 @@ def action_mux(inputfile, in_tags):
                         stream_forced = stream_disposition_dict.get('forced', None)
                         if stream_forced:
                             has_forced_subtitle = True
-                        subtitle_sizes.append(
-                            (stream_out_dict, os.path.getsize(output_track_file_name)))
+                        if stream_ext in ('.sub', '.sup'):
+                            out = do_exec_cmd(['ffprobe', '-i', output_track_file_name, '-show_frames'])
+                            subtitle_count = out.count(
+                                b'[SUBTITLE]' if type(out) is byte else '[SUBTITLE]')
+                        elif stream_ext in ('.idx',):
+                            out = open(output_track_file_name, 'rb').read()
+                            subtitle_count = out.count(b'timestamp:')
+                        elif stream_ext in ('.srt', '.vtt'):
+                            out = open(output_track_file_name, 'rb').read()
+                            subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
+                        else:
+                            raise NotImplementedError(stream_ext)
+                        stream_out_dict['subtitle_count'] = subtitle_count
+                        subtitle_counts.append(
+                            (stream_out_dict, subtitle_count))
 
                 mux_dict['streams'].append(stream_out_dict)
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
-        if not has_forced_subtitle and subtitle_sizes:
-            max_subtitle_size = max(siz for stream_dict, siz in subtitle_sizes)
-            for stream_dict, siz in subtitle_sizes:
+        if not has_forced_subtitle and subtitle_counts:
+            max_subtitle_size = max(subtitle_count
+                                    for stream_dict, subtitle_count in subtitle_counts)
+            for stream_dict, subtitle_count in subtitle_counts:
                 stream_index = stream_dict['index']
-                if siz <= 0.10 * max_subtitle_size:
+                if subtitle_count <= 0.10 * max_subtitle_size:
                     app.log.info('Detected subtitle stream #%d (%s) is forced',
                                  stream_index,
                                  stream_dict.get('language', 'und'))
