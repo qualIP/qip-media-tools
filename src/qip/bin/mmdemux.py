@@ -614,7 +614,7 @@ def action_mux(inputfile, in_tags):
 
                     if app.args.video_language:
                         stream_dict.setdefault('tags', {})
-                        stream_dict['tags']['language'] = str(app.args.video_language)
+                        stream_dict['tags']['language'] = app.args.video_language.code3
                     stream_out_dict['sample_aspect_ratio'] = stream_dict['sample_aspect_ratio']
                     stream_out_dict['display_aspect_ratio'] = stream_dict['display_aspect_ratio']
 
@@ -645,6 +645,8 @@ def action_mux(inputfile, in_tags):
                     stream_language = stream_out_dict['language'] = stream_dict['tags']['language']
                 except KeyError:
                     pass
+                else:
+                    stream_language = isolang(stream_language)
 
                 if stream_ext == '.vtt':
                     # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
@@ -823,7 +825,7 @@ def action_chop(inputdir, in_tags):
             stream_codec_type = stream_dict['codec_type']
             orig_stream_file_name = stream_file_name = stream_dict['file_name']
             stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
-            stream_language = stream_dict.get('language', 'und')
+            stream_language = isolang(stream_dict.get('language', 'und'))
 
             snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
             ffprobe_json = snd_file.extract_ffprobe_json()
@@ -885,7 +887,7 @@ def action_optimize(inputdir, in_tags):
         stream_codec_type = stream_dict['codec_type']
         orig_stream_file_name = stream_file_name = stream_dict['file_name']
         stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
-        stream_language = stream_dict.get('language', 'und')
+        stream_language = isolang(stream_dict.get('language', 'und'))
 
         if stream_codec_type == 'video':
             if stream_file_ext in ('.vp9', '.vp8'):
@@ -1308,7 +1310,7 @@ def action_optimize(inputdir, in_tags):
                         cmd = [
                             'bdsup2sub',
                             # TODO --forced-only
-                            '--language', isolang(stream_language).code2,
+                            '--language', stream_language.code2,
                             '--output', os.path.join(inputdir, new_stream_file_name),
                             os.path.join(inputdir, stream_file_name),
                             ]
@@ -1389,7 +1391,7 @@ def action_optimize(inputdir, in_tags):
                         # ~/tools/installs/SubRip/CLI.txt
                         cmd = [
                             'SubRip', '/AUTOTEXT',
-                            '--subtitle-language', isolang(stream_language).code3,
+                            '--subtitle-language', stream_language.code3,
                             '--',
                             os.path.join(inputdir, stream_file_name),
                             os.path.join(inputdir, new_stream_file_name),
@@ -1550,7 +1552,7 @@ def action_extract_music(inputdir, in_tags):
             orig_stream_file_name = stream_file_name = \
                     stream_dict.get('original_file_name', stream_dict['file_name'])
             stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
-            stream_language = stream_dict.get('language', 'und')
+            stream_language = isolang(stream_dict.get('language', 'und'))
 
             if stream_codec_type == 'video':
                 pass
@@ -1692,9 +1694,9 @@ def action_demux(inputdir, in_tags):
                     cmd += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
             stream_default = stream_dict['disposition'].get('default', None)
             cmd += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
-            stream_language = stream_dict.get('language', None)
-            if stream_language:
-                cmd += ['--language', '0:%s' % (stream_language,)]
+            stream_language = isolang(stream_dict.get('language', 'und'))
+            if stream_language is not isolang('und'):
+                cmd += ['--language', '0:%s' % (stream_language.code3,)]
             stream_forced = stream_dict['disposition'].get('forced', None)
             cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
             # TODO --tags
@@ -1738,10 +1740,10 @@ def action_demux(inputdir, in_tags):
             stream_default = stream_dict['disposition'].get('default', None)
             if stream_default:
                 option_args += ['-disposition:%d' % (new_stream_index,), 'default',]
-            stream_language = stream_dict.get('language', None)
-            if stream_language:
-                #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_language)]
-                option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (isolang(stream_language).code3,),]
+            stream_language = isolang(stream_dict.get('language', 'und'))
+            if stream_language is not isolang('und'):
+                #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_language.code3)]
+                option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (stream_language.code3,),]
             stream_forced = stream_dict['disposition'].get('forced', None)
             if stream_forced:
                 option_args += ['-disposition:%d' % (new_stream_index,), 'forced',]
