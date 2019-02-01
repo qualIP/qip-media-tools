@@ -607,7 +607,7 @@ def taglist_mf_MP4Tags(file_name, mf):
 mkv_tag_map = {
     (50, 'EPISODE', 'PART_NUMBER'): 'episode',
     (50, None, 'ARTIST'): 'artist',
-    (50, None, 'ORIGNAL_MEDIA_TYPE'): 'contenttype',
+    (50, None, 'ORIGNAL_MEDIA_TYPE'): 'mediatype',
     (50, None, 'CONTENT_TYPE'): 'contenttype',
     (50, None, 'DATE_RELEASED'): 'date',
     (50, None, 'ENCODER'): 'tool',
