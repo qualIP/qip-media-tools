@@ -1649,126 +1649,189 @@ def action_demux(inputdir, in_tags):
     output_file = MkvFile(
             app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'), '.webm' if webm else '.mkv'))
 
-    post_process_subtitles = []
-    cmd = [
-        'mkvmerge',
-        ]
-    if webm:
-        cmd += [
-            '--webm',
-        ]
-    cmd += [
-        '-o', output_file.file_name,
-        '--no-track-tags',
-        '--no-global-tags',
-        ]
-    # --title handled with write_tags
-    new_stream_index = -1
-    for stream_index, stream_dict in sorted((stream_dict['index'], stream_dict)
-                                            for stream_dict in mux_dict['streams']):
-        if stream_dict.get('skip', False):
-            continue
-        stream_file_name = stream_dict['file_name']
-        stream_codec_type = stream_dict['codec_type']
-        if stream_codec_type == 'subtitle':
-            if app.args.external_subtitles and os.path.splitext(stream_dict['file_name'])[1] != '.vtt':
-                stream_file_names = [stream_file_name]
-                if os.path.splitext(stream_dict['file_name'])[1] == '.sub':
-                    stream_file_names.append(os.path.splitext(stream_file_name)[0] + '.idx')
-                for stream_file_name in stream_file_names:
-                    external_stream_file_name = '{base}{language}{forced}{ext}'.format(
-                        base=os.path.splitext(str(output_file))[0],
-                        language='.%s' % (isolang(stream_dict['language']).code3,),
-                        forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
-                        ext=os.path.splitext(stream_file_name)[1],
-                    )
-                    app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
-                    shutil.copyfile(os.path.join(inputdir, stream_file_name),
-                                    external_stream_file_name,
-                                    follow_symlinks=True)
-                continue
-            post_process_subtitles.append(stream_dict)
-            continue
-        new_stream_index += 1
-        stream_dict['index'] = new_stream_index
-        if stream_codec_type == 'image':
+    if False:
+        post_process_subtitles = []
+        cmd = [
+            'mkvmerge',
+            ]
+        if webm:
             cmd += [
-                # '--attachment-description', <desc>
-                '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', os.path.join(inputdir, stream_file_name)])).strip(),
-                '--attachment-name', 'cover%s' % (os.path.splitext(stream_file_name)[1],),
-                '--attach-file', os.path.join(inputdir, stream_file_name),
-                ]
-        else:
-            if stream_codec_type == 'video':
-                display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
-                if display_aspect_ratio:
-                    cmd += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
-            stream_default = stream_dict['disposition'].get('default', None)
-            cmd += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
-            stream_language = isolang(stream_dict.get('language', 'und'))
-            if stream_language is not isolang('und'):
-                cmd += ['--language', '0:%s' % (stream_language.code3,)]
-            stream_forced = stream_dict['disposition'].get('forced', None)
-            cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
-            cmd += ['--sync', '%d:%d' % (0, round(ffmpeg.Timestamp(stream_dict['start_time']).seconds * 1000))]
-            # TODO --tags
-            if stream_codec_type == 'subtitle' and os.path.splitext(stream_file_name)[1] == '.sub':
-                cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_file_name)[0],))]
-            cmd += [os.path.join(inputdir, stream_file_name)]
-    if mux_dict['chapters']:
-        cmd += ['--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])]
-    else:
-        cmd += ['--no-chapters']
-    with perfcontext('mkvmerge'):
-        do_spawn_cmd(cmd)
-
-    if post_process_subtitles:
-        num_inputs = 0
-        noss_file_name = output_file.file_name + '.noss%s' % ('.webm' if webm else '.mkv',)
-        if not app.args.dry_run:
-            shutil.move(output_file.file_name, noss_file_name)
-        num_inputs += 1
-        ffmpeg_args = [
-            '-i', noss_file_name,
+                '--webm',
             ]
-        option_args = [
-            '-map', str(num_inputs-1),
+        cmd += [
+            '-o', output_file.file_name,
+            '--no-track-tags',
+            '--no-global-tags',
             ]
-        for stream_dict in post_process_subtitles:
-            assert not stream_dict.get('skip', False)
+        # --title handled with write_tags
+        new_stream_index = -1
+        for stream_index, stream_dict in sorted((stream_dict['index'], stream_dict)
+                                                for stream_dict in mux_dict['streams']):
+            if stream_dict.get('skip', False):
+                continue
             stream_file_name = stream_dict['file_name']
-            stream_index = stream_dict['index']
             stream_codec_type = stream_dict['codec_type']
-            assert stream_codec_type == 'subtitle'
+            if stream_codec_type == 'subtitle':
+                if app.args.external_subtitles and os.path.splitext(stream_dict['file_name'])[1] != '.vtt':
+                    stream_file_names = [stream_file_name]
+                    if os.path.splitext(stream_dict['file_name'])[1] == '.sub':
+                        stream_file_names.append(os.path.splitext(stream_file_name)[0] + '.idx')
+                    for stream_file_name in stream_file_names:
+                        external_stream_file_name = '{base}{language}{forced}{ext}'.format(
+                            base=os.path.splitext(str(output_file))[0],
+                            language='.%s' % (isolang(stream_dict['language']).code3,),
+                            forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
+                            ext=os.path.splitext(stream_file_name)[1],
+                        )
+                        app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                        shutil.copyfile(os.path.join(inputdir, stream_file_name),
+                                        external_stream_file_name,
+                                        follow_symlinks=True)
+                    continue
+                post_process_subtitles.append(stream_dict)
+                continue
             new_stream_index += 1
             stream_dict['index'] = new_stream_index
+            if stream_codec_type == 'image':
+                cmd += [
+                    # '--attachment-description', <desc>
+                    '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', os.path.join(inputdir, stream_file_name)])).strip(),
+                    '--attachment-name', 'cover%s' % (os.path.splitext(stream_file_name)[1],),
+                    '--attach-file', os.path.join(inputdir, stream_file_name),
+                    ]
+            else:
+                if stream_codec_type == 'video':
+                    display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
+                    if display_aspect_ratio:
+                        cmd += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
+                stream_default = stream_dict['disposition'].get('default', None)
+                cmd += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
+                stream_language = isolang(stream_dict.get('language', 'und'))
+                if stream_language is not isolang('und'):
+                    cmd += ['--language', '0:%s' % (stream_language.code3,)]
+                stream_forced = stream_dict['disposition'].get('forced', None)
+                cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
+                cmd += ['--sync', '%d:%d' % (0, round(ffmpeg.Timestamp(stream_dict['start_time']).seconds * 1000))]
+                # TODO --tags
+                if stream_codec_type == 'subtitle' and os.path.splitext(stream_file_name)[1] == '.sub':
+                    cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_file_name)[0],))]
+                cmd += [os.path.join(inputdir, stream_file_name)]
+        if mux_dict['chapters']:
+            cmd += ['--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])]
+        else:
+            cmd += ['--no-chapters']
+        with perfcontext('mkvmerge'):
+            do_spawn_cmd(cmd)
+
+        if post_process_subtitles:
+            num_inputs = 0
+            noss_file_name = output_file.file_name + '.noss%s' % ('.webm' if webm else '.mkv',)
+            if not app.args.dry_run:
+                shutil.move(output_file.file_name, noss_file_name)
             num_inputs += 1
-            ffmpeg_args += [
-                '-i', os.path.join(inputdir, stream_file_name),
+            ffmpeg_args = [
+                '-i', noss_file_name,
                 ]
-            option_args += [
+            option_args = [
                 '-map', str(num_inputs-1),
                 ]
-            stream_default = stream_dict['disposition'].get('default', None)
-            if stream_default:
-                option_args += ['-disposition:%d' % (new_stream_index,), 'default',]
-            stream_language = isolang(stream_dict.get('language', 'und'))
-            if stream_language is not isolang('und'):
-                #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_language.code3)]
-                option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (stream_language.code3,),]
-            stream_forced = stream_dict['disposition'].get('forced', None)
-            if stream_forced:
-                option_args += ['-disposition:%d' % (new_stream_index,), 'forced',]
-            # TODO --tags
-        option_args += [
+            for stream_dict in post_process_subtitles:
+                assert not stream_dict.get('skip', False)
+                stream_file_name = stream_dict['file_name']
+                stream_index = stream_dict['index']
+                stream_codec_type = stream_dict['codec_type']
+                assert stream_codec_type == 'subtitle'
+                new_stream_index += 1
+                stream_dict['index'] = new_stream_index
+                num_inputs += 1
+                ffmpeg_args += [
+                    '-i', os.path.join(inputdir, stream_file_name),
+                    ]
+                option_args += [
+                    '-map', str(num_inputs-1),
+                    ]
+                stream_default = stream_dict['disposition'].get('default', None)
+                if stream_default:
+                    option_args += ['-disposition:%d' % (new_stream_index,), 'default',]
+                stream_language = isolang(stream_dict.get('language', 'und'))
+                if stream_language is not isolang('und'):
+                    #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_language.code3)]
+                    option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (stream_language.code3,),]
+                stream_forced = stream_dict['disposition'].get('forced', None)
+                if stream_forced:
+                    option_args += ['-disposition:%d' % (new_stream_index,), 'forced',]
+                # TODO --tags
+            option_args += [
+                '-codec', 'copy',
+                ]
+            ffmpeg_args += option_args
+            # Note on -f webm:
+            #  By forcing webm format, encoding of target display width/height will
+            #  be used instead of of aspect ratio with DisplayUnits=3 in mkv
+            #  headers (see mkvinfo). Some players, like VLC, exhibit playback
+            #  issues with images stretched vertically, a lot.
+            if webm:
+                ffmpeg_args += [
+                    '-f', 'webm',
+                    ]
+            ffmpeg_args += [
+                output_file.file_name,
+                ]
+            with perfcontext('merge subtitles w/ ffmpeg'):
+                ffmpeg(*ffmpeg_args,
+                       dry_run=app.args.dry_run,
+                       y=app.args.yes)
+            if not app.args.dry_run:
+                os.unlink(noss_file_name)
+    else:
+        ffmpeg_args = [
+            '-map_metadata', '-1',
+            '-map_chapters', '-1',
             '-codec', 'copy',
+            '-copyts', '-start_at_zero',
             ]
-        ffmpeg_args += option_args
-        # Note on -f webm:
-        #  By forcing webm format, encoding of target display width/height will
-        #  be used instead of of aspect ratio with DisplayUnits=3 in mkv
-        #  headers (see mkvinfo). Some players, like VLC, exhibit playback
-        #  issues with images stretched vertically, a lot.
+        new_stream_index = -1
+        for stream_index, stream_dict in sorted((stream_dict['index'], stream_dict)
+                                                for stream_dict in mux_dict['streams']):
+            if stream_dict.get('skip', False):
+                continue
+            stream_file_name = stream_dict['file_name']
+            stream_codec_type = stream_dict['codec_type']
+            if stream_codec_type == 'subtitle':
+                if app.args.external_subtitles and os.path.splitext(stream_dict['file_name'])[1] != '.vtt':
+                    stream_file_names = [stream_file_name]
+                    if os.path.splitext(stream_dict['file_name'])[1] == '.sub':
+                        stream_file_names.append(os.path.splitext(stream_file_name)[0] + '.idx')
+                    for stream_file_name in stream_file_names:
+                        external_stream_file_name = '{base}{language}{forced}{ext}'.format(
+                            base=os.path.splitext(str(output_file))[0],
+                            language='.%s' % (isolang(stream_dict['language']).code3,),
+                            forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
+                            ext=os.path.splitext(stream_file_name)[1],
+                        )
+                        app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                        shutil.copyfile(os.path.join(inputdir, stream_file_name),
+                                        external_stream_file_name,
+                                        follow_symlinks=True)
+                    continue
+            new_stream_index += 1
+            disposition_flags = []
+            for k, v in stream_dict['disposition'].items():
+                if v:
+                    disposition_flags.append(v)
+            ffmpeg_args += [
+                '-disposition:%d' % (new_stream_index,),
+                ','.join(disposition_flags or ['0']),
+                ]
+            if stream_language is not isolang('und'):
+                option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (stream_language.code3,),]
+            ffmpeg_args += [
+                '--ss', ffmpeg.Timestamp(stream_dict['start_time']),
+                ]
+            ffmpeg_args += [
+                '-i',
+                os.path.join(inputdir, stream_file_name),
+                ]
         if webm:
             ffmpeg_args += [
                 '-f', 'webm',
@@ -1776,12 +1839,18 @@ def action_demux(inputdir, in_tags):
         ffmpeg_args += [
             output_file.file_name,
             ]
-        with perfcontext('merge subtitles w/ ffmpeg'):
+        with perfcontext('merge w/ ffmpeg'):
             ffmpeg(*ffmpeg_args,
                    dry_run=app.args.dry_run,
                    y=app.args.yes)
-        if not app.args.dry_run:
-            os.unlink(noss_file_name)
+        if mux_dict['chapters']:
+            cmd = [
+                'mkvpropedit',
+                os.path.join(inputdir, stream_file_name),
+                '--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])],
+            ]
+            with perfcontext('mkvpropedit'):
+                do_spawn_cmd(cmd)
 
     output_file.write_tags(tags=mux_dict['tags'],
             dry_run=app.args.dry_run,
