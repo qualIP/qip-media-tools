@@ -508,6 +508,7 @@ def action_mux(inputfile, in_tags):
         'streams': [],
         'chapters': {},
         'tags': AlbumTags(),
+        'format': {}
     }
 
     name_scan_str = os.path.basename(inputfile_base)
@@ -560,6 +561,8 @@ def action_mux(inputfile, in_tags):
             ):
         ffprobe_dict = inputfile.extract_ffprobe_json()
 
+        mux_dict['format']['start_time'] = ffprobe_dict['format']['start_time']
+
         has_forced_subtitle = False
         subtitle_counts = []
 
@@ -567,7 +570,9 @@ def action_mux(inputfile, in_tags):
         for stream_dict in ffprobe_dict['streams']:
             if stream_dict.get('skip', False):
                 continue
-            stream_out_dict = {}
+            stream_out_dict = {
+                'format': {}
+            }
             stream_index = int(stream_dict['index'])
             stream_out_dict['index'] = stream_index
             stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
@@ -581,6 +586,8 @@ def action_mux(inputfile, in_tags):
                     stream_ext = '.jpg'
                 else:
                     stream_ext = codec_name_to_ext(stream_codec_name)
+
+                stream_out_dict['format']['start_time'] = stream_dict['format']['start_time']
 
                 if stream_codec_type == 'video':
 
@@ -1703,6 +1710,7 @@ def action_demux(inputdir, in_tags):
                 cmd += ['--language', '0:%s' % (stream_language.code3,)]
             stream_forced = stream_dict['disposition'].get('forced', None)
             cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
+            cmd += ['--sync', '%d:%d' % (0, round(ffmpeg.Timestamp(stream_dict['start_time']).seconds * 1000))]
             # TODO --tags
             if stream_codec_type == 'subtitle' and os.path.splitext(stream_file_name)[1] == '.sub':
                 cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_file_name)[0],))]
