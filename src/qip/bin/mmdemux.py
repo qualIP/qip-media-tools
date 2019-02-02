@@ -697,7 +697,7 @@ def action_mux(inputfile, in_tags):
                         if stream_ext in ('.sub', '.sup'):
                             out = do_exec_cmd(['ffprobe', '-i', output_track_file_name, '-show_frames'])
                             subtitle_count = out.count(
-                                b'[SUBTITLE]' if type(out) is byte else '[SUBTITLE]')
+                                b'[SUBTITLE]' if type(out) is bytes else '[SUBTITLE]')
                         elif stream_ext in ('.idx',):
                             out = open(output_track_file_name, 'rb').read()
                             subtitle_count = out.count(b'timestamp:')
