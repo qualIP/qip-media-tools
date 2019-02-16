@@ -182,6 +182,10 @@ class File(object):
         fp = self.fp or self.open()
         return fp.read()
 
+    def write(self, *args, **kwargs):
+        fp = self.fp or self.open(mode='w')
+        return fp.write(*args, **kwargs)
+
     def close(self):
         fp = self.fp
         if fp:
@@ -302,15 +306,15 @@ def cache_url(url, cache_dict={}):
 
 # safe_write_file {{{
 
-def safe_write_file(file, content):
+def safe_write_file(file, content, **kwargs):
     def body(fp):
-        fp.buffer.write(content)
-    safe_write_file_eval(file, body)
+        fp.write(content)
+    safe_write_file_eval(file, body, **kwargs)
 
 # }}}
 # safe_write_file_eval {{{
 
-def safe_write_file_eval(file, body, *, encoding='utf-8'):
+def safe_write_file_eval(file, body, *, text=False, encoding='utf-8'):
     file = str(file)
     if (
             not os.access(file, os.W_OK) and
@@ -318,7 +322,7 @@ def safe_write_file_eval(file, body, *, encoding='utf-8'):
                 not os.access(os.path.dirname(file), os.W_OK))):
         pass # XXXJST TODO: raise Exception('couldn\'t open "%s"' % (file,))
     with TempFile(file + '.tmp') as tmp_file:
-        with tmp_file.open(mode='w', encoding=encoding) as fp:
+        with tmp_file.open(mode='wt' if text else "wb", encoding=encoding) as fp:
             ret = body(fp)
         shutil.move(tmp_file.file_name, file)
         tmp_file.delete = False
