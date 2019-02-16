@@ -94,7 +94,7 @@ def main():
     pgroup.add_argument('--crop', default=True, action='store_true', help='enable cropping video (default)')
     pgroup.add_argument('--crop-whlt', dest="crop_whlt", default=None, type=int, nargs=4, help='force cropping dimensions')
     pgroup.add_argument('--no-crop', dest='crop', default=argparse.SUPPRESS, action='store_false', help='disable cropping video')
-    pgroup.add_argument('--parallel-chapters', dest='parallel_chapters', default=True, action='store_true', help='enable per-chapter parallel processing (default)')
+    pgroup.add_argument('--parallel-chapters', dest='parallel_chapters', default=False, action='store_true', help='enable per-chapter parallel processing (default)')
     pgroup.add_argument('--no-parallel-chapters', dest='parallel_chapters', default=argparse.SUPPRESS, action='store_false', help='disable per-chapter parallel processing')
     pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=int, default=60, help='cropdetect duration (seconds)')
     pgroup.add_argument('--video-language', '--vlang', dest='video_language', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
