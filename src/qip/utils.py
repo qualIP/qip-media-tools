@@ -8,9 +8,11 @@ __all__ = (
 
 import abc
 import collections
-import fractions
+from fractions import Fraction
 import functools
 import re
+import logging
+log = logging.getLogger(__name__)
 
 @functools.total_ordering
 class Timestamp(object):
@@ -188,17 +190,27 @@ def byte_decode(b, encodings=('utf-8', 'iso-8859-1', 'us-ascii')):
             last_e = e
     raise ValueError('Unable to decode %r', (b,)) from last_e
 
+
 def pairwise(iterable):
     "s -> (s0, s1), (s2, s3), (s4, s5), ..."
     a = iter(iterable)
     return zip(a, a)
 
 
-class Ratio(fractions.Fraction):
+class Ratio(Fraction):
+    '''num:den ratio format'''
 
     def __new__(cls, numerator=0, denominator=None, **kwargs):
         if isinstance(numerator, str):
-            numerator = numerator.replace(':', '/')
+            try:
+                numerator = int(numerator)
+            except ValueError:
+                try:
+                    numerator = float(numerator)
+                except ValueError:
+                    numerator = numerator.replace(':', '/')
+        if isinstance(denominator, str):
+            denominator = int(denominator)
         return super().__new__(cls, numerator, denominator, **kwargs)
 
     def to_str(self, *, separator=':', force_denominator=True):
@@ -237,13 +249,13 @@ class Ratio(fractions.Fraction):
 
     def __pow__(a, b):
         v = a.__class__(super().__pow__(b))
-        if isinstance(v, fractions.Fraction):
+        if isinstance(v, Fraction):
             v = a.__class__(v)
         return v
 
     def __rpow__(b, a):
         v = b.__class__(super().__rpow__(a))
-        if isinstance(v, fractions.Fraction):
+        if isinstance(v, Fraction):
             v = b.__class__(v)
         return v
 
@@ -258,7 +270,7 @@ class Ratio(fractions.Fraction):
 
     def __round__(self, **kwargs):
         v = self.__class__(super().__round__(**kwargs))
-        if isinstance(v, fractions.Fraction):
+        if isinstance(v, Fraction):
             v = self.__class__(v)
         return v
 
