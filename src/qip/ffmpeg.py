@@ -237,12 +237,21 @@ class Ffmpeg(_Ffmpeg):
         except AttributeError:
             pass
 
-    def cropdetect(self, input_file, cropdetect_duration=60, dry_run=False):
+    def cropdetect(self, input_file, skip_frame_nokey=True, cropdetect_seek=None, cropdetect_duration=300, dry_run=False):
         stream_crop = None
         with perfcontext('Cropdetect w/ ffmpeg'):
-            ffmpeg_args = [
+            ffmpeg_args = []
+            if cropdetect_seek is not None:
+                ffmpeg_args += [
+                    '-ss', Timestamp(cropdetect_seek),
+                ]
+            if skip_frame_nokey:
+                ffmpeg_args += [
+                    '-skip_frame', 'nokey',
+                ]
+            ffmpeg_args += [
                 '-i', input_file,
-                '-t', cropdetect_duration,
+                '-t', Timestamp(cropdetect_duration),
                 '-filter:v', 'cropdetect=24:2:0:0',
                 ]
             ffmpeg_args += [
@@ -251,17 +260,30 @@ class Ffmpeg(_Ffmpeg):
             out = self(*ffmpeg_args,
                        dry_run=dry_run)
         if not dry_run:
+            frames_count = 0
+            last_cropdetect_match = None
             parser = lines_parser(byte_decode(out.out).split('\n'))
             while parser.advance():
                 parser.line = parser.line.strip()
                 m = re.match(r'.*Parsed_cropdetect.* crop=(\d+):(\d+):(\d+):(\d+)$', parser.line)
                 if m:
-                    stream_crop = (int(m.group(1)),
-                            int(m.group(2)),
-                            int(m.group(3)),
-                            int(m.group(4)))
-            if not stream_crop:
+                    frames_count += 1
+                    last_cropdetect_match = m
+            if not last_cropdetect_match:
                 raise ValueError('Crop detection failed')
+            if skip_frame_nokey and frames_count < 2:
+                return self.cropdetect(input_file,
+                                       skip_frame_nokey=False,
+                                       cropdetect_seek=cropdetect_seek,
+                                       cropdetect_duration=cropdetect_duration,
+                                       dry_run=dry_run)
+            m = last_cropdetect_match
+            w, h, l, t = stream_crop = (
+                int(m.group(1)),
+                int(m.group(2)),
+                int(m.group(3)),
+                int(m.group(4)))
+            assert w > 0 and h > 0 and l >= 0 and t >= 0, (w, h, l, t)
         return stream_crop
 
 ffmpeg = Ffmpeg()
