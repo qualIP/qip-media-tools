@@ -20,6 +20,7 @@ import urllib.request
 import io
 import tempfile
 import shutil
+import subprocess
 
 import logging
 log = logging.getLogger(__name__)
@@ -143,6 +144,25 @@ class File(object):
         if fp:
             return fp.fileno()
         raise ValueError('I/O operation on closed file')  # like file objects
+
+    def pvopen(self, mode='r', encoding=None):
+        assert 'r' in mode
+        if not shutil.which('pv'):
+            return self.open(mode=mode, encoding=encoding)
+        assert not self.fp
+        if not self.file_name:
+            raise ValueError('%r: file_name not defined' % (self,))
+        if 't' not in mode and 'b' not in mode:
+            mode += self.open_mode
+        p = subprocess.Popen(['pv', self.file_name],
+                  stdout=subprocess.PIPE,
+                  text=(
+                      True if 't' in mode else (
+                          False if 'b' in mode else
+                          None)),
+                  encoding=encoding,
+                  )
+        return p.stdout
 
     def open(self, mode='r', encoding=None):
         assert not self.fp
