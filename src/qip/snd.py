@@ -46,6 +46,7 @@ from qip.file import *
 from qip.parser import *
 from qip.propex import propex
 from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise
+from .mm import MediaFile
 
 
 def _tIntRange(value, rng):
@@ -3176,7 +3177,7 @@ AudioType.__new__ = AudioType._AudioType__new
 
 # class SoundFile {{{
 
-class SoundFile(BinaryFile):
+class SoundFile(MediaFile):
 
     class Chapter(collections.namedtuple('Chapter', ['time', 'name'])):
         __slots__ = ()
@@ -3201,36 +3202,6 @@ class SoundFile(BinaryFile):
         self.cover_file = cover_file
         self.tags = TrackTags()
 
-    def test_integrity(self):
-        if not self.file_name:
-            raise ValueError('%r: file_name not defined' % (self,))
-        log.info('Testing %s...' % (self.file_name,))
-        cmd = [
-                'ffmpeg',
-                '-i', self.file_name,
-                '-vn',
-                '-f', 'null',
-                '-y',
-                '/dev/null',
-                ]
-        with subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                ) as proc:
-            out, unused_err = proc.communicate()
-            if proc.returncode != 0:
-                raise subprocess.CalledProcessError(proc.returncode, cmd, out)
-        # Error while decoding stream #0:0: Invalid data found when processing input
-        out = byte_decode(out)
-        out = io.IncrementalNewlineDecoder(decoder=None, translate=True).decode(out, final=True)
-        m = re.search(r'Error while decoding stream.*', out)
-        if m:
-            # raise ValueError("%s: %s" % (self.file_name, m.group(0)))
-            log.error("%s: %s", self.file_name, m.group(0))
-            return False
-        return True
-
     def set_tag(self, tag, value, source=''):
         return self.tags.set_tag(tag, value, source=source)
 
@@ -3238,52 +3209,6 @@ class SoundFile(BinaryFile):
         if tags is None:
             tags = self.tags
         self.tag_writer.write_tags(tags=tags, file_name=self.file_name, **kwargs)
-
-    def extract_ffprobe_json(self,
-            show_streams=True,
-            show_format=True,
-            show_chapters=True,
-            show_error=True,
-        ):
-        cmd = [
-            'ffprobe',
-            '-i', self.file_name,
-            '-threads', '0',
-            '-v', 'info',
-            '-print_format', 'json',
-        ]
-        if show_streams:
-            cmd += ['-show_streams']
-        if show_format:
-            cmd += ['-show_format']
-        if show_chapters:
-            cmd += ['-show_chapters']
-        if show_error:
-            cmd += ['-show_error']
-        try:
-            # ffprobe -print_format json -show_streams -show_format -i ...
-            out = dbg_exec_cmd(cmd, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError:
-            # TODO ignore/report failure only?
-            raise
-        else:
-            out = clean_cmd_output(out)
-            parser = lines_parser(out.split('\n'))
-            ffprobe_dict = None
-            while parser.advance():
-                if parser.line == '{':
-                    parser.pushback(parser.line)
-                    ffprobe_dict = json.loads('\n'.join(parser.lines_iter))
-                    break
-                parser.line = parser.line.strip()
-                if parser.line == '':
-                    pass
-                else:
-                    #log.debug('TODO: %s', parser.line)
-                    pass
-            if ffprobe_dict:
-                return ffprobe_dict
-            raise ValueError('No json found in output of %r' % subprocess.list2cmdline(cmd))
 
     def extract_info(self, need_actual_duration=False):
         tags_done = False
