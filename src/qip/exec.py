@@ -355,22 +355,37 @@ def edfile(file):
 # }}}
 # edvar {{{
 
-def edvar(value, *, encoding='utf-8'):
+def edvar(value, *, json=None, suffix=None, encoding='utf-8'):
     from qip.file import TempFile
-    from qip import json
     import tempfile
 
-    with TempFile.mkstemp(suffix='.json', text=True, open=True) as tmp_file:
+    if json is None:
+        if isinstance(value, str):
+            json = False
+            suffix = suffix or '.txt'
+        else:
+            json = True
+            suffix = suffix or '.json'
 
-        json.dump(value, tmp_file.fp, indent=2, sort_keys=True, ensure_ascii=False)
-        print('', file=tmp_file.fp)
+    with TempFile.mkstemp(suffix=suffix, text=True, open=True) as tmp_file:
+
+        if json:
+            import qip.json
+            qip.json.dump(value, tmp_file.fp, indent=2, sort_keys=True, ensure_ascii=False)
+            print('', file=tmp_file.fp)
+        else:
+            tmp_file.write(value)
+
         tmp_file.close()
 
         if not edfile(tmp_file):
             return (False, value)
 
         tmp_file.fp = tmp_file.open(mode='r', encoding=encoding)
-        new_value = json.load(tmp_file.fp)
+        if json:
+            new_value = json.load(tmp_file.fp)
+        else:
+            new_value = json.read()
         tmp_file.close()
 
         #if type(new_value) is not type(value):
