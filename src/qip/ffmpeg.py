@@ -1,6 +1,7 @@
 
 __all__ = [
         'ffmpeg',
+        'ffprobe',
         ]
 
 import functools
@@ -94,10 +95,6 @@ class _Ffmpeg(Executable):
 class Ffmpeg(_Ffmpeg):
 
     name = 'ffmpeg'
-
-    run_func = staticmethod(do_spawn_cmd)
-
-    Timestamp = Timestamp
 
     def _run(self, *args, run_func=None, dry_run=False,
             slurm=False, slurm_cpus_per_task=None,
@@ -266,8 +263,6 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
 
     name = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg-2pass-pipe')
 
-    run_func = staticmethod(do_exec_cmd)
-
     def build_cmd(self, *args, **kwargs):
         args = list(args)
 
@@ -329,5 +324,42 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
 
 
 ffmpeg_2pass_pipe = Ffmpeg2passPipe()
+
+class Ffprobe(_Ffmpeg):
+
+    name = 'ffprobe'
+
+    run_func = staticmethod(dbg_exec_cmd)
+
+    def build_cmd(self, *args, **kwargs):
+        args = list(args)
+
+        args.append('-')  # dummy output
+
+        cmd = super().build_cmd(*args, **kwargs)
+        assert cmd.pop(-1) == '-'
+        return cmd
+
+    def _run(self, *args, run_func=None, dry_run=False,
+            **kwargs):
+        args = list(args)
+
+        run_kwargs = {}
+
+        run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
+        #if not dry_run:
+        #    run_kwargs['stdin'] = open(str(in_file), "rb")
+        #    run_kwargs['stdout'] = open(str(out_file), "w")
+
+        if run_kwargs:
+            run_func = functools.partial(run_func, **run_kwargs)
+
+        return super()._run(
+                *args,
+                dry_run=dry_run,
+                run_func=run_func,
+                **kwargs)
+
+ffprobe = Ffprobe()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
