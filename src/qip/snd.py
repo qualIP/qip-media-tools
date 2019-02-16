@@ -56,7 +56,9 @@ def _tIntRange(value, rng):
     return value
 
 def _tTrackRange(value):
-    return _tIntRange(value, range(1, 99 + 1))
+    return int(value)
+    # TODO -- mkv Track UIDs can be very large numbers (64 bits?)
+    # return _tIntRange(value, range(1, 99 + 1))
 
 def _tYear(value):
     return _tIntRange(value, range(datetime.MINYEAR, datetime.MAXYEAR + 1))
@@ -427,6 +429,10 @@ SoundTagEnum.iTunesInternalTags = frozenset((
     SoundTagEnum.itunescatalogid,
     SoundTagEnum.itunesplaylistid,
 ))
+
+def _tDebugTag(value):
+    app.log.debug('_tDebugTag(value=%r)', value)
+    raise ValueError('_tDebugTag(value=%r)' % (value,))
 
 def _tNullTag(value):
     if value is None:
@@ -1148,7 +1154,7 @@ class AlbumTags(SoundTagDict):
 
         def _sanitize_key(self, key):
             try:
-                key = _tIntRange(key, range(1, 100))
+                key = _tTrackRange(key)
             except:
                 raise KeyError(key)
             return key
