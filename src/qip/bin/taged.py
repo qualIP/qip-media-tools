@@ -58,6 +58,21 @@ def replace_html_entities(s):
 @app.main_wrapper
 def main():
 
+    #https://genius.com/api-clients
+    #API Clients
+    #App Website URL
+    #    http://qualipsoft.com/taged/
+    #Redirect URI
+    #    http://qualipsoft.com/taged/
+    #Client ID
+    #    mudU4SVqVbrQ4YG0dKDnOPktNbJ65sW3mB2yPG8SVhTJ3JiskPPgLKeKvlDgzhnK
+    #Client Secret
+    #    gY66ic2V2vcdFhXLlEwUiZBWx8ZdlxQG5ab8IRTgIjamUGZVL54Nqq2qn2ODN_291zw-0966Azio8EaOLfel2g
+    #Client Access Token
+    #    djPgExvVVDyXSaNLTpyZrsbAZ8JsC4cvMtQyXogt0oIcV_9BnY_EKBpu3Ixds83o
+    os.environ.setdefault('GENIUS_CLIENT_ACCESS_TOKEN',
+                          'djPgExvVVDyXSaNLTpyZrsbAZ8JsC4cvMtQyXogt0oIcV_9BnY_EKBpu3Ixds83o')
+
     app.init(
             version='1.0',
             description='Tag Editor',
@@ -84,12 +99,22 @@ def main():
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--edit', dest='action', default='edit', action='store_const', const='edit', help='edit tags (default)')
     xgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
+    xgroup.add_argument('--find-lyrics', dest='action', default=argparse.SUPPRESS, action='store_const', const='find_lyrics', help='find lyrics')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     pgroup.add_argument('--prep-picture', dest='prep_picture', action='store_true', help='prepare picture')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--ipod-compat', dest='ipod_compat', default=True, action='store_true', help='iPod compatibility (default)')
     xgroup.add_argument('--no-ipod-compat', dest='ipod_compat', default=argparse.SUPPRESS, action='store_false', help='iPod compatibility (disable)')
+
+    pgroup = app.parser.add_argument_group('Lyrics')
+    pgroup.add_argument('--genius-timeout', dest='genius_timeout', default=5, type=int, help='Genius API timeout')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--lyrics-section-headers', dest='lyrics_section_headers', default=True, action='store_true', help='Include lyrics section headers (default)')
+    xgroup.add_argument('--no-lyrics-section-headers', dest='lyrics_section_headers', default=argparse.SUPPRESS, action='store_false', help='Do not nclude lyrics section headers')
+    pgroup.add_argument('--lyrics-exclude-terms', dest='lyrics_exclude_terms', default=[], nargs="+", help='Terms to exclude from title songs')
+    pgroup.add_argument('--lyrics-save', dest='lyrics_save', action='store_true', help='Save lyrics to .txt file if found')
+    pgroup.add_argument('--lyrics-embed', dest='lyrics_embed', action='store_true', help='Embed lyrics in sound file if found')
 
     pgroup = app.parser.add_argument_group('Tags')
     pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
@@ -160,8 +185,92 @@ def main():
                 taglist(file_name)
 
         # }}}
+    elif app.args.action == 'find_lyrics':
+        # {{{
+
+        import lyricsgenius
+        genius = lyricsgenius.Genius(
+                os.environ['GENIUS_CLIENT_ACCESS_TOKEN'],
+                timeout=app.args.genius_timeout,
+                sleep_time=0.5 if len(app.args.files) > 1 else 0,  # Enforce rate limiting
+                verbose = app.log.isEnabledFor(logging.VERBOSE),
+                remove_section_headers=not app.args.lyrics_section_headers,
+                excluded_terms=app.args.lyrics_exclude_terms,
+                )
+
+        #if not app.args.files:
+        #    raise Exception('No files provided')
+        if app.args.files:
+            file_names = app.args.files
+        else:
+            file_names = [None]
+            if in_tags.artist is None or in_tags.title is None:
+                raise Exception('%s: --artist and --title required to find lyrics' % (prog,))
+
+        for file_name in file_names:
+            lyrics = find_lyrics(file_name, genius=genius, tags=in_tags).rstrip()
+            if not lyrics:
+                app.log.error('%s: Lyrics not found for %s', prog, file_name)
+                continue
+            print_lyrics = True
+            if app.args.interactive:
+                print(lyrics)
+                print_lyrics = False
+                while True:
+                    print('')
+                    print('Interactive mode...')
+                    print(' e - edit lyrics')
+                    print(' q - quit')
+                    print(' y - yes, continue!')
+                    c = input('Choice: ')
+                    if c == 'e':
+                        lyrics = edvar(lyrics)[1].rstrip()
+                    elif c == 'q':
+                        return False
+                    elif c == 'y':
+                        break
+                    else:
+                        app.log.error('Invalid input')
+            if file_name is not None:
+                if app.args.lyrics_save:
+                    lyrics_file = TextFile(os.path.splitext(file_name)[0] + '.txt')
+                    assert app.args.yes or not lyrics_file.exists()
+                    app.log.info('Writing lyrics to %s', lyrics_file)
+                    lyrics_file.write(lyrics)
+                    print_lyrics = False
+                if app.args.lyrics_embed:
+                    taged(file_name, TrackTags(lyrics=lyrics))
+                    print_lyrics = False
+            if print_lyrics:
+                print(lyrics)
+                print_lyrics = False
+
+        # }}}
     else:
         raise ValueError('Invalid action \'%s\'' % (app.args.action,))
+
+def find_lyrics(file_name, *, genius=None, tags=None, **kwargs):
+
+    if not genius:
+        client_access_token = kwargs.get('client_access_token', None)
+        if not client_access_token:
+            client_access_token = os.environ.get("GENIUS_CLIENT_ACCESS_TOKEN", None)
+        assert client_access_token, 'Must declare environment variable: GENIUS_CLIENT_ACCESS_TOKEN'
+        kwargs['client_access_token'] = client_access_token
+        kwargs.setdefault('verbose', app.log.isEnabledFor(logging.VERBOSE))
+        import lyricsgenius
+        genius = lyricsgenius.Genius(
+                os.environ['GENIUS_CLIENT_ACCESS_TOKEN'],
+                **kwargs)
+
+    if file_name is not None:
+        snd_file = SoundFile(file_name)
+        tags = snd_file.load_tags()
+    with perfcontext('genius.search_song'):
+        song = genius.search_song(tags.title, tags.artist)
+    if song:
+        return song.lyrics
+    return None
 
 def taged_mf_id3(file_name, mf, tags):
     # http://id3.org/Developer%20Information
