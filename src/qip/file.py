@@ -239,6 +239,7 @@ class TempFile(File):
 
     @classmethod
     def mkstemp(cls, *, open=False, text=False, **kwargs):
+        '''mkstemp(suffix=, prefix=, dir=, text=, open=, ...)'''
         tmpfile = cls(file_name=None,
                       open_mode='t' if text else 'b')
         fd, tmpfile.file_name = tempfile.mkstemp(text=text, **kwargs)
