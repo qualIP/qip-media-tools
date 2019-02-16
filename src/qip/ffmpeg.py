@@ -51,11 +51,18 @@ class Timestamp(_BaseTimestamp):
 
     def __str__(self):
         s = self.seconds
+        if s < 0.0:
+            sign = '-'
+            s = -s
+        else:
+            sign = ''
         m = s // 60
         s = s - m * 60
         h = m // 60
         m = m - h * 60
-        return '%02d:%02d:%s' % (h, m, ('%.8f' % (s + 100.0))[1:])
+        return '%s%02d:%02d:%s' % (sign, h, m, ('%.8f' % (s + 100.0))[1:])
+
+Timestamp.MAX = Timestamp('99:59:59.99999999')
 
 
 class _Ffmpeg(Executable):

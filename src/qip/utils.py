@@ -45,8 +45,16 @@ class Timestamp(object):
             raise ValueError(value)
         self.seconds = seconds
 
+    def __bool__(self):
+        return bool(self.seconds)
+
     def __str__(self):
         s = self.seconds
+        if s < 0.0:
+            sign = '-'
+            s = -s
+        else:
+            sign = ''
         m = s // 60
         s = s - m * 60
         h = m // 60
@@ -62,7 +70,7 @@ class Timestamp(object):
                 string = string[:-6]
             else:
                 string = string[:-3]
-        return string + 's'
+        return sign + string + 's'
 
     def __repr__(self):
         return '%s(%r)' % (self.__class__.__name__, str(self))
@@ -72,6 +80,9 @@ class Timestamp(object):
 
     def __int__(self):
         return int(self.seconds)
+
+    def __neg__(self):
+        return self.__class__(-self.seconds)
 
     def __add__(self, other):
         if isinstance(other, Timestamp):
@@ -141,6 +152,7 @@ class TypedKeyDict(abc.ABC):
                     break
         return NotImplemented
 
+
 class TypedValueDict(abc.ABC):
 
     @abc.abstractmethod
@@ -162,6 +174,7 @@ class TypedValueDict(abc.ABC):
                         return True
                     break
         return NotImplemented
+
 
 def byte_decode(b, encodings=('utf-8', 'iso-8859-1', 'us-ascii')):
     if isinstance(b, str):
