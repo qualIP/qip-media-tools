@@ -252,7 +252,7 @@ class Ffmpeg(_Ffmpeg):
             ffmpeg_args += [
                 '-i', input_file,
                 '-t', Timestamp(cropdetect_duration),
-                '-filter:v', 'cropdetect=24:2:0:0',
+                '-filter:v', 'cropdetect',  # =24:2:0:0
                 ]
             ffmpeg_args += [
                 '-f', 'null', '-',
