@@ -96,16 +96,18 @@ class Mediainfo(Executable):
                     k = 'DisplayAspectRatio'
                 elif k == 'Width':
                     # 780 pixels
+                    # 1 920 pixels
                     k = 'Width'
-                    m = re.match(r'^(?P<v>\d+) pixels$', v)
+                    m = re.match(r'^(?P<v>\d+(?: \d\d\d)*) pixels$', v)
                     assert m, (k, v)
-                    v = m.group('v')
+                    v = m.group('v').replace(' ', '')
                 elif k == 'Height':
                     # 480 pixels
+                    # 1 080 pixels
                     k = 'Height'
-                    m = re.match(r'^(?P<v>\d+) pixels$', v)
+                    m = re.match(r'^(?P<v>\d+(?: \d\d\d)*) pixels$', v)
                     assert m, (k, v)
-                    v = m.group('v')
+                    v = m.group('v').replace(' ', '')
                 else:
                     continue  # skip
                 track_dict[k] = v
