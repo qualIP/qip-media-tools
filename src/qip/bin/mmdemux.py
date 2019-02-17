@@ -82,6 +82,12 @@ import qip.utils
 # https://www.ffmpeg.org/ffmpeg.html
 
 
+common_aspect_ratios = {
+    Ratio(4, 3),
+    Ratio(16, 9),   # 1.78:1 1920x1080 "FHD"
+    Ratio(40, 17),  # 2.35:1 1920x816  "CinemaScope"
+}
+
 def MOD_ROUND(v, m):
     return v if m == 1 else m * ((v + (m >> 1)) // m)
 
@@ -1264,10 +1270,15 @@ def action_optimize(inputdir, in_tags):
                         pixel_aspect_ratio = Ratio(stream_dict['pixel_aspect_ratio'])  # invariable
                         display_aspect_ratio = pixel_aspect_ratio * storage_aspect_ratio
                         if app.args.crop is None:
-                            app.log.error('Crop detection! --crop or --no-crop or --crop_whlt %s w/ DAR %s',
-                                          ' '.join(str(e) for e in stream_crop_whlt),
-                                          display_aspect_ratio)
-                            raise RuntimeError
+                            if display_aspect_ratio in common_aspect_ratios:
+                                app.log.warning('Crop detection result accepted: --crop_whlt %s w/ common DAR %s',
+                                                ' '.join(str(e) for e in stream_crop_whlt),
+                                                display_aspect_ratio)
+                            else:
+                                app.log.error('Crop detection! --crop or --no-crop or --crop_whlt %s w/ DAR %s',
+                                              ' '.join(str(e) for e in stream_crop_whlt),
+                                              display_aspect_ratio)
+                                raise RuntimeError
                         stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
 
                 mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
