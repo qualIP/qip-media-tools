@@ -2819,7 +2819,7 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Grouping",               "©grp",                     "utf-8",                    "grouping",                 "TT1",                      "TIT1",           []],
     # composer = mp4v2 writer
     ["Composer",               "©wrt",                     "utf-8",                    "composer",                 "TCM",                      "TCOM",           ["writer"]],
-    ["Comment",                "©cmt",                     "utf-8",                    "comment",                  None,                       None,             []],
+    ["Comment",                "©cmt",                     "utf-8",                    "comment",                  "COM",                      "COMM",           []],
     ["Genre ID",               "gnre",                     "enum",                     "genreID",                  None,                       None,             []],
     ["Genre",                  "©gen",                     "utf-8",                    "genre",                    "TCO",                      "TCON",           ["GenreType"]],
     # date = mp4v2 year
@@ -3228,14 +3228,19 @@ class SoundFile(MediaFile):
         import mutagen
         tags = TrackTags(album_tags=AlbumTags())
         for id3_tag, tag_value in mf.items():
+            # COMM::eng -> COMM
+            if id3_tag.endswith('::eng'):
+                id3_tag = id3_tag[0:-5]
+            elif id3_tag.endswith(':eng'):
+                id3_tag = id3_tag[0:-4]
             id3_tag = {
                 'APIC:': 'APIC',
                 }.get(id3_tag, id3_tag)
             if id3_tag in (
-                    'COMM:iTunNORM:eng',  # TODO
-                    'COMM:iTunPGAP:eng',  # TODO
-                    'COMM:iTunSMPB:eng',  # TODO
-                    'COMM:iTunes_CDDB_IDs:eng',  # TODO
+                    'COMM:iTunNORM',  # TODO
+                    'COMM:iTunPGAP',  # TODO
+                    'COMM:iTunSMPB',  # TODO
+                    'COMM:iTunes_CDDB_IDs',  # TODO
                     'TDRC',  # TODO
                     'UFID:http://www.cddb.com/id3/taginfo1.html',  # TODO
                     ):
