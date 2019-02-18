@@ -516,18 +516,36 @@ def action_rip(rip_dir, device):
 def pick_framerate(ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
     ffprobe_r_framerate = FrameRate(ffprobe_stream_json['r_frame_rate'])
     ffprobe_avg_framerate = FrameRate(ffprobe_stream_json['avg_frame_rate'])
-    assert ffprobe_r_framerate == ffprobe_avg_framerate \
-        or ffprobe_r_framerate == ffprobe_avg_framerate * 2
-    framerate = ffprobe_avg_framerate
     mediainfo_format = mediainfo_track_dict['Format']
+    mediainfo_framerate = FrameRate(mediainfo_track_dict['FrameRate'])
+    mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
+    mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
+
+    if (
+            ffprobe_r_framerate == FrameRate(60000, 1001) and
+            ffprobe_avg_framerate in (FrameRate(30000, 1001),  # 29.97
+                                      FrameRate(31, 1),        # 31.00
+                                      FrameRate(57, 2),        # 28.50
+                                      FrameRate(113, 4),       # 28.25
+                                      ) and
+            mediainfo_format == 'MPEG Video' and
+            mediainfo_scantype == 'Progressive' and
+            mediainfo_scanorder == '2:3 Pulldown' and
+            mediainfo_framerate == FrameRate(24000, 1001)):
+        # Common 2:3 Pulldown cases; mediainfo is right.
+        return mediainfo_framerate
+
+    assert (
+        ffprobe_r_framerate == ffprobe_avg_framerate
+        or ffprobe_r_framerate == ffprobe_avg_framerate * 2), \
+        (ffprobe_r_framerate, ffprobe_avg_framerate)
+    framerate = ffprobe_avg_framerate
+
     if mediainfo_format in ('FFV1',):
         # mediainfo's ffv1 framerate is all over the place (24 instead of 23.976 for .ffv1.mkv and total number of frames for .ffv1.avi)
         pass
     else:
-        mediainfo_framerate = FrameRate(mediainfo_track_dict['FrameRate'])
         if framerate != mediainfo_framerate:
-            mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
-            mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
             if (mediainfo_scantype, mediainfo_scanorder) == (None, None):
                 # Assume Progressive
                 pass
@@ -535,7 +553,7 @@ def pick_framerate(ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
                 pass
             elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
                 # Rely on mediainfo's framerate
-                framerate = mediainfo_framerate
+                return mediainfo_framerate
             else:
                 raise ValueError('Inconsistent framerate: %s vs mediainfo=%s' % (framerate, mediainfo_framerate))
     return framerate
