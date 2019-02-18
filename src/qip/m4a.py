@@ -224,7 +224,7 @@ class M4aFile(snd.SoundFile):
                         ), file=fp)
                     if hasattr(inputfile, 'duration'):
                         print('duration %.3f' % (inputfile.duration,), file=fp)
-            safe_write_file_eval(filesfile, body)
+            safe_write_file_eval(filesfile, body, text=True)
             app.log.info('Files:\n' +
                          re.sub(r'^', '    ', safe_read_file(filesfile), flags=re.MULTILINE))
             ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', filesfile.file_name]

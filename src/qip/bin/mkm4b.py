@@ -482,7 +482,7 @@ def mkm4b(inputfiles, default_tags):
                     ), file=fp)
                 if hasattr(inputfile, 'duration'):
                     print('duration %.3f' % (inputfile.duration,), file=fp)
-        safe_write_file_eval(filesfile, body)
+        safe_write_file_eval(filesfile, body, text=True)
         print('Files:')
         print(re.sub(r'^', '    ', safe_read_file(filesfile), flags=re.MULTILINE))
 
@@ -512,7 +512,7 @@ def mkm4b(inputfiles, default_tags):
                 else:
                     offset += inputfile.duration
             expected_duration = offset
-        safe_write_file_eval(chapters_file, body)
+        safe_write_file_eval(chapters_file, body, text=True)
     print('Chapters:')
     print(re.sub(r'^', '    ', safe_read_file(chapters_file), flags=re.MULTILINE))
     if expected_duration is not None:

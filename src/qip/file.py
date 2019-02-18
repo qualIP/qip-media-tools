@@ -323,7 +323,11 @@ def safe_write_file_eval(file, body, *, text=False, encoding='utf-8'):
                 not os.access(os.path.dirname(file), os.W_OK))):
         pass # XXXJST TODO: raise Exception('couldn\'t open "%s"' % (file,))
     with TempFile(file + '.tmp') as tmp_file:
-        with tmp_file.open(mode='wt' if text else "wb", encoding=encoding) as fp:
+        open_kwargs = {}
+        if text:
+            open_kwargs['encoding'] = encoding
+        with tmp_file.open(mode='wt' if text else "wb",
+                           **open_kwargs) as fp:
             ret = body(fp)
         shutil.move(tmp_file.file_name, file)
         tmp_file.delete = False
