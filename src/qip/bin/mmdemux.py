@@ -795,7 +795,11 @@ def action_mux(inputfile, in_tags):
                                 output_track_file_name,
                             )]
                         do_spawn_cmd(cmd)
-                elif False:
+                elif stream_codec_name in (
+                        'vp8',
+                        'vp9',
+                        ):
+                    # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
                     with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
                         force_format = None
                         try:
