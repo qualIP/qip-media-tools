@@ -383,9 +383,9 @@ def edvar(value, *, json=None, suffix=None, encoding='utf-8'):
 
         tmp_file.fp = tmp_file.open(mode='r', encoding=encoding)
         if json:
-            new_value = json.load(tmp_file.fp)
+            new_value = qip.json.load(tmp_file.fp)
         else:
-            new_value = json.read()
+            new_value = qip.json.read()
         tmp_file.close()
 
         #if type(new_value) is not type(value):
