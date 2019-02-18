@@ -218,10 +218,34 @@ class Executable(metaclass=abc.ABCMeta):
             d.elapsed_time = t1 - t0
         return d
 
+    def _popen(self, *args, dry_run=False,
+               stdin=None, stdout=None, stderr=None,
+               text=None, encoding=None,
+               **kwargs):
+        """p1 = myexe1.popen([...], stdout=subprocess.PIPE)
+           p2 = myexe2.popen([...], stdin=p1.stdout, stdout=myfile.fp)
+        """
+        cmd = self.build_cmd(*args, **kwargs)
+        if dry_run:
+            log.verbose('CMD (dry-run): %s',
+                        subprocess.list2cmdline(cmd))
+            d = types.SimpleNamespace()
+            d.stdout = None
+            return d
+        else:
+            return subprocess.Popen(
+                cmd,
+                stdin=stdin, stdout=stdout, stderr=stderr,
+                text=text, encoding=encoding,
+                )
+
     def run(self, *args, **kwargs):
         return self._run(*args, **kwargs)
 
     __call__ = run
+
+    def popen(self, *args, **kwargs):
+        return self._popen(*args, **kwargs)
 
 class PipedExecutable(Executable):
     pass

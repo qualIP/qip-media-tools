@@ -146,6 +146,9 @@ class File(object):
         raise ValueError('I/O operation on closed file')  # like file objects
 
     def pvopen(self, mode='r', encoding=None):
+        """p1 = myfile.pvopen()
+           p2 = myexe2.popen([...], stdin=p1)
+        """
         assert 'r' in mode
         if not shutil.which('pv'):
             return self.open(mode=mode, encoding=encoding)
@@ -155,12 +158,12 @@ class File(object):
         if 't' not in mode and 'b' not in mode:
             mode += self.open_mode
         p = subprocess.Popen(['pv', self.file_name],
-                  stdout=subprocess.PIPE,
-                  text=(
-                      True if 't' in mode else (
-                          False if 'b' in mode else
-                          None)),
-                  encoding=encoding,
+                             stdout=subprocess.PIPE,
+                             text=(
+                                 True if 't' in mode else (
+                                     False if 'b' in mode else
+                                     None)),
+                             encoding=encoding,
                   )
         return p.stdout
 
