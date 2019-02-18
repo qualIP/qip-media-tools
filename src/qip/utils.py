@@ -9,6 +9,7 @@ __all__ = (
 import abc
 import collections
 from fractions import Fraction
+from decimal import Decimal
 import functools
 import re
 import logging
@@ -201,17 +202,20 @@ class Ratio(Fraction):
     '''num:den ratio format'''
 
     def __new__(cls, numerator=0, denominator=None, **kwargs):
-        if isinstance(numerator, str):
-            try:
-                numerator = int(numerator)
-            except ValueError:
-                try:
-                    numerator = float(numerator)
-                except ValueError:
-                    numerator = numerator.replace(':', '/')
-        if isinstance(denominator, str):
+        if denominator is None:
+            if isinstance(numerator, str):
+                numerator = numerator.replace(':', '/')
+                m = re.match(r'^(?P<num>\d+(?:\.\d+)?)(?:/1)?$', numerator)
+                if m:
+                    numerator = Decimal(m.group('num'))
+        elif type(numerator) is str is type(denominator):
+            numerator = int(numerator)
             denominator = int(denominator)
-        return super().__new__(cls, numerator, denominator, **kwargs)
+        try:
+            return super().__new__(cls, numerator, denominator, **kwargs)
+        except Exception as e:
+            log.debug('%s: %s(%r, %r)', e, cls.__name__, numerator, denominator)
+            raise
 
     def to_str(self, *, separator=':', force_denominator=True):
         if not force_denominator and self._denominator == 1:
