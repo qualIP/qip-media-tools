@@ -908,8 +908,10 @@ def action_mux(inputfile, in_tags):
                         # subqequent P or B frames, the start time will be
                         # incorrect.
                         app.log.warning('Fixing first chapter start time rf %s to 0', v)
-                        e.tag = 'orig_ChapterTimeStart'
-                        e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
+                        if False:
+                            # mkvpropedit doesn't like unknown elements
+                            e.tag = 'orig_ChapterTimeStart'
+                            e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
                         e.text = str(ffmpeg.Timestamp(0))
                         chapters_xml_io = io.StringIO()
                         chapters_xml.write(chapters_xml_io,
