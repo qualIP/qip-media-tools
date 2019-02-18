@@ -477,7 +477,8 @@ def clean_Tag_elements(root):
 def taged_MKV(file_name, tags):
     # https://matroska.org/technical/specs/tagging/index.html
     with TempFile(file_name + '.tags.tmp.xml',
-                  delete=not getattr(app.args, 'save_temps', False)) as tmp_tags_xml_file:
+                  delete=not (__name__ == "__main__" and getattr(app.args, 'save_temps', False)),
+                  ) as tmp_tags_xml_file:
         tags_xml = None
         for tag, value in tags.items():
             tag = tag.name
