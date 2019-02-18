@@ -326,6 +326,7 @@ class SoundTagEnum(enum.Enum):
     title = 'title'  # STR  Set the song title
     subtitle = 'subtitle'  # STR
     composer = 'composer'  # STR  Set the composer information (writer)
+    publisher = 'publisher'  # STR  Set the publisher information
     # TODO originalartist = 'originalartist'
 
     date = 'date'  # None|SoundTagDate
@@ -2878,10 +2879,11 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Owner",                  "ownr",                     "utf-8",                    "owner",                    None,                       None,             []],
     # Non-mp4v2 {{{
     ["Content Type",           None,                       None,                       "contentType",              None,                       None,             ["CONTENT_TYPE"]],
+    ["Publisher",              None,                       None,                       "publisher",                "TPB",                      "TPUB",           []],
     # }}}
     # As per operon {{{
     ["Release Country",        "----:com.apple.iTunes:MusicBrainz Album Release Country", "utf-8", 'country',      None,                       None,             []],
-    ["Language",               "----:com.apple.iTunes:LANGUAGE"                         , "utf-8", None,           None,                       None,             ['language']],
+    ["Language",               "----:com.apple.iTunes:LANGUAGE"                         , "utf-8", None,           "TLA",                      "TLAN",           ['language']],
     # "----:com.apple.iTunes:CONDUCTOR": "conductor",
     # "----:com.apple.iTunes:DISCSUBTITLE": "discsubtitle",
     # "----:com.apple.iTunes:MOOD": "mood",
@@ -3243,6 +3245,7 @@ class SoundFile(MediaFile):
                     'COMM:iTunes_CDDB_IDs',  # TODO
                     'TDRC',  # TODO
                     'UFID:http://www.cddb.com/id3/taginfo1.html',  # TODO
+                    'TXXX:OverDrive MediaMarkers',  # TODO
                     ):
                 continue
             try:
