@@ -86,6 +86,7 @@ common_aspect_ratios = {
     Ratio(4, 3),
     Ratio(16, 9),   # 1.78:1 1920x1080 "FHD"
     Ratio(40, 17),  # 2.35:1 1920x816  "CinemaScope"
+    Ratio(12, 5),   # 2.40:1 1920x800  "CinemaScope"
 }
 
 def MOD_ROUND(v, m):
