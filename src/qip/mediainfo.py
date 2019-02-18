@@ -76,15 +76,16 @@ class Mediainfo(Executable):
                     v = re.sub(r' s *', 's', v)
                     v = str(Timestamp(v).seconds)
                 elif k == 'Frame rate':
+                    # 1 000.000 FPS
                     # 23.976 (24000/1001) FPS
                     k = 'FrameRate'
                     m = re.match(r'^(?P<float>\d+\.\d+) \((?P<ratio>\d+/\d+)\) FPS$', v)
                     if m:
                         v = m.group('ratio')
                     else:
-                        m = re.match(r'^(?P<float>\d+\.\d+) FPS$', v)
+                        m = re.match(r'^(?P<float>\d+(?: \d+)*\.\d+) FPS$', v)
                         if m:
-                            v = m.group('float')
+                            v = m.group('float').replace(' ', '')
                         else:
                             raise ValueError((k, v))
                 elif k == 'Scan type':
@@ -93,6 +94,7 @@ class Mediainfo(Executable):
                     k = 'ScanOrder'
                 elif k == 'Display aspect ratio':
                     # 16:9
+                    # 2.40:1
                     k = 'DisplayAspectRatio'
                 elif k == 'Width':
                     # 780 pixels
