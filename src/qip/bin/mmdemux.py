@@ -70,7 +70,7 @@ import qip.snd
 import qip.utils
 
 #map_RatioConverter = {
-#    Ratio("186:157"): 
+#    Ratio("186:157"):
 #    Ratio("279:157"):
 #}
 #def RatioConverter(ratio)
@@ -299,6 +299,7 @@ def codec_name_to_ext(codec_name):
     return codec_ext
 
 def ext_to_container(ext):
+    ext = os.path.splitext('x' + ext)[1]
     try:
         ext_container = {
             '.mkv': 'matroska',
@@ -306,19 +307,18 @@ def ext_to_container(ext):
             # video
             '.y4m': 'yuv4mpegpipe',
             '.mpeg2': 'mpeg2video',
-            '.mpeg2.mp2v': 'mpeg2video',
+            '.mp2v': 'mpeg2video',
             '.mpegts': 'mpegts',
             '.h264': 'h264',
             #'.h265': 'h265',
             '.vp8': 'ivf',
-            '.vp8.ivf': 'ivf',
             '.vp9': 'ivf',
-            '.vp9.ivf': 'ivf',
+            '.ivf': 'ivf',
             # audio
             #'.ac3': 'ac3',
             #'.dts': 'dts',
             '.opus': 'ogg',
-            '.opus.ogg': 'ogg',
+            '.ogg': 'ogg',
             #'.aac': 'aac',
             '.wav': 'wav',
             # subtitles
@@ -1195,9 +1195,79 @@ def action_optimize(inputdir, in_tags):
                             finally:
                                 stream_file.close()
                             p.communicate()
+                            assert p.returncode == 0
 
                         done_optimize_iter()
                         continue
+
+                    elif True:
+
+                        new_stream_file_ext = '.ffv1.mkv'
+                        new_stream_file_name = stream_file_base + '.pullup' + new_stream_file_ext
+                        new_stream_file = MediaFile(os.path.join(inputdir, new_stream_file_name))
+                        app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+
+                        ffmpeg_dec_args = [
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-vf', 'fieldmatch,yadif=deint=interlaced',
+                            '-pix_fmt', 'yuv420p',
+                            '-nostats',  # will expect progress on output
+                            '-f', ext_to_container('.y4m'),
+                            '--', 'pipe:',
+                        ]
+
+                        yuvkineco_cmd = [
+                            'yuvkineco',
+                        ]
+                        if framerate == FrameRate(24000, 1001):
+                            yuvkineco_cmd += ['-F', '1']
+                        elif framerate == FrameRate(30000, 1001):
+                            yuvkineco_cmd += ['-F', '4']
+                        else:
+                            raise NotImplementedError(framerate)
+                        yuvkineco_cmd += ['-n', '2']  # Noise level (default: 10)
+                        yuvkineco_cmd += ['-i', '-1']  # Disable deinterlacing
+
+                        ffmpeg_enc_args = [
+                            '-i', 'pipe:0',
+                            '-f', ext_to_container(new_stream_file_ext),
+                            os.path.join(inputdir, new_stream_file_name),
+                        ]
+
+                        with perfcontext('Pullup w/ -> .y4m -> yuvkineco -> .ffv1'):
+                            p1 = ffmpeg.popen(*ffmpeg_dec_args,
+                                              stdout=subprocess.PIPE,
+                                              dry_run=app.args.dry_run)
+                            try:
+                                if app.args.dry_run:
+                                    app.log.verbose('CMD (dry-run): %s',
+                                                    subprocess.list2cmdline(yuvkineco_cmd))
+                                    p2 = types.SimpleNamespace()
+                                    p2.stdout = None
+                                else:
+                                    p2 = subprocess.Popen(yuvkineco_cmd,
+                                                          stdin=p1.stdout,
+                                                          stdout=subprocess.PIPE)
+                                try:
+                                    # 500% CPU!
+                                    p3 = ffmpeg.popen(*ffmpeg_enc_args,
+                                                      stdin=p2.stdout,
+                                                      dry_run=app.args.dry_run,
+                                                      y=app.args.yes)
+                                finally:
+                                    if not app.args.dry_run:
+                                        p2.stdout.close()
+                            finally:
+                                if not app.args.dry_run:
+                                    p1.stdout.close()
+                            if not app.args.dry_run:
+                                p3.communicate()
+                                assert p3.returncode == 0
+
+                        done_optimize_iter()
+                        continue
+
+                        expected_framerate = framerate
 
                     elif True:
                         # -> .y4m -> yuvkineco -> .y4m
