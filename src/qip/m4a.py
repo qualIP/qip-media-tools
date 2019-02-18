@@ -61,12 +61,13 @@ class M4aFile(snd.SoundFile):
                 picture = TempFile.mkstemp(suffix='.png')
             if str(src_picture) != str(picture):
                 app.log.info('Writing new picture %s...', picture)
-            cmd = [shutil.which('ffmpeg')]
+            from qip.ffmpeg import ffmpeg
+            ffmpeg_args = []
             if True or yes:
-                cmd += ['-y']
-            cmd += ['-i', str(src_picture)]
-            cmd += ['-an', str(picture)]
-            do_exec_cmd(cmd, stderr=subprocess.STDOUT)
+                ffmpeg_args += ['-y']
+            ffmpeg_args += ['-i', str(src_picture)]
+            ffmpeg_args += ['-an', str(picture)]
+            ffmpeg(*ffmpeg)
             src_picture = picture
         if ipod_compat and shutil.which('gm'):
             if keep_picture_file_name:
