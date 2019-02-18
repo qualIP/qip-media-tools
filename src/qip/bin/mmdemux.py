@@ -2192,6 +2192,9 @@ def action_demux(inputdir, in_tags):
             ]
         time_offset = 0  # ffmpeg.Timestamp(-0.007)
         new_stream_index = -1
+        has_opus_streams = any(
+                my_splitext(stream_dict['file_name'])[1] in ('.opus', '.opus.ogg')
+                for stream_dict in mux_dict['streams'])
         for stream_index, stream_dict in sorted((stream_dict['index'], stream_dict)
                                                 for stream_dict in mux_dict['streams']):
             if stream_dict.get('skip', False):
@@ -2231,7 +2234,7 @@ def action_demux(inputdir, in_tags):
             display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
             if display_aspect_ratio:
                 ffmpeg_output_args += ['-aspect:%d' % (new_stream_index,), display_aspect_ratio]
-            if stream_codec_type == 'audio' and stream_file_ext in ('.opus', '.opus.ogg'):
+            if has_opus_streams and stream_file_ext in ('.opus', '.opus.ogg'):
                 # Note that this is not needed if the audio track is wrapped in a mkv container
                 ffmpeg_input_args += [
                     '-itsoffset', -ffmpeg.Timestamp.MAX,
