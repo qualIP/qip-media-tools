@@ -236,7 +236,8 @@ class Executable(metaclass=abc.ABCMeta):
             return subprocess.Popen(
                 cmd,
                 stdin=stdin, stdout=stdout, stderr=stderr,
-                text=text, encoding=encoding,
+                universal_newlines=text,  # 3.7: text=text
+                encoding=encoding,
                 )
 
     def run(self, *args, **kwargs):
