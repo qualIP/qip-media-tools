@@ -1212,6 +1212,7 @@ def action_optimize(inputdir, in_tags):
                             '-vf', 'fieldmatch,yadif=deint=interlaced',
                             '-pix_fmt', 'yuv420p',
                             '-nostats',  # will expect progress on output
+                            '-vcodec', 'yuv4',
                             '-f', ext_to_container('.y4m'),
                             '--', 'pipe:',
                         ]
@@ -1230,6 +1231,7 @@ def action_optimize(inputdir, in_tags):
 
                         ffmpeg_enc_args = [
                             '-i', 'pipe:0',
+                            '-vcodec', 'ffv1',
                             '-f', ext_to_container(new_stream_file_ext),
                             os.path.join(inputdir, new_stream_file_name),
                         ]
@@ -2328,7 +2330,7 @@ def action_demux(inputdir, in_tags):
                     '-itsoffset', -ffmpeg.Timestamp.MAX,
                     ]
             if stream_codec_type == 'video':
-                if stream_file_ext in ('.vp9.ivf',):
+                if stream_file_ext in ('.vp9', '.vp9.ivf',):
                     # ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
                     tmp_stream_file_name = stream_file_name + '.mkv'
                     ffmpeg(*[
