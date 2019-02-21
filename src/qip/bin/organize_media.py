@@ -604,6 +604,7 @@ def organize(inputfile):
         raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
     app.log.info('Organizing %s...', inputfile)
     inputfile.extract_info(need_actual_duration=False)
+    inputfile.tags = inputfile.load_tags()
     if app.log.isEnabledFor(logging.DEBUG):
         dump_tags(inputfile.tags)
 
