@@ -44,16 +44,16 @@ class Mediainfo(Executable):
             if line == '':
                 continue
             track_type = line
-            m = re.match(r'^Text #(\d+)$', track_type)
+            m = re.match(r'^(?P<track_type>\w+) #(\d+)$', track_type)
             if m:
-                track_type = 'Text'
+                track_type = m.group('track_type')
             assert track_type in (
                 'General',
                 'Video',
                 'Audio',
                 'Text',
                 'Menu',
-            )
+            ), track_type
             track_dict = {
                 '@type': track_type,
             }
@@ -61,10 +61,15 @@ class Mediainfo(Executable):
                 line = parser.line.strip()
                 if line == '':
                     break
-                m = re.match(r'^(?P<k>[^:]+): (?P<v>.*)$', line)
+                m = (
+                        re.match(r'^(?P<k>[^:]+): (?P<v>.*)$', line) or
+                        re.match(r'^(?P<k>\d\d:\d\d:\d\d.\d\d\d) *: (?P<v>.*)$', line)  # (Menu) 00:00:00.000  : en:Chapter 01
+                        )
                 assert m, line
                 k, v = m.group('k').strip(), m.group('v').strip()
-                if k == 'Format':
+                if k == 'ID':
+                    k = 'ID'
+                elif k == 'Format':
                     k = 'Format'
                 elif k == 'Format version':
                     k = 'FormatVersion'
@@ -74,20 +79,26 @@ class Mediainfo(Executable):
                     v = re.sub(r' h *', 'h', v)
                     v = re.sub(r' min *', 'm', v)
                     v = re.sub(r' s *', 's', v)
+                    v = re.sub(r'(\d+)s(\d\d\d+) ms', r'\1.\2s', v)
                     v = str(Timestamp(v).seconds)
                 elif k == 'Frame rate':
-                    # 1 000.000 FPS
-                    # 23.976 (24000/1001) FPS
                     k = 'FrameRate'
+                    # 23.976 (24000/1001) FPS
                     m = re.match(r'^(?P<float>\d+\.\d+) \((?P<ratio>\d+/\d+)\) FPS$', v)
                     if m:
                         v = m.group('ratio')
                     else:
-                        m = re.match(r'^(?P<float>\d+(?: \d+)*\.\d+) FPS$', v)
+                        # 1 000.000 FPS
+                        m = re.match(r'^(?P<float>\d+(?: \d\d\d)*\.\d+) FPS$', v)
                         if m:
                             v = m.group('float').replace(' ', '')
                         else:
-                            raise ValueError((k, v))
+                            # 31.250 FPS (1536 SPF)
+                            m = re.match(r'^(?P<float>\d+(?: \d\d\d)*\.\d+) FPS \((?P<spf>\d+) SPF\)$', v)
+                            if m:
+                                v = m.group('float').replace(' ', '')
+                            else:
+                                raise ValueError((k, v))
                 elif k == 'Scan type':
                     k = 'ScanType'
                 elif k == 'Scan order':
