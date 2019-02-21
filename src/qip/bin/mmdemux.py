@@ -669,6 +669,7 @@ def action_mux(inputfile, in_tags):
         else:
             d['episode'] = [int(e) for e in str_episodes.split('E') if e]
         mux_dict['tags'].update(d)
+    mux_dict['tags'].update(inputfile.load_tags() or {})
     mux_dict['tags'].update(in_tags)
     if app.args.interactive:
         # for tag in set(SoundTagEnum) - set(SoundTagEnum.iTunesInternalTags):
