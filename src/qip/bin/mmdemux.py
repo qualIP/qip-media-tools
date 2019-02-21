@@ -1148,78 +1148,32 @@ def action_optimize(inputdir, in_tags):
                     if '23pulldown' in stream_file_base.split('.'):
                         mediainfo_scanorder = '2:3 Pulldown'
 
-                if (mediainfo_scantype, mediainfo_scanorder) == (None, None):
-                    # Assume Progressive
-                    pass
-                elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', None):
-                    pass
-                elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
+                if (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
 
-                    if stream_file_ext == '.y4m':
-                        assert framerate == FrameRate(30000, 1001)
-                        framerate = FrameRate(24000, 1001)
-                        app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
+                    if True:
 
-                        new_stream_file_ext = '.y4m'
+                        new_stream_file_ext = '.ffv1.mkv'
                         new_stream_file_name = '.'.join(e for e in stream_file_base.split('.')
                                                         if e not in ('23pulldown',)) \
                             + '.pullup' + new_stream_file_ext
                         new_stream_file = MediaFile(os.path.join(inputdir, new_stream_file_name))
                         app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
-                        cmd = [
-                            'yuvkineco',
-                        ]
-                        if framerate == FrameRate(24000, 1001):
-                            cmd += ['-F', '1']
-                        elif framerate == FrameRate(30000, 1001):
-                            cmd += ['-F', '4']
+                        if stream_file_ext == '.y4m':
+                            assert framerate == FrameRate(30000, 1001)
+                            framerate = FrameRate(24000, 1001)
+                            app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
+                            ffmpeg_dec_args = None
                         else:
-                            raise NotImplementedError(framerate)
-                        cmd += ['-n', '2']  # Noise level (default: 10)
-                        cmd += ['-i', '-1']  # Disable deinterlacing
-                        if app.args.dry_run:
-                            app.log.verbose('CMD (dry-run): %s < %s > %s',
-                                        subprocess.list2cmdline(cmd),
-                                        stream_file,
-                                        new_stream_file)
-                        else:
-                            if app.log.isEnabledFor(logging.DEBUG):
-                                app.log.verbose('CMD: %s < %s > %s',
-                                            subprocess.list2cmdline(cmd),
-                                            stream_file,
-                                            new_stream_file)
-                            stream_file.fp = stream_file.pvopen(mode='r')
-                            try:
-                                new_stream_file.fp = new_stream_file.open(mode='w')
-                                try:
-                                    p = subprocess.Popen(cmd, stdin=stream_file.fp, stdout=new_stream_file.fp)
-                                finally:
-                                    new_stream_file.close()
-                            finally:
-                                stream_file.close()
-                            p.communicate()
-                            assert p.returncode == 0
-
-                        done_optimize_iter()
-                        continue
-
-                    elif True:
-
-                        new_stream_file_ext = '.ffv1.mkv'
-                        new_stream_file_name = stream_file_base + '.pullup' + new_stream_file_ext
-                        new_stream_file = MediaFile(os.path.join(inputdir, new_stream_file_name))
-                        app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
-
-                        ffmpeg_dec_args = [
-                            '-i', os.path.join(inputdir, stream_file_name),
-                            '-vf', 'fieldmatch,yadif=deint=interlaced',
-                            '-pix_fmt', 'yuv420p',
-                            '-nostats',  # will expect progress on output
-                            '-vcodec', 'yuv4',
-                            '-f', ext_to_container('.y4m'),
-                            '--', 'pipe:',
-                        ]
+                            ffmpeg_dec_args = [
+                                '-i', os.path.join(inputdir, stream_file_name),
+                                '-vf', 'fieldmatch,yadif=deint=interlaced',
+                                '-pix_fmt', 'yuv420p',
+                                '-nostats',  # will expect progress on output
+                                # '-vcodec', 'yuv4',  # yuv4mpegpipe ERROR: Codec not supported.
+                                '-f', ext_to_container('.y4m'),
+                                '--', 'pipe:',
+                            ]
 
                         yuvkineco_cmd = [
                             'yuvkineco',
@@ -1241,19 +1195,19 @@ def action_optimize(inputdir, in_tags):
                         ]
 
                         with perfcontext('Pullup w/ -> .y4m -> yuvkineco -> .ffv1'):
-                            p1 = ffmpeg.popen(*ffmpeg_dec_args,
-                                              stdout=subprocess.PIPE,
-                                              dry_run=app.args.dry_run)
+                            if ffmpeg_dec_args:
+                                p1 = ffmpeg.popen(*ffmpeg_dec_args,
+                                                  stdout=subprocess.PIPE,
+                                                  dry_run=app.args.dry_run)
+                                p1_out = p1.stdout
+                            elif not app.args.dry_run:
+                                p1_out = stream_file.fp = stream_file.pvopen(mode='r')
+                            else:
+                                p1_out = None
                             try:
-                                if app.args.dry_run:
-                                    app.log.verbose('CMD (dry-run): %s',
-                                                    subprocess.list2cmdline(yuvkineco_cmd))
-                                    p2 = types.SimpleNamespace()
-                                    p2.stdout = None
-                                else:
-                                    p2 = subprocess.Popen(yuvkineco_cmd,
-                                                          stdin=p1.stdout,
-                                                          stdout=subprocess.PIPE)
+                                p2 = do_popen_cmd(yuvkineco_cmd,
+                                                  stdin=p1_out,
+                                                  stdout=subprocess.PIPE)
                                 try:
                                     # 500% CPU!
                                     p3 = ffmpeg.popen(*ffmpeg_enc_args,
@@ -1265,37 +1219,15 @@ def action_optimize(inputdir, in_tags):
                                         p2.stdout.close()
                             finally:
                                 if not app.args.dry_run:
-                                    p1.stdout.close()
+                                    if ffmpeg_dec_args:
+                                        p1.stdout.close()
+                                    else:
+                                        stream_file.close()
                             if not app.args.dry_run:
                                 p3.communicate()
                                 assert p3.returncode == 0
 
-                        done_optimize_iter()
-                        continue
-
                         expected_framerate = framerate
-
-                    elif True:
-                        # -> .y4m -> yuvkineco -> .y4m
-                        new_stream_file_ext = '.y4m'
-                        new_stream_file_name = stream_file_base + '.23pulldown' + new_stream_file_ext
-                        new_stream_file = MediaFile(os.path.join(inputdir, new_stream_file_name))
-                        app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
-
-                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                            ffmpeg_args = [
-                                '-i', os.path.join(inputdir, stream_file_name),
-                                '-vf', 'fieldmatch,yadif=deint=interlaced',
-                                '-pix_fmt', 'yuv420p',
-                            ]
-                            ffmpeg_args += [
-                                '-f', ext_to_container(new_stream_file_ext),
-                                os.path.join(inputdir, new_stream_file_name),
-                            ]
-                            ffmpeg(*ffmpeg_args,
-                                   #slurm=True,  # No slurm; More disk-bound than CPU.
-                                   dry_run=app.args.dry_run,
-                                   y=app.args.yes)
 
                         done_optimize_iter()
                         continue
@@ -1332,8 +1264,6 @@ def action_optimize(inputdir, in_tags):
 
                         done_optimize_iter()
                         continue
-                else:
-                    raise NotImplementedError((mediainfo_scantype, mediainfo_scanorder))
 
                 new_stream_file_ext = '.vp9.ivf'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
@@ -1349,6 +1279,34 @@ def action_optimize(inputdir, in_tags):
                 extra_args = []
                 video_filter_specs = []
 
+                mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
+                mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
+                ffprobe_field_order = ffprobe_stream_json.get('field_order', None)
+                if (mediainfo_scantype, mediainfo_scanorder) == (None, None):
+                    # Assume Progressive
+                    assert ffprobe_field_order == 'progressive'
+                    pass
+                elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', None):
+                    assert ffprobe_field_order == 'progressive'
+                    pass
+                elif (mediainfo_scantype, mediainfo_scanorder) == ('Interlaced', 'Top Field First'):
+                    assert ffprobe_field_order in ('tt', 'tb')
+                    # ‘tt’ Interlaced video, top field coded and displayed first
+                    # ‘tb’ Interlaced video, top coded first, bottom displayed first
+                    # https://ffmpeg.org/ffmpeg-filters.html#yadif
+                    video_filter_specs.append('yadif=parity=tff')
+                elif (mediainfo_scantype, mediainfo_scanorder) == ('Interlaced', 'Bottom Field First'):
+                    assert ffprobe_field_order in ('bb', 'bt')
+                    # ‘bb’ Interlaced video, bottom field coded and displayed first
+                    # ‘bt’ Interlaced video, bottom coded first, top displayed first
+                    # https://ffmpeg.org/ffmpeg-filters.html#yadif
+                    video_filter_specs.append('yadif=parity=bff')
+                elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
+                    assert NotImplementedError('pulldown should have been corrected already using yuvkineco or mencoder!')
+                    video_filter_specs.append('pullup,fps=%s' % (framerate,))
+                else:
+                    raise NotImplementedError((mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order))
+
                 if app.args.crop in (None, True):
                     stream_crop_whlt = app.args.crop_whlt or stream_dict.pop('crop', None)
                     if not stream_crop_whlt and 'original_crop' not in stream_dict:
@@ -1357,6 +1315,7 @@ def action_optimize(inputdir, in_tags):
                             # Seek 5 minutes in
                             #cropdetect_seek=max(0.0, min(300.0, float(mediainfo_duration) - 300.0)),
                             cropdetect_duration=app.args.cropdetect_duration,
+                            video_filter_specs=video_filter_specs,
                             dry_run=app.args.dry_run)
                     if stream_crop_whlt and (stream_crop_whlt[0], stream_crop_whlt[1]) == (mediainfo_width, mediainfo_height):
                         stream_crop_whlt = None
@@ -1381,19 +1340,6 @@ def action_optimize(inputdir, in_tags):
                                               display_aspect_ratio)
                                 raise RuntimeError
                         stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
-
-                mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
-                mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
-                if (mediainfo_scantype, mediainfo_scanorder) == (None, None):
-                    # Assume Progressive
-                    pass
-                elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', None):
-                    pass
-                elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
-                    assert NotImplementedError('pulldown should have been corrected already using mencoder!')
-                    video_filter_specs.append('pullup,fps=%s' % (framerate,))
-                else:
-                    raise NotImplementedError((mediainfo_scantype, mediainfo_scanorder))
 
                 if video_filter_specs:
                     extra_args += ['-filter:v', ','.join(video_filter_specs)]
