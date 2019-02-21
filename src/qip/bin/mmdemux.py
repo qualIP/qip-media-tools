@@ -919,30 +919,30 @@ def action_mux(inputfile, in_tags):
                                   log_append=' > %s' % (output_chapters_file_name,),
                                   #stderr=subprocess.STDOUT,
                                  )
-            chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
-            chapters_root = chapters_xml.getroot()
-            for eEditionEntry in chapters_root.findall('EditionEntry'):
-                for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
-                    e = eChapterAtom.find('ChapterTimeStart')
-                    v = ffmpeg.Timestamp(e.text)
-                    if v != 0.0:
-                        # In case initial frame is a I frame to be displayed after
-                        # subqequent P or B frames, the start time will be
-                        # incorrect.
-                        app.log.warning('Fixing first chapter start time rf %s to 0', v)
-                        if False:
-                            # mkvpropedit doesn't like unknown elements
-                            e.tag = 'orig_ChapterTimeStart'
-                            e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
-                        e.text = str(ffmpeg.Timestamp(0))
-                        chapters_xml_io = io.StringIO()
-                        chapters_xml.write(chapters_xml_io,
-                                           xml_declaration=True,
-                                           encoding='unicode',  # Force string
-                                           )
-                        chapters_out = chapters_xml_io.getvalue()
-                    break
             if not app.args.dry_run:
+                chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
+                chapters_root = chapters_xml.getroot()
+                for eEditionEntry in chapters_root.findall('EditionEntry'):
+                    for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
+                        e = eChapterAtom.find('ChapterTimeStart')
+                        v = ffmpeg.Timestamp(e.text)
+                        if v != 0.0:
+                            # In case initial frame is a I frame to be displayed after
+                            # subqequent P or B frames, the start time will be
+                            # incorrect.
+                            app.log.warning('Fixing first chapter start time rf %s to 0', v)
+                            if False:
+                                # mkvpropedit doesn't like unknown elements
+                                e.tag = 'orig_ChapterTimeStart'
+                                e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
+                            e.text = str(ffmpeg.Timestamp(0))
+                            chapters_xml_io = io.StringIO()
+                            chapters_xml.write(chapters_xml_io,
+                                               xml_declaration=True,
+                                               encoding='unicode',  # Force string
+                                               )
+                            chapters_out = chapters_xml_io.getvalue()
+                        break
                 safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
             mux_dict['chapters']['file_name'] = os.path.basename(output_chapters_file_name)
 
