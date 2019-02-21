@@ -562,7 +562,7 @@ def pick_framerate(ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
 def action_hb(inputfile, in_tags):
     app.log.info('HandBrake %s...', inputfile)
     inputfile = SoundFile(inputfile)
-    inputfile_base, inputfile_ext = os.path.splitext(inputfile.file_name)
+    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
     outputfile_name = "%s.hb.mkv" % (inputfile_base,)
     if app.args.chain:
         app.args.mux_files += (outputfile_name,)
@@ -637,7 +637,7 @@ def action_hb(inputfile, in_tags):
 def action_mux(inputfile, in_tags):
     app.log.info('Muxing %s...', inputfile)
     inputfile = SoundFile(inputfile)
-    inputfile_base, inputfile_ext = os.path.splitext(inputfile.file_name)
+    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
     outputdir = app.args.project or "%s" % (inputfile_base,)
     if app.args.chain:
         app.args.optimize_dirs += (outputdir,)
@@ -1000,7 +1000,7 @@ def action_chop(inputdir, in_tags):
             stream_index = stream_dict['index']
             stream_codec_type = stream_dict['codec_type']
             orig_stream_file_name = stream_file_name = stream_dict['file_name']
-            stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+            stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             stream_language = isolang(stream_dict.get('language', 'und'))
 
             snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
@@ -1576,7 +1576,7 @@ def action_optimize(inputdir, in_tags):
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -1637,7 +1637,7 @@ def action_optimize(inputdir, in_tags):
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -1671,7 +1671,7 @@ def action_optimize(inputdir, in_tags):
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -1716,7 +1716,7 @@ def action_optimize(inputdir, in_tags):
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -1762,7 +1762,7 @@ def action_optimize(inputdir, in_tags):
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -1868,7 +1868,7 @@ def action_optimize(inputdir, in_tags):
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -1898,7 +1898,7 @@ def action_optimize(inputdir, in_tags):
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -1945,7 +1945,7 @@ def action_optimize(inputdir, in_tags):
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
                 stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -1991,7 +1991,7 @@ def action_extract_music(inputdir, in_tags):
             stream_codec_type = stream_dict['codec_type']
             orig_stream_file_name = stream_file_name = \
                     stream_dict.get('original_file_name', stream_dict['file_name'])
-            stream_file_base, stream_file_ext = os.path.splitext(stream_file_name)
+            stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             stream_language = isolang(stream_dict.get('language', 'und'))
 
             if stream_codec_type == 'video':
@@ -2034,7 +2034,7 @@ def action_extract_music(inputdir, in_tags):
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
-                m4a = M4aFile(os.path.splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
+                m4a = M4aFile(my_splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
                 m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
                 m4a.tags.track = track_no  # Since a copy was taken and not fully connected to album_tags anymore
                 m4a.tags.tracks = tracks_total
@@ -2110,16 +2110,16 @@ def action_demux(inputdir, in_tags):
             stream_file_name = stream_dict['file_name']
             stream_codec_type = stream_dict['codec_type']
             if stream_codec_type == 'subtitle':
-                if app.args.external_subtitles and os.path.splitext(stream_dict['file_name'])[1] != '.vtt':
+                if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_file_names = [stream_file_name]
-                    if os.path.splitext(stream_dict['file_name'])[1] == '.sub':
-                        stream_file_names.append(os.path.splitext(stream_file_name)[0] + '.idx')
+                    if my_splitext(stream_dict['file_name'])[1] == '.sub':
+                        stream_file_names.append(my_splitext(stream_file_name)[0] + '.idx')
                     for stream_file_name in stream_file_names:
                         external_stream_file_name = '{base}{language}{forced}{ext}'.format(
-                            base=os.path.splitext(output_file.file_name)[0],
+                            base=my_splitext(output_file.file_name)[0],
                             language='.%s' % (isolang(stream_dict['language']).code3,),
                             forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
-                            ext=os.path.splitext(stream_file_name)[1],
+                            ext=my_splitext(stream_file_name)[1],
                         )
                         app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
                         shutil.copyfile(os.path.join(inputdir, stream_file_name),
@@ -2167,8 +2167,8 @@ def action_demux(inputdir, in_tags):
                 stream_forced = stream_dict['disposition'].get('forced', None)
                 cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
                 # TODO --tags
-                if stream_codec_type == 'subtitle' and os.path.splitext(stream_file_name)[1] == '.sub':
-                    cmd += [os.path.join(inputdir, '%s.idx' % (os.path.splitext(stream_file_name)[0],))]
+                if stream_codec_type == 'subtitle' and my_splitext(stream_file_name)[1] == '.sub':
+                    cmd += [os.path.join(inputdir, '%s.idx' % (my_splitext(stream_file_name)[0],))]
                 cmd += [os.path.join(inputdir, stream_file_name)]
         if mux_dict['chapters']:
             cmd += ['--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])]
@@ -2225,7 +2225,7 @@ def action_demux(inputdir, in_tags):
             #  headers (see mkvinfo). Some players, like VLC, exhibit playback
             #  issues with images stretched vertically, a lot.
             ffmpeg_args += [
-                '-f', ext_to_container(os.path.splitext(output_file.file_name)[1]),
+                '-f', ext_to_container(my_splitext(output_file.file_name)[1]),
                 output_file.file_name,
                 ]
             with perfcontext('merge subtitles w/ ffmpeg'):
@@ -2259,16 +2259,16 @@ def action_demux(inputdir, in_tags):
             stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             stream_codec_type = stream_dict['codec_type']
             if stream_codec_type == 'subtitle':
-                if app.args.external_subtitles and os.path.splitext(stream_dict['file_name'])[1] != '.vtt':
+                if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_file_names = [stream_file_name]
-                    if os.path.splitext(stream_dict['file_name'])[1] == '.sub':
-                        stream_file_names.append(os.path.splitext(stream_file_name)[0] + '.idx')
+                    if my_splitext(stream_dict['file_name'])[1] == '.sub':
+                        stream_file_names.append(my_splitext(stream_file_name)[0] + '.idx')
                     for stream_file_name in stream_file_names:
                         external_stream_file_name = '{base}{language}{forced}{ext}'.format(
-                            base=os.path.splitext(str(output_file))[0],
+                            base=my_splitext(str(output_file))[0],
                             language='.%s' % (isolang(stream_dict['language']).code3,),
                             forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
-                            ext=os.path.splitext(stream_file_name)[1],
+                            ext=my_splitext(stream_file_name)[1],
                         )
                         app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
                         shutil.copyfile(os.path.join(inputdir, stream_file_name),
@@ -2335,7 +2335,7 @@ def action_demux(inputdir, in_tags):
                 '-map', new_stream_index,
                 ]
         ffmpeg_output_args += [
-            '-f', ext_to_container(os.path.splitext(output_file.file_name)[1]),
+            '-f', ext_to_container(my_splitext(output_file.file_name)[1]),
             output_file.file_name,
             ]
         ffmpeg_args = ffmpeg_input_args + ffmpeg_output_args
