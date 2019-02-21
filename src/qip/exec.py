@@ -3,6 +3,10 @@ __all__ = [
         'dbg_exec_cmd',
         'do_exec_cmd',
         'suggest_exec_cmd',
+        'dbg_system_cmd',
+        'do_system_cmd',
+        'dbg_popen_cmd',
+        'do_popen_cmd',
         'dbg_spawn_cmd',
         'do_spawn_cmd',
         'clean_cmd_output',
@@ -34,15 +38,17 @@ log = logging.getLogger(__name__)
 from qip.app import app  # Also setup log.verbose
 from qip.utils import byte_decode
 
-def dbg_exec_cmd(cmd, hidden_args=[], log_append='', **kwargs):
+def dbg_exec_cmd(cmd, *, hidden_args=[], log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
     return subprocess.check_output(cmd + hidden_args, **kwargs)
 
-def do_exec_cmd(cmd, log_append='', **kwargs):
-    if getattr(app.args, 'dry_run', False):
+def do_exec_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
+    if dry_run is None:
+         dry_run = getattr(app.args, 'dry_run', False)
+    if dry_run:
         log.verbose('CMD (dry-run): %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
@@ -50,15 +56,20 @@ def do_exec_cmd(cmd, log_append='', **kwargs):
     else:
         return dbg_exec_cmd(cmd, log_append=log_append, **kwargs)
 
-def dbg_system_cmd(cmd, hidden_args=[], log_append='', **kwargs):
+def suggest_exec_cmd(cmd, **kwargs):
+    log.info('SUGGEST: %s', subprocess.list2cmdline(cmd))
+
+def dbg_system_cmd(cmd, *, hidden_args=[], log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
     return os.system(subprocess.list2cmdline(cmd + hidden_args), **kwargs)
 
-def do_system_cmd(cmd, log_append='', **kwargs):
-    if getattr(app.args, 'dry_run', False):
+def do_system_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
+    if dry_run is None:
+         dry_run = getattr(app.args, 'dry_run', False)
+    if dry_run:
         log.verbose('CMD (dry-run): %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
@@ -66,8 +77,25 @@ def do_system_cmd(cmd, log_append='', **kwargs):
     else:
         return dbg_system_cmd(cmd, log_append=log_append, **kwargs)
 
-def suggest_exec_cmd(cmd, **kwargs):
-    log.info('SUGGEST: %s', subprocess.list2cmdline(cmd))
+def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
+    if dry_run is None:
+         dry_run = getattr(app.args, 'dry_run', False)
+    if dry_run:
+        log.verbose('CMD (dry-run): %s%s',
+                    subprocess.list2cmdline(cmd),
+                    log_append)
+        d = types.SimpleNamespace()
+        d.stdout = None
+        return d
+    else:
+        return dbg_popen_cmd(cmd, log_append=log_append, **kwargs)
+
+def dbg_popen_cmd(cmd, *, hidden_args=[], log_append='', **kwargs):
+    if log.isEnabledFor(logging.DEBUG):
+        log.verbose('CMD: %s%s',
+                    subprocess.list2cmdline(cmd),
+                    log_append)
+    return subprocess.Popen(cmd + hidden_args, **kwargs)
 
 def dbg_spawn_cmd(cmd, hidden_args=[], no_status=False, yes=False, logfile=True):
     if app.log.isEnabledFor(logging.DEBUG):
@@ -226,19 +254,12 @@ class Executable(metaclass=abc.ABCMeta):
            p2 = myexe2.popen([...], stdin=p1.stdout, stdout=myfile.fp)
         """
         cmd = self.build_cmd(*args, **kwargs)
-        if dry_run:
-            log.verbose('CMD (dry-run): %s',
-                        subprocess.list2cmdline(cmd))
-            d = types.SimpleNamespace()
-            d.stdout = None
-            return d
-        else:
-            return subprocess.Popen(
-                cmd,
-                stdin=stdin, stdout=stdout, stderr=stderr,
-                universal_newlines=text,  # 3.7: text=text
-                encoding=encoding,
-                )
+        return do_popen_cmd(
+            cmd,
+            stdin=stdin, stdout=stdout, stderr=stderr,
+            universal_newlines=text,  # 3.7: text=text
+            encoding=encoding,
+            )
 
     def run(self, *args, **kwargs):
         return self._run(*args, **kwargs)
