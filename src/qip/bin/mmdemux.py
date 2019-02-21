@@ -29,6 +29,7 @@
 # tbr = tbr is guessed from the video stream and is the value users want to see when they look for the video frame rate, except sometimes it is twice what one would expect because of field rate versus frame rate.
 
 import argparse
+import collections
 import copy
 import decimal
 import errno
@@ -720,6 +721,7 @@ def action_mux(inputfile, in_tags):
                         and stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
                     stream_codec_type = stream_out_dict['codec_type'] = 'image'
                     stream_file_ext = '.jpg'
+                    stream_out_dict['attachment_type'] = my_splitext(stream_dict['tags']['filename'])[0]
                 else:
                     stream_file_ext = codec_name_to_ext(stream_codec_name)
 
@@ -2135,6 +2137,7 @@ def action_demux(inputdir, in_tags):
 
     output_file = MkvFile(
             app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'), '.webm' if webm else '.mkv'))
+    attachment_counts = collections.defaultdict(lambda: 0)
 
     if use_mkvmerge:
         post_process_subtitles = []
@@ -2182,12 +2185,27 @@ def action_demux(inputdir, in_tags):
             new_stream_index += 1
             stream_dict['index'] = new_stream_index
             if stream_codec_type == 'image':
-                cmd += [
-                    # '--attachment-description', <desc>
-                    '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', os.path.join(inputdir, stream_file_name)])).strip(),
-                    '--attachment-name', 'cover%s' % (os.path.splitext(stream_file_name)[1],),
-                    '--attach-file', os.path.join(inputdir, stream_file_name),
-                    ]
+                attachment_type = stream_dict['attachment_type']
+                if webm:
+                    # attachments not supported
+                    attachment_counts[attachment_type] += 1
+                    external_stream_file_name = '{type}{num_suffix}{ext}'.format(
+                        type=attachment_type,
+                        num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
+                        ext=my_splitext(stream_file_name)[1],
+                    )
+                    app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                    shutil.copyfile(os.path.join(inputdir, stream_file_name),
+                                    external_stream_file_name,
+                                    follow_symlinks=True)
+                    continue
+                else:
+                    cmd += [
+                        # '--attachment-description', <desc>
+                        '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', os.path.join(inputdir, stream_file_name)])).strip(),
+                        '--attachment-name', '%s%s' % (attachment_type, my_splitext(stream_file_name)[1]),
+                        '--attach-file', os.path.join(inputdir, stream_file_name),
+                        ]
             else:
                 if stream_codec_type == 'video':
                     display_aspect_ratio = Ratio(stream_dict.get('display_aspect_ratio', None))
@@ -2308,6 +2326,21 @@ def action_demux(inputdir, in_tags):
                         shutil.copyfile(os.path.join(inputdir, stream_file_name),
                                         external_stream_file_name,
                                         follow_symlinks=True)
+                    continue
+            if stream_codec_type == 'image':
+                attachment_type = stream_dict['attachment_type']
+                if webm:
+                    # attachments not supported
+                    attachment_counts[attachment_type] += 1
+                    external_stream_file_name = '{type}{num_suffix}{ext}'.format(
+                        type=attachment_type,
+                        num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
+                        ext=my_splitext(stream_file_name)[1],
+                    )
+                    app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                    shutil.copyfile(os.path.join(inputdir, stream_file_name),
+                                    external_stream_file_name,
+                                    follow_symlinks=True)
                     continue
             new_stream_index += 1
             disposition_flags = []
