@@ -16,7 +16,7 @@ class CHandBrake(Executable):
 
     name = 'HandBrakeCLI'
 
-    run_func = classmethod(do_spawn_cmd)
+    run_func = staticmethod(do_spawn_cmd)
 
     @classmethod
     def kwargs_to_cmdargs(cls, **kwargs):
