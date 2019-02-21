@@ -3771,6 +3771,12 @@ class SoundFile(MediaFile):
                         elif parser.line == 'Microsoft PCM':
                             # Microsoft PCM
                             pass
+                        elif parser.line == 'Matroska data':
+                            # Matroska data
+                            pass
+                        elif parser.line == 'WebM':
+                            # WebM
+                            pass
                         elif parser.re_search(r'^(\d+) bit$'):
                             # 16 bit
                             self.sample_bits = int(parser.match.group(1))
