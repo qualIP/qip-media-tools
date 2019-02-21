@@ -237,7 +237,10 @@ class Ffmpeg(_Ffmpeg):
         except AttributeError:
             pass
 
-    def cropdetect(self, input_file, skip_frame_nokey=True, cropdetect_seek=None, cropdetect_duration=300, dry_run=False):
+    def cropdetect(self, input_file,
+            skip_frame_nokey=True, cropdetect_seek=None, cropdetect_duration=300,
+            video_filter_specs=None,
+            dry_run=False):
         stream_crop = None
         with perfcontext('Cropdetect w/ ffmpeg'):
             ffmpeg_args = []
@@ -249,10 +252,13 @@ class Ffmpeg(_Ffmpeg):
                 ffmpeg_args += [
                     '-skip_frame', 'nokey',
                 ]
+            video_filter_specs = list(video_filter_specs or [])
+            video_filter_specs.append('cropdetect=24:2:0:0')  # Handbrake?
+            #video_filter_specs.append('cropdetect=24:16:0:0')  # ffmpeg default
             ffmpeg_args += [
                 '-i', input_file,
                 '-t', Timestamp(cropdetect_duration),
-                '-filter:v', 'cropdetect',  # =24:2:0:0
+                '-filter:v', ','.join(video_filter_specs),
                 ]
             ffmpeg_args += [
                 '-f', 'null', '-',
