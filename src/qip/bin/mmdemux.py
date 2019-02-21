@@ -702,6 +702,7 @@ def action_mux(inputfile, in_tags):
             '.webm',
             ):
         ffprobe_dict = inputfile.extract_ffprobe_json()
+        mediainfo_dict = inputfile.extract_mediainfo_dict()
 
         has_forced_subtitle = False
         subtitle_counts = []
@@ -860,9 +861,9 @@ def action_mux(inputfile, in_tags):
 
                     if stream_codec_type == 'video':
                         output_track_file = MediaFile(output_track_file_name)
-                        mediainfo_dict = output_track_file.extract_mediainfo_dict()
-                        assert len(mediainfo_dict['media']['track']) >= 2
-                        mediainfo_track_dict = mediainfo_dict['media']['track'][1]
+                        mediainfo_track_dict, = (mediainfo_track_dict
+                                for mediainfo_track_dict in mediainfo_dict['media']['track']
+                                if int(mediainfo_track_dict.get('ID', 0)) == stream_index + 1)
                         assert mediainfo_track_dict['@type'] == 'Video'
                         storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
                         display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
