@@ -3451,6 +3451,15 @@ class SoundFile(MediaFile):
     def extract_info(self, need_actual_duration=False):
         tags_done = False
 
+        try:
+            loaded_tags = self.load_tags()
+        except Exception as e:
+            log.debug(e)
+        else:
+            if loaded_tags is not None:
+                self.tags.update(loaded_tags)
+                tags_done = True
+
         if shutil.which('ffprobe'):
             ffprobe_dict = self.extract_ffprobe_json()
             if ffprobe_dict:
@@ -3461,20 +3470,30 @@ class SoundFile(MediaFile):
                             self.bitrate = int(stream_dict['bit_rate'])
                         except KeyError:
                             pass
-                for tag, value in ffprobe_dict['format']['tags'].items():
-                    if value == 'None':
-                        continue
-                    if tag in (
-                        'major_brand',
-                        'minor_version',
-                        'compatible_brands',
-                        'Encoding Params',
-                        'creation_time',
-                        'CREATION_TIME',
-                    ):
-                        continue
-                    self.set_tag(tag, value)
-                tags_done = True
+                if not tags_done:
+                    for tag, value in ffprobe_dict['format']['tags'].items():
+                        if value == 'None':
+                            continue
+                        if tag in (
+                            'major_brand',
+                            'minor_version',
+                            'compatible_brands',
+                            'Encoding Params',
+                            'creation_time',
+                            'CREATION_TIME',
+                        ):
+                            continue
+                        try:
+                            self.set_tag(tag, value)
+                        except KeyError as e:
+                            if os.path.splitext(self.file_name)[1] in ('.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v'):
+                                try:
+                                    self.set_tag('----:com.apple.iTunes:' + tag, value)
+                                except KeyError:
+                                    raise e
+                            else:
+                                raise e
+                    tags_done = True
 
         if os.path.splitext(self.file_name)[1] in qip.snd.get_mp4v2_app_support().extensions_can_read:
             if not tags_done and mp4info.which(assert_found=False):
