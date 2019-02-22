@@ -632,6 +632,9 @@ def action_hb(inputfile, in_tags):
                    # Files
                    input=inputfile.file_name,
                    output=outputfile_name,
+                   scan=True if app.args.dry_run else False,
+                   json=True if app.args.dry_run else False,
+                   dry_run=False,
                 )
 
     else:

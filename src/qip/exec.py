@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 from qip.app import app  # Also setup log.verbose
 from qip.utils import byte_decode
 
-def dbg_exec_cmd(cmd, *, hidden_args=[], log_append='', **kwargs):
+def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
                     subprocess.list2cmdline(cmd),
@@ -56,10 +56,10 @@ def do_exec_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
     else:
         return dbg_exec_cmd(cmd, log_append=log_append, **kwargs)
 
-def suggest_exec_cmd(cmd, **kwargs):
+def suggest_exec_cmd(cmd, dry_run=None, **kwargs):
     log.info('SUGGEST: %s', subprocess.list2cmdline(cmd))
 
-def dbg_system_cmd(cmd, *, hidden_args=[], log_append='', **kwargs):
+def dbg_system_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
                     subprocess.list2cmdline(cmd),
@@ -90,14 +90,14 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
     else:
         return dbg_popen_cmd(cmd, log_append=log_append, **kwargs)
 
-def dbg_popen_cmd(cmd, *, hidden_args=[], log_append='', **kwargs):
+def dbg_popen_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
     return subprocess.Popen(cmd + hidden_args, **kwargs)
 
-def dbg_spawn_cmd(cmd, hidden_args=[], no_status=False, yes=False, logfile=True):
+def dbg_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False, logfile=True):
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
     out = ''
@@ -180,8 +180,10 @@ def dbg_spawn_cmd(cmd, hidden_args=[], no_status=False, yes=False, logfile=True)
                 output=out)
     return out
 
-def do_spawn_cmd(cmd, **kwargs):
-    if getattr(app.args, 'dry_run', False):
+def do_spawn_cmd(cmd, dry_run=None, **kwargs):
+    if dry_run is None:
+         dry_run = getattr(app.args, 'dry_run', False)
+    if dry_run:
         app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
         return ''
     else:
@@ -233,17 +235,11 @@ class Executable(metaclass=abc.ABCMeta):
     def _run(self, *args, run_func=None, dry_run=False, **kwargs):
         d = types.SimpleNamespace()
         cmd = self.build_cmd(*args, **kwargs)
-        if dry_run:
-            log.verbose('CMD (dry-run): %s',
-                        subprocess.list2cmdline(cmd))
-            d.out = ''
-            d.elapsed_time = 0
-        else:
-            run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
-            t0 = time.time()
-            d.out = run_func(cmd)
-            t1 = time.time()
-            d.elapsed_time = t1 - t0
+        run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
+        t0 = time.time()
+        d.out = run_func(cmd, dry_run=dry_run)
+        t1 = time.time()
+        d.elapsed_time = t1 - t0
         return d
 
     def _popen(self, *args, dry_run=False,
