@@ -285,7 +285,10 @@ def do_srun_cmd(cmd,
         slurm_job_name=None,
         chdir=None,
         uid=None,
+        dry_run=None,
         ):
+    if dry_run is None:
+         dry_run = getattr(app.args, 'dry_run', False)
     slurm_args = [
         'srun',
         ]
@@ -313,7 +316,7 @@ def do_srun_cmd(cmd,
 
     slurm_args.extend(cmd)
     slurm_args = [str(e) for e in slurm_args]
-    do_exec_cmd(slurm_args)
+    do_exec_cmd(slurm_args, dry_run=dry_run)
 
 def do_sbatch_cmd(cmd,
         stdin=None, stdin_file=None,
