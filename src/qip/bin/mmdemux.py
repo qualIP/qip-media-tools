@@ -1287,7 +1287,7 @@ def action_optimize(inputdir, in_tags):
 
                 mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
                 mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
-                ffprobe_field_order = ffprobe_stream_json.get('field_order', None)
+                ffprobe_field_order = ffprobe_stream_json.get('field_order', 'progressive')
                 if (mediainfo_scantype, mediainfo_scanorder) == (None, None):
                     # Assume Progressive
                     assert ffprobe_field_order == 'progressive'
