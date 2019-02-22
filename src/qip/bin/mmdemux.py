@@ -160,9 +160,11 @@ def main():
     pgroup.add_argument('--minlength', default=3600, type=qip.utils.Timestamp, help='minimum title length for ripping (default 3600s)')
 
     pgroup = app.parser.add_argument_group('Video Control')
-    pgroup.add_argument('--crop', default=None, action='store_true', help='enable cropping video (default)')
-    pgroup.add_argument('--no-crop', dest='crop', default=argparse.SUPPRESS, action='store_false', help='disable cropping video')
-    pgroup.add_argument('--crop-whlt', dest="crop_whlt", default=None, type=int, nargs=4, help='force cropping dimensions')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--crop', default=None, action='store_true', help='enable cropping video (default)')
+    xgroup.add_argument('--no-crop', dest='crop', default=argparse.SUPPRESS, action='store_false', help='disable cropping video')
+    xgroup.add_argument('--crop-wh', dest="crop_wh", default=None, type=int, nargs=2, help='force cropping dimensions (centered)')
+    xgroup.add_argument('--crop-whlt', dest="crop_whlt", default=None, type=int, nargs=4, help='force cropping dimensions')
     pgroup.add_argument('--parallel-chapters', dest='parallel_chapters', default=False, action='store_true', help='enable per-chapter parallel processing (default)')
     pgroup.add_argument('--no-parallel-chapters', dest='parallel_chapters', default=argparse.SUPPRESS, action='store_false', help='disable per-chapter parallel processing')
     pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=int, default=300, help='cropdetect duration (seconds)')
@@ -527,6 +529,7 @@ def pick_framerate(ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
             ffprobe_avg_framerate in (FrameRate(30000, 1001),  # 29.97
                                       FrameRate(31, 1),        # 31.00
                                       FrameRate(57, 2),        # 28.50
+                                      FrameRate(59, 2),        # 29.50
                                       FrameRate(113, 4),       # 28.25
                                       ) and
             mediainfo_format == 'MPEG Video' and
@@ -1308,38 +1311,49 @@ def action_optimize(inputdir, in_tags):
                     raise NotImplementedError((mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order))
 
                 if app.args.crop in (None, True):
-                    stream_crop_whlt = app.args.crop_whlt or stream_dict.pop('crop', None)
-                    if not stream_crop_whlt and 'original_crop' not in stream_dict:
-                        stream_crop_whlt = ffmpeg.cropdetect(
-                            input_file=os.path.join(inputdir, stream_file_name),
-                            # Seek 5 minutes in
-                            #cropdetect_seek=max(0.0, min(300.0, float(mediainfo_duration) - 300.0)),
-                            cropdetect_duration=app.args.cropdetect_duration,
-                            video_filter_specs=video_filter_specs,
-                            dry_run=app.args.dry_run)
-                    if stream_crop_whlt and (stream_crop_whlt[0], stream_crop_whlt[1]) == (mediainfo_width, mediainfo_height):
+                    if app.args.crop_wh:
+                        w, h = app.args.crop_wh
+                        l, t = (mediainfo_width - w) // 2, (mediainfo_height - h) // 2
+                        stream_crop_whlt = w, h, l, t
+                        stream_crop = True
+                    elif app.args.crop_whlt:
+                        stream_crop_whlt = app.args.crop_whlt
+                        stream_crop = True
+                    else:
                         stream_crop_whlt = None
-                    stream_dict.setdefault('original_crop', stream_crop_whlt)
-                    if stream_crop_whlt:
-                        w, h, l, t = stream_crop_whlt
-                        video_filter_specs.append('crop={w}:{h}:{l}:{t}'.format(
-                                    w=w, h=h, l=l, t=t))
-                        # extra_args += ['-aspect', XXX]
-                        stream_dict.setdefault('original_display_aspect_ratio', stream_dict['display_aspect_ratio'])
-                        storage_aspect_ratio = Ratio(w, h)
-                        pixel_aspect_ratio = Ratio(stream_dict['pixel_aspect_ratio'])  # invariable
-                        display_aspect_ratio = pixel_aspect_ratio * storage_aspect_ratio
-                        if app.args.crop is None:
-                            if display_aspect_ratio in common_aspect_ratios:
-                                app.log.warning('Crop detection result accepted: --crop_whlt %s w/ common DAR %s',
-                                                ' '.join(str(e) for e in stream_crop_whlt),
-                                                display_aspect_ratio)
-                            else:
-                                app.log.error('Crop detection! --crop or --no-crop or --crop_whlt %s w/ DAR %s',
-                                              ' '.join(str(e) for e in stream_crop_whlt),
-                                              display_aspect_ratio)
-                                raise RuntimeError
-                        stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
+                        stream_crop = getattr(app.args, 'crop', None)
+                    if stream_crop is not False:
+                        if not stream_crop_whlt and 'original_crop' not in stream_dict:
+                            stream_crop_whlt = ffmpeg.cropdetect(
+                                input_file=os.path.join(inputdir, stream_file_name),
+                                # Seek 5 minutes in
+                                #cropdetect_seek=max(0.0, min(300.0, float(mediainfo_duration) - 300.0)),
+                                cropdetect_duration=app.args.cropdetect_duration,
+                                video_filter_specs=video_filter_specs,
+                                dry_run=app.args.dry_run)
+                        if stream_crop_whlt and (stream_crop_whlt[0], stream_crop_whlt[1]) == (mediainfo_width, mediainfo_height):
+                            stream_crop_whlt = None
+                        stream_dict.setdefault('original_crop', stream_crop_whlt)
+                        if stream_crop_whlt:
+                            w, h, l, t = stream_crop_whlt
+                            video_filter_specs.append('crop={w}:{h}:{l}:{t}'.format(
+                                        w=w, h=h, l=l, t=t))
+                            # extra_args += ['-aspect', XXX]
+                            stream_dict.setdefault('original_display_aspect_ratio', stream_dict['display_aspect_ratio'])
+                            storage_aspect_ratio = Ratio(w, h)
+                            pixel_aspect_ratio = Ratio(stream_dict['pixel_aspect_ratio'])  # invariable
+                            display_aspect_ratio = pixel_aspect_ratio * storage_aspect_ratio
+                            if stream_crop is None:
+                                if display_aspect_ratio in common_aspect_ratios:
+                                    app.log.warning('Crop detection result accepted: --crop-whlt %s w/ common DAR %s',
+                                                    ' '.join(str(e) for e in stream_crop_whlt),
+                                                    display_aspect_ratio)
+                                else:
+                                    app.log.error('Crop detection! --crop or --no-crop or --crop-whlt %s w/ DAR %s',
+                                                  ' '.join(str(e) for e in stream_crop_whlt),
+                                                  display_aspect_ratio)
+                                    raise RuntimeError
+                            stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
 
                 if video_filter_specs:
                     extra_args += ['-filter:v', ','.join(video_filter_specs)]
