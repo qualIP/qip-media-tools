@@ -3143,6 +3143,7 @@ class AudioType(enum.Enum):
     vorbis = 'vorbis'
     wav = 'wav'
     ac3 = 'ac3'
+    dts = 'dts'
 
     def __eq__(self, other):
         try:

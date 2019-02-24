@@ -161,6 +161,7 @@ class M4aFile(snd.SoundFile):
                         if len(audio_type) == 1 and audio_type[0] in (
                                 snd.AudioType.mp2,
                                 snd.AudioType.mp3,
+                                snd.AudioType.dts,
                         ):
                             use_qaac_intermediate = True
                             ffmpeg_format = 'wav'
