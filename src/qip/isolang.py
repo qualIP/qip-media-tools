@@ -566,7 +566,7 @@ def isolang(v):
             return iso_lang_map[v.lower()]
         except KeyError:
             raise ValueError('Unrecognized language code %r' % (v,))
-    elif isinstance(IsoLang, v):
+    elif isinstance(v, IsoLang):
         return v  # Unique!
     else:
         raise TypeError(v)

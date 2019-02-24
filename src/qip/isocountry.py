@@ -403,7 +403,7 @@ def isocountry(v):
             return iso_country_map[v.lower()]
         except KeyError:
             raise ValueError('Unrecognized country code %r' % (v,))
-    elif isinstance(IsoCountry, v):
+    elif isinstance(v, IsoCountry):
         return v  # Unique!
     else:
         raise TypeError(v)
