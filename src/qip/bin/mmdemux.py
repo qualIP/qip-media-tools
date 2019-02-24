@@ -314,7 +314,7 @@ def ext_to_container(ext):
             '.mpeg2': 'mpeg2video',
             '.mp2v': 'mpeg2video',
             '.mpegts': 'mpegts',
-            '.h264': 'h264',
+            '.h264': 'h264',  # raw H.264 video
             #'.h265': 'h265',
             '.vp8': 'ivf',
             '.vp9': 'ivf',
