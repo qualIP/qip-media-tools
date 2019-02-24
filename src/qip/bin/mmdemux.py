@@ -168,7 +168,7 @@ def main():
     xgroup.add_argument('--crop-whlt', dest="crop_whlt", default=None, type=int, nargs=4, help='force cropping dimensions')
     pgroup.add_argument('--parallel-chapters', dest='parallel_chapters', default=False, action='store_true', help='enable per-chapter parallel processing (default)')
     pgroup.add_argument('--no-parallel-chapters', dest='parallel_chapters', default=argparse.SUPPRESS, action='store_false', help='disable per-chapter parallel processing')
-    pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=int, default=300, help='cropdetect duration (seconds)')
+    pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(300), help='cropdetect duration (seconds)')
     pgroup.add_argument('--video-language', '--vlang', dest='video_language', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
     pgroup.add_argument('--video-rate-control-mode', dest='video_rate_control_mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
     pgroup.add_argument('--force-ffprobe-field-order', dest='force_ffprobe_field_order', default=None, choices=('progressive', 'tt', 'tb', 'bb', 'bt'), help='Ignore and force ffprobe field order')
