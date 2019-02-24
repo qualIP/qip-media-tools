@@ -154,6 +154,7 @@ def main():
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
     pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue mode')
     pgroup.add_argument('--batch', '-B', action='store_true', help='batch mode')
+    pgroup.add_argument('--step', action='store_true', help='step mode')
 
     pgroup = app.parser.add_argument_group('Ripping Control')
     pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
@@ -1115,6 +1116,9 @@ def action_optimize(inputdir, in_tags):
                 for file_name in temp_files:
                     os.unlink(file_name)
                 temp_files = []
+        if app.args.step:
+            app.log.warning('Step done; Exit.')
+            exit(0)
 
     for stream_dict in mux_dict['streams']:
         if stream_dict.get('skip', False):
