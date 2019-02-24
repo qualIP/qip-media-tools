@@ -679,6 +679,26 @@ def action_mux(inputfile, in_tags):
         mux_dict['tags'].update(d)
     mux_dict['tags'].update(inputfile.load_tags() or {})
     mux_dict['tags'].update(in_tags)
+
+    if inputfile_ext in (
+            '.mkv',
+            '.webm',
+            ):
+        ffprobe_dict = inputfile.extract_ffprobe_json()
+        mediainfo_dict = inputfile.extract_mediainfo_dict()
+        mediainfo_track_dict, = (mediainfo_track_dict
+                for mediainfo_track_dict in mediainfo_dict['media']['track']
+                if mediainfo_track_dict['@type'] == 'Video') or ({},)
+        mediainfo_mediatype = mediainfo_dict.get('OriginalSourceMedium', None)
+        if mediainfo_mediatype is None:
+            pass
+        elif mediainfo_mediatype == 'DVD-Video':
+            mux_dict['tags'].setdefault('mediatype', 'DVD')
+        elif mediainfo_mediatype == 'Blu-ray':
+            mux_dict['tags'].setdefault('mediatype', 'BD')
+        else:
+            raise NotImplementedError(mediainfo_mediatype)
+
     if app.args.interactive:
         # for tag in set(SoundTagEnum) - set(SoundTagEnum.iTunesInternalTags):
         for tag in (
@@ -709,8 +729,6 @@ def action_mux(inputfile, in_tags):
             '.mkv',
             '.webm',
             ):
-        ffprobe_dict = inputfile.extract_ffprobe_json()
-        mediainfo_dict = inputfile.extract_mediainfo_dict()
 
         has_forced_subtitle = False
         subtitle_counts = []

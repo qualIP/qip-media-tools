@@ -101,6 +101,8 @@ class Mediainfo(Executable):
                                 raise ValueError((k, v))
                 elif k == 'Scan type':
                     k = 'ScanType'
+                elif k == 'Original source medium':
+                    k = 'OriginalSourceMedium'
                 elif k == 'Scan order':
                     k = 'ScanOrder'
                 elif k == 'Display aspect ratio':
