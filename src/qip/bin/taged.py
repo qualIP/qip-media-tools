@@ -312,6 +312,9 @@ def taged_mf_MP4Tags(file_name, mf, tags):
         tags_to_set.discard(SoundTagEnum.disks)
     if SoundTagEnum.track in tags_to_set:
         tags_to_set.discard(SoundTagEnum.tracks)
+    if SoundTagEnum.contenttype in tags_to_set:
+        tags_to_set.discard(SoundTagEnum.contenttype)
+        tags_to_set.add(SoundTagEnum.type)
     for tag in (
             SoundTagEnum.barcode,
             SoundTagEnum.isrc,
@@ -327,10 +330,16 @@ def taged_mf_MP4Tags(file_name, mf, tags):
     for tag in tags_to_set:
         if tag in (
                 SoundTagEnum.musicbrainz_releaseid,
+                SoundTagEnum.mediatype,
         ):
             continue
         tag = tag.name
-        value = tags[tag]
+        if tag == 'type':
+            snd_file = SoundFile(file_name)
+            snd_file.tags = tags
+            value = snd_file.deduce_type()
+        else:
+            value = tags[tag]
         try:
             mapped_tag = qip.snd.tag_info['map'][tag]
             mp4_tag = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_tag']
@@ -391,8 +400,16 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                 with img_file.open('rb') as fp:
                     v = fp.read()
                     mp4_value.append(mutagen.mp4.MP4Cover(v, img_type))
+            elif mp4v2_data_type in ('enum8',):
+                if mp4_tag == 'stik':
+                    if isinstance(value, str):
+                        value = qip.snd.tag_stik_info['map'][value.lower()]
+                    value = qip.snd.tag_stik_info['stik'][value]['stik']
+                    mp4_value = [value]
+                else:
+                    raise NotImplementedError((tag, mp4v2_data_type))
             else:
-                raise NotImplementedError(mp4v2_data_type)
+                raise NotImplementedError((tag, mp4v2_data_type))
             try:
                 mf.tags[mp4_tag] = mp4_value
             except:

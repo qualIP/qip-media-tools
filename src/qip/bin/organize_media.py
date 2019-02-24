@@ -614,23 +614,7 @@ def organize(inputfile):
         inputfile.tags.contenttype = app.args.contenttype
     if app.args.library_mode:
         inputfile.tags.type = app.args.library_mode
-    if not inputfile.tags.type:
-        name, ext = os.path.splitext(inputfile.file_name)
-        if ext in ('.m4a', '.mp3', '.ogg', '.wav'):
-            inputfile.tags.type = 'normal'
-        elif ext in ('.m4b'):
-            inputfile.tags.type = 'audiobook'
-        elif ext in ('.mkv', '.webm', '.avi', '.mp4', '.m4v'):
-            contenttype = inputfile.tags.contenttype
-            if 'Music Video' in str(inputfile.tags.contenttype) \
-                    or 'Concert' in str(inputfile.tags.contenttype):
-                inputfile.tags.type = 'musicvideo'
-            elif inputfile.tags.tvshow is not None:
-                inputfile.tags.type = 'tvshow'
-            else:
-                inputfile.tags.type = 'movie'
-        else:
-            raise MissingSoundTagError(SoundTagEnum.type, file=inputfile)
+    inputfile.tags.type = inputfile.deduce_type()
     app.log.debug('type = %r', inputfile.tags.type)
 
     # PEOPLE

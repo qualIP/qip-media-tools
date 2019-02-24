@@ -3817,6 +3817,24 @@ class SoundFile(MediaFile):
             app.log.warning('Failed to read tags from %s' % (self.file_name,))
         # log.debug('extract_info: %r', vars(self))
 
+    def deduce_type(self):
+        if self.tags.type is not None:
+            return self.tags.type
+        if 'Music Video' in str(self.tags.contenttype) \
+                or 'Concert' in str(self.tags.contenttype):
+            return 'musicvideo'
+        elif self.tags.tvshow is not None:
+            return 'tvshow'
+        if self.file_name:
+            name, ext = os.path.splitext(self.file_name)
+            if ext in ('.m4a', '.mp3', '.ogg', '.wav'):
+                return 'normal'
+            elif ext in ('.m4b'):
+                return 'audiobook'
+            elif ext in ('.mkv', '.webm', '.avi', '.mp4', '.m4v'):
+                return 'movie'
+        raise MissingSoundTagError(SoundTagEnum.type, file=self)
+
 class AlbumTagsCache(dict):
 
     def __missing__(self, key):
