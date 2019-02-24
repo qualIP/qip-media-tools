@@ -527,17 +527,12 @@ def pick_framerate(ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
     mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
 
     if (
-            ffprobe_r_framerate == FrameRate(60000, 1001) and
-            ffprobe_avg_framerate in (FrameRate(30000, 1001),  # 29.97
-                                      FrameRate(31, 1),        # 31.00
-                                      FrameRate(57, 2),        # 28.50
-                                      FrameRate(59, 2),        # 29.50
-                                      FrameRate(113, 4),       # 28.25
-                                      ) and
-            mediainfo_format == 'MPEG Video' and
-            mediainfo_scantype == 'Progressive' and
-            mediainfo_scanorder == '2:3 Pulldown' and
-            mediainfo_framerate == FrameRate(24000, 1001)):
+            ffprobe_r_framerate == FrameRate(60000, 1001)
+            and (27.0 <= ffprobe_avg_framerate <= 31.0)
+            and mediainfo_format == 'MPEG Video'
+            and mediainfo_scantype == 'Progressive'
+            and mediainfo_scanorder == '2:3 Pulldown'
+            and mediainfo_framerate == FrameRate(24000, 1001)):
         # Common 2:3 Pulldown cases; mediainfo is right.
         return mediainfo_framerate
 
