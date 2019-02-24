@@ -1214,6 +1214,7 @@ def action_optimize(inputdir, in_tags):
                         ffmpeg_enc_args = [
                             '-i', 'pipe:0',
                             '-vcodec', 'ffv1',
+                            '-slices', 12, '-threads', 4,
                             '-f', ext_to_container(new_stream_file_ext),
                             os.path.join(inputdir, new_stream_file_name),
                         ]
@@ -1233,7 +1234,6 @@ def action_optimize(inputdir, in_tags):
                                                   stdin=p1_out,
                                                   stdout=subprocess.PIPE)
                                 try:
-                                    # 500% CPU!
                                     p3 = ffmpeg.popen(*ffmpeg_enc_args,
                                                       stdin=p2.stdout,
                                                       dry_run=app.args.dry_run,
@@ -1276,7 +1276,7 @@ def action_optimize(inputdir, in_tags):
                             stream_file,
                             '-ofps', framerate,
                             '-vf', 'pullup,softskip,harddup',
-                            '-ovc', 'lavc', '-lavcopts', 'vcodec=ffv1',
+                            '-ovc', 'lavc', '-lavcopts', 'vcodec=ffv1:slices=12:threads=4',
                             '-of', 'lavf', '-lavfopts', 'format=%s' % (ext_to_mencoder_libavcodec_format(new_stream_file_ext),),
                             '-o', new_stream_file,
                         ]
