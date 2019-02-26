@@ -540,11 +540,16 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
     # TVSHOW S01E01 [TITLE]
     dst_file_base += inputfile.tags.tvshow
-    dst_file_base += ' S%02dE' % (
+    dst_file_base += ' S%02d' % (
         inputfile.tags.season,
         )
-    for episode in inputfile.tags.episode:
-        dst_file_base += '%02d' % (episode,)
+    episodes = inputfile.tags.episode
+    if episodes is not None:
+        episodes = sorted(episodes)
+        dst_file_base += 'E%02d' % (episodes[0],)
+        if len(episodes) > 1:
+            # https://support.plex.tv/articles/200220687-naming-series-season-based-tv-shows/
+            dst_file_base += '-E%02d' % (episodes[-1],)
     if inputfile.tags.title and inputfile.tags.title != inputfile.tags.tvshow:
         dst_file_base += ' %s' % (inputfile.tags.title,)
 
