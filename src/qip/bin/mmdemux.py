@@ -171,7 +171,8 @@ def main():
     pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(300), help='cropdetect duration (seconds)')
     pgroup.add_argument('--video-language', '--vlang', dest='video_language', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
     pgroup.add_argument('--video-rate-control-mode', dest='video_rate_control_mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
-    pgroup.add_argument('--force-ffprobe-field-order', dest='force_ffprobe_field_order', default=None, choices=('progressive', 'tt', 'tb', 'bb', 'bt'), help='Ignore and force ffprobe field order')
+    pgroup.add_argument('--force-framerate', dest='force_framerate', default=None, type=FrameRate, help='Ignore heuristics and force framerate')
+    pgroup.add_argument('--force-field-order', dest='force_field_order', default=None, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=None, help='SubRip OCR matrix file')
@@ -518,20 +519,72 @@ def action_rip(rip_dir, device):
                 assert entry.is_file()
                 app.args.mux_files += (os.path.join(rip_dir, entry.name),)
 
-def pick_framerate(ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
+def pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
+    if app.args.force_field_order is not None:
+        return app.args.force_field_order
+
+    mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
+    mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
+    ffprobe_field_order = ffprobe_stream_json.get('field_order', 'progressive')
+
+    if mediainfo_scanorder is None:
+        stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+        if '23pulldown' in stream_file_base.split('.'):
+            mediainfo_scanorder = '2:3 Pulldown'
+
+    if (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order) in(
+            (None, None, 'progressive'),
+            ('Progressive', None, 'progressive'),
+    ):
+        return ffprobe_field_order
+
+    elif (mediainfo_scantype, mediainfo_scanorder) == ('Interlaced', 'Top Field First'):
+        assert ffprobe_field_order in ('tt', 'tb'), (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+        # ‘tt’ Interlaced video, top field coded and displayed first
+        # ‘tb’ Interlaced video, top coded first, bottom displayed first
+        # https://ffmpeg.org/ffmpeg-filters.html#yadif
+        return ffprobe_field_order
+
+    elif (mediainfo_scantype, mediainfo_scanorder) == ('Interlaced', 'Bottom Field First'):
+        assert ffprobe_field_order in ('bb', 'bt'), (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+        # ‘bb’ Interlaced video, bottom field coded and displayed first
+        # ‘bt’ Interlaced video, bottom coded first, top displayed first
+        # https://ffmpeg.org/ffmpeg-filters.html#yadif
+        return ffprobe_field_order
+
+    elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
+        assert ffprobe_field_order == 'progressive', (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+        return '23pulldown'
+
+    else:
+        raise NotImplementedError((mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order))
+
+
+def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
+    if app.args.force_framerate is not None:
+        return app.args.force_framerate
+
     ffprobe_r_framerate = FrameRate(ffprobe_stream_json['r_frame_rate'])
     ffprobe_avg_framerate = FrameRate(ffprobe_stream_json['avg_frame_rate'])
     mediainfo_format = mediainfo_track_dict['Format']
     mediainfo_framerate = FrameRate(mediainfo_track_dict['FrameRate'])
+
+    field_order = pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+
     mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
     mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
+    ffprobe_field_order = ffprobe_stream_json.get('field_order', 'progressive')
+
+    if mediainfo_scanorder is None:
+        stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+        if '23pulldown' in stream_file_base.split('.'):
+            mediainfo_scanorder = '2:3 Pulldown'
 
     if (
             ffprobe_r_framerate == FrameRate(60000, 1001)
-            and (27.0 <= ffprobe_avg_framerate <= 31.0)
+            and (26.75 <= ffprobe_avg_framerate <= 31.0)
             and mediainfo_format == 'MPEG Video'
-            and mediainfo_scantype == 'Progressive'
-            and mediainfo_scanorder == '2:3 Pulldown'
+            and field_order == '23pulldown'
             and mediainfo_framerate == FrameRate(24000, 1001)):
         # Common 2:3 Pulldown cases; mediainfo is right.
         return mediainfo_framerate
@@ -547,16 +600,14 @@ def pick_framerate(ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
         pass
     else:
         if framerate != mediainfo_framerate:
-            if (mediainfo_scantype, mediainfo_scanorder) == (None, None):
-                # Assume Progressive
+            if field_order == 'progressive':
                 pass
-            elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', None):
-                pass
-            elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
+            elif field_order == '23pulldown':
+                assert (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown')
                 # Rely on mediainfo's framerate
                 return mediainfo_framerate
             else:
-                raise ValueError('Inconsistent framerate: %s vs mediainfo=%s' % (framerate, mediainfo_framerate))
+                raise ValueError('Inconsistent %s framerate: %s vs mediainfo=%s' % (field_order, framerate, mediainfo_framerate))
     return framerate
 
 def action_hb(inputfile, in_tags):
@@ -590,7 +641,7 @@ def action_hb(inputfile, in_tags):
         mediainfo_track_dict = mediainfo_dict['media']['track'][1]
         assert mediainfo_track_dict['@type'] == 'Video'
 
-        framerate = pick_framerate(ffprobe_dict, stream_dict, mediainfo_track_dict)
+        framerate = pick_framerate(inputfile.file_name, ffprobe_dict, stream_dict, mediainfo_track_dict)
 
         video_target_bit_rate = get_vp9_target_bitrate(
             width=stream_dict['width'],
@@ -1161,18 +1212,14 @@ def action_optimize(inputdir, in_tags):
                 mediainfo_general_dict, mediainfo_track_dict = mediainfo_dict['media']['track']
                 assert mediainfo_track_dict['@type'] == 'Video'
 
-                framerate = pick_framerate(ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+                framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
                 if expected_framerate is not None:
                     assert framerate == expected_framerate, (framerate, expected_framerate)
                 display_aspect_ratio = Ratio(stream_dict['display_aspect_ratio'])
 
-                mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
-                mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
-                if mediainfo_scanorder is None:
-                    if '23pulldown' in stream_file_base.split('.'):
-                        mediainfo_scanorder = '2:3 Pulldown'
+                field_order = pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
 
-                if (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
+                if field_order == '23pulldown':
 
                     if True:
 
@@ -1303,33 +1350,23 @@ def action_optimize(inputdir, in_tags):
                 extra_args = []
                 video_filter_specs = []
 
-                mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
-                mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
-                ffprobe_field_order = app.args.force_ffprobe_field_order or ffprobe_stream_json.get('field_order', 'progressive')
-                if (mediainfo_scantype, mediainfo_scanorder) == (None, None):
-                    # Assume Progressive
-                    assert ffprobe_field_order == 'progressive', (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+                if field_order == 'progressive':
                     pass
-                elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', None):
-                    assert ffprobe_field_order == 'progressive', (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
-                    pass
-                elif (mediainfo_scantype, mediainfo_scanorder) == ('Interlaced', 'Top Field First'):
-                    assert ffprobe_field_order in ('tt', 'tb'), (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+                elif field_order in ('tt', 'tb'):
                     # ‘tt’ Interlaced video, top field coded and displayed first
                     # ‘tb’ Interlaced video, top coded first, bottom displayed first
                     # https://ffmpeg.org/ffmpeg-filters.html#yadif
                     video_filter_specs.append('yadif=parity=tff')
-                elif (mediainfo_scantype, mediainfo_scanorder) == ('Interlaced', 'Bottom Field First'):
-                    assert ffprobe_field_order in ('bb', 'bt'), (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+                elif field_order in ('bb', 'bt'):
                     # ‘bb’ Interlaced video, bottom field coded and displayed first
                     # ‘bt’ Interlaced video, bottom coded first, top displayed first
                     # https://ffmpeg.org/ffmpeg-filters.html#yadif
                     video_filter_specs.append('yadif=parity=bff')
-                elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
+                elif filters == '23pulldown':
                     raise NotImplementedError('pulldown should have been corrected already using yuvkineco or mencoder!')
                     video_filter_specs.append('pullup,fps=%s' % (framerate,))
                 else:
-                    raise NotImplementedError((mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order))
+                    raise NotImplementedError(field_order)
 
                 if app.args.crop in (None, True):
                     if app.args.crop_wh:
