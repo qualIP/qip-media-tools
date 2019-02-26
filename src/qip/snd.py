@@ -184,7 +184,7 @@ class ITunesXid(object):
     def xid(self, value):
         m = re.match(self.RE_XID, str(value))
         if not m:
-            raise ValueError('Not a iTunes XID')
+            raise ValueError('Not a iTunes XID: %s' % (value,))
         for k, v in m.groupdict().items():
             setattr(self, k, v)
 
@@ -826,6 +826,28 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 identifier = self[tag_enum]
                 if identifier is not None:
                     yield ITunesXid(prefix, scheme, identifier)
+
+    @xids.setter
+    def xids(self, value):
+        for xid in value:
+            xid = ITunesXid(xid)
+            for tag_enum, prefix, scheme in (
+                    (SoundTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
+                    (SoundTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
+                    (SoundTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
+                    (SoundTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
+                    (SoundTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
+                    (SoundTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
+                    (SoundTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
+            ):
+                if xid.scheme is not scheme:
+                    continue
+                if xid.prefix != prefix:
+                    continue
+                self.set_tag(tag_enum, xid.identifier)
+                break
+            else:
+                raise ValueError('Unsupported iTunes XID: %s' % (xid,))
 
     itunescountryid = propex(
         name='itunescountryid',
@@ -3324,7 +3346,10 @@ class SoundFile(MediaFile):
                 if not isinstance(tag_value, tuple):
                     tag_value = (tag_value,)
                 tag_value = old_value + tag_value
-            tags.set_tag(mapped_tag, tag_value)
+            if mapped_tag == 'xid':
+                tags.xids = tag_value
+            else:
+                tags.set_tag(mapped_tag, tag_value)
         return tags
 
     def _load_tags_MKV(self):
