@@ -182,6 +182,8 @@ def main():
     pgroup.add_argument('--output', '-o', dest='output_file', default=None, help='specify the output (demuxed) file name')
 
     pgroup = app.parser.add_argument_group('Compatibility')
+    xgroup.add_argument('--webm', default=True, action='store_true', help='enable webm output format (default)')
+    xgroup.add_argument('--no-webm', dest='webm', default=argparse.SUPPRESS, action='store_false', help='disable webm output format (plain Matroska)')
 
     pgroup = app.parser.add_argument_group('Encoding')
     pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
@@ -2153,7 +2155,7 @@ def action_demux(inputdir, in_tags):
     # ffmpeg messes up timestamps, mkvmerge doesn't support WebVTT yet
     # https://trac.ffmpeg.org/ticket/7736#ticket
     use_mkvmerge = False
-    webm = True
+    webm = app.args.webm
 
     output_file = MkvFile(
             app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'), '.webm' if webm else '.mkv'))
@@ -2347,6 +2349,18 @@ def action_demux(inputdir, in_tags):
                                         external_stream_file_name,
                                         follow_symlinks=True)
                     continue
+                if my_splitext(stream_dict['file_name'])[1] == '.sub':
+                    # ffmpeg doesn't read the .idx file?? Embed .sub/.idx into a .mkv first
+                    tmp_stream_file_name = stream_file_name + '.mkv'
+                    mkvmerge_cmd = [
+                        'mkvmerge',
+                        '-o', os.path.join(inputdir, tmp_stream_file_name),
+                        os.path.join(inputdir, stream_file_name),
+                        '%s.idx' % (my_splitext(os.path.join(inputdir, stream_file_name))[0],),
+                    ]
+                    do_spawn_cmd(mkvmerge_cmd)
+                    stream_file_name = tmp_stream_file_name
+                    stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             if stream_codec_type == 'image':
                 attachment_type = stream_dict['attachment_type']
                 if webm:
@@ -2394,7 +2408,7 @@ def action_demux(inputdir, in_tags):
                         ])
                     stream_file_name = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-                elif stream_file_ext in ('.mkv',):
+                elif stream_file_ext.endswith('.mkv'):
                     pass
                 else:
                     raise NotImplementedError(stream_file_ext)
