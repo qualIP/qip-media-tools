@@ -840,33 +840,37 @@ def action_mux(inputfile, in_tags):
 
                 stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
 
-                if stream_disposition_dict['attached_pic']:
-                    attachment_index += 1
-                    output_track_file_name = '%s/attachment-%02d-%s%s' % (
-                            outputdir,
-                            attachment_index,
-                            stream_codec_type,
-                            stream_file_ext,
-                            )
-                else:
-                    output_track_file_name = '%s/track-%02d-%s%s' % (
-                            outputdir,
-                            stream_index,
-                            stream_codec_type,
-                            stream_file_ext,
-                            )
-                stream_out_dict['file_name'] = os.path.basename(output_track_file_name)
-
                 try:
                     stream_title = stream_out_dict['title'] = stream_dict['tags']['title']
                 except KeyError:
                     pass
+
                 try:
                     stream_language = stream_out_dict['language'] = stream_dict['tags']['language']
                 except KeyError:
-                    pass
+                    stream_language = None
                 else:
                     stream_language = isolang(stream_language)
+
+                stream_file_name_language_suffix = '.%s' % (stream_language,) if stream_language is not None else ''
+                if stream_disposition_dict['attached_pic']:
+                    attachment_index += 1
+                    output_track_file_name = '%s/attachment-%02d-%s%s%s' % (
+                            outputdir,
+                            attachment_index,
+                            stream_codec_type,
+                            stream_file_name_language_suffix,
+                            stream_file_ext,
+                            )
+                else:
+                    output_track_file_name = '%s/track-%02d-%s%s%s' % (
+                            outputdir,
+                            stream_index,
+                            stream_codec_type,
+                            stream_file_name_language_suffix,
+                            stream_file_ext,
+                            )
+                stream_out_dict['file_name'] = os.path.basename(output_track_file_name)
 
                 if stream_file_ext == '.vtt':
                     # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
