@@ -257,6 +257,9 @@ def main():
     pgroup.add_argument('--batch', '-B', action='store_true', help='batch mode')
     pgroup.add_argument('--step', action='store_true', help='step mode')
 
+    pgroup = app.parser.add_argument_group('Tools Control')
+    pgroup.add_argument('--track-extract-tool', dest='track_extract_tool', default=None, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
+
     pgroup = app.parser.add_argument_group('Ripping Control')
     pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
     pgroup.add_argument('--minlength', default=3600, type=qip.utils.Timestamp, help='minimum title length for ripping (default 3600s)')
@@ -431,7 +434,7 @@ def ext_to_container(ext):
             #'.aac': 'aac',
             '.wav': 'wav',
             # subtitles
-            #'.sub': 'dvd_subtitle',
+            'sub': 'vobsub',
             #'.idx': 'dvd_subtitle',
             #'.sup': 'hdmv_pgs_subtitle',
             '.vtt': 'webvtt',
@@ -980,10 +983,12 @@ def action_mux(inputfile, in_tags):
                                 output_track_file_name,
                             )]
                         do_spawn_cmd(cmd)
-                elif stream_codec_name in (
-                        'vp8',
-                        'vp9',
-                        ):
+                elif app.args.track_extract_tool == 'ffmpeg' \
+                    or (app.args.track_extract_tool is None
+                        and stream_codec_name in (
+                            'vp8',
+                            'vp9',
+                        )):
                     # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
                     with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
                         force_format = None
@@ -1009,7 +1014,7 @@ def action_mux(inputfile, in_tags):
                         ffmpeg(*ffmpeg_args,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
-                else:
+                elif app.args.track_extract_tool in ('mkvextract', None):
                     with perfcontext('extract track %d w/ mkvextract' % (stream_index,)):
                         cmd = [
                             'mkvextract', 'tracks', inputfile.file_name,
@@ -1018,7 +1023,9 @@ def action_mux(inputfile, in_tags):
                                 output_track_file_name,
                             )]
                         do_spawn_cmd(cmd)
-                        assert NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
+                        # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
+                else:
+                    raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
 
                 if not app.args.dry_run:
 
