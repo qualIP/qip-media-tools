@@ -5,9 +5,11 @@ __all__ = [
         ]
 
 import functools
+from decimal import Decimal
 import types
 import re
 import os
+import subprocess
 import logging
 log = logging.getLogger(__name__)
 
@@ -15,7 +17,7 @@ from .perf import perfcontext
 from .exec import *
 from .parser import lines_parser
 from .utils import byte_decode
-from .utils import Timestamp as _BaseTimestamp
+from .utils import Timestamp as _BaseTimestamp, Ratio
 from qip.file import *
 
 class Timestamp(_BaseTimestamp):
@@ -360,6 +362,16 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
 
 ffmpeg_2pass_pipe = Ffmpeg2passPipe()
 
+def NA_or_int(value):
+    if value == 'N/A':
+        return None
+    return int(value)
+
+def NA_or_Decimal(value):
+    if value == 'N/A':
+        return None
+    return Decimal(value)
+
 class Ffprobe(_Ffmpeg):
 
     name = 'ffprobe'
@@ -394,6 +406,153 @@ class Ffprobe(_Ffmpeg):
                 dry_run=dry_run,
                 run_func=run_func,
                 **kwargs)
+
+    class Frame(types.SimpleNamespace):
+
+        _attr_convs = {
+            # 'channel_layout': TODO,  # 5.1(side)
+            # 'chroma_location': TODO,  # left
+            # 'color_primaries': TODO,  # unknown
+            # 'color_range': TODO,  # tv
+            # 'color_space': TODO,  # unknown
+            # 'color_transfer': TODO,  # unknown
+            # 'media_type': TODO,  # audio, video, subtitle
+            # 'pict_type': TODO,  # I
+            # 'pix_fmt': TODO,  # yuv420p
+            # 'sample_fmt': TODO,  # fltp
+            'best_effort_timestamp': NA_or_int,  # 0
+            'best_effort_timestamp_time': NA_or_Decimal,  # 0.000000
+            'channels': int,  # 6
+            'coded_picture_number': int,  # 0
+            'display_picture_number': int,  # 0
+            'height': int,  # 480
+            'interlaced_frame': bool,  # 0
+            'key_frame': int,  # 1
+            'nb_samples': int,  # 1536
+            'pkt_dts': NA_or_int,  # 0
+            'pkt_dts_time': NA_or_Decimal,  # 0.000000
+            'pkt_duration': int,  # 32
+            'pkt_duration_time': Decimal,  # 0.032000
+            'pkt_pos': int,  # 13125
+            'pkt_pts': NA_or_int,  # 0
+            'pkt_pts_time': NA_or_Decimal,  # 0.000000
+            'pkt_size': int,  # 1536
+            'repeat_pict': bool,  # 0
+            'sample_aspect_ratio': Ratio,  # 186:157
+            'stream_index': int,  # 1
+            'top_field_first': bool,  # 1
+            'width': int,  # 720
+        }
+
+        def __init__(self, *, side_datas=None, **kwargs):
+            super().__init__(side_datas=side_datas or [],
+                           **kwargs)
+
+    class SideData(types.SimpleNamespace):
+
+        _attr_convs = {
+            # 'side_data_type': TODO,  # AVMatrixEncoding
+            # 'side_data_type': TODO,  # AVPanScan
+            # 'side_data_type': TODO,  # GOP timecode
+            # 'side_data_type': TODO,  # Metadata relevant to a downmix procedure
+            # 'side_data_type': TODO,  # QP table data
+            # 'side_data_type': TODO,  # QP table properties
+            # 'timecode': TODO,  # 00:00:00:00
+        }
+
+    class Subtitle(types.SimpleNamespace):
+
+        _attr_convs = {
+            # 'media_type': TODO,  # subtitle
+            'pts': int,  # 22272000
+            'pts_time': Decimal,  # 22.272000
+            'format': int,  # 1
+            'start_display_time': int,  # 0
+            'end_display_time': int,  # 2000
+            'num_rects': int,  # 1
+        }
+
+    def iter_frames(self, file, *, dry_run=False):
+        from qip.parser import lines_parser
+        ffprobe_args = [
+            '-loglevel', 'panic',
+            '-hide_banner',
+            '-i', str(file),
+            '-show_frames',
+        ]
+        with self.popen(*ffprobe_args,
+                        stdout=subprocess.PIPE, text=True,
+                        dry_run=dry_run) as p:
+            parser = lines_parser(p.stdout)
+            for line in parser:
+                line = line.strip()
+                if line == '[FRAME]':
+		    # [FRAME]
+                    frame = Ffprobe.Frame()
+                    for line in parser:
+                        line = line.strip()
+                        m = re.match(r'^(?P<attr>\w+)=(?P<value>.*)$', line)
+                        if m:
+                            attr = m.group('attr')
+                            value = m.group('value')
+                            conv = frame._attr_convs.get(attr, None)
+                            if conv:
+                                value = conv(value)
+                            setattr(frame, attr, value)
+                            continue
+                        if line == '[SIDE_DATA]':
+                            # [SIDE_DATA]
+                            side_data = Ffprobe.SideData()
+                            for line in parser:
+                                line = line.strip()
+                                m = re.match(r'^(?P<attr>\w+)=(?P<value>.*)$', line)
+                                if m:
+                                    attr = m.group('attr')
+                                    value = m.group('value')
+                                    # conv = side_data._attr_convs.get(attr, None)
+                                    # if conv:
+                                    #     value = conv(value)
+                                    setattr(side_data, attr, value)
+                                    continue
+                                if line == '[/SIDE_DATA]':
+                                    # [/SIDE_DATA]
+                                    break
+                                raise ValueError('Unrecognized SIDE_DATA line %d: %s' % (parser.line_no, line))
+                            else:
+                                raise ValueError('Unclosed SIDE_DATA near line %d' % (parser.line_no,))
+                            frame.side_datas.append(side_data)
+                            continue
+                        if line == '[/FRAME]':
+                            # [/FRAME]
+                            break
+                        raise ValueError('Unrecognized FRAME line %d: %s' % (parser.line_no, line))
+                    else:
+                        raise ValueError('Unclosed FRAME near line %d' % (parser.line_no,))
+                    yield frame
+                    continue
+                if line == '[SUBTITLE]':
+		    # [SUBTITLE]
+                    subtitle = Ffprobe.Subtitle()
+                    for line in parser:
+                        line = line.strip()
+                        m = re.match(r'^(?P<attr>\w+)=(?P<value>.*)$', line)
+                        if m:
+                            attr = m.group('attr')
+                            value = m.group('value')
+                            conv = subtitle._attr_convs.get(attr, None)
+                            if conv:
+                                value = conv(value)
+                            setattr(subtitle, attr, value)
+                            continue
+                        if line == '[/SUBTITLE]':
+                            # [/SUBTITLE]
+                            break
+                        raise ValueError('Unrecognized SUBTITLE line %d: %s' % (parser.line_no, line))
+                    else:
+                        raise ValueError('Unclosed SUBTITLE near line %d' % (parser.line_no,))
+                    yield subtitle
+                    continue
+                raise ValueError('Unrecognized line %d: %s' % (parser.line_no, line))
 
 ffprobe = Ffprobe()
 
