@@ -933,11 +933,15 @@ def action_mux(inputfile, in_tags):
                     pass
 
                 try:
-                    stream_language = stream_out_dict['language'] = stream_dict['tags']['language']
+                    stream_language = stream_dict['tags']['language']
                 except KeyError:
                     stream_language = None
                 else:
                     stream_language = isolang(stream_language)
+                    if stream_language is isolang('und'):
+                        stream_language = None
+                if stream_language:
+                    stream_out_dict['language'] = str(stream_language)
 
                 stream_file_name_language_suffix = '.%s' % (stream_language,) if stream_language is not None else ''
                 if stream_disposition_dict['attached_pic']:
