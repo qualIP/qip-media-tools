@@ -1,10 +1,11 @@
 __all__ = (
-        'TypedKeyDict',
-        'TypedValueDict',
-        'byte_decode',
-        'pairwise',
-        'Timestamp',
-        )
+    'TypedKeyDict',
+    'TypedValueDict',
+    'byte_decode',
+    'pairwise',
+    'Timestamp',
+    'prettyxml',
+)
 
 import abc
 import collections
@@ -287,3 +288,15 @@ class Ratio(Fraction):
         if type(self) == Ratio:
             return self     # My components are also immutable
         return super().__deepcopy__()
+
+
+def prettyxml(sXml, *, indent="  "):
+    import xml.dom.minidom
+    import xml.etree.ElementTree
+    if isinstance(sXml, str):
+        pass
+    elif isinstance(sXml, xml.etree.ElementTree.ElementTree):
+        sXml = xml.etree.ElementTree.tostring(sXml.getroot())
+    else:
+        raise TypeError(sXml)
+    return xml.dom.minidom.parseString(sXml).toprettyxml(indent=indent)
