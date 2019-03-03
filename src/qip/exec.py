@@ -84,9 +84,12 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
         log.verbose('CMD (dry-run): %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
-        d = types.SimpleNamespace()
-        d.stdout = None
-        return d
+        import contextlib
+        p = types.SimpleNamespace()
+        pcm = contextlib.nullcontext(p)
+        scm = contextlib.nullcontext(None)
+        pcm.stdout = p.stdout = scm
+        return pcm
     else:
         return dbg_popen_cmd(cmd, log_append=log_append, **kwargs)
 
@@ -252,6 +255,7 @@ class Executable(metaclass=abc.ABCMeta):
         cmd = self.build_cmd(*args, **kwargs)
         return do_popen_cmd(
             cmd,
+            dry_run=dry_run,
             stdin=stdin, stdout=stdout, stderr=stderr,
             universal_newlines=text,  # 3.7: text=text
             encoding=encoding,
