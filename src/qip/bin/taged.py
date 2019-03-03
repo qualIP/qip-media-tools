@@ -21,7 +21,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
 
 from qip import json
@@ -453,166 +452,60 @@ def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):
             continue
         return eTag
 
-def find_all_Simple_element(eTag, *, Name):
-    Name = str(Name) if Name is not None else ''
-    for eSimple in eTag.findall('Simple'):
-        eName = eSimple.find('Name')
-        vName = eName.text if eName is not None else ''
-        if vName != Name:
-            continue
-        if app.log.isEnabledFor(logging.DEBUG):
-            app.log.debug('Found eSimple with Name %r: %r', Name, ET.tostring(eSimple))
-        yield eSimple
-
-def find_Simple_element(eTag, *, Name):
-    for eSimple in find_all_Simple_element(eTag, Name=Name):
-        return eSimple
-
-def clean_Tag_elements(root):
-    for eTag in root.findall('Tag'):
-        # Error: The XML tag file '...' contains an error: <Tag> is missing the <Simple> child.
-        app.log.debug('eTag.find = %r', eTag.find('Simple'))
-        gotValidSimpleTag = False
-        for eSimple in eTag.findall('Simple'):
-            # Error: The XML tag file '...' contains an error: <Simple> must contain either a <String> or a <Binary> child.
-            if eSimple.find('String') is None and eSimple.find('Binary') is None:
-                app.log.debug('remove <Simple> missing <String> or a <Binary> child. %r', ET.tostring(eSimple))
-                eTag.remove(eSimple)
-                continue
-            gotValidSimpleTag = True
-        if not gotValidSimpleTag:
-            app.log.debug('remove <Tag> missing <Simple> child.')
-            root.remove(eTag)
-            continue
-        eTargets = eTag.find('Targets')
-        if eTargets is not None:
-            eTargetTypeValue = eTargets.find('TargetTypeValue')
-            if eTargetTypeValue is None:
-                eTargetTypeValue = ET.SubElement(eTargets, 'TargetTypeValue')
-                eTargetTypeValue.text = '50'
-
 def taged_MKV(file_name, tags):
+    import qip.mkv
     # https://matroska.org/technical/specs/tagging/index.html
-    with TempFile(file_name + '.tags.tmp.xml',
-                  delete=not (__name__ == "__main__" and getattr(app.args, 'save_temps', False)),
-                  ) as tmp_tags_xml_file:
-        tags_xml = None
-        for tag, value in tags.items():
-            tag = tag.name
-            if False and tag == 'title':
-                cmd = [
-                    'mkvpropedit',
-                    '--edit', 'info',
-                    '--set', 'title=%s' % (value,),
-                    file_name,
-                ]
-                do_exec_cmd(cmd)
-            else:
-                if type(value) is tuple:
-                    mkv_value = tuple(str(e) for e in value)
-                else:
-                    mkv_value = str(value)
-                TargetType = None
-                TargetTypeValue = 50
-                if tag == 'track':
-                    mkv_tag = 'PART_NUMBER'
-                elif tag == 'episode':
-                    TargetType = 'EPISODE'
-                    mkv_tag = 'PART_NUMBER'
-                elif tag == 'tracks':
-                    mkv_tag = 'TOTAL_PARTS'
-                elif tag == 'date':
-                    mkv_tag = 'DATE_RELEASED'
-                elif tag == 'genre':
-                    mkv_tag = 'GENRE'
-                # albumartist should be 50/ARTIST while artist should be on individual tracks
-                #elif tag == 'albumartist':
-                #    mkv_tag = 'ARTIST'
-                elif tag == 'artist':
-                    mkv_tag = 'ARTIST'
-                elif tag == 'tvshow':
-                    TargetType = 'COLLECTION'
-                    TargetTypeValue = 70
-                    mkv_tag = 'TITLE'
-                elif tag == 'season':
-                    TargetType = 'SEASON'
-                    TargetTypeValue = 60
-                    mkv_tag = 'PART_NUMBER'
-                elif tag == 'title':
-                    mkv_tag = 'TITLE'
-                elif tag == 'mediatype':
-                    mkv_tag = 'ORIGNAL_MEDIA_TYPE'
-                elif tag == 'contenttype':
-                    mkv_tag = 'CONTENT_TYPE'
-                else:
-                    raise NotImplementedError(tag)
-                if tag == 'title':
-                    cmd = [
-                        'mkvpropedit',
-                        '--edit', 'info',
-                        '--set', 'title=%s' % (value,),
-                        file_name,
-                    ]
-                    do_exec_cmd(cmd)
-                if tags_xml is None:
-                    cmd = [
-                        'mkvextract',
-                        file_name,
-                        'tags',
-                        tmp_tags_xml_file.file_name,
-                    ]
-                    dbg_exec_cmd(cmd)
-                    # https://mkvtoolnix.download/doc/mkvextract.html
-                    # If no tags are found in the file, the output file is not created.
-                    if tmp_tags_xml_file.exists():
-                        tags_xml = ET.parse(tmp_tags_xml_file.file_name)
-                    else:
-                        tags_xml = ET.ElementTree(ET.fromstring(
-                            '''<?xml version="1.0"?>
-                            <!-- <!DOCTYPE Tags SYSTEM "matroskatags.dtd"> -->
-                            <Tags>
-                            </Tags>
-                            '''))
-                root = tags_xml.getroot()
-                clean_Tag_elements(root)
-                eTag = find_Tag_element(root, TargetTypeValue=TargetTypeValue, TargetType=TargetType)
-                if not eTag:
-                    eTag = ET.SubElement(root, 'Tag')
-                    eTargets = ET.SubElement(eTag, 'Targets')
-                    eTrackUID = ET.SubElement(eTargets, 'TrackUID')
-                    eTrackUID.text = '0'
-                    eTargetTypeValue = ET.SubElement(eTargets, 'TargetTypeValue')
-                    eTargetTypeValue.text = str(TargetTypeValue)
-                    if TargetType:
-                        eTargetType = ET.SubElement(eTargets, 'TargetType')
-                        eTargetType.text = str(TargetType)
-                for eSimple in find_all_Simple_element(eTag, Name=mkv_tag):
-                    app.log.debug('Remove %r', ET.tostring(eSimple))
-                    eTag.remove(eSimple)
-                tup_mkv_value = mkv_value if type(mkv_value) is tuple else (mkv_value,)
-                #app.log.debug('value=%r, mkv_value=%r, tup_mkv_value=%r', value, mkv_value, tup_mkv_value)
-                for one_mkv_value in tup_mkv_value:
-                    eSimple = ET.SubElement(eTag, 'Simple')
-                    eName = ET.SubElement(eSimple, 'Name')
-                    eName.text = mkv_tag
-                    eString = ET.SubElement(eSimple, 'String')
-                    eString.text = one_mkv_value
-                    if app.log.isEnabledFor(logging.DEBUG):
-                        app.log.debug('Add %r', ET.tostring(eSimple))
-        if tags_xml is not None:
-            tags_xml.write(tmp_tags_xml_file.file_name,
-                #encoding='unicode',
-                xml_declaration=True,
-                )
-            if app.log.isEnabledFor(logging.DEBUG):
-                with open(tmp_tags_xml_file.file_name, 'r') as fd:
-                    app.log.debug('Tags XML: %s', fd.read())
+    mkv_file = qip.mkv.MkvFile(file_name)
+    tags_list = None
+    for tag, value in tags.items():
+        tag = tag.name
+        if type(value) is tuple:
+            mkv_value = tuple(str(e) for e in value)
+        else:
+            mkv_value = str(value)
+        try:
+            TargetTypeValue, TargetType, mkv_tag = qip.mkv.mkv_tag_rev_map[tag]
+        except KeyError:
+            raise NotImplementedError(tag)
+            TargetType = None
+            TargetTypeValue = 50
+        # albumartist should be 50/ARTIST while artist should be on individual tracks
+        #if tag == 'albumartist':
+        #    mkv_tag = 'ARTIST'
+        if tag == 'title':
             cmd = [
                 'mkvpropedit',
-                '--tags', 'all:%s' % (tmp_tags_xml_file.file_name),
+                '--edit', 'info',
+                '--set', 'title=%s' % (value,),
                 file_name,
             ]
             do_exec_cmd(cmd)
+        if tags_list is None:
+            tags_xml = mkv_file.get_tags_xml()
+            tags_list = mkv_file.parse_tags_xml(tags_xml)
+        d_target = qip.mkv.MkvTagTarget(
+            TrackUID=0,
+            TargetTypeValue=TargetTypeValue,
+            TargetType=TargetType,
+        )
+        # Remove any existing similar tag
+        tags_list = [d_tag
+                     for d_tag in tags_list
+                     if d_tag.Target != d_target or d_tag.Name != mkv_tag]
+        tup_mkv_value = mkv_value if type(mkv_value) is tuple else (mkv_value,)
+        for one_mkv_value in tup_mkv_value:
+            d_tag = qip.mkv.MkvTagSimple(Target=d_target,
+                                         Name=mkv_tag,
+                                         String=one_mkv_value,
+                                         )
+            if app.log.isEnabledFor(logging.DEBUG):
+                app.log.debug('Add %r', d_tag)
+            tags_list.append(d_tag)
+    if tags_list is not None:
+        tags_xml = qip.mkv.MkvFile.create_tags_xml(tags_list)
+        import qip.utils
+        app.log.debug('tags_xml: %s', qip.utils.prettyxml(tags_xml))
+        mkv_file.set_tags_xml(tags_xml)
 
 def taged(file_name, tags):
     app.log.info('Editing %s...', file_name)

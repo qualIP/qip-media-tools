@@ -40,4 +40,8 @@ class lines_parser(object):
         self.match = re.match(pattern, self.line, **kwargs)
         return self.match
 
+    def __iter__(self):
+        while self.advance():
+            yield self.line
+
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

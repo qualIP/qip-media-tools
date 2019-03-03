@@ -3354,61 +3354,41 @@ class SoundFile(MediaFile):
 
     def _load_tags_MKV(self):
         import xml.etree.ElementTree as ET
+        import qip.mkv
         tags = AlbumTags()
-        tags_xml_txt = dbg_exec_cmd(['mkvextract', self.file_name, 'tags', '-'])
-        tags_xml = ET.fromstring(tags_xml_txt)
-        root = tags_xml  # tags_xml.getroot()
-        for eTag in root.findall('Tag'):
-            eTargets = eTag.find('Targets')
-            # <Targets>
-            #   <TargetTypeValue>50</TargetTypeValue>
-            #   <TrackUID>9427439434839936200</TrackUID>
-            #   <TargetType>MOVIE</TargetType>
-            # </Targets>
-            eTargetTypeValue = eTargets and eTargets.find('TargetTypeValue')
-            vTargetTypeValue = int(eTargetTypeValue.text) if (eTargetTypeValue is not None and eTargetTypeValue.text is not None) else 50
-            eTargetType = eTargets and eTargets.find('TargetType')
-            vTargetType = eTargetType.text if eTargetType is not None else None
-            eTrackUID = eTargets and eTargets.find('TrackUID')
-            vTrackUID = eTrackUID.text if (eTrackUID is not None and eTrackUID.text is not None) else '0'
-            app.log.debug('Target: TargetType=%r/%s, TrackUID=%r', vTargetTypeValue, vTargetType, vTrackUID)
-            target_tags = tags if vTrackUID == '0' else tags.tracks_tags[int(vTrackUID)]
-            #if vTrackUID != '0':
-            #    continue
-            for eSimple in eTag.findall('Simple'):
-                # <Simple>
-                #   <Name>BPS</Name>
-                #   <String>325282</String>
-                #   <TagLanguage>eng</TagLanguage>
-                # </Simple>
-                mkv_tag = eSimple.find('Name').text
-                if mkv_tag in (
-                        'BPS',  # TODO
-                        'DURATION',  # TODO
-                        'NUMBER_OF_FRAMES',  # TODO
-                        'NUMBER_OF_BYTES',  # TODO
-                        'SOURCE_ID',  # TODO
-                        '_STATISTICS_WRITING_APP',  # TODO
-                        '_STATISTICS_WRITING_DATE_UTC',  # TODO
-                        '_STATISTICS_TAGS',  # TODO
-                        ):
-                    continue
-                tag_value = eSimple.find('String').text
-                app.log.debug('Simple: name=%r, value=%r', mkv_tag, tag_value)
-                import qip.mkv
+        mkv_file = qip.mkv.MkvFile(self.file_name)
+        tags_xml = mkv_file.get_tags_xml()
+        tags_list = mkv_file.parse_tags_xml(tags_xml)
+        for d_tag in tags_list:
+            app.log.debug('d_tag = %r', d_tag)
+            target_tags = tags if d_tag.Target.TrackUID == 0 else tags.tracks_tags[d_tag.Target.TrackUID]
+            if d_tag.Name in (
+                    'BPS',  # TODO
+                    'DURATION',  # TODO
+                    'NUMBER_OF_FRAMES',  # TODO
+                    'NUMBER_OF_BYTES',  # TODO
+                    'SOURCE_ID',  # TODO
+                    '_STATISTICS_WRITING_APP',  # TODO
+                    '_STATISTICS_WRITING_DATE_UTC',  # TODO
+                    '_STATISTICS_TAGS',  # TODO
+                    ):
+                continue
+            if d_tag.String is not None:
                 try:
-                    mapped_tag = qip.mkv.mkv_tag_map[(vTargetTypeValue, vTargetType, mkv_tag)]
-                except KeyError:
+                    mapped_tag = qip.mkv.mkv_tag_map[(d_tag.Target.TargetTypeValue, d_tag.Target.TargetType, d_tag.Name)]
+                except KeyError as e:
+                    #app.log.debug('e: %s', e)
                     raise
-                    # mapped_tag = qip.mkv.mkv_tag_map[(vTargetTypeValue, None, mkv_tag)]
+                    # mapped_tag = qip.mkv.mkv_tag_map[(d_tag.Target.TargetTypeValue, None, d_tag.Name)]
                 old_value = tags[mapped_tag] if mapped_tag in ('episode',) else None
                 if old_value is not None:
                     if not isinstance(old_value, tuple):
                         old_value = (old_value,)
-                    if not isinstance(tag_value, tuple):
-                        tag_value = (tag_value,)
-                    tag_value = old_value + tag_value
-                target_tags.set_tag(mapped_tag, tag_value)
+                    if not isinstance(d_tag.String, tuple):
+                        d_tag.String = (d_tag.String,)
+                    d_tag.String = old_value + d_tag.String
+                #app.log.debug('%s = %r', mapped_tag, d_tag.String)
+                target_tags.set_tag(mapped_tag, d_tag.String)
         return tags
 
     def load_tags(self):
