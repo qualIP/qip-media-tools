@@ -47,6 +47,7 @@ import sys
 import types
 import xml.etree.ElementTree as ET
 from fractions import Fraction
+from decimal import Decimal
 reprlib.aRepr.maxdict = 100
 
 from qip import json
@@ -62,7 +63,6 @@ from qip.mediainfo import *
 from qip.mkv import *
 from qip.mm import MediaFile, Chapters
 from qip.opusenc import opusenc
-from qip.parser import *
 from qip.perf import perfcontext
 from qip.snd import *
 from qip.threading import *
@@ -82,6 +82,13 @@ import qip.utils
 
 # https://www.ffmpeg.org/ffmpeg.html
 
+class FieldOrderUnknownError(NotImplementedError):
+
+    def __init__(self, mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order):
+        self.mediainfo_scantype = mediainfo_scantype
+        self.mediainfo_scanorder = mediainfo_scanorder
+        self.ffprobe_field_order = ffprobe_field_order
+        super().__init__((mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order))
 
 common_aspect_ratios = {
     Ratio(4, 3),
@@ -124,6 +131,100 @@ class FrameRate(Fraction):
                 else:
                     raise NotImplementedError(numerator)
         return super().__new__(cls, numerator, denominator, **kwargs)
+
+def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
+    field_order = app.args.force_field_order
+    framerate = app.args.force_framerate
+
+    if field_order is None:
+
+        mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
+        mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
+        ffprobe_field_order = ffprobe_stream_json.get('field_order', 'progressive')
+
+        video_frames = []
+        prev_pkt_pts_time = Decimal('0.000000')
+        for frame in ffprobe.iter_frames(stream_file_name):
+            if frame.media_type != 'video':
+                continue
+            assert frame.stream_index == 0
+            if frame.pkt_pts_time is None:
+                frame.pkt_pts_time = prev_pkt_pts_time
+            else:
+                prev_pkt_pts_time = frame.pkt_pts_time
+            video_frames.append(frame)
+            if len(video_frames) >= 1000:
+                break
+        video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
+
+    if field_order is None:
+        for time_long, time_short, result_framerate in (
+                (Decimal('0.050050'), Decimal('0.033367'), FrameRate(24000, 1001)),
+                (Decimal('0.050000'), Decimal('0.033000'), FrameRate(24000, 1001)),
+        ):
+            i = 0
+            while i < len(video_frames) and video_frames[i].pkt_duration_time == time_short:
+                i += 1
+            for c in range(3):
+                if i < len(video_frames) and video_frames[i].pkt_duration_time == time_long:
+                    i += 1
+            while i < len(video_frames) and video_frames[i].pkt_duration_time == time_short:
+                i += 1
+            # pts_time=1.668333 duration_time=0.050050
+            # pts_time=N/A      duration_time=0.050050
+            # pts_time=1.751750 duration_time=0.050050
+            # pts_time=1.801800 duration_time=0.033367
+            # pts_time=N/A      duration_time=0.033367
+            # pts_time=1.885217 duration_time=0.033367
+            is_pulldown = None
+            duration_time_pattern1 = (
+                time_long, time_long, time_long,
+                time_short, time_short, time_short,
+            )
+            duration_time_pattern2 = (
+                time_long, time_short,
+                time_long, time_short,
+                time_long, time_short,
+            )
+            while i < len(video_frames) - 6:
+                duration_time_found = (
+                    video_frames[i+0].pkt_duration_time,
+                    video_frames[i+1].pkt_duration_time,
+                    video_frames[i+2].pkt_duration_time,
+                    video_frames[i+3].pkt_duration_time,
+                    video_frames[i+4].pkt_duration_time,
+                    video_frames[i+5].pkt_duration_time,
+                )
+                if (
+                        duration_time_found == duration_time_pattern1
+                        or duration_time_found == duration_time_pattern2
+                ):
+                    is_pulldown = True
+                else:
+                    is_pulldown = False
+                    app.log.debug('not 23pulldown @ frame %d: %r', i, duration_time_found)
+                    break
+                i += 6
+            if is_pulldown:
+                field_order = '23pulldown'
+                framerate = result_framerate
+                app.log.warning('Detected field order is %s at %s fps', field_order, framerate)
+                break
+
+    if field_order is None:
+        #for i in range(0, len(video_frames)):
+        #    print('pkt_duration_time=%r, interlaced_frame=%r' % (video_frames[i].pkt_duration_time, video_frames[i].interlaced_frame))
+        # pkt_duration_time=0.033000|interlaced_frame=1|top_field_first=1 = tt @ 30000/1001 ?
+        # pkt_duration_time=0.041000|interlaced_frame=0|top_field_first=0 = progressive @ 24000/1001 ?
+        field_order = pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+
+    if field_order is None:
+        raise NotImplementedError('field_order unknown')
+
+    if framerate is None:
+        framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
+
+    return field_order, framerate
 
 @app.main_wrapper
 def main():
@@ -559,10 +660,10 @@ def pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediai
         return '23pulldown'
 
     else:
-        raise NotImplementedError((mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order))
+        raise FieldOrderUnknownError(mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
 
 
-def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
+def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, *, field_order=None):
     if app.args.force_framerate is not None:
         return app.args.force_framerate
 
@@ -570,8 +671,14 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
     ffprobe_avg_framerate = FrameRate(ffprobe_stream_json['avg_frame_rate'])
     mediainfo_format = mediainfo_track_dict['Format']
     mediainfo_framerate = FrameRate(mediainfo_track_dict['FrameRate'])
+    mediainfo_original_framerate = mediainfo_track_dict.get('OriginalFrameRate', None)
+    if mediainfo_original_framerate is not None:
+        mediainfo_original_framerate = FrameRate(mediainfo_original_framerate)
 
-    field_order = pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+    try:
+        field_order = field_order or pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+    except FieldOrderUnknownError:
+        field_order = None
 
     mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
     mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
@@ -594,13 +701,16 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
     assert (
         ffprobe_r_framerate == ffprobe_avg_framerate
         or ffprobe_r_framerate == ffprobe_avg_framerate * 2), \
-        (ffprobe_r_framerate, ffprobe_avg_framerate)
+        (ffprobe_r_framerate, ffprobe_avg_framerate, mediainfo_framerate, mediainfo_original_framerate)
     framerate = ffprobe_avg_framerate
 
     if mediainfo_format in ('FFV1',):
         # mediainfo's ffv1 framerate is all over the place (24 instead of 23.976 for .ffv1.mkv and total number of frames for .ffv1.avi)
         pass
     else:
+        assert mediainfo_original_framerate is None \
+            or mediainfo_framerate == mediainfo_original_framerate, \
+            (ffprobe_r_framerate, ffprobe_avg_framerate, mediainfo_framerate, mediainfo_original_framerate)
         if framerate != mediainfo_framerate:
             if field_order == 'progressive':
                 pass
@@ -643,7 +753,10 @@ def action_hb(inputfile, in_tags):
         mediainfo_track_dict = mediainfo_dict['media']['track'][1]
         assert mediainfo_track_dict['@type'] == 'Video'
 
-        framerate = pick_framerate(inputfile.file_name, ffprobe_dict, stream_dict, mediainfo_track_dict)
+        #framerate = pick_framerate(inputfile.file_name, ffprobe_dict, stream_dict, mediainfo_track_dict)
+        field_order, framerate = analyze_field_order_and_framerate(
+            inputfile.file_name,
+            ffprobe_dict, stream_dict, mediainfo_track_dict)
 
         video_target_bit_rate = get_vp9_target_bitrate(
             width=stream_dict['width'],
@@ -803,35 +916,6 @@ def action_mux(inputfile, in_tags):
                     stream_file_ext = codec_name_to_ext(stream_codec_name)
 
                 if stream_codec_type == 'video':
-
-                    if False:
-                        with perfcontext('Scan w/ HandBrake'):
-                            out = HandBrake(
-                                   # Dimensions
-                                   # crop='<top:bottom:left:right>',
-                                   loose_crop=True,
-                                   # Filters
-                                   deinterlace=True,
-                                   input=inputfile.file_name,
-                                   json=True,
-                                   scan=True,
-                                   run_func=do_exec_cmd,
-                                )
-                            if not app.args.dry_run:
-                                (hb_sect, hb_sect_dict), = HandBrake.parse_json_output(out.out)
-                                hb_title_dict, = hb_sect_dict['TitleList']
-                                hb_crop = hb_title_dict['Crop']
-                                t, b, l, r = hb_crop
-                                hb_geometry = hb_title_dict['Geometry']
-                                if (t, b, l, r) != (0, 0, 0, 0):
-                                    w = hb_geometry['Width'] - l - r
-                                    h = hb_geometry['Height'] - t - b
-                                    stream_out_dict['crop'] = [w, h, l, t]
-
-                                hb_InterlaceDetected = hb_title_dict['InterlaceDetected']
-                                if hb_InterlaceDetected:
-                                    raise NotImplementedError('Interlace detected')
-
                     if app.args.video_language:
                         stream_dict.setdefault('tags', {})
                         stream_dict['tags']['language'] = app.args.video_language.code3
@@ -1219,12 +1303,13 @@ def action_optimize(inputdir, in_tags):
                 mediainfo_general_dict, mediainfo_track_dict = mediainfo_dict['media']['track']
                 assert mediainfo_track_dict['@type'] == 'Video'
 
-                framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+                field_order, framerate = analyze_field_order_and_framerate(
+                    os.path.join(inputdir, stream_file_name),
+                    ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+
                 if expected_framerate is not None:
                     assert framerate == expected_framerate, (framerate, expected_framerate)
                 display_aspect_ratio = Ratio(stream_dict['display_aspect_ratio'])
-
-                field_order = pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
 
                 if field_order == '23pulldown':
 
@@ -1252,6 +1337,8 @@ def action_optimize(inputdir, in_tags):
                                 '-f', ext_to_container('.y4m'),
                                 '--', 'pipe:',
                             ]
+
+                        app.log.verbose('pullup framerate: %s', framerate)
 
                         yuvkineco_cmd = [
                             'yuvkineco',
