@@ -81,8 +81,11 @@ class Mediainfo(Executable):
                     v = re.sub(r' s *', 's', v)
                     v = re.sub(r'(\d+)s(\d\d\d+) ms', r'\1.\2s', v)
                     v = str(Timestamp(v).seconds)
-                elif k == 'Frame rate':
-                    k = 'FrameRate'
+                elif k in (
+                    'Original frame rate',
+                    'Frame rate',
+                ):
+                    k = ''.join(k.title().split())  # OriginalFrameRate, FrameRate
                     # 23.976 (24000/1001) FPS
                     m = re.match(r'^(?P<float>\d+\.\d+) \((?P<ratio>\d+/\d+)\) FPS$', v)
                     if m:
