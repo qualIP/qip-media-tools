@@ -35,28 +35,58 @@ mkv_tag_rev_map = {}
 for _k, _v in mkv_tag_map.items():
     mkv_tag_rev_map[_v] = _k
 
-MkvTagTarget = collections.namedtuple('MkvTagTarget',
-                                      (
-                                          'TrackUID',
-                                          'TargetTypeValue',
-                                          'TargetType',
-                                      ),
-                                      defaults=(
-                                          None,  # TargetType
-                                      ))
-MkvTagSimple = collections.namedtuple('MkvTagSimple',
-                                      (
-                                          'Target',
-                                          'Name',
-                                          'String',
-                                          'Binary',
-                                          'TagLanguage',
-                                      ),
-                                      defaults=(
-                                          None,  # String
-                                          None,  # Binary
-                                          None,  # TagLanguage
-                                      ))
+
+class MkvTagTarget(collections.namedtuple(
+        'MkvTagTarget',
+        (
+            'TrackUID',
+            'TargetTypeValue',
+            'TargetType',
+        ),
+        # defaults=(
+        #     None,  # TargetType
+        # ),
+        )):
+
+    __slots__ = ()
+
+    def __new__(cls, *,
+            TargetType=None,
+            **kwargs):
+        return super().__new__(
+                cls,
+                TargetType=TargetType,
+                **kwargs)
+
+
+class MkvTagSimple(collections.namedtuple(
+        'MkvTagSimple',
+        (
+            'Target',
+            'Name',
+            'String',
+            'Binary',
+            'TagLanguage',
+        ),
+        # defaults=(
+        #     None,  # String
+        #     None,  # Binary
+        #     None,  # TagLanguage
+        # ),
+        )):
+
+    __slots__ = ()
+
+    def __new__(cls, *,
+            String=None, Binary=None, TagLanguage=None,
+            **kwargs):
+        return super().__new__(
+                cls,
+                String=String,
+                Binary=Binary,
+                TagLanguage=TagLanguage,
+                **kwargs)
+
 
 class MkvFile(snd.SoundFile):
 
