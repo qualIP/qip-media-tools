@@ -3,11 +3,13 @@ __all__ = (
     'Chapter',
     'Chapters',
     'MediaFile',
+    'FrameRate',
 )
 
-import xml.etree.ElementTree as ET
+from fractions import Fraction
 import io
 import logging
+import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
 from .file import BinaryFile
@@ -177,5 +179,43 @@ class MediaFile(BinaryFile):
                 log.debug('mediainfo_dict:\n%s', pprint.pformat(mediainfo_dict))
             return mediainfo_dict
         raise ValueError('Nothing found in output of mediainfo')
+
+
+class FrameRate(Fraction):
+
+    def __new__(cls, numerator=0, denominator=None, **kwargs):
+        if denominator is None:
+            if isinstance(numerator, str):
+                try:
+                    numerator = int(numerator)
+                except ValueError:
+                    try:
+                        numerator = float(numerator)
+                    except ValueError:
+                        pass
+            if isinstance(numerator, (int, float)):
+                if numerator == 23.976:
+                    numerator, denominator = 24000, 1001
+                elif numerator == 29.970:
+                    numerator, denominator = 30000, 1001
+                elif numerator in (24.0, 30.0):
+                    pass
+                else:
+                    raise NotImplementedError(numerator)
+        return super().__new__(cls, numerator, denominator, **kwargs)
+
+    def round_common(self):
+        for framerate in common_framerates:
+            if framerate * 0.998 < self <= framerate:
+                return framerate
+        raise ValueError(framerate)
+
+
+common_framerates = sorted([
+    FrameRate(24000, 1001),
+    FrameRate(24000, 1000),
+    FrameRate(30000, 1001),
+    FrameRate(30000, 1000),
+    ])
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

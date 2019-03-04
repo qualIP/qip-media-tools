@@ -61,7 +61,7 @@ from qip.isolang import isolang
 from qip.m4a import *
 from qip.mediainfo import *
 from qip.mkv import *
-from qip.mm import MediaFile, Chapters
+from qip.mm import MediaFile, Chapters, FrameRate
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
 from qip.snd import *
@@ -108,29 +108,6 @@ def MOD_UP(v, m):
 
 def isolang_or_None(v):
     return None if v == 'None' else isolang(v)
-
-class FrameRate(Fraction):
-
-    def __new__(cls, numerator=0, denominator=None, **kwargs):
-        if denominator is None:
-            if isinstance(numerator, str):
-                try:
-                    numerator = int(numerator)
-                except ValueError:
-                    try:
-                        numerator = float(numerator)
-                    except ValueError:
-                        pass
-            if isinstance(numerator, (int, float)):
-                if numerator == 23.976:
-                    numerator, denominator = 24000, 1001
-                elif numerator == 29.970:
-                    numerator, denominator = 30000, 1001
-                elif numerator in (24.0, 30.0):
-                    pass
-                else:
-                    raise NotImplementedError(numerator)
-        return super().__new__(cls, numerator, denominator, **kwargs)
 
 def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
     field_order = app.args.force_field_order
