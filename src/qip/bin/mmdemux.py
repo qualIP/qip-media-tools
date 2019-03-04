@@ -136,6 +136,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
     field_order = app.args.force_field_order
     framerate = app.args.force_framerate
 
+    video_frames = []
+
     if field_order is None:
 
         mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
@@ -155,9 +157,46 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             video_frames.append(frame)
             if len(video_frames) >= 1000:
                 break
-        video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
+        #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
+        #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
 
-    if field_order is None:
+        video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
+        # XXXJST:
+        # Based on libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
+        # though getting the proper TemporalReference is more complex and may
+        # be different than pkt_dts_time ordering.
+        temporal_string = ''.join([
+            ('T' if frame.top_field_first else 'B') + ('3' if frame.repeat_pict else '2')
+            for frame in video_frames])
+        #app.log.debug('temporal_string: %r', temporal_string)
+
+    if field_order is None and '3' in temporal_string:
+        # libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
+        for temporal_pattern in (
+                'T2T3B2B3T2T3B2B3',
+                'B2B3T2T3B2B3T2T3',
+                ):
+            if temporal_pattern in temporal_string:
+                field_order = '23pulldown'
+                framerate = FrameRate(24000, 1001)  # framerate * 24 / 30
+                interlacement = 'ppf'
+                app.log.warning('Detected field order is %s at %s fps based on temporal pattern %r', field_order, framerate, temporal_pattern)
+                break
+
+    if field_order is None and '3' in temporal_string:
+        # libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
+        for temporal_pattern in (
+                'T2T2T2T2T2T2T2T2T2T2T2T3B2B2B2B2B2B2B2B2B2B2B2B3',
+                'B2B2B2B2B2B2B2B2B2B2B2B3T2T2T2T2T2T2T2T2T2T2T2T3',
+                ):
+            if temporal_pattern in temporal_string:
+                field_order = '222222222223pulldown'
+                framerate = framerate * framerate * 24 / 25
+                interlacement = 'ppf'
+                app.log.warning('Detected field order is %s at %s fps based on temporal pattern %r', field_order, framerate, temporal_pattern)
+                break
+
+    if False and field_order is None:
         for time_long, time_short, result_framerate in (
                 (Decimal('0.050050'), Decimal('0.033367'), FrameRate(24000, 1001)),
                 (Decimal('0.050000'), Decimal('0.033000'), FrameRate(24000, 1001)),
@@ -687,10 +726,10 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
     mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
     ffprobe_field_order = ffprobe_stream_json.get('field_order', 'progressive')
 
-    if mediainfo_scanorder is None:
-        stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-        if '23pulldown' in stream_file_base.split('.'):
-            mediainfo_scanorder = '2:3 Pulldown'
+    #if mediainfo_scanorder is None:
+    #    stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+    #    if '23pulldown' in stream_file_base.split('.'):
+    #        mediainfo_scanorder = '2:3 Pulldown'
 
     if (
             ffprobe_r_framerate == FrameRate(60000, 1001)
