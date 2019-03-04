@@ -372,6 +372,13 @@ def NA_or_Decimal(value):
         return None
     return Decimal(value)
 
+def str_to_bool(value):
+    if value == '0':
+        return False
+    if value == '1':
+        return True
+    raise ValueError(value)
+
 class Ffprobe(_Ffmpeg):
 
     name = 'ffprobe'
@@ -426,7 +433,7 @@ class Ffprobe(_Ffmpeg):
             'coded_picture_number': int,  # 0
             'display_picture_number': int,  # 0
             'height': int,  # 480
-            'interlaced_frame': bool,  # 0
+            'interlaced_frame': str_to_bool,  # 0
             'key_frame': int,  # 1
             'nb_samples': int,  # 1536
             'pkt_dts': NA_or_int,  # 0
@@ -437,10 +444,10 @@ class Ffprobe(_Ffmpeg):
             'pkt_pts': NA_or_int,  # 0
             'pkt_pts_time': NA_or_Decimal,  # 0.000000
             'pkt_size': int,  # 1536
-            'repeat_pict': bool,  # 0
+            'repeat_pict': str_to_bool,  # 0
             'sample_aspect_ratio': Ratio,  # 186:157
             'stream_index': int,  # 1
-            'top_field_first': bool,  # 1
+            'top_field_first': str_to_bool,  # 1
             'width': int,  # 720
         }
 
