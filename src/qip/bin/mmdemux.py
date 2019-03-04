@@ -39,6 +39,7 @@ import io
 import logging
 import os
 import pexpect
+import pprint
 import re
 import reprlib
 import shutil
@@ -116,123 +117,160 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
     video_frames = []
 
     if field_order is None:
+        with perfcontext('analyze field_order'):
 
-        mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
-        mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
-        ffprobe_field_order = ffprobe_stream_json.get('field_order', 'progressive')
+            mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
+            mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
+            ffprobe_field_order = ffprobe_stream_json.get('field_order', 'progressive')
+            time_base = Fraction(ffprobe_stream_json['time_base'])
 
-        video_frames = []
-        prev_pkt_pts_time = Decimal('0.000000')
-        for frame in ffprobe.iter_frames(stream_file_name):
-            if frame.media_type != 'video':
-                continue
-            assert frame.stream_index == 0
-            if frame.pkt_pts_time is None:
-                frame.pkt_pts_time = prev_pkt_pts_time
-            else:
-                prev_pkt_pts_time = frame.pkt_pts_time
-            video_frames.append(frame)
-            if len(video_frames) >= 1000:
-                break
-        #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
-        #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
+            video_frames = []
+            prev_pkt_pts_time = Decimal('0.000000')
+            with perfcontext('frames iteration'):
+                for frame in ffprobe.iter_frames(stream_file_name):
+                    if frame.media_type != 'video':
+                        continue
+                    assert frame.stream_index == 0
+                    if frame.pkt_pts_time is None:
+                        frame.pkt_pts_time = prev_pkt_pts_time
+                    else:
+                        prev_pkt_pts_time = frame.pkt_pts_time
+                    video_frames.append(frame)
+                    if float(frame.pkt_dts_time) >= app.args.video_analyze_duration:
+                        break
+                #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
+                #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
 
-        video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
-        # XXXJST:
-        # Based on libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
-        # though getting the proper TemporalReference is more complex and may
-        # be different than pkt_dts_time ordering.
-        temporal_string = ''.join([
-            ('T' if frame.top_field_first else 'B') + ('3' if frame.repeat_pict else '2')
-            for frame in video_frames])
-        #app.log.debug('temporal_string: %r', temporal_string)
+            video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
+            # XXXJST:
+            # Based on libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
+            # though getting the proper TemporalReference is more complex and may
+            # be different than pkt_dts_time ordering.
+            temporal_string = ''.join([
+                ('T' if frame.top_field_first else 'B') + ('3' if frame.repeat_pict else '2')
+                for frame in video_frames])
+            #app.log.debug('temporal_string: %r', temporal_string)
 
-    if field_order is None and '3' in temporal_string:
-        # libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
-        for temporal_pattern in (
-                'T2T3B2B3T2T3B2B3',
-                'B2B3T2T3B2B3T2T3',
-                ):
-            if temporal_pattern in temporal_string:
-                field_order = '23pulldown'
-                framerate = FrameRate(24000, 1001)  # framerate * 24 / 30
-                interlacement = 'ppf'
-                app.log.warning('Detected field order is %s at %s fps based on temporal pattern %r', field_order, framerate, temporal_pattern)
-                break
-
-    if field_order is None and '3' in temporal_string:
-        # libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
-        for temporal_pattern in (
-                'T2T2T2T2T2T2T2T2T2T2T2T3B2B2B2B2B2B2B2B2B2B2B2B3',
-                'B2B2B2B2B2B2B2B2B2B2B2B3T2T2T2T2T2T2T2T2T2T2T2T3',
-                ):
-            if temporal_pattern in temporal_string:
-                field_order = '222222222223pulldown'
-                framerate = framerate * framerate * 24 / 25
-                interlacement = 'ppf'
-                app.log.warning('Detected field order is %s at %s fps based on temporal pattern %r', field_order, framerate, temporal_pattern)
-                break
-
-    if False and field_order is None:
-        for time_long, time_short, result_framerate in (
-                (Decimal('0.050050'), Decimal('0.033367'), FrameRate(24000, 1001)),
-                (Decimal('0.050000'), Decimal('0.033000'), FrameRate(24000, 1001)),
-        ):
-            i = 0
-            while i < len(video_frames) and video_frames[i].pkt_duration_time == time_short:
-                i += 1
-            for c in range(3):
-                if i < len(video_frames) and video_frames[i].pkt_duration_time == time_long:
-                    i += 1
-            while i < len(video_frames) and video_frames[i].pkt_duration_time == time_short:
-                i += 1
-            # pts_time=1.668333 duration_time=0.050050
-            # pts_time=N/A      duration_time=0.050050
-            # pts_time=1.751750 duration_time=0.050050
-            # pts_time=1.801800 duration_time=0.033367
-            # pts_time=N/A      duration_time=0.033367
-            # pts_time=1.885217 duration_time=0.033367
-            is_pulldown = None
-            duration_time_pattern1 = (
-                time_long, time_long, time_long,
-                time_short, time_short, time_short,
-            )
-            duration_time_pattern2 = (
-                time_long, time_short,
-                time_long, time_short,
-                time_long, time_short,
-            )
-            while i < len(video_frames) - 6:
-                duration_time_found = (
-                    video_frames[i+0].pkt_duration_time,
-                    video_frames[i+1].pkt_duration_time,
-                    video_frames[i+2].pkt_duration_time,
-                    video_frames[i+3].pkt_duration_time,
-                    video_frames[i+4].pkt_duration_time,
-                    video_frames[i+5].pkt_duration_time,
-                )
-                if (
-                        duration_time_found == duration_time_pattern1
-                        or duration_time_found == duration_time_pattern2
-                ):
-                    is_pulldown = True
-                else:
-                    is_pulldown = False
-                    app.log.debug('not 23pulldown @ frame %d: %r', i, duration_time_found)
+            if field_order is None and '3' in temporal_string:
+                # libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
+                for temporal_pattern, result_field_order, result_interlacement, result_framerate_ratio in (
+                        ('T2T3B2B3T2T3B2B3', '23pulldown', 'ppf', Ratio(24, 30)),
+                        ('B2B3T2T3B2B3T2T3', '23pulldown', 'ppf', Ratio(24, 30)),
+                        ('T2T2T2T2T2T2T2T2T2T2T2T3B2B2B2B2B2B2B2B2B2B2B2B3', '222222222223pulldown', 'ppf', Ratio(24, 25)),
+                        ('B2B2B2B2B2B2B2B2B2B2B2B3T2T2T2T2T2T2T2T2T2T2T2T3', '222222222223pulldown', 'ppf', Ratio(24, 25)),
+                        ):
+                    temporal_pattern_offset = temporal_string.find(temporal_pattern)
+                    if temporal_pattern_offset == -1:
+                        continue
+                    found_frame_offset = temporal_pattern_offset // 2
+                    found_frame_count = len(temporal_pattern) // 2
+                    found_frames = video_frames[found_frame_offset:found_frame_offset + found_frame_count]
+                    app.log.debug('found_frames: \n%s', pprint.pformat(found_frames))
+                    field_order = result_field_order
+                    interlacement = result_interlacement
+                    # framerate = FrameRate(1 / (
+                    #     time_base
+                    #     * sum(frame.pkt_duration for frame in found_frames)
+                    #     / len(found_frames)))
+                    calc_framerate = framerate = FrameRate(1 / (Fraction(
+                        (found_frames[-1].pkt_pts if found_frames[-1].pkt_pts is not None else found_frames[-1].pkt_dts)
+                        - (found_frames[0].pkt_pts if found_frames[0].pkt_pts is not None else found_frames[0].pkt_dts)
+                        + found_frames[-1].pkt_duration,
+                        len(found_frames)) * time_base))
+                    framerate = framerate.round_common()
+                    app.log.warning('Detected field order is %s at %s (%.3f) fps based on temporal pattern %r', field_order, framerate, framerate, temporal_pattern)
+                    assert framerate == FrameRate(24000, 1001)  # Only verified case so far
+                    # assert framerate == original_framerate * result_framerate_ratio
                     break
-                i += 6
-            if is_pulldown:
-                field_order = '23pulldown'
-                framerate = result_framerate
-                app.log.warning('Detected field order is %s at %s fps', field_order, framerate)
-                break
 
-    if field_order is None:
-        #for i in range(0, len(video_frames)):
-        #    print('pkt_duration_time=%r, interlaced_frame=%r' % (video_frames[i].pkt_duration_time, video_frames[i].interlaced_frame))
-        # pkt_duration_time=0.033000|interlaced_frame=1|top_field_first=1 = tt @ 30000/1001 ?
-        # pkt_duration_time=0.041000|interlaced_frame=0|top_field_first=0 = progressive @ 24000/1001 ?
-        field_order = pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+            if field_order is None:
+                frame0 = video_frames[0]
+                constant_framerate = all(
+                        frame.pkt_duration == frame0.pkt_duration
+                        for frame in video_frames)
+                if constant_framerate:
+                    framerate = FrameRate(1 / (
+                        time_base
+                        * sum(frameB.pkt_pts - frameA.pkt_pts
+                              for frameA, frameB in zip(video_frames[0:-1], video_frames[1:]))
+                        / (len(video_frames) - 1)))
+                    # framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
+                    framerate = framerate.round_common()
+                    app.log.debug('Constant %s (%.3f) fps found...', framerate, framerate)
+                    all_same_interlaced_frame = all(
+                            frame.interlaced_frame == frame0.interlaced_frame
+                            for frame in video_frames)
+                    if all_same_interlaced_frame:
+                        if frame0.interlaced_frame:
+                            raise NotImplementedError('Interlaced frames detected')
+                        else:
+                            field_order = 'progressive'
+                            app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
+                    else:
+                        app.log.debug('Mix of interlaced and non-interlaced frames found.')
+                else:
+                    app.log.debug('Variable fps found.')
+
+            if False and field_order is None:
+                for time_long, time_short, result_framerate in (
+                        (Decimal('0.050050'), Decimal('0.033367'), FrameRate(24000, 1001)),
+                        (Decimal('0.050000'), Decimal('0.033000'), FrameRate(24000, 1001)),
+                ):
+                    i = 0
+                    while i < len(video_frames) and video_frames[i].pkt_duration_time == time_short:
+                        i += 1
+                    for c in range(3):
+                        if i < len(video_frames) and video_frames[i].pkt_duration_time == time_long:
+                            i += 1
+                    while i < len(video_frames) and video_frames[i].pkt_duration_time == time_short:
+                        i += 1
+                    # pts_time=1.668333 duration_time=0.050050
+                    # pts_time=N/A      duration_time=0.050050
+                    # pts_time=1.751750 duration_time=0.050050
+                    # pts_time=1.801800 duration_time=0.033367
+                    # pts_time=N/A      duration_time=0.033367
+                    # pts_time=1.885217 duration_time=0.033367
+                    is_pulldown = None
+                    duration_time_pattern1 = (
+                        time_long, time_long, time_long,
+                        time_short, time_short, time_short,
+                    )
+                    duration_time_pattern2 = (
+                        time_long, time_short,
+                        time_long, time_short,
+                        time_long, time_short,
+                    )
+                    while i < len(video_frames) - 6:
+                        duration_time_found = (
+                            video_frames[i+0].pkt_duration_time,
+                            video_frames[i+1].pkt_duration_time,
+                            video_frames[i+2].pkt_duration_time,
+                            video_frames[i+3].pkt_duration_time,
+                            video_frames[i+4].pkt_duration_time,
+                            video_frames[i+5].pkt_duration_time,
+                        )
+                        if (
+                                duration_time_found == duration_time_pattern1
+                                or duration_time_found == duration_time_pattern2
+                        ):
+                            is_pulldown = True
+                        else:
+                            is_pulldown = False
+                            app.log.debug('not 23pulldown @ frame %d: %r', i, duration_time_found)
+                            break
+                        i += 6
+                    if is_pulldown:
+                        field_order = '23pulldown'
+                        framerate = result_framerate
+                        app.log.warning('Detected field order is %s at %s fps', field_order, framerate)
+                        break
+
+            if False and field_order is None:
+                #for i in range(0, len(video_frames)):
+                #    print('pkt_duration_time=%r, interlaced_frame=%r' % (video_frames[i].pkt_duration_time, video_frames[i].interlaced_frame))
+                # pkt_duration_time=0.033000|interlaced_frame=1|top_field_first=1 = tt @ 30000/1001 ?
+                # pkt_duration_time=0.041000|interlaced_frame=0|top_field_first=0 = progressive @ 24000/1001 ?
+                field_order = pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
 
     if field_order is None:
         raise NotImplementedError('field_order unknown')
@@ -293,6 +331,7 @@ def main():
     pgroup.add_argument('--video-rate-control-mode', dest='video_rate_control_mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
     pgroup.add_argument('--force-framerate', dest='force_framerate', default=None, type=FrameRate, help='Ignore heuristics and force framerate')
     pgroup.add_argument('--force-field-order', dest='force_field_order', default=None, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
+    pgroup.add_argument('--video-analyze-duration', dest='video_analyze_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(300), help='video analysis duration (seconds)')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=None, help='SubRip OCR matrix file')
