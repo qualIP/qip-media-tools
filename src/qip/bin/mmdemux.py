@@ -783,7 +783,6 @@ def action_hb(inputfile, in_tags):
         for stream_dict in ffprobe_dict['streams']:
             if stream_dict.get('skip', False):
                 continue
-            stream_index = int(stream_dict['index'])
             stream_codec_type = stream_dict['codec_type']
             if stream_codec_type == 'video':
                 break
@@ -2467,10 +2466,10 @@ def action_demux(inputdir, in_tags):
         has_opus_streams = any(
                 my_splitext(stream_dict['file_name'])[1] in ('.opus', '.opus.ogg')
                 for stream_dict in mux_dict['streams'])
-        for stream_index, stream_dict in sorted((stream_dict['index'], stream_dict)
-                                                for stream_dict in mux_dict['streams']):
+        for stream_dict in sorted(mux_dict['streams'], key=lambda stream_dict: stream_dict['index']):
             if stream_dict.get('skip', False):
                 continue
+            stream_index = stream_dict['index']
             stream_file_name = stream_dict['file_name']
             stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             stream_codec_type = stream_dict['codec_type']
