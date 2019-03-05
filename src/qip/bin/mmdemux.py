@@ -346,7 +346,7 @@ def main():
     pgroup.add_argument('--video-rate-control-mode', dest='video_rate_control_mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
     pgroup.add_argument('--force-framerate', dest='force_framerate', default=None, type=FrameRate, help='Ignore heuristics and force framerate')
     pgroup.add_argument('--force-field-order', dest='force_field_order', default=None, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
-    pgroup.add_argument('--video-analyze-duration', dest='video_analyze_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(300), help='video analysis duration (seconds)')
+    pgroup.add_argument('--video-analyze-duration', dest='video_analyze_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(120), help='video analysis duration (seconds)')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=None, help='SubRip OCR matrix file')
