@@ -141,6 +141,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                 #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
                 #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
 
+            app.log.debug('Analyzing %d video frames...', len(video_frames))
+
             video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
             # XXXJST:
             # Based on libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
@@ -191,8 +193,10 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                 if constant_framerate:
                     framerate = FrameRate(1 / (
                         time_base
-                        * sum(frameB.pkt_pts - frameA.pkt_pts
-                              for frameA, frameB in zip(video_frames[0:-1], video_frames[1:]))
+                        * sum(
+                            (frameB.pkt_pts if frameB.pkt_pts is not None else frameB.pkt_dts)
+                            - (frameA.pkt_pts if frameA.pkt_pts is not None else frameA.pkt_dts)
+                            for frameA, frameB in zip(video_frames[0:-1], video_frames[1:]))
                         / (len(video_frames) - 1)))
                     # framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
                     framerate = framerate.round_common()
@@ -202,7 +206,18 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             for frame in video_frames)
                     if all_same_interlaced_frame:
                         if frame0.interlaced_frame:
-                            raise NotImplementedError('Interlaced frames detected')
+                            all_same_top_field_first = all(
+                                    frame.top_field_first == frame0.top_field_first
+                                    for frame in video_frames)
+                            if all_same_top_field_first:
+                                if frame0.top_field_first:
+                                    field_order = 'tt'
+                                    app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
+                                else:
+                                    field_order = 'bb'
+                                    app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
+                            else:
+                                raise NotImplementedError('Mix of top field first and bottom field first Interlaced frames detected')
                         else:
                             field_order = 'progressive'
                             app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
