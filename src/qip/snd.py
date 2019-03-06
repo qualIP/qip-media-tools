@@ -3352,45 +3352,6 @@ class SoundFile(MediaFile):
                 tags.set_tag(mapped_tag, tag_value)
         return tags
 
-    def _load_tags_MKV(self):
-        import xml.etree.ElementTree as ET
-        import qip.matroska
-        tags = AlbumTags()
-        mkv_file = qip.matroska.MkvFile(self.file_name)
-        tags_xml = mkv_file.get_tags_xml()
-        tags_list = mkv_file.parse_tags_xml(tags_xml)
-        for d_tag in tags_list:
-            app.log.debug('d_tag = %r', d_tag)
-            target_tags = tags if d_tag.Target.TrackUID == 0 else tags.tracks_tags[d_tag.Target.TrackUID]
-            if d_tag.Name in (
-                    'BPS',  # TODO
-                    'DURATION',  # TODO
-                    'NUMBER_OF_FRAMES',  # TODO
-                    'NUMBER_OF_BYTES',  # TODO
-                    'SOURCE_ID',  # TODO
-                    '_STATISTICS_WRITING_APP',  # TODO
-                    '_STATISTICS_WRITING_DATE_UTC',  # TODO
-                    '_STATISTICS_TAGS',  # TODO
-                    ):
-                continue
-            if d_tag.String is not None:
-                try:
-                    mapped_tag = qip.matroska.mkv_tag_map[(d_tag.Target.TargetTypeValue, d_tag.Target.TargetType, d_tag.Name)]
-                except KeyError as e:
-                    #app.log.debug('e: %s', e)
-                    raise
-                    # mapped_tag = qip.matroska.mkv_tag_map[(d_tag.Target.TargetTypeValue, None, d_tag.Name)]
-                old_value = tags[mapped_tag] if mapped_tag in ('episode',) else None
-                if old_value is not None:
-                    if not isinstance(old_value, tuple):
-                        old_value = (old_value,)
-                    if not isinstance(d_tag.String, tuple):
-                        d_tag.String = (d_tag.String,)
-                    d_tag.String = old_value + d_tag.String
-                #app.log.debug('%s = %r', mapped_tag, d_tag.String)
-                target_tags.set_tag(mapped_tag, d_tag.String)
-        return tags
-
     def load_tags(self):
         tags = None
         if tags is None:
@@ -3402,10 +3363,12 @@ class SoundFile(MediaFile):
             tags = self._load_tags_mf(mf)
         if tags is None:
             file_base, file_ext = os.path.splitext(self.file_name)
-            if file_ext in ('.mkv', '.webm'):
-                tags = self._load_tags_MKV()
+            if file_ext in ('.mka', '.mkv', '.webm'):
+                import qip.matroska
+                mkv_file = qip.matroska.MatroskaFile(self.file_name)
+                tags = mkv_file.load_tags()
         if tags is None:
-            raise NotImplementedError(file_ext)
+            raise NotImplementedError(f'{self}: Loading tags unsupported')
         return tags
 
     def extract_ffprobe_json(self,
@@ -4014,6 +3977,8 @@ def get_audio_file_ffmpeg_stats(d):
     # log.debug('ffmpegstats: %r', vars(d))
 
 # }}}
+
+class MovieFile(SoundFile): pass  # TODO
 
 # class ArgparseSetTagAction {{{
 

@@ -452,7 +452,7 @@ def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):
             continue
         return eTag
 
-def taged_MKV(file_name, tags):
+def taged_Matroska(file_name, tags):
     import qip.matroska
     # https://matroska.org/technical/specs/tagging/index.html
     mkv_file = qip.matroska.MkvFile(file_name)
@@ -483,7 +483,7 @@ def taged_MKV(file_name, tags):
         if tags_list is None:
             tags_xml = mkv_file.get_tags_xml()
             tags_list = mkv_file.parse_tags_xml(tags_xml)
-        d_target = qip.matroska.MkvTagTarget(
+        d_target = qip.matroska.MatroskaTagTarget(
             TrackUID=0,
             TargetTypeValue=TargetTypeValue,
             TargetType=TargetType,
@@ -494,10 +494,10 @@ def taged_MKV(file_name, tags):
                      if d_tag.Target != d_target or d_tag.Name != mkv_tag]
         tup_mkv_value = mkv_value if type(mkv_value) is tuple else (mkv_value,)
         for one_mkv_value in tup_mkv_value:
-            d_tag = qip.matroska.MkvTagSimple(Target=d_target,
-                                              Name=mkv_tag,
-                                              String=one_mkv_value,
-                                              )
+            d_tag = qip.matroska.MatroskaTagSimple(Target=d_target,
+                                                   Name=mkv_tag,
+                                                   String=one_mkv_value,
+                                                   )
             if app.log.isEnabledFor(logging.DEBUG):
                 app.log.debug('Add %r', d_tag)
             tags_list.append(d_tag)
@@ -523,7 +523,7 @@ def taged(file_name, tags):
         return True
     file_base, file_ext = os.path.splitext(file_name)
     if file_ext in ('.mka', '.mkv', '.webm'):
-        return taged_MKV(file_name, tags)
+        return taged_Matroska(file_name, tags)
     raise NotImplementedError(file_ext)
     return True
 

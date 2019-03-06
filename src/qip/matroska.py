@@ -1,6 +1,8 @@
 
 __all__ = (
+    'MatroskaFile',
     'MkvFile',
+    'MkaFile',
 )
 
 # https://matroska.org/technical/specs/tagging/index.html
@@ -11,7 +13,8 @@ import collections
 import logging
 log = logging.getLogger(__name__)
 
-import qip.snd as snd
+from .mm import MediaFile
+from .snd import SoundFile, MovieFile, taged, AlbumTags
 
 mkv_tag_map = {
     (50, 'EPISODE', 'PART_NUMBER'): 'episode',
@@ -36,8 +39,8 @@ for _k, _v in mkv_tag_map.items():
     mkv_tag_rev_map[_v] = _k
 
 
-class MkvTagTarget(collections.namedtuple(
-        'MkvTagTarget',
+class MatroskaTagTarget(collections.namedtuple(
+        'MatroskaTagTarget',
         (
             'TrackUID',
             'TargetTypeValue',
@@ -59,8 +62,8 @@ class MkvTagTarget(collections.namedtuple(
                 **kwargs)
 
 
-class MkvTagSimple(collections.namedtuple(
-        'MkvTagSimple',
+class MatroskaTagSimple(collections.namedtuple(
+        'MatroskaTagSimple',
         (
             'Target',
             'Name',
@@ -88,11 +91,11 @@ class MkvTagSimple(collections.namedtuple(
                 **kwargs)
 
 
-class MkvFile(snd.SoundFile):
+class MatroskaFile(MediaFile):
 
     @property
     def tag_writer(self):
-        return snd.taged
+        return taged
 
     # <Tags>
     #   <Tag>
@@ -223,7 +226,7 @@ class MkvFile(snd.SoundFile):
                 'SHOT': 10,
             }.get(vTargetType, 50)
         vTargetType = vTargetType or None
-        return MkvTagTarget(
+        return MatroskaTagTarget(
             TrackUID=vTrackUID,
             TargetTypeValue=vTargetTypeValue,
             TargetType=vTargetType,  # Can be None
@@ -258,7 +261,7 @@ class MkvFile(snd.SoundFile):
         assert vName is not None
         parent_Simple_names = parent_Simple_names + (vName,)
         if vString is not None or vBinary is not None:
-            yield MkvTagSimple(
+            yield MatroskaTagSimple(
                 Target=d_target,
                 Name='/'.join(parent_Simple_names),
                 String=vString,
@@ -324,5 +327,49 @@ class MkvFile(snd.SoundFile):
                     eTagLanguage = ET.SubElement(eSimple, 'TagLanguage')
                     eTagLanguage.text = str(d_tag.TagLanguage)
         return tags_xml
+
+    def load_tags(self):
+        import xml.etree.ElementTree as ET
+        tags = AlbumTags()
+        tags_xml = self.get_tags_xml()
+        tags_list = self.parse_tags_xml(tags_xml)
+        for d_tag in tags_list:
+            log.debug('d_tag = %r', d_tag)
+            target_tags = tags if d_tag.Target.TrackUID == 0 else tags.tracks_tags[d_tag.Target.TrackUID]
+            if d_tag.Name in (
+                    'BPS',  # TODO
+                    'DURATION',  # TODO
+                    'NUMBER_OF_FRAMES',  # TODO
+                    'NUMBER_OF_BYTES',  # TODO
+                    'SOURCE_ID',  # TODO
+                    '_STATISTICS_WRITING_APP',  # TODO
+                    '_STATISTICS_WRITING_DATE_UTC',  # TODO
+                    '_STATISTICS_TAGS',  # TODO
+                    ):
+                continue
+            if d_tag.String is not None:
+                try:
+                    mapped_tag = mkv_tag_map[(d_tag.Target.TargetTypeValue, d_tag.Target.TargetType, d_tag.Name)]
+                except KeyError as e:
+                    #log.debug('e: %s', e)
+                    raise
+                    # mapped_tag = mkv_tag_map[(d_tag.Target.TargetTypeValue, None, d_tag.Name)]
+                old_value = tags[mapped_tag] if mapped_tag in ('episode',) else None
+                if old_value is not None:
+                    if not isinstance(old_value, tuple):
+                        old_value = (old_value,)
+                    if not isinstance(d_tag.String, tuple):
+                        d_tag.String = (d_tag.String,)
+                    d_tag.String = old_value + d_tag.String
+                #log.debug('%s = %r', mapped_tag, d_tag.String)
+                target_tags.set_tag(mapped_tag, d_tag.String)
+        return tags
+
+
+class MkvFile(MatroskaFile, MovieFile):
+    pass
+
+class MkaFile(MatroskaFile, SoundFile):
+    pass
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
