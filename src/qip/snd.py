@@ -3365,7 +3365,7 @@ class SoundFile(MediaFile):
             file_base, file_ext = os.path.splitext(self.file_name)
             if file_ext in ('.mka', '.mkv', '.webm'):
                 import qip.matroska
-                mkv_file = qip.matroska.MatroskaFile(self.file_name)
+                mkv_file = qip.matroska.MatroskaFile.new_by_file_name(self.file_name)
                 tags = mkv_file.load_tags()
         if tags is None:
             raise NotImplementedError(f'{self}: Loading tags unsupported')
@@ -4369,5 +4369,7 @@ class Taged(Executable):
             self(*(tagargs + (file_name,)), **kwargs)
 
 taged = Taged()
+
+SoundFile._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

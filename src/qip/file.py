@@ -48,6 +48,14 @@ class File(object):
         default='',
         type=propex.test_in(('', 't', 'b')))
 
+    @classmethod
+    def new_by_file_name(cls, file_name, default_class=None, *args, **kwargs):
+        ext = os.path.splitext(file_name)[1]
+        factory_cls = cls._extension_to_class_map.get(ext, default_class)
+        if factory_cls is None:
+            raise ValueError('Unknown extension %r' % (ext,))
+        return factory_cls(file_name, *args, **kwargs)
+
     def __init__(self, file_name, open_mode=None):
         self.file_name = file_name
         if open_mode is not None:
@@ -196,7 +204,20 @@ class File(object):
             self.fp = None
         # No exception if no fp, like file objects
 
+    @classmethod
+    def _build_extension_to_class_map(cls):
+        cls._extension_to_class_map = {}
+        for subcls in cls.__subclasses__():
+            subcls._build_extension_to_class_map()
+            cls._extension_to_class_map.update(subcls._extension_to_class_map)
+        for k in cls.__dict__.get('_common_extensions', ()):
+            cls._extension_to_class_map[k] = cls
+
 class TextFile(File):
+
+    _common_extensions = (
+        '.txt',
+    )
 
     open_mode = 't'
 
@@ -208,13 +229,23 @@ class BinaryFile(File):
     open_mode = 'b'
 
 class HtmlFile(TextFile):
-    pass
+
+    _common_extensions = (
+        '.html',
+        '.htm',
+    )
 
 class XmlFile(TextFile):
-    pass
+
+    _common_extensions = (
+        '.xml',
+    )
 
 class JsonFile(TextFile):
-    pass
+
+    _common_extensions = (
+        '.json',
+    )
 
 class TempFile(File):
 
@@ -343,5 +374,7 @@ def safe_read_file(file, *, encoding='utf-8'):
     return open(str(file), mode='r', encoding=encoding).read()
 
 # }}}
+
+File._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

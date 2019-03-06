@@ -252,6 +252,10 @@ class CDTocFile(TextFile):
     See: http://linux.die.net/man/1/cdrdao
     '''
 
+    _common_extensions = (
+        '.toc',
+    )
+
     tags = None
     session_type = None
     files = None
@@ -742,6 +746,10 @@ class CDTocFile(TextFile):
 
 class CDDACueSheetFile(TextFile):
 
+    _common_extensions = (
+        '.cue',
+    )
+
     files = None
     tracks = None
     _sectors = None
@@ -1086,5 +1094,8 @@ class CDDACueSheetFile(TextFile):
         return self.discid.freedb_id
 
 # }}}
+
+CDTocFile._build_extension_to_class_map()
+CDDACueSheetFile._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

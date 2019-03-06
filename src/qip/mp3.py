@@ -11,6 +11,10 @@ from . import snd
 
 class Mp3File(snd.SoundFile):
 
+    _common_extensions = (
+        '.mp3',
+    )
+
     @property
     def audio_type(self):
         return snd.AudioType.mp3
@@ -26,5 +30,7 @@ class Mp3File(snd.SoundFile):
         #return snd.id3v2
         #return snd.operon
         return snd.taged
+
+Mp3File._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

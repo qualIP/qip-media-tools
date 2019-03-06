@@ -17,6 +17,10 @@ WAV_HEADER_LEN = WAV_RIFF_HLEN + WAV_FORMAT_HLEN + WAV_DATA_HLEN
 
 class WaveFile(snd.SoundFile):
 
+    _common_extensions = (
+        '.wav',
+    )
+
     @property
     def audio_type(self):
         return snd.AudioType.wav
@@ -66,5 +70,7 @@ class WaveFile(snd.SoundFile):
     @property
     def tag_writer(self):
         return snd.id3v2
+
+WaveFile._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

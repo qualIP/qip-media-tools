@@ -680,6 +680,14 @@ ImageType.__new__ = ImageType._ImageType__new
 
 class ImageFile(BinaryFile):
 
+    _common_extensions = (
+        '.png',
+        '.jpeg',
+        '.jpg',
+        '.gif',
+        '.tiff',
+    )
+
     @property
     def image_type(self):
         image_type = getattr(self, '_image_type', None)
@@ -866,5 +874,7 @@ def date_to_year(date):
     m = re.match('^(\d{4})(?:\d\d?-\d\d?)?$', date)
     if m:
         return int(m.group(1))
+
+ImageFile._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

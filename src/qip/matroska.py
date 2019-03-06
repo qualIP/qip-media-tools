@@ -367,9 +367,17 @@ class MatroskaFile(MediaFile):
 
 
 class MkvFile(MatroskaFile, MovieFile):
-    pass
+
+    _common_extensions = (
+        '.mkv',
+    )
 
 class MkaFile(MatroskaFile, SoundFile):
-    pass
+
+    _common_extensions = (
+        '.mka',
+    )
+
+MatroskaFile._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

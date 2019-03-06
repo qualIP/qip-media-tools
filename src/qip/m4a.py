@@ -19,6 +19,10 @@ from .utils import byte_decode
 
 class M4aFile(snd.SoundFile):
 
+    _common_extensions = (
+        '.m4a',
+    )
+
     def rip_cue_track(self, cue_track, bin_file=None, tags=None):
         from qip.qaac import qaac
         #with tempfile.TemporaryDirectory() as tmp_dir:
@@ -321,5 +325,7 @@ class M4aFile(snd.SoundFile):
                 cmd = [shutil.which('mp4art')]
                 cmd += ['--add', str(picture), m4b.file_name]
                 out = do_exec_cmd(cmd)
+
+M4aFile._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

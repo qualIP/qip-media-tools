@@ -218,4 +218,6 @@ common_framerates = sorted([
     FrameRate(30000, 1000),
     ])
 
+MediaFile._build_extension_to_class_map()
+
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
