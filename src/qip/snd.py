@@ -3354,9 +3354,9 @@ class SoundFile(MediaFile):
 
     def _load_tags_MKV(self):
         import xml.etree.ElementTree as ET
-        import qip.mkv
+        import qip.matroska
         tags = AlbumTags()
-        mkv_file = qip.mkv.MkvFile(self.file_name)
+        mkv_file = qip.matroska.MkvFile(self.file_name)
         tags_xml = mkv_file.get_tags_xml()
         tags_list = mkv_file.parse_tags_xml(tags_xml)
         for d_tag in tags_list:
@@ -3375,11 +3375,11 @@ class SoundFile(MediaFile):
                 continue
             if d_tag.String is not None:
                 try:
-                    mapped_tag = qip.mkv.mkv_tag_map[(d_tag.Target.TargetTypeValue, d_tag.Target.TargetType, d_tag.Name)]
+                    mapped_tag = qip.matroska.mkv_tag_map[(d_tag.Target.TargetTypeValue, d_tag.Target.TargetType, d_tag.Name)]
                 except KeyError as e:
                     #app.log.debug('e: %s', e)
                     raise
-                    # mapped_tag = qip.mkv.mkv_tag_map[(d_tag.Target.TargetTypeValue, None, d_tag.Name)]
+                    # mapped_tag = qip.matroska.mkv_tag_map[(d_tag.Target.TargetTypeValue, None, d_tag.Name)]
                 old_value = tags[mapped_tag] if mapped_tag in ('episode',) else None
                 if old_value is not None:
                     if not isinstance(old_value, tuple):
@@ -3833,7 +3833,7 @@ class SoundFile(MediaFile):
             return 'tvshow'
         if self.file_name:
             name, ext = os.path.splitext(self.file_name)
-            if ext in ('.m4a', '.mp3', '.ogg', '.wav'):
+            if ext in ('.mka', '.m4a', '.mp3', '.ogg', '.wav'):
                 return 'normal'
             elif ext in ('.m4b'):
                 return 'audiobook'

@@ -61,7 +61,7 @@ from qip.handbrake import *
 from qip.isolang import isolang
 from qip.m4a import *
 from qip.mediainfo import *
-from qip.mkv import *
+from qip.matroska import *
 from qip.mm import MediaFile, Chapters, FrameRate
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
@@ -501,6 +501,7 @@ def ext_to_container(ext):
             #'.dts': 'dts',
             '.opus': 'ogg',
             '.ogg': 'ogg',
+            '.mka': 'matroska',
             #'.aac': 'aac',
             '.wav': 'wav',
             # subtitles

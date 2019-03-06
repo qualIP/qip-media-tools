@@ -190,7 +190,7 @@ def dump_tags(tags, *, deep=True, heading='Tags:'):
 supported_audio_exts = \
         set(qip.snd.get_mp4v2_app_support().extensions_can_read) | \
         set(qip.snd.get_sox_app_support().extensions_can_read) | \
-        set(('.ogg', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v')) | \
+        set(('.ogg', '.mka', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v')) | \
         set(('.mp3', '.wav')) | \
         set(('.avi', '.mkv', '.webm'))
 
@@ -596,8 +596,8 @@ def organize(inputfile):
         elif os.path.splitext(inputfile)[1] in {'.wav',}:
             from qip.wav import WaveFile
             inputfile = WaveFile(file_name=inputfile)
-        elif os.path.splitext(inputfile)[1] in {'.mkv', '.webm'}:
-            from qip.mkv import MkvFile
+        elif os.path.splitext(inputfile)[1] in {'.mka', '.mkv', '.webm'}:
+            from qip.matroska import MkvFile
             inputfile = MkvFile(file_name=inputfile)
         elif os.path.splitext(inputfile)[1] in qip.snd.get_mp4v2_app_support().extensions_can_write:
             from qip.m4a import M4aFile
