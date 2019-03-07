@@ -136,14 +136,14 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                     else:
                         prev_pkt_pts_time = frame.pkt_pts_time
                     video_frames.append(frame)
-                    if float(frame.pkt_dts_time) >= app.args.video_analyze_duration:
+                    if float(frame.pkt_dts_time if frame.pkt_dts_time is not None else frame.pkt_pts_time) >= app.args.video_analyze_duration:
                         break
                 #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
                 #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
 
             app.log.debug('Analyzing %d video frames...', len(video_frames))
 
-            video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
+            video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time if frame.pkt_dts_time is not None else frame.pkt_pts_time)
             # XXXJST:
             # Based on libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
             # though getting the proper TemporalReference is more complex and may
@@ -191,15 +191,26 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                         frame.pkt_duration == frame0.pkt_duration
                         for frame in video_frames)
                 if constant_framerate:
-                    framerate = FrameRate(1 / (
-                        time_base
-                        * sum(
-                            (frameB.pkt_pts if frameB.pkt_pts is not None else frameB.pkt_dts)
-                            - (frameA.pkt_pts if frameA.pkt_pts is not None else frameA.pkt_dts)
-                            for frameA, frameB in zip(video_frames[0:-1], video_frames[1:]))
-                        / (len(video_frames) - 1)))
-                    # framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
-                    framerate = framerate.round_common()
+                    if frame0.pkt_duration_time in (
+                                Decimal('0.033367'),
+                                Decimal('0.033000'),
+                            ):
+                        framerate = FrameRate(30000, 1001)
+                    elif frame0.pkt_duration_time in (
+                                Decimal('0.041000'),
+                            ):
+                        framerate = FrameRate(24000, 1001)
+                    else:
+                        raise NotImplementedError(frame0.pkt_duration_time)
+                    #framerate = FrameRate(1 / (
+                    #    time_base
+                    #    * sum(
+                    #        (frameB.pkt_pts if frameB.pkt_pts is not None else frameB.pkt_dts)
+                    #        - (frameA.pkt_pts if frameA.pkt_pts is not None else frameA.pkt_dts)
+                    #        for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
+                    #    / (len(video_frames) - 1)))
+                    ## framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
+                    #framerate = framerate.round_common()
                     app.log.debug('Constant %s (%.3f) fps found...', framerate, framerate)
                     all_same_interlaced_frame = all(
                             frame.interlaced_frame == frame0.interlaced_frame
@@ -223,6 +234,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
                     else:
                         app.log.debug('Mix of interlaced and non-interlaced frames found.')
+                    assert framerate == pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
                 else:
                     app.log.debug('Variable fps found.')
 
