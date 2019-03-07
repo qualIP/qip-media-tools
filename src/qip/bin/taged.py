@@ -553,6 +553,7 @@ def taglist(file_name):
     tags = snd_file.load_tags()
     assert tags is not None
     dump_tags(tags)
+    sys.stdout.flush()  # Sync with logging
     return True
 
 if __name__ == "__main__":
