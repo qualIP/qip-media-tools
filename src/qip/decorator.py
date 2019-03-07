@@ -193,4 +193,16 @@ def trace_generator(gen, gen_name=None, log=None, pyield=True, pexcept=True, ptr
                                         .rstrip("\r\n"))
                 raise
 
+def func_once(func):
+    """A decorator that runs a function only once.
+	From http://code.activestate.com/recipes/425445-once-decorator/
+    """
+    def decorated(*args, **kwargs):
+        try:
+            return decorated._once_result
+        except AttributeError:
+            decorated._once_result = func(*args, **kwargs)
+            return decorated._once_result
+    return decorated
+
 # vim: ft=python ts=8 sw=4 et
