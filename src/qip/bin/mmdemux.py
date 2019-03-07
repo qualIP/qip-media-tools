@@ -481,7 +481,7 @@ def codec_name_to_ext(codec_name):
             'dts': '.dts',
             'opus': '.opus.ogg',
             'aac': '.aac',
-            'wav': '.wav',
+            'pcm_s16le': '.wav',
             # subtitles
             'dvd_subtitle': '.sub',  # and .idx
             'hdmv_pgs_subtitle': '.sup',
