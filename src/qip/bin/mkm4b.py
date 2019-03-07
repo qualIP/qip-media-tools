@@ -26,7 +26,7 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
-from qip.m4b import *
+from qip.m4b import M4bFile
 from qip.parser import *
 from qip.snd import *
 from qip.utils import byte_decode
@@ -378,7 +378,7 @@ def clean_file_name(file_name):
 # }}}
 
 def mkm4b(inputfiles, default_tags):
-    m4b = AudiobookFile(file_name=None)
+    m4b = M4bFile(file_name=None)
     m4b.tags.update(default_tags)
 
     inputfiles = [

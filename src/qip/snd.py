@@ -3980,6 +3980,8 @@ def get_audio_file_ffmpeg_stats(d):
 
 class MovieFile(SoundFile): pass  # TODO
 
+class AudiobookFile(SoundFile): pass  # TODO
+
 # class ArgparseSetTagAction {{{
 
 class ArgparseSetTagAction(argparse.Action):

@@ -117,13 +117,13 @@ def bincuerip(cue_file_name):
         bin_file = BinaryFile(os.path.join(os.path.dirname(cue_file.file_name), track.file.name))
 
         if app.args.format == 'wav':
-            import qip.wav as wav
-            track_out_file = wav.WaveFile('{base}-{track_no:02d}.wav'.format(
+            from qip.wav import WaveFile
+            track_out_file = WaveFile('{base}-{track_no:02d}.wav'.format(
                 base=os.path.splitext(bin_file.file_name)[0],
                 track_no=track_no))
         elif app.args.format == 'm4a':
-            import qip.m4a as m4a
-            track_out_file = m4a.M4aFile('{base}-{track_no:02d}.m4a'.format(
+            from qip.mp4 import M4aFile
+            track_out_file = M4aFile('{base}-{track_no:02d}.m4a'.format(
                 base=os.path.splitext(bin_file.file_name)[0],
                 track_no=track_no))
         else:

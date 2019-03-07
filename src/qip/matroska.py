@@ -2,6 +2,7 @@
 __all__ = (
     'MatroskaFile',
     'MkvFile',
+    'WebmFile',
     'MkaFile',
 )
 
@@ -370,6 +371,12 @@ class MkvFile(MatroskaFile, MovieFile):
 
     _common_extensions = (
         '.mkv',
+    )
+
+class WebmFile(MkvFile):
+
+    _common_extensions = (
+        '.webm',
     )
 
 class MkaFile(MatroskaFile, SoundFile):

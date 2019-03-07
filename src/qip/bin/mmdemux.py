@@ -59,7 +59,7 @@ from qip.mencoder import mencoder
 from qip.file import *
 from qip.handbrake import *
 from qip.isolang import isolang
-from qip.m4a import *
+from qip.mp4 import M4aFile
 from qip.mediainfo import *
 from qip.matroska import *
 from qip.mm import MediaFile, Chapters, FrameRate
@@ -2298,7 +2298,7 @@ def action_extract_music(inputdir, in_tags):
                     audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
                     audio_bitrate = audio_bitrate // 1000
 
-                    with perfcontext('Convert %s -> %s w/ qip.m4a' % (stream_chapter_tmp_file.file_name, '.m4a')):
+                    with perfcontext('Convert %s -> %s w/ M4aFile.encode' % (stream_chapter_tmp_file.file_name, '.m4a')):
                         m4a.encode(inputfiles=[stream_chapter_tmp_file],
                                    target_bitrate=audio_bitrate,
                                    yes=app.args.yes,

@@ -586,24 +586,8 @@ def organize(inputfile):
                 organize(inputfile_path)
         return True
 
-    if not isinstance(inputfile, SoundFile):
-        if os.path.splitext(inputfile)[1] in {'.m4b',}:
-            from qip.m4b import AudiobookFile
-            inputfile = AudiobookFile(file_name=inputfile)
-        elif os.path.splitext(inputfile)[1] in {'.mp3',}:
-            from qip.mp3 import Mp3File
-            inputfile = Mp3File(file_name=inputfile)
-        elif os.path.splitext(inputfile)[1] in {'.wav',}:
-            from qip.wav import WaveFile
-            inputfile = WaveFile(file_name=inputfile)
-        elif os.path.splitext(inputfile)[1] in {'.mka', '.mkv', '.webm'}:
-            from qip.matroska import MkvFile
-            inputfile = MkvFile(file_name=inputfile)
-        elif os.path.splitext(inputfile)[1] in qip.snd.get_mp4v2_app_support().extensions_can_write:
-            from qip.m4a import M4aFile
-            inputfile = M4aFile(file_name=inputfile)
-        else:
-            inputfile = SoundFile(file_name=inputfile)
+    if not isinstance(inputfile, MediaFile):
+        inputfile = MediaFile.new_by_file_name(str(inputfile), default_class=MediaFile)
 
     if not os.path.isfile(inputfile.file_name):
         raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)

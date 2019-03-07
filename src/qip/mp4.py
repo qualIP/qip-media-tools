@@ -1,6 +1,9 @@
 
 __all__ = (
+    'Mpeg4ContainerFile',
+    'Mp4File',
     'M4aFile',
+    'M4bFile',
 )
 
 import os
@@ -11,17 +14,20 @@ import tempfile
 import logging
 log = logging.getLogger(__name__)
 
+from .mm import MediaFile
+from .snd import SoundFile
+from .snd import MovieFile
+from .snd import AudiobookFile
+import qip.snd as snd
 import qip.snd as snd
 import qip.wav as wav
 import qip.cdda as cdda
 from .img import ImageFile
 from .utils import byte_decode
 
-class M4aFile(snd.SoundFile):
+# https://en.wikipedia.org/wiki/MPEG-4_Part_14
 
-    _common_extensions = (
-        '.m4a',
-    )
+class Mpeg4ContainerFile(MediaFile):
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None):
         from qip.qaac import qaac
@@ -326,6 +332,51 @@ class M4aFile(snd.SoundFile):
                 cmd += ['--add', str(picture), m4b.file_name]
                 out = do_exec_cmd(cmd)
 
-M4aFile._build_extension_to_class_map()
+class Mp4File(Mpeg4ContainerFile, MovieFile):
+
+    _common_extensions = (
+        '.mp4',
+        '.m4v',  # Raw MPEG-4 Visual bitstreams m4v but also sometimes used for video in MP4 container format.
+    )
+
+class M4aFile(Mpeg4ContainerFile, SoundFile):
+
+    _common_extensions = (
+        '.m4a',
+        '.m4r',  # Apple iPhone ringtones
+        '.m4p',  # encrypted by FairPlay Digital Rights Management
+    )
+
+class M4bFile(M4aFile, AudiobookFile):
+
+    _common_extensions = (
+        '.m4b',
+    )
+
+    def create_mkm4b(self, snd_files, out_dir=None, interactive=False, single=False):
+        oldcwd = os.getcwd()
+        try:
+            if out_dir is not None:
+                os.chdir(out_dir)
+            cmd = [
+                    'mkm4b',
+                    ]
+            if self.cover_file:
+                cmd += [
+                        '--cover', str(os.path.join(oldcwd, str(self.cover_file))),
+                        ]
+            if interactive:
+                cmd += ['--interactive']
+            if single:
+                cmd += ['--single']
+            cmd += ['--logging_level', str(logging.getLogger().level)]
+            cmd += [os.path.join(oldcwd, str(e)) for e in snd_files]
+            if log.isEnabledFor(logging.DEBUG):
+                log.debug('CMD: %s', subprocess.list2cmdline(cmd))
+            subprocess.check_call(cmd)
+        finally:
+            os.chdir(oldcwd)
+
+Mpeg4ContainerFile._build_extension_to_class_map()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

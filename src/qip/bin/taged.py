@@ -384,7 +384,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                 if getattr(app.args, 'prep_picture', False):
                     global m4a_prepped_picture
                     if not m4a_prepped_picture:
-                        from qip.m4a import M4aFile
+                        from qip.mp4 import M4aFile
                         m4a = M4aFile(file_name)
                         m4a_prepped_picture = m4a.prep_picture(value)
                     value = m4a_prepped_picture
@@ -455,7 +455,7 @@ def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):
 def taged_Matroska(file_name, tags):
     import qip.matroska
     # https://matroska.org/technical/specs/tagging/index.html
-    mkv_file = qip.matroska.MkvFile(file_name)
+    matroska_file = qip.matroska.MatroskaFile.new_by_file_name(file_name)
     tags_list = None
     for tag, value in tags.items():
         tag = tag.name
@@ -481,8 +481,8 @@ def taged_Matroska(file_name, tags):
             ]
             do_exec_cmd(cmd)
         if tags_list is None:
-            tags_xml = mkv_file.get_tags_xml()
-            tags_list = mkv_file.parse_tags_xml(tags_xml)
+            tags_xml = matroska_file.get_tags_xml()
+            tags_list = matroska_file.parse_tags_xml(tags_xml)
         d_target = qip.matroska.MatroskaTagTarget(
             TrackUID=0,
             TargetTypeValue=TargetTypeValue,
@@ -502,10 +502,10 @@ def taged_Matroska(file_name, tags):
                 app.log.debug('Add %r', d_tag)
             tags_list.append(d_tag)
     if tags_list is not None:
-        tags_xml = qip.matroska.MkvFile.create_tags_xml(tags_list)
+        tags_xml = matroska_file.create_tags_xml(tags_list)
         import qip.utils
         app.log.debug('tags_xml: %s', qip.utils.prettyxml(tags_xml))
-        mkv_file.set_tags_xml(tags_xml)
+        matroska_file.set_tags_xml(tags_xml)
 
 def taged(file_name, tags):
     app.log.info('Editing %s...', file_name)

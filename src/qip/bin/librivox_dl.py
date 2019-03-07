@@ -18,11 +18,11 @@ from gettext import gettext as _
 from qip.app import app
 from qip.file import *
 from qip.snd import *
-from qip.m4b import *
 from qip.img import *
 from qip.cmp import *
 from qip.librivox import *
 from qip import json
+from qip.mp4 import M4bFile
 
 @app.main_wrapper
 def main():
@@ -62,7 +62,7 @@ def main():
         app.args.logging_level = logging.INFO
     app.set_logging_level(app.args.logging_level)
 
-    audiobook = AudiobookFile(file_name=None)
+    audiobook = M4bFile(file_name=None)
 
     if app.args._continue:
         if app.args.dir is None:
@@ -155,7 +155,7 @@ def main():
         rel_snd_file = os.path.join(
                 snd_file_info.format,
                 os.path.split(urllib.parse.urlparse(url_file).path)[1])
-        snd_file = SoundFile(file_name=os.path.join(app.args.dir, rel_snd_file))
+        snd_file = SoundFile.new_by_file_name(os.path.join(app.args.dir, rel_snd_file))
         if snd_file.download(url=url_file, md5=snd_file_info.md5) and first_file:
             if not snd_file.test_integrity():
                 app.log.info('Other formats:\n    ' + '\n    '.join(
@@ -174,7 +174,7 @@ def main():
     url_file = urllib.parse.urljoin(book_info.url_download_base, cover_file_info.name)
     rel_cover_file = os.path.split(urllib.parse.urlparse(url_file).path)[1]
     book_info.cover_file = rel_cover_file
-    audiobook.cover_file = ImageFile(file_name=os.path.join(app.args.dir, rel_cover_file))
+    audiobook.cover_file = ImageFile.new_by_file_name(os.path.join(app.args.dir, rel_cover_file))
     audiobook.cover_file.download(url=url_file, md5=cover_file_info.md5)
 
     book_info_file = json.JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.book_info.json'))

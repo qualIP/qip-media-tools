@@ -25,6 +25,7 @@ import logging
 log = logging.getLogger(__name__)
 
 from qip.propex import propex
+from qip.decorator import func_once
 
 # http://stackoverflow.com/questions/3431825/generating-a-md5-checksum-of-a-file
 def hashfile(afile, hasher, blocksize=65536):
@@ -48,10 +49,14 @@ class File(object):
         type=propex.test_in(('', 't', 'b')))
 
     @classmethod
-    def new_by_file_name(cls, file_name, default_class=None, *args, **kwargs):
+    def new_by_file_name(cls, file_name, *args, default_class=None, **kwargs):
         ext = os.path.splitext(file_name)[1]
         factory_cls = cls._extension_to_class_map.get(ext, default_class)
         if factory_cls is None:
+            load_all_file_types()
+            factory_cls = cls._extension_to_class_map.get(ext, default_class)
+        if factory_cls is None:
+            log.debug('%r._extension_to_class_map = %r', cls, cls._extension_to_class_map)
             raise ValueError('Unknown extension %r' % (ext,))
         return factory_cls(file_name, *args, **kwargs)
 
@@ -367,6 +372,19 @@ def safe_read_file(file, *, encoding='utf-8'):
     return open(str(file), mode='r', encoding=encoding).read()
 
 # }}}
+
+@func_once
+def load_all_file_types():
+    import qip.cdda
+    #import qip.file
+    import qip.json
+    import qip.mm
+    import qip.img
+    import qip.snd
+    import qip.mp4
+    import qip.matroska
+    import qip.mp3
+    import qip.wav
 
 File._build_extension_to_class_map()
 

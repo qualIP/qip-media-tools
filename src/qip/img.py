@@ -38,6 +38,7 @@ from qip.file import *
 from qip.parser import *
 from qip.propex import propex
 from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise
+from .mm import MediaFile
 
 
 def _tIntRange(value, rng):
@@ -678,7 +679,7 @@ ImageType.__new__ = ImageType._ImageType__new
 
 # class ImageFile {{{
 
-class ImageFile(BinaryFile):
+class ImageFile(MediaFile):
 
     _common_extensions = (
         '.png',
