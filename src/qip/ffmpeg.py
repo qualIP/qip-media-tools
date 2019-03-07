@@ -494,7 +494,7 @@ class Ffprobe(_Ffmpeg):
             for line in parser:
                 line = line.strip()
                 if line == '[FRAME]':
-		    # [FRAME]
+                    # [FRAME]
                     frame = Ffprobe.Frame()
                     for line in parser:
                         line = line.strip()
@@ -538,7 +538,7 @@ class Ffprobe(_Ffmpeg):
                     yield frame
                     continue
                 if line == '[SUBTITLE]':
-		    # [SUBTITLE]
+                    # [SUBTITLE]
                     subtitle = Ffprobe.Subtitle()
                     for line in parser:
                         line = line.strip()
