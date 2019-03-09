@@ -3,6 +3,7 @@ coloredlogs
 argcomplete
 musicbrainzngs
 unidecode
+progress
 # requires: apt-get-install libdiscid-dev
 # or use: apt-get install python3-libdiscid
 # python-libdiscid

@@ -28,6 +28,8 @@
 # tbc = the time base in AVCodecContext for the codec used for a particular stream
 # tbr = tbr is guessed from the video stream and is the value users want to see when they look for the video frame rate, except sometimes it is twice what one would expect because of field rate versus frame rate.
 
+from decimal import Decimal
+from fractions import Fraction
 import argparse
 import collections
 import copy
@@ -47,9 +49,14 @@ import subprocess
 import sys
 import types
 import xml.etree.ElementTree as ET
-from fractions import Fraction
-from decimal import Decimal
 reprlib.aRepr.maxdict = 100
+
+HAVE_PROGRESS_BAR = False
+try:
+    import progress.bar
+    HAVE_PROGRESS_BAR = True
+except ImportError:
+    pass
 
 from qip import json
 from qip.app import app
@@ -127,6 +134,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             video_frames = []
             prev_pkt_pts_time = Decimal('0.000000')
             with perfcontext('frames iteration'):
+                if HAVE_PROGRESS_BAR:
+                    bar = progress.bar.Bar('iterate frames', max=float(app.args.video_analyze_duration))
                 for frame in ffprobe.iter_frames(stream_file_name):
                     if frame.media_type != 'video':
                         continue
@@ -136,10 +145,14 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                     else:
                         prev_pkt_pts_time = frame.pkt_pts_time
                     video_frames.append(frame)
+                    if HAVE_PROGRESS_BAR:
+                        bar.goto(float(frame.pkt_dts_time))
                     if float(frame.pkt_dts_time if frame.pkt_dts_time is not None else frame.pkt_pts_time) >= app.args.video_analyze_duration:
                         break
                 #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
                 #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
+                if HAVE_PROGRESS_BAR:
+                    bar.finish()
 
             app.log.debug('Analyzing %d video frames...', len(video_frames))
 
@@ -167,19 +180,31 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                     found_frame_offset = temporal_pattern_offset // 2
                     found_frame_count = len(temporal_pattern) // 2
                     found_frames = video_frames[found_frame_offset:found_frame_offset + found_frame_count]
-                    app.log.debug('found_frames: \n%s', pprint.pformat(found_frames))
+                    if app.log.isEnabledFor(logging.DEBUG):
+                        app.log.debug('found_frames: \n%s', pprint.pformat(found_frames))
                     field_order = result_field_order
                     interlacement = result_interlacement
                     # framerate = FrameRate(1 / (
                     #     time_base
                     #     * sum(frame.pkt_duration for frame in found_frames)
                     #     / len(found_frames)))
-                    calc_framerate = framerate = FrameRate(1 / (Fraction(
-                        (found_frames[-1].pkt_pts if found_frames[-1].pkt_pts is not None else found_frames[-1].pkt_dts)
-                        - (found_frames[0].pkt_pts if found_frames[0].pkt_pts is not None else found_frames[0].pkt_dts)
-                        + found_frames[-1].pkt_duration,
-                        len(found_frames)) * time_base))
-                    framerate = framerate.round_common()
+                    #calc_framerate = framerate = FrameRate(1 / (Fraction(
+                    #    (found_frames[-1].pkt_pts if found_frames[-1].pkt_pts is not None else found_frames[-1].pkt_dts)
+                    #    - (found_frames[0].pkt_pts if found_frames[0].pkt_pts is not None else found_frames[0].pkt_dts)
+                    #    + found_frames[-1].pkt_duration,
+                    #    len(found_frames)) * time_base))
+                    #framerate = framerate.round_common()
+                    found_pkt_duration_times = [
+                            frame.pkt_duration_time
+                            for frame in found_frames]
+                    found_pkt_duration_times = sorted(found_pkt_duration_times)
+                    if found_pkt_duration_times in (
+                            sorted([Decimal('0.033000'), Decimal('0.050000')] * 4),
+                            sorted([Decimal('0.033367'), Decimal('0.050050')] * 4),
+                            ):
+                        framerate = FrameRate(24000, 1001)
+                    else:
+                        raise NotImplementedError(found_pkt_duration_times)
                     app.log.warning('Detected field order is %s at %s (%.3f) fps based on temporal pattern %r', field_order, framerate, framerate, temporal_pattern)
                     assert framerate == FrameRate(24000, 1001)  # Only verified case so far
                     # assert framerate == original_framerate * result_framerate_ratio
@@ -191,26 +216,28 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                         frame.pkt_duration == frame0.pkt_duration
                         for frame in video_frames)
                 if constant_framerate:
-                    if frame0.pkt_duration_time in (
-                                Decimal('0.033367'),
-                                Decimal('0.033000'),
-                            ):
-                        framerate = FrameRate(30000, 1001)
-                    elif frame0.pkt_duration_time in (
-                                Decimal('0.041000'),
-                            ):
-                        framerate = FrameRate(24000, 1001)
+                    if False:
+                        if frame0.pkt_duration_time in (
+                                    Decimal('0.033367'),
+                                    Decimal('0.033000'),
+                                ):
+                            framerate = FrameRate(30000, 1001)
+                        elif frame0.pkt_duration_time in (
+                                    Decimal('0.041000'),
+                                ):
+                            framerate = FrameRate(24000, 1001)
+                        else:
+                            raise NotImplementedError(frame0.pkt_duration_time)
                     else:
-                        raise NotImplementedError(frame0.pkt_duration_time)
-                    #framerate = FrameRate(1 / (
-                    #    time_base
-                    #    * sum(
-                    #        (frameB.pkt_pts if frameB.pkt_pts is not None else frameB.pkt_dts)
-                    #        - (frameA.pkt_pts if frameA.pkt_pts is not None else frameA.pkt_dts)
-                    #        for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
-                    #    / (len(video_frames) - 1)))
-                    ## framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
-                    #framerate = framerate.round_common()
+                        framerate = FrameRate(1 / (
+                            time_base
+                            * sum(
+                                (frameB.pkt_pts if frameB.pkt_pts is not None else frameB.pkt_dts)
+                                - (frameA.pkt_pts if frameA.pkt_pts is not None else frameA.pkt_dts)
+                                for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
+                            / (len(video_frames) - 1)))
+                        # framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
+                        framerate = framerate.round_common()
                     app.log.debug('Constant %s (%.3f) fps found...', framerate, framerate)
                     all_same_interlaced_frame = all(
                             frame.interlaced_frame == frame0.interlaced_frame
@@ -1030,24 +1057,23 @@ def action_mux(inputfile, in_tags):
                 stream_file_name_language_suffix = '.%s' % (stream_language,) if stream_language is not None else ''
                 if stream_disposition_dict['attached_pic']:
                     attachment_index += 1
-                    output_track_file_name = '%s/attachment-%02d-%s%s%s' % (
-                            outputdir,
+                    output_track_file_name = 'attachment-%02d-%s%s%s' % (
                             attachment_index,
                             stream_codec_type,
                             stream_file_name_language_suffix,
                             stream_file_ext,
                             )
                 else:
-                    output_track_file_name = '%s/track-%02d-%s%s%s' % (
-                            outputdir,
+                    output_track_file_name = 'track-%02d-%s%s%s' % (
                             stream_index,
                             stream_codec_type,
                             stream_file_name_language_suffix,
                             stream_file_ext,
                             )
-                stream_out_dict['file_name'] = os.path.basename(output_track_file_name)
+                stream_out_dict['file_name'] = output_track_file_name
 
                 if stream_file_ext == '.vtt':
+                    app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
                     # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
                     # (mkvextract expects S_TEXT/WEBVTT)
                     with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
@@ -1057,18 +1083,19 @@ def action_mux(inputfile, in_tags):
                             '-map_chapters', '-1',
                             '-map', '0:%d' % (stream_index,),
                             '-codec', 'copy',
-                            output_track_file_name,
+                            os.path.join(outputdir, output_track_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
                 elif stream_disposition_dict['attached_pic']:
+                    app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
                     with perfcontext('extract attachment %d w/ mkvextract' % (attachment_index,)):
                         cmd = [
                             'mkvextract', 'attachments', inputfile.file_name,
                             '%d:%s' % (
                                 attachment_index,
-                                output_track_file_name,
+                                os.path.join(outputdir, output_track_file_name),
                             )]
                         do_spawn_cmd(cmd)
                 elif app.args.track_extract_tool == 'ffmpeg' \
@@ -1078,6 +1105,7 @@ def action_mux(inputfile, in_tags):
                             'vp9',
                         )):
                     # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
+                    app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
                     with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
                         force_format = None
                         try:
@@ -1097,18 +1125,19 @@ def action_mux(inputfile, in_tags):
                                 '-f', force_format,
                                 ]
                         ffmpeg_args += [
-                            output_track_file_name,
+                            os.path.join(outputdir, output_track_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
                 elif app.args.track_extract_tool in ('mkvextract', None):
+                    app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
                     with perfcontext('extract track %d w/ mkvextract' % (stream_index,)):
                         cmd = [
                             'mkvextract', 'tracks', inputfile.file_name,
                             '%d:%s' % (
                                 stream_index,
-                                output_track_file_name,
+                                os.path.join(outputdir, output_track_file_name),
                             )]
                         do_spawn_cmd(cmd)
                         # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
@@ -1118,7 +1147,7 @@ def action_mux(inputfile, in_tags):
                 if not app.args.dry_run:
 
                     if stream_codec_type == 'video':
-                        output_track_file = MediaFile(output_track_file_name)
+                        output_track_file = MediaFile(os.path.join(outputdir, output_track_file_name))
                         mediainfo_track_dict, = (mediainfo_track_dict
                                 for mediainfo_track_dict in mediainfo_dict['media']['track']
                                 if int(mediainfo_track_dict.get('ID', 0)) == stream_index + 1)
@@ -1134,15 +1163,15 @@ def action_mux(inputfile, in_tags):
                         if stream_forced:
                             has_forced_subtitle = True
                         if stream_file_ext in ('.sub', '.sup'):
-                            d = ffprobe(i=output_track_file_name, show_frames=True)
+                            d = ffprobe(i=os.path.join(outputdir, output_track_file_name), show_frames=True)
                             out = d.out
                             subtitle_count = out.count(
                                 b'[SUBTITLE]' if type(out) is bytes else '[SUBTITLE]')
                         elif stream_file_ext in ('.idx',):
-                            out = open(output_track_file_name, 'rb').read()
+                            out = open(os.path.join(outputdir, output_track_file_name), 'rb').read()
                             subtitle_count = out.count(b'timestamp:')
                         elif stream_file_ext in ('.srt', '.vtt'):
-                            out = open(output_track_file_name, 'rb').read()
+                            out = open(os.path.join(outputdir, output_track_file_name), 'rb').read()
                             subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
                         else:
                             raise NotImplementedError(stream_file_ext)

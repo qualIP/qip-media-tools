@@ -96,8 +96,16 @@ class _Ffmpeg(Executable):
             out_file_args = [args.pop(-1)] + out_file_args
 
         if 'loglevel' not in kwargs and '-loglevel' not in args:
-            if not log.isEnabledFor(logging.VERBOSE):
+            if log.isEnabledFor(logging.DEBUG):
+                kwargs['loglevel'] = 'verbose'
+            elif log.isEnabledFor(logging.VERBOSE):
                 kwargs['loglevel'] = 'info'
+            else:
+                kwargs['loglevel'] = 'info'
+
+        if 'hide_banner' not in kwargs and '-hide_banner' not in args:
+            if not log.isEnabledFor(logging.VERBOSE):
+                kwargs['hide_banner'] = True
 
         return super().build_cmd(*args, **kwargs) + out_file_args
 
@@ -482,8 +490,7 @@ class Ffprobe(_Ffmpeg):
     def iter_frames(self, file, *, dry_run=False):
         from qip.parser import lines_parser
         ffprobe_args = [
-            '-loglevel', 'panic',
-            '-hide_banner',
+            '-loglevel', 'panic', '-hide_banner',
             '-i', str(file),
             '-show_frames',
         ]
