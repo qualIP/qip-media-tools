@@ -228,16 +228,26 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             framerate = FrameRate(24000, 1001)
                         else:
                             raise NotImplementedError(frame0.pkt_duration_time)
-                    else:
-                        framerate = FrameRate(1 / (
-                            time_base
-                            * sum(
-                                (frameB.pkt_pts if frameB.pkt_pts is not None else frameB.pkt_dts)
-                                - (frameA.pkt_pts if frameA.pkt_pts is not None else frameA.pkt_dts)
-                                for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
-                            / (len(video_frames) - 1)))
+                    elif False:
+                        pts_sum = sum(
+                            (frameB.pkt_pts if frameB.pkt_pts is not None else frameB.pkt_dts)
+                            - (frameA.pkt_pts if frameA.pkt_pts is not None else frameA.pkt_dts)
+                            for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
+                        framerate = FrameRate(1 / (time_base * pts_sum / (len(video_frames) - 2)), 1)
+                        app.log.debug('framerate = 1 / (%r * %r / (%r - 2)) = %r = %r', time_base, pts_sum, len(video_frames), framerate, float(framerate))
                         # framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
                         framerate = framerate.round_common()
+                        app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
+                    else:
+                        assert len(video_frames) > 1000  # To make sure there's enough precision
+                        pts_diff = (
+                            (video_frames[-2].pkt_pts if video_frames[-2].pkt_pts is not None else video_frames[-2].pkt_dts)  # Last frame may not have either dts and pts
+                            - (video_frames[0].pkt_pts if video_frames[0].pkt_pts is not None else video_frames[0].pkt_dts))
+                        framerate = FrameRate(1 / (time_base * pts_diff / (len(video_frames) - 2)), 1)
+                        app.log.debug('framerate = 1 / (%r * %r) / (%r - 2) = %r = %r', time_base, pts_diff, len(video_frames), framerate, float(framerate))
+                        framerate = framerate.round_common()
+                        app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
+
                     app.log.debug('Constant %s (%.3f) fps found...', framerate, framerate)
                     all_same_interlaced_frame = all(
                             frame.interlaced_frame == frame0.interlaced_frame
