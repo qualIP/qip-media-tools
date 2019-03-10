@@ -6,6 +6,7 @@ __all__ = [
 
 import functools
 from decimal import Decimal
+from fractions import Fraction
 import types
 import re
 import os
@@ -26,7 +27,7 @@ class Timestamp(_BaseTimestamp):
     def __init__(self, value):
         if isinstance(value, float):
             seconds = value
-        elif isinstance(value, int):
+        elif isinstance(value, (int, Fraction)):
             seconds = float(value)
         elif isinstance(value, _BaseTimestamp):
             seconds = value.seconds

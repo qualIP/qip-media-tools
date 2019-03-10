@@ -5,8 +5,14 @@ __all__ = (
     'pairwise',
     'Timestamp',
     'prettyxml',
+    'round_up',
+    'round_down',
+    'round_half_up',
+    'round_half_down',
+    'round_half_away_from_zero',
 )
 
+import math
 import abc
 import collections
 from fractions import Fraction
@@ -23,7 +29,7 @@ class Timestamp(object):
     def __init__(self, value):
         if isinstance(value, float):
             seconds = value
-        elif isinstance(value, int):
+        elif isinstance(value, (int, Fraction)):
             seconds = float(value)
         elif isinstance(value, Timestamp):
             seconds = value.seconds
@@ -91,28 +97,48 @@ class Timestamp(object):
     def __add__(self, other):
         if isinstance(other, Timestamp):
             return self.__class__(self.seconds + other.seconds)
-        if isinstance(other, (int, float)):
+        if isinstance(other, (int, float, Fraction)):
             return self.__class__(self.seconds + other)
         return NotImplemented
 
     def __sub__(self, other):
         if isinstance(other, Timestamp):
             return self.__class__(self.seconds - other.seconds)
-        if isinstance(other, (int, float)):
+        if isinstance(other, (int, float, Fraction)):
             return self.__class__(self.seconds - other)
         return NotImplemented
+
+    def __mul__(self, other):
+        if isinstance(other, Timestamp):
+            return self.__class__(self.seconds * other.seconds)
+        if isinstance(other, (int, float, Fraction)):
+            return self.__class__(self.seconds * other)
+        return NotImplemented
+
+    def __truediv__(self, other):
+        if isinstance(other, Timestamp):
+            return self.__class__(self.seconds / other.seconds)
+        if isinstance(other, (int, float, Fraction)):
+            return self.__class__(self.seconds / other)
+        return NotImplemented
+
+    def __floordiv__(self, other):
+        return self.seconds // other
+
+    def __abs__(self):
+        return self.__class__(abs(self.seconds))
 
     def __eq__(self, other):
         if isinstance(other, Timestamp):
             return self.seconds == other.seconds
-        if isinstance(other, (int, float)):
+        if isinstance(other, (int, float, Fraction)):
             return self.seconds == other
         return NotImplemented
 
     def __lt__(self, other):
         if isinstance(other, Timestamp):
             return self.seconds < other.seconds
-        if isinstance(other, (int, float)):
+        if isinstance(other, (int, float, Fraction)):
             return self.seconds < other
         return NotImplemented
 
@@ -300,3 +326,35 @@ def prettyxml(sXml, *, indent="  "):
     else:
         raise TypeError(sXml)
     return xml.dom.minidom.parseString(sXml).toprettyxml(indent=indent)
+
+
+def round_up(n, decimals=0):
+    '''See: https://realpython.com/python-rounding/'''
+    multiplier = 10 ** decimals
+    return math.ceil(n * multiplier) / multiplier
+
+
+def round_down(n, decimals=0):
+    '''See: https://realpython.com/python-rounding/'''
+    multiplier = 10 ** decimals
+    return math.floor(n * multiplier) / multiplier
+
+
+def round_half_up(n, decimals=0):
+    '''See: https://realpython.com/python-rounding/'''
+    multiplier = 10 ** decimals
+    return math.floor(n*multiplier + 0.5) / multiplier
+
+
+def round_half_down(n, decimals=0):
+    '''See: https://realpython.com/python-rounding/'''
+    multiplier = 10 ** decimals
+    return math.ceil(n*multiplier - 0.5) / multiplier
+
+
+def round_half_away_from_zero(n, decimals=0):
+    '''See: https://realpython.com/python-rounding/'''
+    rounded_abs = round_half_up(abs(n), decimals)
+    return math.copysign(rounded_abs, n)
+
+# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
