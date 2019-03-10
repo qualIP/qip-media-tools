@@ -97,9 +97,9 @@ default_tag_map = (
     # XXXJST CONFLICT TagInfo(70, 'COLLECTION', 'TITLE', 'tvshow'),
     # XXXJST CONFLICT TagInfo(60, 'SEASON', 'PART_NUMBER', 'season'),
     # XXXJST CONFLICT TagInfo(50, 'EPISODE', 'PART_NUMBER', 'episode'),
+    TagInfo(50, None, 'TOTAL_PARTS', 'parts'),
     TagInfo(40, None, 'PART_NUMBER', 'part'),
     TagInfo(40, None, 'TITLE', 'parttitle'),
-    TagInfo(40, None, 'TOTAL_PARTS', 'parts'),
     # XXXJST CONFLICT TagInfo(None, None, 'TODO','albumartist'),
     TagInfo(None, None, 'ARTIST', 'artist'),  # CONFLICT
     # XXXJST CONFLICT TagInfo(None, None, 'TODO', 'albumtitle'),
@@ -228,8 +228,10 @@ class MatroskaFile(MediaFile):
                 40: 'PART',
             })
             tag_map += [
-                TagInfo(40, None, 'PART_NUMBER', 'part'),
+                TagInfo(60, None, 'TOTAL_PARTS', 'disks'),
+                TagInfo(50, None, 'PART_NUMBER', 'disk'),
                 TagInfo(50, None, 'TOTAL_PARTS', 'parts'),
+                TagInfo(40, None, 'PART_NUMBER', 'part'),
             ]
         if file_type in ('tvshow',):
             default_TargetTypes.update({
