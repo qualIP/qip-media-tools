@@ -126,6 +126,14 @@ class Mediainfo(Executable):
                     m = re.match(r'^(?P<v>\d+(?: \d\d\d)*) pixels$', v)
                     assert m, (k, v)
                     v = m.group('v').replace(' ', '')
+                elif k == 'Sampling rate':
+                    k = 'SamplingRate'
+                    # 48.0 kHz
+                    m = re.match(r'^(?P<float>\d+\.\d{1,3}) kHz$', v)
+                    if m:
+                        v = int(float(m.group('float')) * 1000)
+                    else:
+                        raise ValueError((k, v))
                 else:
                     continue  # skip
                 track_dict[k] = v

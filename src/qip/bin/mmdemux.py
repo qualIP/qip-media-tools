@@ -74,7 +74,7 @@ from qip.opusenc import opusenc
 from qip.perf import perfcontext
 from qip.mm import *
 from qip.threading import *
-from qip.utils import byte_decode, Ratio
+from qip.utils import byte_decode, Ratio, round_half_away_from_zero
 import qip.mm
 import qip.utils
 
@@ -488,6 +488,47 @@ def main():
         did_something = True
     if not did_something:
         raise ValueError('Nothing to do!')
+
+def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_stream_dict=None):
+    if mediainfo_track_dict:
+        if mediainfo_track_dict['Format'] == 'Opus':
+            # default encoding delay of 312 samples
+            return ffmpeg.Timestamp(Fraction(1, int(mediainfo_track_dict['SamplingRate'])) * 312)
+        return 0
+    if ffprobe_stream_dict:
+        if ffprobe_stream_dict['codec_name'] == 'opus':
+            # default encoding delay of 312 samples
+            return ffmpeg.Timestamp(Fraction(1, int(ffprobe_stream_dict['sample_rate'])) * 312)
+        return 0
+    file_ext = my_splitext(file_name)[1]
+    if file_ext in (
+            '.y4m',
+            '.mpeg2.mp2v',
+            '.mjpeg',
+            '.msmpeg4v3.avi',
+            '.mp4',
+            '.vc1',
+            '.h264',
+            '.h265',
+            '.vp8',
+            '.vp8.ivf',
+            '.vp9',
+            '.vp9.ivf',
+            '.ac3',
+            '.mp3',
+            '.dts',
+            '.aac',
+            '.wav',
+            '.sub',
+            '.sup',
+            '.srt',
+            '.vtt',
+    ):
+        return 0
+    mediainfo_dict = MediaFile.new_by_file_name(file_name).extract_mediainfo_dict()
+    assert len(mediainfo_dict['media']['track']) == 2
+    mediainfo_track_dict = mediainfo_dict['media']['track'][1]
+    return get_codec_encoding_delay(file_name, mediainfo_track_dict=mediainfo_track_dict)
 
 def codec_name_to_ext(codec_name):
     try:
@@ -1035,6 +1076,17 @@ def action_mux(inputfile, in_tags):
                         stream_dict['tags']['language'] = app.args.video_language.code3
                     # stream_out_dict['pixel_aspect_ratio'] = stream_dict['pixel_aspect_ratio']
                     # stream_out_dict['display_aspect_ratio'] = stream_dict['display_aspect_ratio']
+
+                stream_time_base = Fraction(stream_dict['time_base'])
+
+                stream_start_time = ffmpeg.Timestamp(stream_dict['start_time'])
+                codec_encoding_delay = get_codec_encoding_delay(inputfile, ffprobe_stream_dict=stream_dict)
+                if stream_start_time < 0 \
+                        and stream_start_time == (stream_time_base * round_half_away_from_zero(-codec_encoding_delay / stream_time_base)):
+                    stream_start_time = ffmpeg.Timestamp(0)
+                else:
+                    stream_start_time += codec_encoding_delay
+                stream_out_dict['start_time'] = str(stream_start_time)
 
                 stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
 
@@ -2607,11 +2659,19 @@ def action_demux(inputdir, in_tags):
             display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
             if display_aspect_ratio:
                 ffmpeg_output_args += ['-aspect:%d' % (new_stream_index,), display_aspect_ratio]
-            if has_opus_streams and stream_file_ext in ('.opus', '.opus.ogg'):
+
+            stream_start_time = ffmpeg.Timestamp(stream_dict.get('start_time', 0))
+            if stream_start_time:
+                codec_encoding_delay = get_codec_encoding_delay(os.path.join(inputdir, stream_file_name))
+                stream_start_time += codec_encoding_delay
+            elif has_opus_streams and stream_file_ext in ('.opus', '.opus.ogg'):
                 # Note that this is not needed if the audio track is wrapped in a mkv container
+                stream_start_time = -ffmpeg.Timestamp.MAX
+            if stream_start_time:
                 ffmpeg_input_args += [
-                    '-itsoffset', -ffmpeg.Timestamp.MAX,
+                    '-itsoffset', stream_start_time,
                     ]
+
             if stream_codec_type == 'video':
                 if stream_file_ext in ('.vp9', '.vp9.ivf',):
                     # ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
