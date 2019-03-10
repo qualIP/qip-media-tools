@@ -563,7 +563,7 @@ class MatroskaFile(MediaFile):
         if file_type is None:
             for d_tag in tags_list:
                 if (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue, d_tag.Name) == (0, 50, 'CONTENT_TYPE'):
-                    contenttype = str(ContentType(d_tag.Value))
+                    contenttype = str(ContentType(d_tag.String))
                     if 'Music Video' in contenttype \
                             or 'Concert' in contenttype:
                         file_type = 'musicvideo'
