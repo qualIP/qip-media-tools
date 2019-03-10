@@ -116,6 +116,7 @@ def main():
     pgroup.add_argument('--lyrics-embed', dest='lyrics_embed', action='store_true', help='Embed lyrics in sound file if found')
 
     pgroup = app.parser.add_argument_group('Tags')
+    pgroup.add_argument('--grouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
