@@ -458,7 +458,9 @@ class MatroskaFile(MediaFile):
                 tag_info = tag_info._replace(
                     TargetType=default_TargetTypes.get(tag_info.TargetTypeValue, None))
 
-            if type(value) is tuple:
+            if value is None:
+                mkv_value = ()
+            elif type(value) is tuple:
                 mkv_value = tuple(str(e) for e in value)
             else:
                 mkv_value = str(value)
