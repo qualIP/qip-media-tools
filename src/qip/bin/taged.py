@@ -96,7 +96,8 @@ def main():
 
     pgroup = app.parser.add_argument_group('Actions')
     xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--edit', dest='action', default='edit', action='store_const', const='edit', help='edit tags (default)')
+    xgroup.add_argument('--set', dest='action', default=None, action='store_const', const='set', help='set tags')
+    xgroup.add_argument('--edit', dest='action', default=argparse.SUPPRESS, action='store_const', const='edit', help='edit tags')
     xgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
     xgroup.add_argument('--find-lyrics', dest='action', default=argparse.SUPPRESS, action='store_const', const='find_lyrics', help='find lyrics')
 
@@ -153,7 +154,7 @@ def main():
     app.parse_args()
 
     if getattr(app.args, 'action', None) is None:
-        app.args.action = 'edit'
+        app.args.action = 'set' if in_tags else 'edit'
     if not hasattr(app.args, 'logging_level'):
         app.args.logging_level = logging.INFO
     app.set_logging_level(app.args.logging_level)
@@ -169,7 +170,7 @@ def main():
         if not shutil.which(prog):
             app.log.warning('%s: command not found; Functionality may be limited.', prog)
 
-    if app.args.action == 'edit':
+    if app.args.action == 'set':
         # {{{
 
         if not app.args.files:
@@ -177,6 +178,16 @@ def main():
         for file_name in app.args.files:
             with perfcontext('taged'):
                 taged(file_name, in_tags)
+
+        # }}}
+    elif app.args.action == 'edit':
+        # {{{
+
+        if not app.args.files:
+            raise Exception('No files provided')
+        for file_name in app.args.files:
+            with perfcontext('list'):
+                tageditor(file_name)
 
         # }}}
     elif app.args.action == 'list':
@@ -268,8 +279,8 @@ def find_lyrics(file_name, *, genius=None, tags=None, **kwargs):
                 **kwargs)
 
     if file_name is not None:
-        snd_file = MediaFile.new_by_file_name(file_name)
-        tags = snd_file.load_tags()
+        mm_file = MediaFile.new_by_file_name(file_name)
+        tags = mm_file.load_tags()
     with perfcontext('genius.search_song'):
         song = genius.search_song(tags.title, tags.artist)
     if song:
@@ -339,9 +350,9 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             continue
         tag = tag.name
         if tag == 'type':
-            snd_file = MediaFile.new_by_file_name(file_name)
-            snd_file.tags = tags
-            value = snd_file.deduce_type()
+            mm_file = MediaFile.new_by_file_name(file_name)
+            mm_file.tags = tags
+            value = mm_file.deduce_type()
         else:
             value = tags[tag]
         try:
@@ -508,11 +519,23 @@ def dump_tags(tags, *, deep=True, heading='Tags:'):
     for track_no, track_tags in tags.tracks_tags.items() if isinstance(tags, AlbumTags) else ():
         dump_tags(track_tags, deep=False, heading='- Track %d' % (track_no,))
 
+def tageditor(file_name):
+    app.log.info('Editing %s...', file_name)
+    mm_file = MediaFile.new_by_file_name(file_name)
+    import qip.matroska
+    if isinstance(mm_file, qip.matroska.MatroskaFile):
+        tags_xml = mm_file.get_tags_xml()
+        modified, tags_xml = edvar(tags_xml)
+        if modified:
+            mm_file.set_tags_xml(tags_xml)
+        return True
+    raise NotImplementedError(mm_file)
+
 def taglist(file_name):
     app.log.info('Listing %s...', file_name)
-    snd_file = MediaFile.new_by_file_name(file_name)
-    app.log.debug('snd_file = %r', snd_file)
-    tags = snd_file.load_tags()
+    mm_file = MediaFile.new_by_file_name(file_name)
+    app.log.debug('mm_file = %r', mm_file)
+    tags = mm_file.load_tags()
     assert tags is not None
     dump_tags(tags)
     sys.stdout.flush()  # Sync with logging
