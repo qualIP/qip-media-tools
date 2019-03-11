@@ -822,7 +822,7 @@ class FrameRate(Fraction):
 
     def round_common(self):
         for framerate in common_framerates:
-            if framerate * 0.998 < self <= framerate:
+            if abs(self - framerate) <= 0.001:
                 return framerate
         raise ValueError(framerate)
 
