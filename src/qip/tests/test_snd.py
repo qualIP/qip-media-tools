@@ -4,7 +4,7 @@ import unittest
 import operator
 
 import qip.mm
-from qip.mm import MediaTagEnum, AlbumTags
+from qip.mm import MediaTagEnum, AlbumTags, FrameRate
 
 class test_snd(unittest.TestCase):
 
@@ -31,10 +31,18 @@ class test_snd(unittest.TestCase):
         self.assertFalse(album_tags.contains(MediaTagEnum.composer, strict=True))
         self.assertEqual(dict(album_tags),
                          {
-                             MediaTagEnum.albumtitle: '-title-',
+                             #MediaTagEnum.albumtitle: '-title-',
                              MediaTagEnum.title: '-title-',
                              MediaTagEnum.date: qip.mm.MediaTagDate('2019'),
                          })
+
+    def test_FrameRate_round_common(self):
+
+        FrameRate(24000, 1000).round_common == FrameRate(24000, 1000)
+        FrameRate(24000, 1001).round_common == FrameRate(24000, 1001)
+        FrameRate(30000, 1000).round_common == FrameRate(30000, 1000)
+        FrameRate(30000, 1001).round_common == FrameRate(30000, 1001)
+        FrameRate(1/0.033367, 1).round_common == FrameRate(24000, 1001)
 
 if __name__ == '__main__':
     unittest.main()
