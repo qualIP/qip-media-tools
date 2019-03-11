@@ -1060,6 +1060,9 @@ def action_mux(inputfile, in_tags):
         has_forced_subtitle = False
         subtitle_counts = []
 
+        iter_frames = None
+        first_pts_time_per_stream = {}
+
         attachment_index = 0  # First attachment is index 1
         for stream_dict in ffprobe_dict['streams']:
             if stream_dict.get('skip', False):
@@ -1096,6 +1099,23 @@ def action_mux(inputfile, in_tags):
                     stream_start_time = ffmpeg.Timestamp(0)
                 else:
                     stream_start_time += codec_encoding_delay
+                if stream_start_time and stream_codec_type == 'video':
+                    if stream_index not in first_pts_time_per_stream:
+                        if iter_frames is None:
+                            iter_frames = ffprobe.iter_frames(inputfile)
+                        for frame in iter_frames:
+                            if frame.stream_index in first_pts_time_per_stream:
+                                continue
+                            if frame.pkt_pts_time is None:
+                                continue
+                            first_pts_time_per_stream[frame.stream_index] = frame.pkt_pts_time
+                            if frame.stream_index == stream_index:
+                                break
+                    if first_pts_time_per_stream[stream_index] == 0.0:
+                        app.log.warning('Correcting %s stream #%d start time to 0 based on first frame PTS', stream_codec_type, stream_index)
+                        stream_start_time = ffmpeg.Timestamp(0)
+                if stream_start_time:
+                    app.log.warning('%s stream #%d start time is %s', stream_codec_type.title(), stream_index, stream_start_time)
                 stream_out_dict['start_time'] = str(stream_start_time)
 
                 stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
