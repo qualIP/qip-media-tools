@@ -194,7 +194,7 @@ class MatroskaFile(MediaFile):
 
         if file_type is None:
             file_type = self.deduce_type()
-        log.debug('file_type = %r', file_type)
+        log.debug('get_matroska_tag_map for file_type %r', file_type)
         if file_type in ('normal', 'audiobook'):
             default_TargetTypes.update({
                 60: 'EDITION',
@@ -221,13 +221,21 @@ class MatroskaFile(MediaFile):
                 50: 'CONCERT',
             })
             tag_map += [
+                TagInfo(60, None, 'TOTAL_PARTS', 'disks'),
+                TagInfo(50, None, 'PART_NUMBER', 'disk'),
+                TagInfo(50, None, 'TOTAL_PARTS', 'parts'),
+                TagInfo(40, None, 'PART_NUMBER', 'part'),
             ]
         if file_type in ('movie', 'oldmovie'):
             default_TargetTypes.update({
+                #60: 'SEQUEL',
                 50: 'MOVIE',
                 40: 'PART',
             })
             tag_map += [
+                #TagInfo(70, None, 'TOTAL_PARTS', 'seriesparts'),
+                #TagInfo(60, 'SEQUEL', 'PART_NUMBER', 'seriespart'),
+                #TagInfo(60, 'SEQUEL', 'TITLE', 'seriestitle'),
                 TagInfo(60, None, 'TOTAL_PARTS', 'disks'),
                 TagInfo(50, None, 'PART_NUMBER', 'disk'),
                 TagInfo(50, None, 'TOTAL_PARTS', 'parts'),
@@ -245,6 +253,8 @@ class MatroskaFile(MediaFile):
                 TagInfo(60, None, 'PART_NUMBER', 'season'),
                 TagInfo(60, None, 'TOTAL_PARTS', 'episodes'),
                 TagInfo(50, None, 'PART_NUMBER', 'episode'),
+                TagInfo(50, None, 'TOTAL_PARTS', 'parts'),
+                TagInfo(40, None, 'PART_NUMBER', 'part'),
             ]
         if file_type in ('booklet',):
             default_TargetTypes.update({
@@ -445,6 +455,8 @@ class MatroskaFile(MediaFile):
         tags_list = None
         for tag, value in self.tags.items():
             tag = tag.name
+            if tag == 'type':
+                continue  # Mostly implicit from tag map choices
 
             for tag_info in tag_map:
                 if tag_info.tag != tag:
@@ -556,13 +568,28 @@ class MatroskaFile(MediaFile):
                     eTagLanguage.text = str(d_tag.TagLanguage)
         return tags_xml
 
-    def load_tags(self):
+    def load_tags(self, file_type=None):
         import xml.etree.ElementTree as ET
         tags = AlbumTags()
         tags_xml = self.get_tags_xml()
         tags_list = self.iter_matroska_tags(tags_xml)
         tags_list = list(tags_list)
-        file_type = None
+        if file_type is None:
+            for d_tag in tags_list:
+                if (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue) == (0, 50):
+                    try:
+                        file_type = {
+                            'ALBUM': 'normal',  # TODO Differentiate from audiobook!
+                            'MOVIE': 'movie',
+                            'CONCERT': 'musicvideo',
+                            'EPISODE': 'tvshow',
+                            # TODO booklet
+                            # TODO ringtone
+                        }[d_tag.Target.TargetType]
+                    except KeyError:
+                        pass
+                    else:
+                        break
         if file_type is None:
             for d_tag in tags_list:
                 if (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue, d_tag.Name) == (0, 50, 'CONTENT_TYPE'):
@@ -586,6 +613,10 @@ class MatroskaFile(MediaFile):
                     file_type = 'tvshow'
                     log.debug('Deduced type is %r based on %r + %r', file_type, d_tag_collection_title, d_tag_episode)
                     break
+        if file_type is None:
+            file_type = self.deduce_type()
+        if file_type is not None:
+            tags.type = file_type
         default_TargetTypeValue, default_TargetTypes, tag_map = self.get_matroska_tag_map(file_type=file_type)
         for d_tag in tags_list:
             log.debug('d_tag = %r', d_tag)
