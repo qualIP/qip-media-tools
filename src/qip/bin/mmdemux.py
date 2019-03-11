@@ -2559,16 +2559,21 @@ def action_demux(inputdir, in_tags):
                 option_args += [
                     '-map', str(num_inputs-1),
                     ]
-                stream_default = stream_dict['disposition'].get('default', None)
-                if stream_default:
-                    option_args += ['-disposition:%d' % (new_stream_index,), 'default',]
                 stream_language = isolang(stream_dict.get('language', 'und'))
                 if stream_language is not isolang('und'):
                     #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_language.code3)]
                     option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (stream_language.code3,),]
-                stream_forced = stream_dict['disposition'].get('forced', None)
-                if stream_forced:
-                    option_args += ['-disposition:%d' % (new_stream_index,), 'forced',]
+
+                disposition_flags = []
+                if stream_dict['disposition'].get('default', None):
+                    disposition_flags.append('default')
+                if stream_dict['disposition'].get('forced', None):
+                    disposition_flags.append('forced')
+                ffmpeg_output_args += [
+                    '-disposition:%d' % (new_stream_index,),
+                    '+'.join(disposition_flags or ['0']),
+                    ]
+
                 # TODO --tags
             option_args += [
                 '-codec', 'copy',
@@ -2664,7 +2669,7 @@ def action_demux(inputdir, in_tags):
                     disposition_flags.append(k)
             ffmpeg_output_args += [
                 '-disposition:%d' % (new_stream_index,),
-                ','.join(disposition_flags or ['0']),
+                '+'.join(disposition_flags or ['0']),
                 ]
             stream_language = isolang(stream_dict.get('language', 'und'))
             if stream_language is not isolang('und'):
