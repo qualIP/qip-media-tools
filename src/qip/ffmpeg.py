@@ -502,35 +502,31 @@ class Ffprobe(_Ffmpeg):
             for line in parser:
                 line = line.strip()
                 if line == '[FRAME]':
-                    # [FRAME]
                     frame = Ffprobe.Frame()
                     for line in parser:
                         line = line.strip()
-                        m = re.match(r'^(?P<attr>\w+)=(?P<value>.*)$', line)
-                        if m:
-                            attr = m.group('attr')
-                            value = m.group('value')
+                        try:
+                            attr, value = line.split('=', maxsplit=1)
+                        except ValueError:
+                            pass
+                        else:
                             conv = frame._attr_convs.get(attr, None)
                             if conv:
                                 value = conv(value)
                             setattr(frame, attr, value)
                             continue
                         if line == '[SIDE_DATA]':
-                            # [SIDE_DATA]
                             side_data = Ffprobe.SideData()
                             for line in parser:
                                 line = line.strip()
-                                m = re.match(r'^(?P<attr>\w+)=(?P<value>.*)$', line)
-                                if m:
-                                    attr = m.group('attr')
-                                    value = m.group('value')
-                                    # conv = side_data._attr_convs.get(attr, None)
-                                    # if conv:
-                                    #     value = conv(value)
+                                try:
+                                    attr, value = line.split('=', maxsplit=1)
+                                except ValueError:
+                                    pass
+                                else:
                                     setattr(side_data, attr, value)
                                     continue
                                 if line == '[/SIDE_DATA]':
-                                    # [/SIDE_DATA]
                                     break
                                 raise ValueError('Unrecognized SIDE_DATA line %d: %s' % (parser.line_no, line))
                             else:
@@ -538,7 +534,6 @@ class Ffprobe(_Ffmpeg):
                             frame.side_datas.append(side_data)
                             continue
                         if line == '[/FRAME]':
-                            # [/FRAME]
                             break
                         raise ValueError('Unrecognized FRAME line %d: %s' % (parser.line_no, line))
                     else:
@@ -546,21 +541,20 @@ class Ffprobe(_Ffmpeg):
                     yield frame
                     continue
                 if line == '[SUBTITLE]':
-                    # [SUBTITLE]
                     subtitle = Ffprobe.Subtitle()
                     for line in parser:
                         line = line.strip()
-                        m = re.match(r'^(?P<attr>\w+)=(?P<value>.*)$', line)
-                        if m:
-                            attr = m.group('attr')
-                            value = m.group('value')
+                        try:
+                            attr, value = line.split('=', maxsplit=1)
+                        except ValueError:
+                            pass
+                        else:
                             conv = subtitle._attr_convs.get(attr, None)
                             if conv:
                                 value = conv(value)
                             setattr(subtitle, attr, value)
                             continue
                         if line == '[/SUBTITLE]':
-                            # [/SUBTITLE]
                             break
                         raise ValueError('Unrecognized SUBTITLE line %d: %s' % (parser.line_no, line))
                     else:
