@@ -82,9 +82,11 @@ class Chapter(object):
         #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>
         start = eChapterAtom.find('ChapterTimeStart').text
         #   <ChapterFlagHidden>0</ChapterFlagHidden>
-        hidden = {'0': False, '1': True}[eChapterAtom.find('ChapterFlagHidden').text]
+        eChapterFlagHidden = eChapterAtom.find('ChapterFlagHidden')
+        hidden = eChapterFlagHidden and {'0': False, '1': True}[eChapterFlagHidden.text]
         #   <ChapterFlagEnabled>1</ChapterFlagEnabled>
-        enabled = {'0': False, '1': True}[eChapterAtom.find('ChapterFlagEnabled').text]
+        eChapterFlagEnabled = eChapterAtom.find('ChapterFlagEnabled')
+        enabled = (not eChapterFlagEnabled) or {'0': False, '1': True}[eChapterFlagEnabled.text]
         #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>
         end = eChapterAtom.find('ChapterTimeEnd').text
         #   <ChapterDisplay>
