@@ -33,6 +33,7 @@ import sys
 import time
 import types
 import logging
+import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
 from qip.app import app  # Also setup log.verbose
@@ -407,11 +408,18 @@ def edfile(file):
 def edvar(value, *, json=None, suffix=None, encoding='utf-8'):
     from qip.file import TempFile
     import tempfile
+    orig_value = value
 
+    xml = False
     if json is None:
+        json = False
         if isinstance(value, str):
-            json = False
             suffix = suffix or '.txt'
+        elif isinstance(value, ET.ElementTree):
+            xml = True
+            from qip.utils import prettyxml
+            suffix = suffix or '.xml'
+            value = prettyxml(value)
         else:
             json = True
             suffix = suffix or '.json'
@@ -428,18 +436,20 @@ def edvar(value, *, json=None, suffix=None, encoding='utf-8'):
         tmp_file.close()
 
         if not edfile(tmp_file):
-            return (False, value)
+            return (False, orig_value)
 
         tmp_file.fp = tmp_file.open(mode='r', encoding=encoding)
         if json:
             new_value = qip.json.load(tmp_file.fp)
         else:
-            new_value = qip.json.read()
-        tmp_file.close()
+            new_value = tmp_file.read()
 
-        #if type(new_value) is not type(value):
-        #    raise ValueError(new_value)
-        return (True, new_value)
+    if xml:
+        new_value = ET.ElementTree(ET.fromstring(new_value))
+
+    #if type(new_value) is not type(value):
+    #    raise ValueError(new_value)
+    return (True, new_value)
 
 # }}}
 
