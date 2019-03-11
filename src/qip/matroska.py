@@ -419,6 +419,9 @@ class MatroskaFile(MediaFile):
             elif eSub.tag == 'TagLanguage':
                 assert vTagLanguage is None
                 vTagLanguage = isolang(eSub.text)
+            elif eSub.tag == 'DefaultLanguage':
+                # Deprecated; Was always 1.
+                pass
             elif eSub.tag == 'Simple':
                 lSubSimples.append(eSub)
             else:
