@@ -1209,7 +1209,7 @@ def action_mux(inputfile, in_tags):
                 if not app.args.dry_run:
 
                     if stream_codec_type == 'video':
-                        output_track_file = MediaFile(os.path.join(outputdir, output_track_file_name))
+                        output_track_file = MediaFile.new_by_file_name(os.path.join(outputdir, output_track_file_name))
                         mediainfo_track_dict, = (mediainfo_track_dict
                                 for mediainfo_track_dict in mediainfo_dict['media']['track']
                                 if int(mediainfo_track_dict.get('ID', 0)) == stream_index + 1)
@@ -1476,7 +1476,7 @@ def action_optimize(inputdir, in_tags):
             expected_framerate = None
             while True:
 
-                stream_file = MediaFile(os.path.join(inputdir, stream_file_name))
+                stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
                 ffprobe_json = stream_file.extract_ffprobe_json()
                 ffprobe_stream_json, = ffprobe_json['streams']
                 stream_codec_name = ffprobe_stream_json['codec_name']
@@ -1505,7 +1505,7 @@ def action_optimize(inputdir, in_tags):
                         new_stream_file_name = '.'.join(e for e in stream_file_base.split('.')
                                                         if e not in ('23pulldown',)) \
                             + '.pullup' + new_stream_file_ext
-                        new_stream_file = MediaFile(os.path.join(inputdir, new_stream_file_name))
+                        new_stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, new_stream_file_name))
                         app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                         if stream_file_ext == '.y4m':
@@ -1595,7 +1595,7 @@ def action_optimize(inputdir, in_tags):
                             # mencoder seems to mess up the encoder frame rate in avi (total-frames/1), ffmpeg's r_frame_rate seems accurate.
                             new_stream_file_ext = '.ffv1.avi'
                         new_stream_file_name = stream_file_base + '.pullup' + new_stream_file_ext
-                        new_stream_file = MediaFile(os.path.join(inputdir, new_stream_file_name))
+                        new_stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, new_stream_file_name))
                         app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                         mencoder_args = [
