@@ -1773,7 +1773,10 @@ def action_optimize(inputdir, in_tags):
 
                 ffmpeg_concat_args = []
 
-                chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=True))
+                if mux_dict['chapters']:
+                    chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=True))
+                else:
+                    chaps = []
                 if (app.args.parallel_chapters
                         and len(chaps) > 1
                         and chaps[0].start == 0
