@@ -790,6 +790,8 @@ class MediaFile(BinaryFile):
                 return 'movie'
             if isinstance(self, AudiobookFile):
                 return 'audiobook'
+            if isinstance(self, RingtoneFile):
+                return 'ringtone'
             if isinstance(self, SoundFile):
                 return 'normal'
         raise MissingMediaTagError(MediaTagEnum.type, file=self)
