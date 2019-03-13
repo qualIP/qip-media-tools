@@ -1253,6 +1253,9 @@ def action_mux(inputfile, in_tags):
                             out = d.out
                             subtitle_count = out.count(
                                 b'[SUBTITLE]' if type(out) is bytes else '[SUBTITLE]')
+                            if stream_file_ext in ('.sup',):
+                                # TODO count only those frames with num_rect != 0
+                                subtitle_count = subtitle_count // 2
                         elif stream_file_ext in ('.idx',):
                             out = open(os.path.join(outputdir, output_track_file_name), 'rb').read()
                             subtitle_count = out.count(b'timestamp:')
