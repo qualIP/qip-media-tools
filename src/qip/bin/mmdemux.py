@@ -427,7 +427,7 @@ def main():
     pgroup.add_argument('--track', dest='track_slash_tracks', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--tvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
-    pgroup.add_argument('--season', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--season', dest='season_slash_seasons', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--episode', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
@@ -982,7 +982,7 @@ def action_mux(inputfile, in_tags):
     mux_dict = {
         'streams': [],
         'chapters': {},
-        'tags': AlbumTags(),
+        #'tags': ...,
     }
 
     name_scan_str = os.path.basename(inputfile_base)
@@ -1001,7 +1001,9 @@ def action_mux(inputfile, in_tags):
             pass
         else:
             d['episode'] = [int(e) for e in str_episodes.split('E') if e]
-        mux_dict['tags'].update(d)
+        inputfile.tags.update(d)
+
+    inputfile.tags.update(inputfile.load_tags())
 
     if inputfile_ext in (
             '.mkv',
@@ -1016,14 +1018,16 @@ def action_mux(inputfile, in_tags):
         if mediainfo_mediatype is None:
             pass
         elif mediainfo_mediatype == 'DVD-Video':
-            mux_dict['tags'].mediatype = 'DVD'
+            inputfile.tags.mediatype = 'DVD'
         elif mediainfo_mediatype == 'Blu-ray':
-            mux_dict['tags'].mediatype = 'BD'
+            inputfile.tags.mediatype = 'BD'
         else:
             raise NotImplementedError(mediainfo_mediatype)
 
-    mux_dict['tags'].update(inputfile.load_tags() or {})
-    mux_dict['tags'].update(in_tags)
+    inputfile.tags.pop('type', None)
+    inputfile.tags.update(in_tags)
+    inputfile.tags.type = inputfile.deduce_type()
+    mux_dict['tags'] = inputfile.tags
 
     if app.args.interactive:
         # for tag in set(MediaTagEnum) - set(MediaTagEnum.iTunesInternalTags):
