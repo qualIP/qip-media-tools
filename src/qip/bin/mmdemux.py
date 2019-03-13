@@ -2469,6 +2469,9 @@ def action_demux(inputdir, in_tags):
             app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'), '.webm' if webm else '.mkv'))
     attachment_counts = collections.defaultdict(lambda: 0)
 
+    external_stream_file_names_seen = set()
+    stream_characteristics_seen = set()
+
     if use_mkvmerge:
         post_process_subtitles = []
         cmd = [
@@ -2491,6 +2494,16 @@ def action_demux(inputdir, in_tags):
                 continue
             stream_file_name = stream_dict['file_name']
             stream_codec_type = stream_dict['codec_type']
+            stream_language = isolang(stream_dict.get('language', 'und'))
+            stream_characteristics = (stream_codec_type, stream_language)
+            if stream_codec_type == 'subtitle':
+                stream_characteristics += (
+                    'forced' if stream_dict['disposition'].get('forced', None) else '',
+                    'hearing_impaired' if stream_dict['disposition'].get('hearing_impaired', None) else '',
+                )
+            if stream_characteristics in stream_characteristics_seen:
+                raise ValueError(f'Stream #{stream_index} characteristics already seen: {stream_characteristics!r}')
+            stream_characteristics_seen.add(stream_characteristics)
             if stream_codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_file_names = [stream_file_name]
@@ -2499,11 +2512,14 @@ def action_demux(inputdir, in_tags):
                     for stream_file_name in stream_file_names:
                         external_stream_file_name = '{base}{language}{forced}{ext}'.format(
                             base=my_splitext(output_file.file_name)[0],
-                            language='.%s' % (isolang(stream_dict['language']).code3,),
+                            language='.%s' % (stream_language.code3,),
                             forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
                             ext=my_splitext(stream_file_name)[1],
                         )
                         app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                        if external_stream_file_name in external_stream_file_names_seen:
+                            raise ValueError(f'Stream {stream_index} External subtitle file already created: {external_stream_file_name}')
+                        external_stream_file_names_seen.add(external_stream_file_name)
                         shutil.copyfile(os.path.join(inputdir, stream_file_name),
                                         external_stream_file_name,
                                         follow_symlinks=True)
@@ -2543,7 +2559,6 @@ def action_demux(inputdir, in_tags):
                         cmd += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
                 stream_default = stream_dict['disposition'].get('default', None)
                 cmd += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
-                stream_language = isolang(stream_dict.get('language', 'und'))
                 if stream_language is not isolang('und'):
                     cmd += ['--language', '0:%s' % (stream_language.code3,)]
                 stream_forced = stream_dict['disposition'].get('forced', None)
@@ -2645,8 +2660,16 @@ def action_demux(inputdir, in_tags):
             stream_file_name = stream_dict['file_name']
             stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             stream_codec_type = stream_dict['codec_type']
+            stream_language = isolang(stream_dict.get('language', 'und'))
+            stream_characteristics = (stream_codec_type, stream_language)
+            if stream_codec_type == 'subtitle':
+                stream_characteristics += (
+                    'forced' if stream_dict['disposition'].get('forced', None) else '',
+                    'hearing_impaired' if stream_dict['disposition'].get('hearing_impaired', None) else '',
+                )
             if stream_codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
+                    stream_characteristics += ('external',)
                     stream_file_names = [stream_file_name]
                     if my_splitext(stream_dict['file_name'])[1] == '.sub':
                         stream_file_names.append(my_splitext(stream_file_name)[0] + '.idx')
@@ -2658,6 +2681,9 @@ def action_demux(inputdir, in_tags):
                             ext=my_splitext(stream_file_name)[1],
                         )
                         app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                        if external_stream_file_name in external_stream_file_names_seen:
+                            raise ValueError(f'Stream {stream_index} External subtitle file already created: {external_stream_file_name}')
+                        external_stream_file_names_seen.add(external_stream_file_name)
                         shutil.copyfile(os.path.join(inputdir, stream_file_name),
                                         external_stream_file_name,
                                         follow_symlinks=True)
@@ -2674,6 +2700,9 @@ def action_demux(inputdir, in_tags):
                     do_spawn_cmd(mkvmerge_cmd)
                     stream_file_name = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+            if stream_characteristics in stream_characteristics_seen:
+                raise ValueError(f'Stream #{stream_index} characteristics already seen: {stream_characteristics!r}')
+            stream_characteristics_seen.add(stream_characteristics)
             if stream_codec_type == 'image':
                 attachment_type = stream_dict['attachment_type']
                 if webm:
