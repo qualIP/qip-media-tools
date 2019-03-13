@@ -1137,6 +1137,8 @@ class MediaTagEnum(enum.Enum):
     tvnetwork = 'tvnetwork'  # STR  Set the TV network
     tvshow = 'tvshow'  # STR  Set the TV show
     season = 'season'  # NUM  Set the season number
+    seasons = 'seasons'  # NUM  Set the number of seasons
+    season_slash_seasons = 'season_slash_seasons'  # NUM  Set the season number (*from season[/seasons])
     episode = 'episode'  # NUM  Set the episode number (or list)
 
     description = 'description'  # STR  Set the short description
@@ -1596,6 +1598,56 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         name='season',
         type=(_tNullTag, int))
 
+    seasons = propex(
+        name='seasons',
+        type=(_tNullTag, int))
+
+    season_slash_seasons = propex(
+        name='season_slash_seasons',
+        type=(_tNullTag, int, _tReMatchGroups(r'^0*(?P<season>\d+)(?:(?: of |/)0*(?P<seasons>\d+))?')))
+
+    @season_slash_seasons.getter
+    def season_slash_seasons(self):
+        try:
+            season = self.season
+        except AttributeError:
+            raise AttributeError
+        if season is None:
+            return None
+        value = str(season)
+        seasons = getattr(self, 'seasons', None)
+        if seasons is not None:
+            value += '/' + str(seasons)
+        return value
+
+    @season_slash_seasons.setter
+    def season_slash_seasons(self, value):
+        if value is None:
+            self.season = None
+            self.seasons = None
+        elif type(value) is int:
+            self.season = value
+            self.seasons = None
+        elif type(value) is tuple:
+            self.season, self.seasons = value
+        else:
+            raise RuntimeError(value)
+
+    @season_slash_seasons.deleter
+    def season_slash_seasons(self):
+        try:
+            del self.season
+        except AttributeError:
+            try:
+                del self.seasons
+            except AttributeError:
+                raise AttributeError
+        else:
+            try:
+                del self.seasons
+            except AttributeError:
+                pass
+
     episode = propex(
         name='episode',
         type=(_tNullTag, _tIntOrList))
@@ -1867,7 +1919,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 tag = 'genre'
                 self.pop('genreID', None)
 
-        elif tag in ('disk', 'track', 'part'):
+        elif tag in ('disk', 'track', 'part', 'season'):
             if isinstance(value, (list, tuple)):
                 value, n = value
                 self[tag + 's'] = n
@@ -3700,17 +3752,18 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Release Date",           "©day",                     "utf-8",                    "date",                     "TDA",                      "TDAT",           ["releaseDate", "Date", "date", 'DATE_RELEASED']],
     ["Year",                   None,                       None,                       None,                       "TYE",                      "TYER",           ["year"]],
     ["Track Number",           "trkn",                     "binary",                   "track",                    None,                       None,             []],
-    ["Total Tracks",           None,                       "int32",                    "tracks",                   None,                       None,             ['TOTAL_PARTS']],
+    ["Total Tracks",           None,                       "int32",                    "tracks",                   None,                       None,             []],
     ["track_slash_tracks",     None,                       "utf-8",                    None,                       "TRK",                      "TRCK",           []],
     ["Disc Number",            "disk",                     "binary",                   "disk",                     None,                       None,             ["disc"]],
     ["Total Discs",            None,                       "int32",                    "disks",                    None,                       None,             ["discs"]],
     ["disk_slash_disks",       None,                       "utf-8",                    None,                       "TPA",                      "TPOS",           []],
     ["Tempo (bpm)",            "tmpo",                     "int16",                    "tempo",                    None,                       None,             []],
     ["Compilation",            "cpil",                     "bool8",                    "compilation",              None,                       "TCMP",           []],
-    ["TV Show Name",           "tvsh",                     "utf-8",                    "tvShow",                   None,                       None,             ['COLLECTION/TITLE']],
+    ["TV Show Name",           "tvsh",                     "utf-8",                    "tvShow",                   None,                       None,             []],
     ["TV Episode ID",          "tven",                     "utf-8",                    "EpisodeID",                None,                       None,             []],
-    ["TV Season",              "tvsn",                     "int32",                    "season",                   None,                       None,             ['SEASON/PART_NUMBER']],
-    ["TV Episode",             "tves",                     "int32",                    "episode",                  None,                       None,             ['EPISODE/PART_NUMBER']],
+    ["TV Season",              "tvsn",                     "int32",                    "season",                   None,                       None,             []],
+    ["Total Seasons",          None,                       "int32",                    None,                       None,                       None,             ['seasons']],
+    ["TV Episode",             "tves",                     "int32",                    "episode",                  None,                       None,             []],
     ["TV Network",             "tvnn",                     "utf-8",                    "tvNetwork",                None,                       None,             []],
     ["Description",            "desc",                     "utf-8",                    "description",              None,                       None,             []],
     ["Long Description",       "ldes",                     "utf-8",                    "longDescription",          None,                       None,             ['synopsis']],
@@ -3752,7 +3805,7 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["musicbrainz_cdstubid",   "----:com.apple.iTunes:MusicBrainz CD Stub Id", "utf-8", None,                      None,                       None,             ['MusicBrainz CD Stub Id']],
     ["Owner",                  "ownr",                     "utf-8",                    "owner",                    None,                       "TOWN",           []],
     # Non-mp4v2 {{{
-    ["Content Type",           None,                       None,                       "contentType",              None,                       None,             ["CONTENT_TYPE"]],
+    ["Content Type",           None,                       None,                       "contentType",              None,                       None,             []],
     ["Publisher",              None,                       None,                       "publisher",                "TPB",                      "TPUB",           []],
     # }}}
     # As per operon {{{
