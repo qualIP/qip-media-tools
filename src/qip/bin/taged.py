@@ -472,7 +472,8 @@ def taged_Matroska(file_name, tags):
     import qip.matroska
     # https://matroska.org/technical/specs/tagging/index.html
     matroska_file = qip.matroska.MatroskaFile.new_by_file_name(file_name)
-    matroska_file.tags = tags
+    matroska_file.tags = matroska_file.load_tags()
+    matroska_file.tags.update(tags)
     tags_list = matroska_file.create_tags_list()
     if tags_list is not None:
         tags_xml = matroska_file.create_tags_xml_from_list(tags_list)

@@ -1924,7 +1924,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 value, n = value
                 self[tag + 's'] = n
             else:
-                m = re.search(r'^0*(?P<value>\d*)(?:(?: of |/)0*(?P<n>\d*))?$', value)
+                m = re.search(r'^(?:0*(?P<value>\d+))?(?:(?: of |/)(?:0*(?P<n>\d+))?)?$', value)
                 if m:
                     value = m.group('value')
                     if m.group('n') is not None:
