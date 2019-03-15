@@ -132,7 +132,13 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             time_base = Fraction(ffprobe_stream_json['time_base'])
 
             video_frames = []
-            prev_pkt_pts_time = Decimal('0.000000')
+            prev_frame = ffprobe.Frame()
+            prev_frame.pkt_dts_time = Decimal('0.000000')
+            prev_frame.pkt_pts_time = Decimal('0.000000')
+            prev_frame.pkt_duration_time = Decimal('0.000000')
+            prev_frame.pkt_dts = 0
+            prev_frame.pkt_pts = 0
+            prev_frame.pkt_duration = 0
             with perfcontext('frames iteration'):
                 if HAVE_PROGRESS_BAR:
                     bar = progress.bar.Bar('iterate frames', max=float(app.args.video_analyze_duration))
@@ -140,15 +146,27 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                     if frame.media_type != 'video':
                         continue
                     assert frame.stream_index == 0
+
                     if frame.pkt_pts_time is None:
-                        frame.pkt_pts_time = prev_pkt_pts_time
-                    else:
-                        prev_pkt_pts_time = frame.pkt_pts_time
+                        frame.pkt_pts_time = frame.pkt_dts_time
+                    if frame.pkt_pts_time is None:
+                        frame.pkt_pts_time = prev_frame.pkt_pts_time + prev_frame.pkt_duration_time
+                    if frame.pkt_dts_time is None:
+                        frame.pkt_dts_time = frame.pkt_pts_time
+
+                    if frame.pkt_pts is None:
+                        frame.pkt_pts = frame.pkt_dts
+                    if frame.pkt_pts is None:
+                        frame.pkt_pts = prev_frame.pkt_pts + prev_frame.pkt_duration
+                    if frame.pkt_dts is None:
+                        frame.pkt_dts = frame.pkt_pts
+
                     video_frames.append(frame)
                     if HAVE_PROGRESS_BAR:
                         bar.goto(float(frame.pkt_dts_time))
-                    if float(frame.pkt_dts_time if frame.pkt_dts_time is not None else frame.pkt_pts_time) >= app.args.video_analyze_duration:
+                    if float(frame.pkt_dts_time) >= app.args.video_analyze_duration:
                         break
+                    prev_frame = frame
                 #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
                 #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
                 if HAVE_PROGRESS_BAR:
@@ -156,7 +174,9 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
 
             app.log.debug('Analyzing %d video frames...', len(video_frames))
 
-            video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time if frame.pkt_dts_time is not None else frame.pkt_pts_time)
+            video_frames = video_frames[10:]  # Skip first frames; Seen need for 1-9
+
+            # video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
             # XXXJST:
             # Based on libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
             # though getting the proper TemporalReference is more complex and may
@@ -189,8 +209,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                     #     * sum(frame.pkt_duration for frame in found_frames)
                     #     / len(found_frames)))
                     #calc_framerate = framerate = FrameRate(1 / (Fraction(
-                    #    (found_frames[-1].pkt_pts if found_frames[-1].pkt_pts is not None else found_frames[-1].pkt_dts)
-                    #    - (found_frames[0].pkt_pts if found_frames[0].pkt_pts is not None else found_frames[0].pkt_dts)
+                    #    found_frames[-1].pkt_pts - found_frames[0].pkt_pts
                     #    + found_frames[-1].pkt_duration,
                     #    len(found_frames)) * time_base))
                     #framerate = framerate.round_common()
@@ -230,8 +249,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             raise NotImplementedError(frame0.pkt_duration_time)
                     elif False:
                         pts_sum = sum(
-                            (frameB.pkt_pts if frameB.pkt_pts is not None else frameB.pkt_dts)
-                            - (frameA.pkt_pts if frameA.pkt_pts is not None else frameA.pkt_dts)
+                            frameB.pkt_pts - frameA.pkt_pts
                             for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
                         framerate = FrameRate(1 / (time_base * pts_sum / (len(video_frames) - 2)), 1)
                         app.log.debug('framerate = 1 / (%r * %r / (%r - 2)) = %r = %r', time_base, pts_sum, len(video_frames), framerate, float(framerate))
@@ -241,8 +259,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                     else:
                         assert len(video_frames) > 1000  # To make sure there's enough precision
                         pts_diff = (
-                            (video_frames[-2].pkt_pts if video_frames[-2].pkt_pts is not None else video_frames[-2].pkt_dts)  # Last frame may not have either dts and pts
-                            - (video_frames[0].pkt_pts if video_frames[0].pkt_pts is not None else video_frames[0].pkt_dts))
+                            video_frames[-2].pkt_pts  # Last frame may not have either dts and pts
+                            - video_frames[0].pkt_pts)
                         framerate = FrameRate(1 / (time_base * pts_diff / (len(video_frames) - 2)), 1)
                         app.log.debug('framerate = 1 / (%r * %r) / (%r - 2) = %r = %r', time_base, pts_diff, len(video_frames), framerate, float(framerate))
                         framerate = framerate.round_common()
@@ -395,7 +413,7 @@ def main():
     pgroup.add_argument('--video-rate-control-mode', dest='video_rate_control_mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
     pgroup.add_argument('--force-framerate', dest='force_framerate', default=None, type=FrameRate, help='Ignore heuristics and force framerate')
     pgroup.add_argument('--force-field-order', dest='force_field_order', default=None, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
-    pgroup.add_argument('--video-analyze-duration', dest='video_analyze_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(120), help='video analysis duration (seconds)')
+    pgroup.add_argument('--video-analyze-duration', dest='video_analyze_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(60), help='video analysis duration (seconds)')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=None, help='SubRip OCR matrix file')
