@@ -542,9 +542,13 @@ def organize_tvshow(inputfile, *, suggest_tags):
     do_suggest_tags(inputfile, suggest_tags=suggest_tags)
 
     for tag in (
-            'tvshow',
-            'season',
-            'episode',
+            'season',   # Must be set but can be 0
+            ):
+        if tag and getattr(inputfile.tags, tag) is None:
+            raise MissingMediaTagError(tag, file=inputfile)
+    for tag in (
+            'tvshow',   # Not allowed to be empty
+            'episode',  # Not allowed to be an empty list
             ):
         if tag and not getattr(inputfile.tags, tag):
             raise MissingMediaTagError(tag, file=inputfile)
@@ -554,8 +558,12 @@ def organize_tvshow(inputfile, *, suggest_tags):
     # https://github.com/MediaBrowser/Wiki/wiki/TV-naming
     # TVSHOW/SEASON 01/
     dst_dir += '%s/' % (clean_file_name(inputfile.tags.tvshow, keep_ext=False),)
-    if inputfile.tags.season:
-        dst_dir += 'Season %d/' % (inputfile.tags.season,)
+    if inputfile.tags.season is not None:
+        if inputfile.tags.season == 0:
+            # https://support.plex.tv/articles/200220707-naming-tv-show-specials/
+            dst_dir += 'Specials/'
+        else:
+            dst_dir += 'Season %d/' % (inputfile.tags.season,)
 
     dst_file_base = ''
 
