@@ -298,6 +298,7 @@ def do_srun_cmd(cmd,
         'srun',
         ]
 
+    gres_args = []
     if stdin_file is not None:
         slurm_args += ['--input', stdin_file]
     if stdout_file is not None:
@@ -311,13 +312,16 @@ def do_srun_cmd(cmd,
     if slurm_mem is not None:
         slurm_args += ['--mem', slurm_mem]
     if slurm_tmp is not None:
-        slurm_args += ['--tmp', slurm_tmp]
+        #slurm_args += ['--tmp', slurm_tmp]
+        gres_args.append('tmp:%s' % (slurm_tmp,))
     if slurm_job_name is not None:
         slurm_args += ['--job-name', slurm_job_name]
     if chdir is not None:
         slurm_args += ['--chdir', chdir]
     if uid is not None:
         slurm_args += ['--uid', uid]
+    if gres_args:
+        slurm_args += ['--gres', ','.join(gres_args)]
 
     slurm_args.extend(cmd)
     slurm_args = [str(e) for e in slurm_args]
@@ -340,6 +344,7 @@ def do_sbatch_cmd(cmd,
         'sbatch',
         ]
 
+    gres_args = []
     if stdin_file is not None:
         slurm_args += ['--input', stdin_file]
     if stdout_file is not None:
@@ -353,13 +358,17 @@ def do_sbatch_cmd(cmd,
     if slurm_mem is not None:
         slurm_args += ['--mem', slurm_mem]
     if slurm_tmp is not None:
-        slurm_args += ['--tmp', slurm_tmp]
+        #slurm_args += ['--tmp', slurm_tmp]
+        gres_args.append('tmp:%s' % (slurm_tmp,))
     if slurm_job_name is not None:
         slurm_args += ['--job-name', slurm_job_name]
     if chdir is not None:
         slurm_args += ['--chdir', chdir]
     if uid is not None:
         slurm_args += ['--uid', uid]
+    if gres_args:
+        slurm_args += ['--gres', ','.join(gres_args)]
+
     if wait:
         slurm_args += ['--wait']
 
