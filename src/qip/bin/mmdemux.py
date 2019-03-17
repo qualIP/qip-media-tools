@@ -1140,6 +1140,10 @@ def action_mux(inputfile, in_tags):
                     if first_pts_time_per_stream[stream_index] == 0.0:
                         app.log.warning('Correcting %s stream #%d start time to 0 based on first frame PTS', stream_codec_type, stream_index)
                         stream_start_time = ffmpeg.Timestamp(0)
+                if stream_start_time and stream_codec_type == 'subtitle':
+                    # ffmpeg estimates the start_time if it is low enough but the actual time indices will be correct
+                    app.log.warning('Correcting %s stream #%d start time to 0 based on experience', stream_codec_type, stream_index)
+                    stream_start_time = ffmpeg.Timestamp(0)
                 if stream_start_time:
                     app.log.warning('%s stream #%d start time is %s', stream_codec_type.title(), stream_index, stream_start_time)
                 stream_out_dict['start_time'] = str(stream_start_time)
