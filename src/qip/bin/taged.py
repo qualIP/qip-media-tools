@@ -470,16 +470,15 @@ def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):
 
 def taged_Matroska(file_name, tags):
     import qip.matroska
+    import qip.utils
     # https://matroska.org/technical/specs/tagging/index.html
     matroska_file = qip.matroska.MatroskaFile.new_by_file_name(file_name)
     matroska_file.tags = matroska_file.load_tags()
     matroska_file.tags.update(tags)
     tags_list = matroska_file.create_tags_list()
-    if tags_list is not None:
-        tags_xml = matroska_file.create_tags_xml_from_list(tags_list)
-        import qip.utils
-        app.log.debug('tags_xml: %s', qip.utils.prettyxml(tags_xml))
-        matroska_file.set_tags_xml(tags_xml)
+    tags_xml = matroska_file.create_tags_xml_from_list(tags_list)
+    app.log.debug('tags_xml: %s', qip.utils.prettyxml(tags_xml))
+    matroska_file.set_tags_xml(tags_xml)
 
 def taged(file_name, tags):
     app.log.info('Editing %s...', file_name)

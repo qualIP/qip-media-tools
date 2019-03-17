@@ -17,59 +17,69 @@ log = logging.getLogger(__name__)
 from .mm import MediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType
 
 
-class MatroskaTagTarget(collections.namedtuple(
-        'MatroskaTagTarget',
-        (
-            'TargetTypeValue',
-            'TargetType',
-            'TrackUID',
-        ),
-        # defaults=(
-        #     None,  # TargetType
-        #     None,  # TrackUID
-        # ),
-        )):
+class MatroskaTagTarget(object):
 
-    __slots__ = ()
+    TargetType = None
+    TrackUID = None
 
-    def __new__(cls, *,
-            TargetType=None,
-            TrackUID=0,
-            **kwargs):
-        return super().__new__(
-                cls,
-                TargetType=TargetType,
-                TrackUID=TrackUID,
-                **kwargs)
+    def __init__(self, *,
+                 TargetTypeValue,
+                 TargetType=None,
+                 TrackUID=0,
+                 **kwargs):
+        self.TargetTypeValue = TargetTypeValue
+        if TargetType is not None:
+            self.TargetType = TargetType
+        if TrackUID is not None:
+            self.TrackUID = TrackUID
+        super().__init__(**kwargs)
+
+    def __repr__(self):
+        return '%s(%s)' % (
+            self.__class__.__name__,
+            ', '.join('%s=%r' % (k, v)
+                      for k, v in self.__dict__.items()))
+
+    def apply_default_TargetTypes(self, default_TargetTypes):
+        if self.TargetType is None and self.TrackUID == 0:
+            newTargetType = default_TargetTypes.get(self.TargetTypeValue, None)
+            if newTargetType is not None:
+                self.TargetType = newTargetType
+                return True
+        return False
 
 
-class MatroskaTagSimple(collections.namedtuple(
-        'MatroskaTagSimple',
-        (
-            'Target',
-            'Name',
-            'String',
-            'Binary',
-            'TagLanguage',
-        ),
-        # defaults=(
-        #     None,  # String
-        #     None,  # Binary
-        #     None,  # TagLanguage
-        # ),
-        )):
+class MatroskaTagSimple(object):
 
-    __slots__ = ()
+    String = None
+    Binary = None
+    TagLanguage = None
 
-    def __new__(cls, *,
-            String=None, Binary=None, TagLanguage=None,
-            **kwargs):
-        return super().__new__(
-                cls,
-                String=String,
-                Binary=Binary,
-                TagLanguage=TagLanguage,
-                **kwargs)
+    def __init__(self, *,
+                 Target,
+                 Name,
+                 String=None,
+                 Binary=None,
+                 TagLanguage=None,
+                 **kwargs):
+        self.Target = Target
+        self.Name = Name
+        if String is not None:
+            self.String = String
+        if Binary is not None:
+            self.Binary = Binary
+        if TagLanguage is not None:
+            self.TagLanguage = TagLanguage
+        super().__init__(**kwargs)
+
+    def __repr__(self):
+        return '%s(%s)' % (
+                self.__class__.__name__,
+                ', '.join('%s=%r' % (k, v)
+                          for k, v in self.__dict__.items()))
+
+    def apply_default_TargetTypes(self, default_TargetTypes):
+        return self.Target.apply_default_TargetTypes(default_TargetTypes)
 
 
 class TagInfo(collections.namedtuple(
@@ -328,22 +338,22 @@ class MatroskaFile(MediaFile):
             do_exec_cmd(cmd)
 
     @classmethod
-    def iter_matroska_tags(cls, tags_xml, default_TargetTypes=None):
+    def iter_matroska_tags(cls, tags_xml):
         root = tags_xml.getroot()
         for eSub in root:
             if eSub.tag == 'Tag':
-                yield from cls._parse_tags_xml_Tag(eSub, default_TargetTypes=default_TargetTypes)
+                yield from cls._parse_tags_xml_Tag(eSub)
             else:
                 raise NotImplementedError('Unsupported Matroska XML tag %r' % (eSub.tag,))
 
     @classmethod
-    def _parse_tags_xml_Tag(cls, eTag, default_TargetTypes=None):
+    def _parse_tags_xml_Tag(cls, eTag):
         d_target = None
         lSubSimples = []
         for eSub in eTag:
             if eSub.tag == 'Targets':
                 assert d_target is None
-                d_target = cls._parse_tags_xml_Target(eSub, default_TargetTypes=default_TargetTypes)
+                d_target = cls._parse_tags_xml_Target(eSub)
             elif eSub.tag == 'Simple':
                 lSubSimples.append(eSub)
             else:
@@ -352,7 +362,7 @@ class MatroskaFile(MediaFile):
             yield from cls._parse_tags_xml_Simple(eSimple, d_target=d_target)
 
     @classmethod
-    def _parse_tags_xml_Target(cls, eTarget, default_TargetTypes=None):
+    def _parse_tags_xml_Target(cls, eTarget):
         vTrackUID = None
         vTargetTypeValue = None
         vTargetType = None
@@ -396,8 +406,6 @@ class MatroskaFile(MediaFile):
                 'SHOT': 10,
             }.get(vTargetType, 50)
         vTargetType = vTargetType or None
-        if vTargetType is None and vTrackUID == 0 and default_TargetTypes:
-            vTargetType = default_TargetTypes.get(vTargetTypeValue, None)
         return MatroskaTagTarget(
             TrackUID=vTrackUID,
             TargetTypeValue=vTargetTypeValue,
@@ -489,7 +497,10 @@ class MatroskaFile(MediaFile):
                 do_exec_cmd(cmd)
             if tags_list is None:
                 tags_xml = self.get_tags_xml()
-                tags_list = self.iter_matroska_tags(tags_xml, default_TargetTypes=default_TargetTypes)
+                tags_list = self.iter_matroska_tags(tags_xml)
+                if default_TargetTypes:
+                    for d_tag in tags_list:
+                        d_tag.apply_default_TargetTypes(default_TargetTypes)
                 # tags_list = list(tags_list)
             d_target = MatroskaTagTarget(
                 TrackUID=0,
@@ -503,9 +514,9 @@ class MatroskaFile(MediaFile):
             tup_mkv_value = mkv_value if type(mkv_value) is tuple else (mkv_value,)
             for one_mkv_value in tup_mkv_value:
                 d_tag = MatroskaTagSimple(Target=d_target,
-                                                       Name=tag_info.Name,
-                                                       String=one_mkv_value,
-                                                       )
+                                          Name=tag_info.Name,
+                                          String=one_mkv_value,
+                                          )
                 if log.isEnabledFor(logging.DEBUG):
                     log.debug('Add %r', d_tag)
                 tags_list.append(d_tag)
