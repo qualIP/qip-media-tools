@@ -430,6 +430,7 @@ def main():
     pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
 
     pgroup = app.parser.add_argument_group('Tags')
+    pgroup.add_argument('--grouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
@@ -1050,6 +1051,7 @@ def action_mux(inputfile, in_tags):
     if app.args.interactive:
         # for tag in set(MediaTagEnum) - set(MediaTagEnum.iTunesInternalTags):
         for tag in (
+                MediaTagEnum.grouping,
                 MediaTagEnum.artist,
                 MediaTagEnum.contenttype,
                 MediaTagEnum.episode,
