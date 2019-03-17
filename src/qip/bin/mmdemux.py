@@ -994,9 +994,11 @@ def action_mux(inputfile, in_tags):
     if app.args.chain:
         app.args.optimize_dirs += (outputdir,)
 
-    if app.args._continue and os.path.isdir(outputdir):
-        app.log.warning('Directory exists: %r: ignoring', outputdir)
-        return True
+    if os.path.isdir(outputdir):
+        if app.args._continue:
+            app.log.warning('Directory exists: %r: ignoring', outputdir)
+            return True
+        raise OSError(errno.EEXIST, outputdir)
 
     mux_dict = {
         'streams': [],
