@@ -123,8 +123,9 @@ def main():
         if not app.args.inputfiles:
             raise Exception('No input files provided')
         if 'outputdir' not in app.args:
-            app.args.outputdir = ''
-            #raise Exception('No output directory provided')
+            for inputfile in app.args.inputfiles:
+                if os.path.isdir(inputfile):
+                    raise Exception('Output directory mandatory when input directory provided')
         for inputfile in app.args.inputfiles:
             organize(inputfile)
 
