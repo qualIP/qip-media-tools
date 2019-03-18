@@ -1089,14 +1089,15 @@ def action_mux(inputfile, in_tags):
         iter_frames = None
         first_pts_time_per_stream = {}
 
+        mkvextract_tracks_args = []
+        mkvextract_attachments_args = []
+
         attachment_index = 0  # First attachment is index 1
         for stream_dict in ffprobe_dict['streams']:
-            if stream_dict.get('skip', False):
-                continue
             stream_out_dict = {}
-            stream_index = int(stream_dict['index'])
-            stream_out_dict['index'] = stream_index
+            stream_index = stream_out_dict['index'] = int(stream_dict['index'])
             stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
+
             if stream_codec_type in ('video', 'audio', 'subtitle'):
                 stream_codec_name = stream_dict['codec_name']
                 if (
@@ -1201,15 +1202,12 @@ def action_mux(inputfile, in_tags):
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
                 elif stream_disposition_dict['attached_pic']:
-                    app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
-                    with perfcontext('extract attachment %d w/ mkvextract' % (attachment_index,)):
-                        cmd = [
-                            'mkvextract', 'attachments', inputfile.file_name,
-                            '%d:%s' % (
-                                attachment_index,
-                                os.path.join(outputdir, output_track_file_name),
-                            )]
-                        do_spawn_cmd(cmd)
+                    app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
+                    mkvextract_attachments_args += [
+                        '%d:%s' % (
+                            attachment_index,
+                            os.path.join(outputdir, output_track_file_name),
+                        )]
                 elif app.args.track_extract_tool == 'ffmpeg' \
                     or (app.args.track_extract_tool is None
                         and stream_codec_name in (
@@ -1243,60 +1241,78 @@ def action_mux(inputfile, in_tags):
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
                 elif app.args.track_extract_tool in ('mkvextract', None):
-                    app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
-                    with perfcontext('extract track %d w/ mkvextract' % (stream_index,)):
-                        cmd = [
-                            'mkvextract', 'tracks', inputfile.file_name,
-                            '%d:%s' % (
-                                stream_index,
-                                os.path.join(outputdir, output_track_file_name),
-                            )]
-                        do_spawn_cmd(cmd)
-                        # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
+                    app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
+                    mkvextract_tracks_args += [
+                        '%d:%s' % (
+                            stream_index,
+                            os.path.join(outputdir, output_track_file_name),
+                        )]
+                    # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
                 else:
                     raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
-
-                if not app.args.dry_run:
-
-                    if stream_codec_type == 'video':
-                        output_track_file = MediaFile.new_by_file_name(os.path.join(outputdir, output_track_file_name))
-                        mediainfo_track_dict, = (mediainfo_track_dict
-                                for mediainfo_track_dict in mediainfo_dict['media']['track']
-                                if int(mediainfo_track_dict.get('ID', 0)) == stream_index + 1)
-                        assert mediainfo_track_dict['@type'] == 'Video'
-                        storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
-                        display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
-                        pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio
-                        stream_out_dict['display_aspect_ratio'] = str(display_aspect_ratio)
-                        stream_out_dict['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
-
-                    elif stream_codec_type == 'subtitle':
-                        stream_forced = stream_disposition_dict.get('forced', None)
-                        if stream_forced:
-                            has_forced_subtitle = True
-                        if stream_file_ext in ('.sub', '.sup'):
-                            d = ffprobe(i=os.path.join(outputdir, output_track_file_name), show_frames=True)
-                            out = d.out
-                            subtitle_count = out.count(
-                                b'[SUBTITLE]' if type(out) is bytes else '[SUBTITLE]')
-                            if stream_file_ext in ('.sup',):
-                                # TODO count only those frames with num_rect != 0
-                                subtitle_count = subtitle_count // 2
-                        elif stream_file_ext in ('.idx',):
-                            out = open(os.path.join(outputdir, output_track_file_name), 'rb').read()
-                            subtitle_count = out.count(b'timestamp:')
-                        elif stream_file_ext in ('.srt', '.vtt'):
-                            out = open(os.path.join(outputdir, output_track_file_name), 'rb').read()
-                            subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
-                        else:
-                            raise NotImplementedError(stream_file_ext)
-                        stream_out_dict['subtitle_count'] = subtitle_count
-                        subtitle_counts.append(
-                            (stream_out_dict, subtitle_count))
 
                 mux_dict['streams'].append(stream_out_dict)
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+        if mkvextract_tracks_args:
+            with perfcontext('extract tracks w/ mkvextract'):
+                cmd = [
+                    'mkvextract', 'tracks', inputfile.file_name,
+                    ] + mkvextract_tracks_args
+                do_spawn_cmd(cmd)
+        if mkvextract_attachments_args:
+            with perfcontext('extract attachments w/ mkvextract'):
+                cmd = [
+                    'mkvextract', 'attachments', inputfile.file_name,
+                    ] + mkvextract_attachments_args
+
+        # Pre-stream post-processing
+        if not app.args.dry_run:
+
+            for stream_dict in mux_dict['streams']:
+                if stream_dict.get('skip', False):
+                    continue
+                stream_index = stream_dict['index']
+                stream_codec_type = stream_dict['codec_type']
+                stream_file_name = stream_dict['file_name']
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+                stream_disposition_dict = stream_dict['disposition']
+
+                if stream_codec_type == 'video':
+                    mediainfo_track_dict, = (mediainfo_track_dict
+                            for mediainfo_track_dict in mediainfo_dict['media']['track']
+                            if int(mediainfo_track_dict.get('ID', 0)) == stream_index + 1)
+                    assert mediainfo_track_dict['@type'] == 'Video'
+                    storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
+                    display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
+                    pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio
+                    stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
+                    stream_dict['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
+
+                elif stream_codec_type == 'subtitle':
+                    stream_forced = stream_disposition_dict.get('forced', None)
+                    if stream_forced:
+                        has_forced_subtitle = True
+                    if stream_file_ext in ('.sub', '.sup'):
+                        d = ffprobe(i=os.path.join(outputdir, stream_file_name), show_frames=True)
+                        out = d.out
+                        subtitle_count = out.count(
+                            b'[SUBTITLE]' if type(out) is bytes else '[SUBTITLE]')
+                        if stream_file_ext in ('.sup',):
+                            # TODO count only those frames with num_rect != 0
+                            subtitle_count = subtitle_count // 2
+                    elif stream_file_ext in ('.idx',):
+                        out = open(os.path.join(outputdir, stream_file_name), 'rb').read()
+                        subtitle_count = out.count(b'timestamp:')
+                    elif stream_file_ext in ('.srt', '.vtt'):
+                        out = open(os.path.join(outputdir, stream_file_name), 'rb').read()
+                        subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
+                    else:
+                        raise NotImplementedError(stream_file_ext)
+                    stream_dict['subtitle_count'] = subtitle_count
+                    subtitle_counts.append(
+                        (stream_dict, subtitle_count))
 
         if not has_forced_subtitle and subtitle_counts:
             max_subtitle_size = max(subtitle_count
