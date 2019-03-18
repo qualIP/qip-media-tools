@@ -312,8 +312,8 @@ def do_srun_cmd(cmd,
     if slurm_mem is not None:
         slurm_args += ['--mem', slurm_mem]
     if slurm_tmp is not None:
-        #slurm_args += ['--tmp', slurm_tmp]
-        gres_args.append('tmp:%s' % (slurm_tmp,))
+        #slurm_args += ['--tmp', '%dK' % (slurm_tmp / 1024,)]
+        gres_args.append('tmp:%d' % (slurm_tmp,))
     if slurm_job_name is not None:
         slurm_args += ['--job-name', slurm_job_name]
     if chdir is not None:
@@ -358,8 +358,8 @@ def do_sbatch_cmd(cmd,
     if slurm_mem is not None:
         slurm_args += ['--mem', slurm_mem]
     if slurm_tmp is not None:
-        #slurm_args += ['--tmp', slurm_tmp]
-        gres_args.append('tmp:%s' % (slurm_tmp,))
+        #slurm_args += ['--tmp', '%dK' % (slurm_tmp / 1024,)]
+        gres_args.append('tmp:%d' % (slurm_tmp,))
     if slurm_job_name is not None:
         slurm_args += ['--job-name', slurm_job_name]
     if chdir is not None:
