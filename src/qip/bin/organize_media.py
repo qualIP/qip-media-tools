@@ -126,6 +126,7 @@ def main():
             for inputfile in app.args.inputfiles:
                 if os.path.isdir(inputfile):
                     raise Exception('Output directory mandatory when input directory provided')
+            app.args.outputdir = ''
         for inputfile in app.args.inputfiles:
             organize(inputfile)
 
