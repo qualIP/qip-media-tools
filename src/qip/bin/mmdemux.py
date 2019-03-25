@@ -1341,6 +1341,11 @@ def action_mux(inputfile, in_tags):
                     else:
                         raise NotImplementedError(stream_file_ext)
                     stream_dict['subtitle_count'] = subtitle_count
+                    if not subtitle_count:
+                        app.log.warning('Detected empty subtitle stream #%d (%s); Skipping.',
+                                        stream_index,
+                                        stream_dict.get('language', 'und'))
+                        stream_dict['skip'] = True
                     subtitle_counts.append(
                         (stream_dict, subtitle_count))
 
