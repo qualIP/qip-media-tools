@@ -492,7 +492,7 @@ def main():
 
     did_something = False
     if app.args.rip_dir:
-        action_rip(app.args.rip_dir, app.args.device)
+        action_rip(app.args.rip_dir, app.args.device, in_tags=in_tags)
         did_something = True
     for inputfile in getattr(app.args, 'hb_files', ()):
         action_hb(inputfile, in_tags=in_tags)
@@ -771,7 +771,79 @@ def get_vp9_tile_columns_and_threads(width, height):
             return 4, 24
     raise NotImplementedError
 
-def action_rip(rip_dir, device):
+def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=None):
+
+    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+
+    name_scan_str = os.path.basename(inputfile_base)
+    name_scan_str = re.sub(r'_t\d+$', '', name_scan_str)
+    m = (
+            re.match(r'^(?P<tvshow>.+) S(?P<season>\d\d)(?P<str_episodes>(?:E\d\d)+) (?P<title>.+)$', name_scan_str)
+         or re.match(r'^(?P<title>.+)$', name_scan_str)
+        )
+    if m:
+        d = m.groupdict()
+        if d.get('title', None) == 'title':
+            del d['title']
+        try:
+            str_episodes = d.pop('str_episodes')
+        except KeyError:
+            pass
+        else:
+            d['episode'] = [int(e) for e in str_episodes.split('E') if e]
+        inputfile.tags.update(d)
+
+    if inputfile.exists():
+        inputfile.tags.update(inputfile.load_tags())
+        if inputfile_ext in (
+                '.mkv',
+                '.webm',
+                ):
+            if mediainfo_dict is None:
+                mediainfo_dict = inputfile.extract_mediainfo_dict()
+            mediainfo_track_dict, = (mediainfo_track_dict
+                    for mediainfo_track_dict in mediainfo_dict['media']['track']
+                    if mediainfo_track_dict['@type'] == 'Video') or ({},)
+            mediainfo_mediatype = mediainfo_track_dict.get('OriginalSourceMedium', None)
+            if mediainfo_mediatype is None:
+                pass
+            elif mediainfo_mediatype == 'DVD-Video':
+                inputfile.tags.mediatype = 'DVD'
+            elif mediainfo_mediatype == 'Blu-ray':
+                inputfile.tags.mediatype = 'BD'
+            else:
+                raise NotImplementedError(mediainfo_mediatype)
+
+    inputfile.tags.pop('type', None)
+    inputfile.tags.update(in_tags)
+    inputfile.tags.type = inputfile.deduce_type()
+
+def do_edit_tags(tags):
+
+    # for tag in set(MediaTagEnum) - set(MediaTagEnum.iTunesInternalTags):
+    for tag in (
+            MediaTagEnum.grouping,
+            MediaTagEnum.artist,
+            MediaTagEnum.contenttype,
+            MediaTagEnum.episode,
+            MediaTagEnum.genre,
+            MediaTagEnum.mediatype,
+            MediaTagEnum.season,
+            MediaTagEnum.subtitle,
+            MediaTagEnum.title,
+            MediaTagEnum.tvshow,
+            MediaTagEnum.year,
+        ):
+        # Force None values to actually exist
+        if tags[tag] is None:
+            tags[tag] = None
+    tags = edvar(tags)[1]
+    for tag, value in tags.items():
+        if value is None:
+            del tags[tag]
+    return tags
+
+def action_rip(rip_dir, device, in_tags):
     device = os.path.realpath(device)  # makemkv is picky!
 
     if app.args.dry_run:
@@ -1006,72 +1078,23 @@ def action_mux(inputfile, in_tags):
         #'tags': ...,
     }
 
-    name_scan_str = os.path.basename(inputfile_base)
-    name_scan_str = re.sub(r'_t\d+$', '', name_scan_str)
-    m = (
-            re.match(r'^(?P<tvshow>.+) S(?P<season>\d\d)(?P<str_episodes>(?:E\d\d)+) (?P<title>.+)$', name_scan_str)
-         or re.match(r'^(?P<title>.+)$', name_scan_str)
-        )
-    if m:
-        d = m.groupdict()
-        if d.get('title', None) == 'title':
-            del d['title']
-        try:
-            str_episodes = d.pop('str_episodes')
-        except KeyError:
-            pass
-        else:
-            d['episode'] = [int(e) for e in str_episodes.split('E') if e]
-        inputfile.tags.update(d)
-
-    inputfile.tags.update(inputfile.load_tags())
-
+    ffprobe_dict = None
+    mediainfo_dict = None
     if inputfile_ext in (
             '.mkv',
             '.webm',
             ):
         ffprobe_dict = inputfile.extract_ffprobe_json()
         mediainfo_dict = inputfile.extract_mediainfo_dict()
-        mediainfo_track_dict, = (mediainfo_track_dict
-                for mediainfo_track_dict in mediainfo_dict['media']['track']
-                if mediainfo_track_dict['@type'] == 'Video') or ({},)
-        mediainfo_mediatype = mediainfo_track_dict.get('OriginalSourceMedium', None)
-        if mediainfo_mediatype is None:
-            pass
-        elif mediainfo_mediatype == 'DVD-Video':
-            inputfile.tags.mediatype = 'DVD'
-        elif mediainfo_mediatype == 'Blu-ray':
-            inputfile.tags.mediatype = 'BD'
-        else:
-            raise NotImplementedError(mediainfo_mediatype)
 
-    inputfile.tags.pop('type', None)
-    inputfile.tags.update(in_tags)
-    inputfile.tags.type = inputfile.deduce_type()
+    init_inputfile_tags(inputfile,
+                        in_tags=in_tags,
+                        ffprobe_dict=ffprobe_dict,
+                        mediainfo_dict=mediainfo_dict)
     mux_dict['tags'] = inputfile.tags
 
-    if app.args.interactive:
-        # for tag in set(MediaTagEnum) - set(MediaTagEnum.iTunesInternalTags):
-        for tag in (
-                MediaTagEnum.grouping,
-                MediaTagEnum.artist,
-                MediaTagEnum.contenttype,
-                MediaTagEnum.episode,
-                MediaTagEnum.genre,
-                MediaTagEnum.mediatype,
-                MediaTagEnum.season,
-                MediaTagEnum.subtitle,
-                MediaTagEnum.title,
-                MediaTagEnum.tvshow,
-                MediaTagEnum.year,
-            ):
-            # Force None values to actually exist
-            if mux_dict['tags'][tag] is None:
-                mux_dict['tags'][tag] = None
-        mux_dict['tags'] = edvar(mux_dict['tags'])[1]
-        for tag, value in mux_dict['tags'].items():
-            if value is None:
-                del mux_dict['tags'][tag]
+    if app.args.interactive and not (app.args.rip_dir and outputdir in app.args.rip_dir):
+        mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
 
     if app.args.dry_run:
         app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
