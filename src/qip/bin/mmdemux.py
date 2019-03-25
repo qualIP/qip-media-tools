@@ -398,7 +398,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Ripping Control')
     pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
-    pgroup.add_argument('--minlength', default=3600, type=qip.utils.Timestamp, help='minimum title length for ripping (default 3600s)')
+    pgroup.add_argument('--minlength', default=None, type=qip.utils.Timestamp, help='minimum title length for ripping (default 60m (movie), 20m (tvshow))')
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -851,12 +851,19 @@ def action_rip(rip_dir, device, in_tags):
     else:
         os.mkdir(rip_dir)
 
+    minlength = app.args.minlength
+    if minlength is None:
+        if in_tags.type == 'tvshow':
+            minlength = qip.utils.Timestamp('20m')
+        else:
+            minlength = qip.utils.Timestamp('60m')
+
     # http://www.makemkv.com/developers/usage.txt
     cmd = [
         'makemkvcon',
         '--messages', '-stdout',
         '--progress', '-stdout',
-        '--minlength=%d' % (app.args.minlength,),
+        '--minlength=%d' % (minlength,),
         'mkv', 'dev:%s' % (device,),
         'all',
         rip_dir,
