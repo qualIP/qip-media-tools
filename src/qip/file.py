@@ -36,6 +36,52 @@ def hashfile(afile, hasher, blocksize=65536):
     return hasher
 # [(fname, hashfile(open(fname, 'rb'), hashlib.md5())) for fname in fnamelst]
 
+class _argparse_type(object):
+
+    def __init__(self, file_cls, mode='r', **kwargs):
+        self._file_cls = file_cls
+        kwargs['mode'] = mode
+        self._kwargs = kwargs
+
+    def __call__(self, file_name):
+        file_cls = self._file_cls
+        kwargs = self._kwargs
+        fp = None
+        s_file_name = repr(file_name)
+
+        # the special argument "-" means sys.std{in,out}
+        if file_name == '-':
+            file_name = None
+            mode = kwargs['mode']
+            if 'r' in mode:
+                s_file_name = '<stdin>'
+                fp = _sys.stdin
+            elif 'w' in mode:
+                s_file_name = '<stdout>'
+                fp = _sys.stdout
+            else:
+                msg = _('argument "-" with mode %r') % mode
+                raise ValueError(msg)
+
+        file = file_cls.new_by_file_name(file_name)
+
+        if fp is None:
+            try:
+                fp = file.open(**kwargs)
+            except OSError as e:
+                message = _("can't open %s: %s")
+                raise ArgumentTypeError(message % (s_file_name, e))
+
+        file.fp = fp
+        return file
+
+    def __repr__(self):
+        file_cls = self._file_cls
+        kwargs = self._kwargs
+        args_str = ', '.join(['%s=%r' % (kw, arg) for kw, arg in kwargs.items()])
+        return '%s.argparse_type(%s)' % (file_cls.__name__, args_str)
+
+
 class File(object):
 
     file_name = propex(
@@ -47,6 +93,10 @@ class File(object):
         name='open_mode',
         default='',
         type=propex.test_in(('', 't', 'b')))
+
+    @classmethod
+    def argparse_type(cls, *args, **kwargs):
+        return _argparse_type(file_cls=cls, *args, **kwargs)
 
     @classmethod
     def new_by_file_name(cls, file_name, *args, default_class=True, **kwargs):
@@ -183,13 +233,13 @@ class File(object):
                   )
         return p.stdout
 
-    def open(self, mode='r', encoding=None):
+    def open(self, mode='r', encoding=None, **kwargs):
         assert not self.fp
         if not self.file_name:
             raise ValueError('%r: file_name not defined' % (self,))
         if 't' not in mode and 'b' not in mode:
             mode += self.open_mode
-        return open(self.file_name, mode=mode, encoding=encoding)
+        return open(self.file_name, mode=mode, encoding=encoding, **kwargs)
 
     def fdopen(self, fd, mode='r', encoding=None):
         assert not self.fp
