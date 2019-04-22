@@ -97,7 +97,7 @@ def main():
     pgroup.add_argument('--barcode', default=None, help='specify barcode')
     pgroup.add_argument('--country', dest='country_list', default=None, nargs='*', help='specify country list')
 
-    app.parser.add_argument('cue_files', nargs='*', default=None, help='cue file names')
+    app.parser.add_argument('cue_files', nargs='*', default=None, type=CDDACueSheetFile.argparse_type(), help='cue file names')
 
     app.parse_args()
 
@@ -113,7 +113,7 @@ def main():
 
     if app.args.action == 'bincuetags':
         if not app.args.cue_files:
-            raise Exception('No CUE file name provided')
+            raise Exception('No CUE file names provided')
         if app.args.use_cache:
             if False:
                 # Parameters are not hashable!
@@ -338,11 +338,13 @@ def cddbinfo_to_tags(album_tags, cddb_info):
         except ValueError as e:
             app.log.error(e)
 
-def bincuetags(cue_file_name):
+def bincuetags(cue_file):
+    if not isinstance(cue_file, CDDACueSheetFile):
+        cue_file = CDDACueSheetFile(cue_file)
 
-    cue_file = CDDACueSheetFile(cue_file_name)
-    cue_file.read()
-    app.log.debug('%r: cue_file: %r', cue_file, cue_file.tags)
+    if not cue_file.files:
+        cue_file.read()
+    app.log.debug('%r: tags: %r', cue_file, cue_file.tags)
     discid = cue_file.discid
     discid = types.SimpleNamespace(
         id=app.args.musicbrainz_discid or discid.id,
