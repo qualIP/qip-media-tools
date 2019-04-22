@@ -859,17 +859,12 @@ def action_rip(rip_dir, device, in_tags):
         else:
             minlength = qip.utils.Timestamp('60m')
 
-    # http://www.makemkv.com/developers/usage.txt
-    cmd = [
-        'makemkvcon',
-        '--messages', '-stdout',
-        '--progress', '-stdout',
-        '--minlength=%d' % (minlength,),
-        'mkv', 'dev:%s' % (device,),
-        'all',
-        rip_dir,
-    ]
-    out = do_spawn_cmd(cmd)
+    from qip.makemkv import makemkvcon
+    makemkvcon.mkv(
+        source='dev:%s' % (device,),
+        dest_dir=rip_dir,
+        minlength=int(minlength),
+    )
 
     if app.args.eject:
         app.log.info('Ejecting...')
