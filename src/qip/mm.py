@@ -62,6 +62,17 @@ from .file import BinaryFile
 from .ffmpeg import ffmpeg, ffprobe
 
 
+class PictureTagInfo(object):
+
+    def __init__(self, format, description, **kwargs):
+        self.format = format
+        self.description = description
+        super().__init__(**kwargs)
+
+    def __str__(self):
+        return f'({self.format}: {self.description})'
+
+
 class Chapter(object):
 
     def __init__(self, start, end, *,
@@ -328,7 +339,7 @@ class MediaFile(BinaryFile):
                             mutagen.mp4.MP4Cover.FORMAT_PNG: 'PNG',
                             }.get(cover.imageformat, repr(cover.imageformat))
                     file_desc = byte_decode(dbg_exec_cmd(['file', '-b', '-'], input=bytes(cover))).strip()
-                    new_tag_value.append('(%s: %s)' % (imageformat, file_desc))
+                    new_tag_value.append(PictureTagInfo(imageformat, file_desc))
                 tag_value = new_tag_value
             if isinstance(tag_value, list) and len(tag_value) == 1:
                 tag_value = tag_value[0]
@@ -432,7 +443,7 @@ class MediaFile(BinaryFile):
                         except KeyError:
                             pass
                 if not tags_done:
-                    for tag, value in ffprobe_dict['format']['tags'].items():
+                    for tag, value in ffprobe_dict['format'].get('tags', {}).items():
                         if value == 'None':
                             continue
                         if tag in (
@@ -1308,6 +1319,8 @@ def _tPicture(value, accept_iterable=True):
         # value = qip.file.cache_url(value)
         return value
     if isinstance(value, File):
+        return value
+    if isinstance(value, PictureTagInfo):
         return value
     raise ValueError('Not a valid string or file: %r' % (value,))
 
