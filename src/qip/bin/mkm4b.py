@@ -390,7 +390,7 @@ def mkm4b(inputfiles, default_tags):
             raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
         app.log.info('Reading %s...', inputfile)
         inputfile.extract_info(need_actual_duration=(len(inputfiles) > 1))
-        inputfile.tags.picture = None
+        #inputfile.tags.picture = None
         #app.log.debug(inputfile)
 
     app.log.debug('inputfiles = %r', inputfiles)
@@ -520,9 +520,13 @@ def mkm4b(inputfiles, default_tags):
         app.log.info('Expected final duration: %s (%.3f seconds)', qip.mm.mp4chaps_format_time_offset(expected_duration), expected_duration)
 
     src_picture = m4b.tags.picture
+    if isinstance(src_picture, qip.mm.PictureTagInfo):
+        src_picture = m4b.file_name
     if not src_picture:
         if inputfiles[0].tags.picture:
             src_picture = inputfiles[0].tags.picture
+            if isinstance(src_picture, qip.mm.PictureTagInfo):
+                src_picture = inputfiles[0].file_name
         if getattr(inputfiles[0], 'num_cover', 0):
             src_picture = inputfiles[0].file_name
         else:
