@@ -80,7 +80,7 @@ class Mpeg4ContainerFile(MediaFile):
                 ffmpeg_args += ['-y']
             ffmpeg_args += ['-i', str(src_picture)]
             ffmpeg_args += ['-an', str(picture)]
-            ffmpeg(*ffmpeg)
+            ffmpeg(*ffmpeg_args)
             src_picture = picture
         if ipod_compat and shutil.which('gm'):
             if keep_picture_file_name:
