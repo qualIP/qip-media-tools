@@ -109,7 +109,8 @@ class App(object):
                 if e is not None:
                     sys.stderr = codecs.getwriter(e)(old_stderr);
 
-    def init_parser(self, allow_config_file=True, **kwargs):
+    def init_parser(self, allow_config_file=True, fromfile_prefix_chars='@',
+                    **kwargs):
         description = self.description
         if self.version is not None:
             description += ' v%s' % (self.version,)
@@ -134,9 +135,10 @@ class App(object):
                             "--write-out-config-file",
                             ]
         self.parser = argparse.ArgumentParser(
-                prog=self.prog,
-                description=description,
-                **kwargs)
+            fromfile_prefix_chars=fromfile_prefix_chars,
+            prog=self.prog,
+            description=description,
+            **kwargs)
         self.parser.version = self.version
 
     def init_logging(self, level=None, **kwargs):
