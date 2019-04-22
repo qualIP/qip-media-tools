@@ -319,6 +319,7 @@ def taged_mf_id3(file_name, mf, tags):
     return True
 
 def taged_mf_MP4Tags(file_name, mf, tags):
+    assert mutagen.version >= (1, 42, 0), f'Update mutagen ({mutagen.version_string}) module to at least 1.42.0'
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('Old tags: %r', list(mf.tags.keys()))
     tags_to_set = set(tags.keys())

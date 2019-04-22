@@ -77,7 +77,7 @@ setup(
             'pexpect',
             'pint',
             'ConfigArgParse',
-            'mutagen',
+            'mutagen>=1.42.0',
             ],
 
     # List additional groups of dependencies here (e.g. development
