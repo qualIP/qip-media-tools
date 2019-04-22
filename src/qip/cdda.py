@@ -340,6 +340,7 @@ class CDTocFile(TextFile):
 
     def read(self):
         content = super().read()
+        assert content, f'{self} is empty?!'
         self.parse(content)
         return content
 
@@ -851,6 +852,7 @@ class CDDACueSheetFile(TextFile):
 
     def read(self):
         content = super().read()
+        assert content, f'{self} is empty?!'
         self.parse(content)
         return content
 
