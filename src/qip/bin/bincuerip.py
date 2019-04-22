@@ -69,7 +69,7 @@ def main():
     pgroup.add_argument('--country', dest='country_list', default=None, nargs='*', help='specify country list')
     # }}}
 
-    app.parser.add_argument('cue_files', nargs='*', default=None, help='cue file names')
+    app.parser.add_argument('cue_files', nargs='*', default=None, type=CDDACueSheetFile.argparse_type(), help='cue file names')
 
     app.parse_args()
 
@@ -85,17 +85,32 @@ def main():
 
     if app.args.action == 'bincuerip':
         if not app.args.cue_files:
-            raise Exception('No CUE file name provided')
+            raise Exception('No CUE file names provided')
+        if app.args.use_bincuetags:
+            for cue_file in app.args.cue_files:
+                prep_bincuetags(cue_file)
         for cue_file in app.args.cue_files:
             bincuerip(cue_file)
     else:
         raise ValueError('Invalid action \'%s\'' % (app.args.action,))
 
-def bincuerip(cue_file_name):
+def prep_bincuetags(cue_file):
+    if not isinstance(cue_file, CDDACueSheetFile):
+        cue_file = CDDACueSheetFile(cue_file)
 
-    cue_file = CDDACueSheetFile(cue_file_name)
-    cue_file.read()
-    assert len(cue_file.files) == 1
+    tags_file = json.JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
+    if not tags_file.exists():
+        import qip.bin.bincuetags
+        qip.bin.bincuetags.bincuetags(cue_file)
+
+def bincuerip(cue_file):
+    if not isinstance(cue_file, CDDACueSheetFile):
+        cue_file = CDDACueSheetFile(cue_file)
+
+    app.log.debug('%r...', cue_file)
+    if not cue_file.files:
+        cue_file.read()
+    assert len(cue_file.files) == 1, f'{cue_file}: Expected 1 source file, got {cue_file.files!r}'
     assert cue_file.files[0].format is CDDACueSheetFile.FileFormatEnum.BINARY
 
     tags_file = json.JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
@@ -107,9 +122,9 @@ def bincuerip(cue_file_name):
             album_tags.short_str()))
         for track_no, track_tags in album_tags.tracks_tags.items():
             print('  Track {:2d}: {}'.format(track_no, track_tags.short_str()))
-    elif app.args.use_bincuetags:
-        import qip.bin.bincuetags
-        album_tags = qip.bin.bincuetags.bincuetags(cue_file_name)
+    #elif app.args.use_bincuetags:
+    #    import qip.bin.bincuetags
+    #    album_tags = qip.bin.bincuetags.bincuetags(cue_file)
     else:
         album_tags = AlbumTags()
 
