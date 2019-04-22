@@ -27,6 +27,8 @@ sox
 cuetools
 python3-libdiscid
 mkvtoolnix
+opus-tools
+mjpegtools
 
 tesseract-ocr-eng
 tesseract-ocr-fra
