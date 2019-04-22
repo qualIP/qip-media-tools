@@ -565,6 +565,7 @@ def codec_name_to_ext(codec_name):
             # video
             'rawvideo': '.y4m',
             'mpeg2video': '.mpeg2.mp2v',
+            'mp2': '.mpeg2.mp2v',
             #'mjpeg': '.mjpeg',
             'msmpeg4v3': '.msmpeg4v3.avi',
             'mpeg4': '.mp4',
