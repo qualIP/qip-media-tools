@@ -211,7 +211,7 @@ def main():
 
     app.cache_dir = os.path.abspath('mkm4b-cache')
 
-    in_tags = TrackTags()
+    in_tags = TrackTags(type='audiobook')
 
     # TODO app.parser.add_argument('--help', '-h', action='help')
     app.parser.add_argument('--version', '-V', action='version')
