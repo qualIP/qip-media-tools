@@ -26,7 +26,7 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
-from qip.m4b import M4bFile
+from qip.mp4 import M4bFile
 from qip.parser import *
 from qip.mm import *
 from qip.utils import byte_decode
