@@ -39,6 +39,22 @@ log = logging.getLogger(__name__)
 from qip.app import app  # Also setup log.verbose
 from qip.utils import byte_decode
 
+class spawn(pexpect.spawn):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def communicate(self, pattern_dict, **kwargs):
+        pattern_kv_list = list(pattern_dict.items())
+        pattern_list = [k for k, v in pattern_kv_list]
+        compiled_pattern_list = self.compile_pattern_list(pattern_list)
+        while True:
+            idx = self.expect_list(compiled_pattern_list, **kwargs)
+            if idx is None:
+                break
+            k, v = pattern_kv_list[idx]
+            yield v
+
 def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
