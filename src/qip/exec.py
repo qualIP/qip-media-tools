@@ -264,7 +264,7 @@ class Executable(metaclass=abc.ABCMeta):
 
     def _popen(self, *args, dry_run=False,
                stdin=None, stdout=None, stderr=None,
-               text=None, encoding=None,
+               text=None, encoding=None, bufsize=-1,
                **kwargs):
         """p1 = myexe1.popen([...], stdout=subprocess.PIPE)
            p2 = myexe2.popen([...], stdin=p1.stdout, stdout=myfile.fp)
@@ -276,6 +276,7 @@ class Executable(metaclass=abc.ABCMeta):
             stdin=stdin, stdout=stdout, stderr=stderr,
             universal_newlines=text,  # 3.7: text=text
             encoding=encoding,
+            bufsize=bufsize,
             )
 
     def run(self, *args, **kwargs):
