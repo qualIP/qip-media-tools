@@ -482,6 +482,12 @@ def main():
 
     app.parse_args()
 
+    if in_tags.type is None:
+        try:
+            in_tags.type = in_tags.deduce_type()
+        except qip.mm.MissingMediaTagError:
+            pass
+
     # if getattr(app.args, 'action', None) is None:
     #     app.args.action = TODO
     if not hasattr(app.args, 'logging_level'):
