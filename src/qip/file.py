@@ -248,12 +248,16 @@ class File(object):
         return os.fdopen(fd, mode=mode, encoding=encoding)
 
     def read(self):
-        fp = self.fp or self.open()
-        return fp.read()
+        if self.fp:
+            return self.fp.read()
+        with self.open(mode='r') as fp:
+            return fp.read()
 
     def write(self, *args, **kwargs):
-        fp = self.fp or self.open(mode='w')
-        return fp.write(*args, **kwargs)
+        if self.fp:
+            return self.fp.write(*args, **kwargs)
+        with self.open(mode='w') as fp:
+            return fp.write(*args, **kwargs)
 
     def close(self):
         fp = self.fp
