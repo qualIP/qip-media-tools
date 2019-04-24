@@ -220,7 +220,7 @@ class MakemkvconSpawn(_exec_spawn):
             (r'^Using direct disc access mode' + re_eol, True),
             (r'^Downloading latest SDF to (?P<dest_dir>[^\n]+) \.\.\.' + re_eol, True),
             (r'^Using LibreDrive mode \(v(?P<version>\d+) id=(?P<id>[0-9a-fA-F]+)\)' + re_eol, True),
-            (r'^Loaded content hash table, will verify integrity of M2TS files\.' + re_eol, True_,
+            (r'^Loaded content hash table, will verify integrity of M2TS files\.' + re_eol, True),
             (r'^Cells (?P<num_cells>\d+)-end were skipped due to cell commands \(structure protection\?\)' + re_eol, True),
             (r'^Complex multiplex encountered - (?P<num_cells>\d+) cells and (?P<num_vobus>\d+) VOBUs have to be scanned\. This may take some time, please be patient - it can\'t be avoided\.' + re_eol, True),
             (r'^Region setting of drive (?P<drive_label>[^\n]+) does not match the region of currently inserted disc, trying to work around\.\.\.' + re_eol, True),
