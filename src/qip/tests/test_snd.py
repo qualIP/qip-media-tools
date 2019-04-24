@@ -38,11 +38,12 @@ class test_snd(unittest.TestCase):
 
     def test_FrameRate_round_common(self):
 
-        FrameRate(24000, 1000).round_common == FrameRate(24000, 1000)
-        FrameRate(24000, 1001).round_common == FrameRate(24000, 1001)
-        FrameRate(30000, 1000).round_common == FrameRate(30000, 1000)
-        FrameRate(30000, 1001).round_common == FrameRate(30000, 1001)
-        FrameRate(1/0.033367, 1).round_common == FrameRate(24000, 1001)
+        self.assertEqual(FrameRate(24000, 1000).round_common(),  FrameRate(24000, 1000))
+        self.assertEqual(FrameRate(24000, 1001).round_common(),  FrameRate(24000, 1001))
+        self.assertEqual(FrameRate(25000, 1000).round_common(),  FrameRate(25000, 1000))
+        self.assertEqual(FrameRate(30000, 1000).round_common(),  FrameRate(30000, 1000))
+        self.assertEqual(FrameRate(30000, 1001).round_common(),  FrameRate(30000, 1001))
+        #self.assertEqual(FrameRate(1/0.033367).round_common(),  FrameRate(24000, 1001))
 
 if __name__ == '__main__':
     unittest.main()

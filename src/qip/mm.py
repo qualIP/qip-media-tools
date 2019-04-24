@@ -827,7 +827,7 @@ class FrameRate(Fraction):
                     numerator, denominator = 24000, 1001
                 elif numerator == 29.970:
                     numerator, denominator = 30000, 1001
-                elif numerator in (24.0, 30.0):
+                elif numerator in (24.0, 25.0, 30.0):
                     pass
                 else:
                     raise NotImplementedError(numerator)
@@ -835,14 +835,16 @@ class FrameRate(Fraction):
 
     def round_common(self):
         for framerate in common_framerates:
-            if abs(self - framerate) <= 0.001:
+            abs_diff = abs(self - framerate)
+            if abs_diff <= 0.001:
                 return framerate
-        raise ValueError(framerate)
+        raise ValueError(self)
 
 
 common_framerates = sorted([
     FrameRate(24000, 1001),
     FrameRate(24000, 1000),
+    FrameRate(25000, 1000),
     FrameRate(30000, 1001),
     FrameRate(30000, 1000),
     ])
