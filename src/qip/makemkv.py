@@ -25,22 +25,24 @@ def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False,
     elif logfile is False:
         logfile = None
     p = makemkvcon.spawn(cmd[0], args=cmd[1:] + hidden_args, logfile=logfile)
-    out = ''
-    for v in p.communicate():
-        out += byte_decode(p.before)
-        if p.match and p.match is not pexpect.EOF:
-            out += byte_decode(p.match.group(0))
-        if callable(v):
-            if not v(p.match.group(0)):
-                break
-        if p.after is pexpect.exceptions.EOF:
-            break
     try:
-        p.wait()
-    except pexpect.ExceptionPexpect as err:
-        if err.value != 'Cannot wait for dead child process.':
-            raise
-    p.close()
+        out = ''
+        for v in p.communicate():
+            out += byte_decode(p.before)
+            if p.match and p.match is not pexpect.EOF:
+                out += byte_decode(p.match.group(0))
+            if callable(v):
+                if not v(p.match.group(0)):
+                    break
+            if p.after is pexpect.exceptions.EOF:
+                break
+        try:
+            p.wait()
+        except pexpect.ExceptionPexpect as err:
+            if err.value != 'Cannot wait for dead child process.':
+                raise
+    finally:
+        p.close()
     if p.signalstatus is not None:
         raise Exception('Command exited due to signal %r' % (p.signalstatus,))
     if not no_status and p.exitstatus:
@@ -244,6 +246,12 @@ class MakemkvconSpawn(_exec_spawn):
             (pexpect.EOF, False),
         ])
         return super().communicate(pattern_dict, *args, **kwargs)
+
+    def close(self, *args, **kwargs):
+        if self.progress_bar is not None:
+            self.progress_bar.finish()
+            self.progress_bar = None
+        return super().close(*args, **kwargs)
 
 class Makemkvcon(Executable):
     # http://www.makemkv.com/developers/usage.txt
