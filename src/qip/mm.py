@@ -791,13 +791,13 @@ class MediaFile(BinaryFile):
 
     def deduce_type(self, *, using_tags=True, using_class=True):
         if using_tags:
-            if self.tags.type is not None:
-                return self.tags.type
-            if 'Music Video' in str(self.tags.contenttype) \
-                    or 'Concert' in str(self.tags.contenttype):
-                return 'musicvideo'
-            elif self.tags.tvshow is not None:
-                return 'tvshow'
+            try:
+                return self.tags.deduce_type()
+            except MissingMediaTagError as e:
+                if e.tag is not MediaTagEnum.type:
+                    if e.file is None:
+                        e.file = self
+                    raise
         if using_class:
             if isinstance(self, MovieFile):
                 return 'movie'
@@ -1426,6 +1426,16 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 v = str(v)
             d[k.value] = v
         return d
+
+    def deduce_type(self):
+        if self.type is not None:
+            return self.type
+        if 'Music Video' in str(self.contenttype) \
+                or 'Concert' in str(self.contenttype):
+            return 'musicvideo'
+        elif self.tvshow is not None:
+            return 'tvshow'
+        raise MissingMediaTagError(MediaTagEnum.type)
 
     albumartist = propex(
         name='albumartist',
