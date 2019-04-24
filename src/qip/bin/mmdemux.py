@@ -2323,8 +2323,17 @@ def action_optimize(inputdir, in_tags):
                             do_spawn_cmd(cmd)
                             assert os.path.isfile(os.path.join(inputdir, new_stream_file_name)), \
                                     'File not found: %r' % (os.path.join(inputdir, new_stream_file_name),)
-                if app.args.interactive:
-                    edfile(os.path.join(inputdir, new_stream_file_name))
+                cmd = [
+                    os.path.join(os.path.dirname(__file__), 'fix-subtitles'),
+                    os.path.join(inputdir, new_stream_file_name),
+                    ]
+                out = dbg_exec_cmd(cmd)
+                if not app.args.dry_run:
+                    out = clean_cmd_output(out)
+                    File.new_by_file_name(os.path.join(inputdir, new_stream_file_name)) \
+                            .write(out)
+                    if app.args.interactive:
+                        edfile(os.path.join(inputdir, new_stream_file_name))
 
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
