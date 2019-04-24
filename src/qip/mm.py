@@ -267,9 +267,8 @@ class MediaFile(BinaryFile):
                 id3_tag = id3_tag[0:-5]
             elif id3_tag.endswith(':eng'):
                 id3_tag = id3_tag[0:-4]
-            id3_tag = {
-                'APIC:': 'APIC',
-                }.get(id3_tag, id3_tag)
+            if id3_tag.startswith('APIC:'):
+                id3_tag = 'APIC'
             if id3_tag in (
                     'COMM:iTunNORM',  # TODO
                     'COMM:iTunPGAP',  # TODO
