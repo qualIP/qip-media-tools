@@ -1,4 +1,5 @@
 __all__ = (
+    'KwVarsObject',
     'TypedKeyDict',
     'TypedValueDict',
     'byte_decode',
@@ -21,6 +22,24 @@ import functools
 import re
 import logging
 log = logging.getLogger(__name__)
+
+
+class KwVarsObject(object):
+
+    def __repr__(self):
+        '''Generic namedtuple-like repr'''
+        return '%s(%s)' % (
+            self.__class__.__name__,
+            ', '.join('%s=%r' % (k, v)
+                      for k, v in self.__dict__.items()))
+
+    def _replace(self, **kwargs):
+        '''Generic namedtuple-like _replace'''
+        kwargs = dict(
+                tuple(vars(self).items())
+                + tuple(kwargs.items()))
+        return self.__class__(**kwargs)
+
 
 @functools.total_ordering
 class Timestamp(object):

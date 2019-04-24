@@ -15,9 +15,10 @@ import logging
 log = logging.getLogger(__name__)
 
 from .mm import MediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType
+from .utils import KwVarsObject
 
 
-class MatroskaTagTarget(object):
+class MatroskaTagTarget(KwVarsObject):
 
     TargetType = None
     TrackUID = None
@@ -34,12 +35,6 @@ class MatroskaTagTarget(object):
             self.TrackUID = TrackUID
         super().__init__(**kwargs)
 
-    def __repr__(self):
-        return '%s(%s)' % (
-            self.__class__.__name__,
-            ', '.join('%s=%r' % (k, v)
-                      for k, v in self.__dict__.items()))
-
     def apply_default_TargetTypes(self, default_TargetTypes):
         if self.TargetType is None and self.TrackUID == 0:
             newTargetType = default_TargetTypes.get(self.TargetTypeValue, None)
@@ -49,7 +44,7 @@ class MatroskaTagTarget(object):
         return False
 
 
-class MatroskaTagSimple(object):
+class MatroskaTagSimple(KwVarsObject):
 
     String = None
     Binary = None
@@ -71,12 +66,6 @@ class MatroskaTagSimple(object):
         if TagLanguage is not None:
             self.TagLanguage = TagLanguage
         super().__init__(**kwargs)
-
-    def __repr__(self):
-        return '%s(%s)' % (
-                self.__class__.__name__,
-                ', '.join('%s=%r' % (k, v)
-                          for k, v in self.__dict__.items()))
 
     def apply_default_TargetTypes(self, default_TargetTypes):
         return self.Target.apply_default_TargetTypes(default_TargetTypes)
