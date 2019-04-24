@@ -983,7 +983,7 @@ class ITunesXid(object):
     def xid(self, value):
         m = re.match(self.RE_XID, str(value))
         if not m:
-            raise ValueError('Not a iTunes XID: %s' % (value,))
+            raise ValueError('Not a iTunes XID: %r' % (value,))
         for k, v in m.groupdict().items():
             setattr(self, k, v)
 
@@ -1756,6 +1756,8 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     @xids.setter
     def xids(self, value):
+        if isinstance(value, str):
+            value = (value,)
         for xid in value:
             xid = ITunesXid(xid)
             for tag_enum, prefix, scheme in (
