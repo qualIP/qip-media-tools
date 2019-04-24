@@ -152,6 +152,20 @@ class MakemkvconSpawn(_exec_spawn):
         self.num_errors += 1
         return True
 
+    def generic_info(self, str):
+        str = byte_decode(str).rstrip('\r\n')
+        if self.progress_bar is not None:
+            print('')
+        log.info(str.strip('\r\n'))
+        return True
+
+    def generic_warning(self, str):
+        str = byte_decode(str).rstrip('\r\n')
+        if self.progress_bar is not None:
+            print('')
+        log.warning(str.strip('\r\n'))
+        return True
+
     def parse_titles_saved(self, str):
         if self.progress_bar is not None:
             print('')
@@ -192,31 +206,41 @@ class MakemkvconSpawn(_exec_spawn):
                 self.progress_bar.makemkv_action_percent = 0
                 self.progress_bar.suffix = '%(makemkv_action_percent)d%% of %(makemkv_action)s, %(makemkv_operation_percent)d%% of %(makemkv_operation)s'
                 self.progress_bar.goto(self.progress_bar.makemkv_action_percent)
+        re_eol = r'\r?\n'
+        re_title_no = r'[0-9/]+'  # "1", "1/0/1"
         pattern_dict = collections.OrderedDict([
-            (r'^Current progress - *(?P<cur>\d+)% *, Total progress - *(?P<tot>\d+)% *\r?\n', self.current_progress),
-            (r'^MakeMKV v[^\n]* started\r?\n', True),
-            (r'^Current (?P<task_type>action|operation): (?P<task>[^\r\n]+)\r?\n', self.current_task),
-            (r'^Operation successfully completed\r?\n', True),
-            (r'^Saving (?P<title_count>\d+) titles into directory (?P<dest_dir>[^\r\n]+)\r?\n', self.saving_titles_count),
-            (r'^Title #(?P<title_no>\d+) has length of (?P<length>\d+) seconds which is less than minimum title length of (?P<min_length>\d+) seconds and was therefore skipped\r?\n', True),
-            (r'^Using direct disc access mode\r?\n', True),
-            (r'^Cells (?P<num_cells>\d+)-end were skipped due to cell commands \(structure protection\?\)\r?\n', True),
-            (r'^Complex multiplex encountered - (?P<num_cells>\d+) cells and (?P<num_vobus>\d+) VOBUs have to be scanned\. This may take some time, please be patient - it can\'t be avoided\.\r?\n', True),
-            (r'^Region setting of drive (?P<drive_label>[^\n]+) does not match the region of currently inserted disc, trying to work around\.\.\.\r?\n', True),
-            (r'^Title #(?P<title_no>\d+) was added \((?P<num_cells>\d+) cell\(s\), (?P<time>[0-9:]+)\)\r?\n', True),
-            (r'^Unable to open file \'(?P<file_in>[^\']+)\' in OS mode due to a bug in OS Kernel\. This can be worked around, but read speed may be very slow\.\r?\n', True),
-            (r'^Encountered (?P<num_errors>\d+) errors of type \'Read Error\' - see http://www\.makemkv\.com/errors/dvdread/\r?\n', self.generic_error),
-            (r'^Error \'Posix error - Input/output error\' occurred while reading \'(?P<device_path>[^\n]+?)\' at offset \'(?P<offset>\d+)\'\r?\n', self.generic_error),
-            (r'^Error \'Scsi error - ILLEGAL REQUEST:READ OF SCRAMBLED SECTOR WITHOUT AUTHENTICATION\' occurred while reading \'[^\n]*\' at offset \'(?P<offset>\d+)\'\r?\n', True),
-            (r'^Error \'Scsi error - MEDIUM ERROR:L-EC UNCORRECTABLE ERROR\' occurred while reading \'(?P<file_in>[^\']+)\' at offset \'(?P<offset>\d+)\'\r?\n', self.generic_error),
-            (r'^LIBMKV_TRACE: Exception: (?P<exception>[^\n]+)\r?\n', self.generic_error),
-            (r'^Device \'(?P<device_path>[^\n]+?)\' is partially inaccessible due to a bug in Linux kernel \(it reports invalid block device size\)\. This can be worked around, but read speed may be very slow\.\r?\n', True),
-            (r'^Failed to save title (?P<title_no>\d+) to file (?P<file_out>[^\n]+)\r?\n', self.generic_error),
-            (r'^(?P<num_tiltes_saved>\d+) titles saved\r?\n', self.parse_titles_saved),
-            (r'^(?P<num_tiltes_saved>\d+) titles saved, (?P<num_tiltes_failed>\d+) failed\r?\n', self.parse_titles_saved),
-            (r'^Copy complete\. (?P<num_tiltes_saved>\d+) titles saved\.\r?\n', self.parse_titles_saved),
-            (r'^Copy complete\. (?P<num_tiltes_saved>\d+) titles saved, (?P<num_tiltes_failed>\d+) failed\.\r?\n', self.parse_titles_saved),
-            (r'[^\n]*?\r?\n', self.unknown_line),
+            (r'^Current progress - *(?P<cur>\d+)% *, Total progress - *(?P<tot>\d+)% *' + re_eol, self.current_progress),
+            (r'^MakeMKV v[^\n]+ started' + re_eol, True),
+            (r'^Current (?P<task_type>action|operation): (?P<task>[^\r\n]+)' + re_eol, self.current_task),
+            (r'^Operation successfully completed' + re_eol, True),
+            (r'^Saving (?P<title_count>\d+) titles into directory (?P<dest_dir>[^\r\n]+)' + re_eol, self.saving_titles_count),
+            (r'^Title #(?P<title_no>' + re_title_no + r') has length of (?P<length>\d+) seconds which is less than minimum title length of (?P<min_length>\d+) seconds and was therefore skipped' + re_eol, True),
+            (r'^Using direct disc access mode' + re_eol, True),
+            (r'^Cells (?P<num_cells>\d+)-end were skipped due to cell commands \(structure protection\?\)' + re_eol, True),
+            (r'^Complex multiplex encountered - (?P<num_cells>\d+) cells and (?P<num_vobus>\d+) VOBUs have to be scanned\. This may take some time, please be patient - it can\'t be avoided\.' + re_eol, True),
+            (r'^Region setting of drive (?P<drive_label>[^\n]+) does not match the region of currently inserted disc, trying to work around\.\.\.' + re_eol, True),
+            (r'^Title #(?P<title_no>' + re_title_no + r') was added \((?P<num_cells>\d+) cell\(s\), (?P<time>[0-9:]+)\)' + re_eol, True),
+            (r'^Unable to open file \'(?P<file_in>[^\']+)\' in OS mode due to a bug in OS Kernel\. This can be worked around, but read speed may be very slow\.' + re_eol, True),
+            (r'^Encountered (?P<num_errors>\d+) errors of type \'Read Error\' - see http://www\.makemkv\.com/errors/dvdread/' + re_eol, self.generic_error),
+            (r'^Error \'Posix error - Input/output error\' occurred while reading \'(?P<device_path>[^\n]+?)\' at offset \'(?P<offset>\d+)\'' + re_eol, self.generic_error),
+            (r'^Error \'Scsi error - MEDIUM ERROR:L-EC UNCORRECTABLE ERROR\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'' + re_eol, self.generic_error),
+            (r'^Error \'Scsi error - ILLEGAL REQUEST:READ OF SCRAMBLED SECTOR WITHOUT AUTHENTICATION\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'' + re_eol, True),
+            (r'^Error \'Scsi error - ILLEGAL REQUEST:MEDIA REGION CODE IS MISMATCHED TO LOGICAL UNIT REGION\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'' + re_eol, self.generic_error),
+            (r'^Error \'Scsi error - ILLEGAL REQUEST:ILLEGAL MODE FOR THIS TRACK\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'', True),
+            (r'^LIBMKV_TRACE: Exception: (?P<exception>[^\n]+)' + re_eol, self.generic_error),
+            (r'^Device \'(?P<device_path>[^\n]+?)\' is partially inaccessible due to a bug in Linux kernel \(it reports invalid block device size\)\. This can be worked around, but read speed may be very slow\.' + re_eol, True),
+            (r'^Failed to save title (?P<title_no>' + re_title_no + r') to file (?P<file_out>[^\n]+)' + re_eol, self.generic_error),
+            (r'^Failed to open disc' + re_eol, self.generic_error),
+            (r'^(?P<num_tiltes_saved>\d+) titles saved' + re_eol, self.parse_titles_saved),
+            (r'^(?P<num_tiltes_saved>\d+) titles saved, (?P<num_tiltes_failed>\d+) failed' + re_eol, self.parse_titles_saved),
+            (r'^Copy complete\. (?P<num_tiltes_saved>\d+) titles saved\.' + re_eol, self.parse_titles_saved),
+            (r'^Copy complete\. (?P<num_tiltes_saved>\d+) titles saved, (?P<num_tiltes_failed>\d+) failed\.' + re_eol, self.parse_titles_saved),
+            (r'^Track #(?P<track_no>\d+) turned out to be empty and was removed from output file' + re_eol, self.generic_warning),
+            (r'^Title (?P<title_no1>\d+) in VTS (?P<vts_no>\d+) is equal to title (?P<title_no2>\d+) and was skipped' + re_eol, True),
+            (r'^AV synchronization issues were found in file \'(?P<file_name>[^\n]+)\' \(title #(?P<title_no>' + re_title_no + r')\)' + re_eol, self.generic_warning),
+            (r'^AV sync issue in stream (?P<stream_no>\d+) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: audio gap - (?P<missing_frames>\d+) missing frame\(s\)' + re_eol, self.generic_warning),
+            (r'^AV sync issue in stream (?P<stream_no>\d+) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: encountered overlapping frame, audio skew is (?P<audio_skew>\S+)' + re_eol, self.generic_warning),
+            (r'[^\n]*?' + re_eol, self.unknown_line),
             (pexpect.EOF, False),
         ])
         return super().communicate(pattern_dict, *args, **kwargs)
