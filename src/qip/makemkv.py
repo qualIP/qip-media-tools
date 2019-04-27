@@ -209,7 +209,8 @@ class MakemkvconSpawn(_exec_spawn):
                 self.progress_bar.suffix = '%(makemkv_action_percent)d%% of %(makemkv_action)s, %(makemkv_operation_percent)d%% of %(makemkv_operation)s'
                 self.progress_bar.goto(self.progress_bar.makemkv_action_percent)
         re_eol = r'\r?\n'
-        re_title_no = r'[0-9/]+'  # "1", "1/0/1"
+        re_title_no = r'(?:[0-9/]+|\d+\.m2ts)'  # "1", "1/0/1", "00040.m2ts"
+        re_stream_no = r'(?:\d+(?:,\d+)*)'  # "1", "1,2"
         pattern_dict = collections.OrderedDict([
             (r'^Current progress - *(?P<cur>\d+)% *, Total progress - *(?P<tot>\d+)% *' + re_eol, self.current_progress),
             (r'^MakeMKV v[^\n]+ started' + re_eol, True),
@@ -217,6 +218,7 @@ class MakemkvconSpawn(_exec_spawn):
             (r'^Operation successfully completed' + re_eol, True),
             (r'^Saving (?P<title_count>\d+) titles into directory (?P<dest_dir>[^\r\n]+)' + re_eol, self.saving_titles_count),
             (r'^Title #(?P<title_no>' + re_title_no + r') has length of (?P<length>\d+) seconds which is less than minimum title length of (?P<min_length>\d+) seconds and was therefore skipped' + re_eol, True),
+            (r'^Title (?P<title_no1>\d+) in VTS (?P<vts_no>\d+) is equal to title (?P<title_no2>\d+) and was skipped' + re_eol, True),
             (r'^Using direct disc access mode' + re_eol, True),
             (r'^Downloading latest SDF to (?P<dest_dir>[^\n]+) \.\.\.' + re_eol, True),
             (r'^Using LibreDrive mode \(v(?P<version>\d+) id=(?P<id>[0-9a-fA-F]+)\)' + re_eol, True),
@@ -243,10 +245,12 @@ class MakemkvconSpawn(_exec_spawn):
             (r'^Copy complete\. (?P<num_tiltes_saved>\d+) titles saved, (?P<num_tiltes_failed>\d+) failed\.' + re_eol, self.parse_titles_saved),
             (r'^Track #(?P<track_no>\d+) turned out to be empty and was removed from output file' + re_eol, self.generic_warning),
             (r'^Forced subtitles track #(?P<track_no>\d+) turned out to be empty and was removed from output file' + re_eol, self.generic_warning),
-            (r'^Title (?P<title_no1>\d+) in VTS (?P<vts_no>\d+) is equal to title (?P<title_no2>\d+) and was skipped' + re_eol, True),
             (r'^AV synchronization issues were found in file \'(?P<file_name>[^\n]+)\' \(title #(?P<title_no>' + re_title_no + r')\)' + re_eol, self.generic_warning),
-            (r'^AV sync issue in stream (?P<stream_no>\d+) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: audio gap - (?P<missing_frames>\d+) missing frame\(s\)' + re_eol, self.generic_warning),
-            (r'^AV sync issue in stream (?P<stream_no>\d+) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: encountered overlapping frame, audio skew is (?P<audio_skew>\S+)' + re_eol, self.generic_warning),
+            (r'^AV sync issue in stream (?P<stream_no>' + re_stream_no + ') at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: audio gap - (?P<missing_frames>\S+) missing frame\(s\)' + re_eol, self.generic_warning),
+            (r'^AV sync issue in stream (?P<stream_no>' + re_stream_no + ') at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: (?P<action>encountered overlapping frame|short audio gap was removed), audio skew is (?P<audio_skew>\S+)' + re_eol, self.generic_warning),
+            (r'^AV sync issue in stream (?P<stream_no>' + re_stream_no + ') at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: (?P<dropped_frames>\d+) frame\(s\) dropped to reduce audio skew to (?P<audio_skew>\S+)' + re_eol, self.generic_warning),
+            (r'^AV sync issue in stream (?P<stream_no>' + re_stream_no + ') at (?P<timestamp>\S+) *: (?P<num_frames>\d+) frame\(s\) dropped to reduce audio skew to (?P<audio_skew>\S+)' + re_eol, self.generic_warning),
+            (r'^Angle #(?P<angle_no>\d+) was added for title #(?P<title_no>' + re_title_no + ')' + re_eol, self.generic_info),
             (r'[^\n]*?' + re_eol, self.unknown_line),
             (pexpect.EOF, False),
         ])
