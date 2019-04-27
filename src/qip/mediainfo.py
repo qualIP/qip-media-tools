@@ -79,8 +79,8 @@ class Mediainfo(Executable):
                     v = re.sub(r' h *', 'h', v)
                     v = re.sub(r' min *', 'm', v)
                     v = re.sub(r' s *', 's', v)
-                    v = re.sub(r'(\d+)s(\d\d\d+) ms', r'\1.\2s', v)
-                    v = re.sub(r'^(\d\d\d+) ms', r'0.\1s', v)
+                    v = re.sub(r'(?P<s>\d+)s(?P<ms>\d{1,3}) ms', lambda m: '%d.%03d' % (int(m.group('s')), int(m.group('ms'))), v)
+                    v = re.sub(r'^(?P<ms>\d{1,3}) ms', lambda m: '0.%03d' % (int(m.group('ms')),), v)
                     v = str(Timestamp(v).seconds)
                 elif k in (
                     'Original frame rate',
