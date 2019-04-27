@@ -1171,11 +1171,11 @@ def action_mux(inputfile, in_tags):
                             if frame.stream_index == stream_index:
                                 break
                     if first_pts_time_per_stream[stream_index] == 0.0:
-                        app.log.warning('Correcting %s stream #%d start time to 0 based on first frame PTS', stream_codec_type, stream_index)
+                        app.log.warning('Correcting %s stream #%d start time %s to 0 based on first frame PTS', stream_codec_type, stream_index, stream_start_time)
                         stream_start_time = ffmpeg.Timestamp(0)
                 if stream_start_time and stream_codec_type == 'subtitle':
                     # ffmpeg estimates the start_time if it is low enough but the actual time indices will be correct
-                    app.log.warning('Correcting %s stream #%d start time to 0 based on experience', stream_codec_type, stream_index)
+                    app.log.warning('Correcting %s stream #%d start time %s to 0 based on experience', stream_codec_type, stream_index, stream_start_time)
                     stream_start_time = ffmpeg.Timestamp(0)
                 if stream_start_time:
                     app.log.warning('%s stream #%d start time is %s', stream_codec_type.title(), stream_index, stream_start_time)
@@ -1385,7 +1385,7 @@ def action_mux(inputfile, in_tags):
                             # In case initial frame is a I frame to be displayed after
                             # subqequent P or B frames, the start time will be
                             # incorrect.
-                            app.log.warning('Fixing first chapter start time rf %s to 0', v)
+                            app.log.warning('Fixing first chapter start time %s to 0', v)
                             if False:
                                 # mkvpropedit doesn't like unknown elements
                                 e.tag = 'orig_ChapterTimeStart'
@@ -2313,9 +2313,10 @@ def action_optimize(inputdir, in_tags):
                                 ]
                             do_spawn_cmd(cmd)
                         else:
-                            app.log.warn('Run OCR and save as SubRip (.srt) format: %s' % (
-                                byte_decode(dbg_exec_cmd(['winepath', '-w', os.path.join(inputdir, new_stream_file_name)])).strip(),
-                                ))
+                            if False:
+                                app.log.warning('Run OCR and save as SubRip (.srt) format: %s' % (
+                                    byte_decode(dbg_exec_cmd(['winepath', '-w', os.path.join(inputdir, new_stream_file_name)])).strip(),
+                                    ))
                             cmd = [
                                 'SubtitleEdit',
                                 os.path.join(inputdir, stream_file_name),
