@@ -209,7 +209,7 @@ class MakemkvconSpawn(_exec_spawn):
                 self.progress_bar.suffix = '%(makemkv_action_percent)d%% of %(makemkv_action)s, %(makemkv_operation_percent)d%% of %(makemkv_operation)s'
                 self.progress_bar.goto(self.progress_bar.makemkv_action_percent)
         re_eol = r'\r?\n'
-        re_title_no = r'(?:[0-9/]+|\d+\.m2ts)'  # "1", "1/0/1", "00040.m2ts"
+        re_title_no = r'(?:[0-9/]+|\d+\.m2ts|\d+\.mpls)'  # "1", "1/0/1", "00040.m2ts" "00081.mpls"
         re_stream_no = r'(?:\d+(?:,\d+)*)'  # "1", "1,2"
         pattern_dict = collections.OrderedDict([
             (r'^Current progress - *(?P<cur>\d+)% *, Total progress - *(?P<tot>\d+)% *' + re_eol, self.current_progress),
