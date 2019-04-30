@@ -44,6 +44,7 @@ def main():
     pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
     #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
     pgroup.add_argument('--save-temps', dest='save_temps', default=False, action='store_true', help='do not delete intermediate files')
+    pgroup.add_argument('--no-save-temps', dest='save_temps', default=argparse.SUPPRESS, action='store_false', help='delete intermediate files (default)')
     pgroup.add_argument('--format',
                         #default="wav",
                         required=True,

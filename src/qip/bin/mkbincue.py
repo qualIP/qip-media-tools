@@ -65,6 +65,7 @@ def main():
     pgroup.add_argument('--rebuild', default=False, action='store_true', help='rebuild tracks from best sectors if all else fails')
     pgroup.add_argument('--rebuild-unique-sectors', dest='rebuild_unique_sectors', default=False, action='store_true', help='rebuild tracks even from unique sectors')
     pgroup.add_argument('--save-temps', dest='save_temps', default=False, action='store_true', help='do not delete intermediate files')
+    pgroup.add_argument('--no-save-temps', dest='save_temps', default=argparse.SUPPRESS, action='store_false', help='delete intermediate files (default)')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
