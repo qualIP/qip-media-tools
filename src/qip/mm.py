@@ -1152,6 +1152,8 @@ class MediaTagEnum(enum.Enum):
     seasons = 'seasons'  # NUM  Set the number of seasons
     season_slash_seasons = 'season_slash_seasons'  # NUM  Set the season number (*from season[/seasons])
     episode = 'episode'  # NUM  Set the episode number (or list)
+    episodes = 'episodes'  # NUM  Set the number of episodes
+    episode_slash_episodes = 'episode_slash_episodes'  # NUM  Set the episode number (*from episode[/episodes])
 
     description = 'description'  # STR  Set the short description
     longdescription = 'longdescription'  # STR  Set the long description
@@ -1306,7 +1308,7 @@ def _tIntOrList(value):
     if type(value) is int:
         return (value,)
     if type(value) is str:
-        value = value.split()
+        value = value.replace(',', ' ').split()
     if isinstance(value, (tuple, list)):
         if not value:
             return None
@@ -1675,6 +1677,56 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     episode = propex(
         name='episode',
         type=(_tNullTag, _tIntOrList))
+
+    episodes = propex(
+        name='episodes',
+        type=(_tNullTag, int))
+
+    episode_slash_episodes = propex(
+        name='episode_slash_episodes',
+        type=(_tNullTag, _tIntOrList, _tReMatchGroups(r'^0*(?P<episode>\d+(?:,\d+)*)(?:(?: of |/)0*(?P<episodes>\d+))?')))
+
+    @episode_slash_episodes.getter
+    def episode_slash_episodes(self):
+        try:
+            episode = self.episode
+        except AttributeError:
+            raise AttributeError
+        if episode is None:
+            return None
+        value = ','.join(str(e for e in episode))
+        episodes = getattr(self, 'episodes', None)
+        if episodes is not None:
+            value += '/' + str(episodes)
+        return value
+
+    @episode_slash_episodes.setter
+    def episode_slash_episodes(self, value):
+        if value is None:
+            self.episode = None
+            self.episodes = None
+        elif isinstance(value, (int, str)):
+            self.episode = value
+            self.episodes = None
+        elif type(value) is tuple:
+            self.episode, self.episodes = value
+        else:
+            raise RuntimeError(value)
+
+    @episode_slash_episodes.deleter
+    def episode_slash_episodes(self):
+        try:
+            del self.episode
+        except AttributeError:
+            try:
+                del self.episodes
+            except AttributeError:
+                raise AttributeError
+        else:
+            try:
+                del self.episodes
+            except AttributeError:
+                pass
 
     compilation = propex(
         name='compilation',

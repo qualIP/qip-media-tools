@@ -448,7 +448,7 @@ def main():
     pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--tvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--season', dest='season_slash_seasons', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
-    pgroup.add_argument('--episode', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--episode', dest='episode_slash_episodes', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--compilation', '-K', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
@@ -834,6 +834,7 @@ def do_edit_tags(tags):
             MediaTagEnum.artist,
             MediaTagEnum.contenttype,
             MediaTagEnum.episode,
+            MediaTagEnum.episodes,
             MediaTagEnum.genre,
             MediaTagEnum.mediatype,
             MediaTagEnum.season,
