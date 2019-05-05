@@ -3,14 +3,16 @@ __all__ = [
         ]
 
 import codecs
+import configparser
 import functools
+import io
 import logging
 import os
 import re
+import shutil
 import sys
 import traceback
 import urllib
-import configparser
 
 from . import argparse
 
@@ -100,6 +102,7 @@ class App(object):
         self.init_logging(
                 level=logging_level,
                 )
+        self.init_terminal_size()
 
     def init_encoding(self):
         if False:
@@ -144,14 +147,23 @@ class App(object):
         parser_parents = []
         if allow_config_file:
             self.init_parser = argparse.ArgumentParser(
+                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                 description=description,
                 add_help=False
                 )
-            self.init_parser.add_argument("--config", "-c", dest='config_file', default=None, help="Specify config file", metavar="FILE")
-            self.init_parser.add_argument("--no-config", default=argparse.SUPPRESS, action='store_false', help="Disable config file")
+            self.init_parser.add_argument("--config", "-c", metavar="FILE",
+                                          dest='config_file',
+                                          default=self.default_config_file(),
+                                          type=argparse.FileType('r'),
+                                          help="Specify config file")
+            self.init_parser.add_argument("--no-config",
+                                          default=argparse.SUPPRESS,
+                                          action='store_false',
+                                          help="Disable config file")
             parser_parents.append(self.init_parser)
 
         self.parser = argparse.ArgumentParser(
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
             parents=parser_parents,
             fromfile_prefix_chars=fromfile_prefix_chars,
             prog=self.prog,
@@ -179,17 +191,27 @@ class App(object):
                     format=DEFAULT_ROOT_LOG_FORMAT,
                     **kwargs)
 
+    def init_terminal_size(self):
+        if ('COLUMNS' not in os.environ
+                or 'LINES' not in os.environ) \
+                and sys.stdout.isatty():
+            terminal_size = shutil.get_terminal_size()
+            os.environ.setdefault('COLUMNS', str(terminal_size.columns))
+            os.environ.setdefault('LINES', str(terminal_size.lines))
+
     def set_logging_level(self, level):
         logging.getLogger().setLevel(level)
         if HAVE_COLOREDLOGS:
             coloredlogs.set_level(level)
 
     def default_config_file(self):
-        config_home = os.environ.get('XDG_CONFIG_HOME', None) \
-            or os.path.expanduser('~/.config')
-        config_file = f'{config_home}/{self.prog}/config'
-        if not os.path.exists(config_file):
-            config_file = os.path.expanduser(f'~/.{self.prog}rc')
+        config_file = None
+        if self.prog:
+            config_home = os.environ.get('XDG_CONFIG_HOME', None) \
+                or os.path.expanduser('~/.config')
+            config_file = f'{config_home}/{self.prog}/config'
+            if not os.path.exists(config_file):
+                config_file = os.path.expanduser(f'~/.{self.prog}.conf')
         return config_file
 
     def parse_args(self, args=None, namespace=None):
@@ -211,11 +233,11 @@ class App(object):
             namespace, remaining_args = self.init_parser.parse_known_args(
                 args=remaining_args,
                 namespace=namespace)
-            if namespace.config_file is None:
-                config_file = self.default_config_file()
-                if config_file and os.path.exists(config_file):
-                    namespace.config_file = config_file
 
+            if namespace.config_file \
+                    and isinstance(namespace.config_file, str) \
+                    and not os.path.exists(namespace.config_file):
+                namespace.config_file = None
             if namespace.config_file:
                 self.read_config_file(namespace.config_file)
                 try:
@@ -237,6 +259,12 @@ class App(object):
                         else:
                             argument_values = [] if v is None else [v]
                             action(self.parser, namespace, argument_values, option_string)
+                if isinstance(namespace.config_file, io.IOBase):
+                    namespace.config_file.close()
+                    try:
+                        namespace.config_file = namespace.config_file.name
+                    except AttributeError:
+                        namespace.config_file = None
 
         namespace = self.parser.parse_args(
             args=config_args + remaining_args,
@@ -246,8 +274,13 @@ class App(object):
         return self.args
 
     def read_config_file(self, config_file):
-        self.config_parser = configparser.SafeConfigParser(allow_no_value=True)
-        self.config_parser.read([config_file])
+        self.config_parser = configparser.ConfigParser(allow_no_value=True)
+        if isinstance(config_file, io.IOBase):
+            self.config_parser.read_file(config_file)
+        elif isinstance(config_file, str):
+            self.config_parser.read([str(config_file)])
+        else:
+            raise TypeError(config_file)
 
     @property
     def user_agent(self):

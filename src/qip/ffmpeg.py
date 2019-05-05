@@ -52,7 +52,7 @@ class Timestamp(_BaseTimestamp):
             raise ValueError(value)
         super().__init__(seconds)
 
-    def __str__(self):
+    def canonical_str(self):
         s = self.seconds
         if s < 0.0:
             sign = '-'

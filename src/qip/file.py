@@ -353,6 +353,14 @@ class TempFile(File):
             os.close(fd)
         return tmpfile
 
+
+class ConfigFile(File):
+
+    _common_extensions = (
+        '.conf',
+    )
+
+
 def cache_url(url, cache_dict={}):
     assert isinstance(url, str)
     purl = urllib.parse.urlparse(url)

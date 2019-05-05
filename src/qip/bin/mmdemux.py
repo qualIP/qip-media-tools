@@ -77,6 +77,10 @@ from qip.threading import *
 from qip.utils import byte_decode, Ratio, round_half_away_from_zero
 import qip.mm
 import qip.utils
+Auto = qip.utils.Constants.Auto
+
+default_minlength_tvshow = qip.utils.Timestamp('20m')
+default_minlength_movie = qip.utils.Timestamp('60m')
 
 #map_RatioConverter = {
 #    Ratio("186:157"):
@@ -118,8 +122,8 @@ def isolang_or_None(v):
     return None if v == 'None' else isolang(v)
 
 def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
-    field_order = app.args.force_field_order
-    framerate = app.args.force_framerate
+    field_order = getattr(app.args, 'force_field_order', None)
+    framerate = getattr(app.args, 'force_framerate', None)
 
     video_frames = []
 
@@ -383,7 +387,7 @@ def main():
     pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
     pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
     pgroup.add_argument('--save-temps', dest='save_temps', default=False, action='store_true', help='do not delete intermediate files')
-    pgroup.add_argument('--no-save-temps', dest='save_temps', default=argparse.SUPPRESS, action='store_false', help='delete intermediate files (default)')
+    pgroup.add_argument('--no-save-temps', dest='save_temps', default=argparse.SUPPRESS, action='store_false', help='delete intermediate files')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
@@ -394,34 +398,34 @@ def main():
     pgroup.add_argument('--step', action='store_true', help='step mode')
 
     pgroup = app.parser.add_argument_group('Tools Control')
-    pgroup.add_argument('--track-extract-tool', dest='track_extract_tool', default=None, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
+    pgroup.add_argument('--track-extract-tool', dest='track_extract_tool', default=Auto, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
 
     pgroup = app.parser.add_argument_group('Ripping Control')
     pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
-    pgroup.add_argument('--minlength', default=None, type=qip.utils.Timestamp, help='minimum title length for ripping (default 60m (movie), 20m (tvshow))')
+    pgroup.add_argument('--minlength', default=Auto, type=qip.utils.Timestamp, help='minimum title length for ripping (default: ' + default_minlength_movie.friendly_str() + ' (movie), ' + default_minlength_tvshow.friendly_str() + ' (tvshow))')
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--crop', default=None, action='store_true', help='enable cropping video (default)')
+    xgroup.add_argument('--crop', default=Auto, action='store_true', help='enable cropping video')
     xgroup.add_argument('--no-crop', dest='crop', default=argparse.SUPPRESS, action='store_false', help='disable cropping video')
-    xgroup.add_argument('--crop-wh', dest="crop_wh", default=None, type=int, nargs=2, help='force cropping dimensions (centered)')
-    xgroup.add_argument('--crop-whlt', dest="crop_whlt", default=None, type=int, nargs=4, help='force cropping dimensions')
+    xgroup.add_argument('--crop-wh', dest="crop_wh", default=argparse.SUPPRESS, type=int, nargs=2, help='force cropping dimensions (centered)')
+    xgroup.add_argument('--crop-whlt', dest="crop_whlt", default=argparse.SUPPRESS, type=int, nargs=4, help='force cropping dimensions')
     pgroup.add_argument('--parallel-chapters', dest='parallel_chapters', default=False, action='store_true', help='enable per-chapter parallel processing (default)')
     pgroup.add_argument('--no-parallel-chapters', dest='parallel_chapters', default=argparse.SUPPRESS, action='store_false', help='disable per-chapter parallel processing')
     pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(300), help='cropdetect duration (seconds)')
     pgroup.add_argument('--video-language', '--vlang', dest='video_language', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
     pgroup.add_argument('--video-rate-control-mode', dest='video_rate_control_mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
-    pgroup.add_argument('--force-framerate', dest='force_framerate', default=None, type=FrameRate, help='Ignore heuristics and force framerate')
-    pgroup.add_argument('--force-field-order', dest='force_field_order', default=None, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
+    pgroup.add_argument('--force-framerate', dest='force_framerate', default=argparse.SUPPRESS, type=FrameRate, help='Ignore heuristics and force framerate')
+    pgroup.add_argument('--force-field-order', dest='force_field_order', default=argparse.SUPPRESS, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
     pgroup.add_argument('--video-analyze-duration', dest='video_analyze_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(60), help='video analysis duration (seconds)')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
-    pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=None, help='SubRip OCR matrix file')
+    pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=Auto, help='SubRip OCR matrix file')
     pgroup.add_argument('--external-subtitles', dest='external_subtitles', action='store_true', help='Keep unoptimized subtitles as external files')
     pgroup.add_argument('--no-external-subtitles', dest='external_subtitles', default=argparse.SUPPRESS, action='store_false', help='Do not keep unoptimized subtitles as external files')
 
     pgroup = app.parser.add_argument_group('Files')
-    pgroup.add_argument('--output', '-o', dest='output_file', default=None, help='specify the output (demuxed) file name')
+    pgroup.add_argument('--output', '-o', dest='output_file', default=Auto, help='specify the output (demuxed) file name')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     xgroup.add_argument('--webm', default=True, action='store_true', help='enable webm output format (default)')
@@ -461,7 +465,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Options')
     pgroup.add_argument('--eject', default=False, action='store_true', help='eject cdrom when done')
-    pgroup.add_argument('--project', default=None, help='project name')
+    pgroup.add_argument('--project', default=Auto, help='project name')
     pgroup.add_argument('--chain', action='store_true', help='chain hb->mux->optimize->demux')
     pgroup.add_argument('--cleanup', action='store_true', help='cleanup when done')
 
@@ -472,7 +476,7 @@ def main():
     pgroup.add_argument('--channels', type=int, default=argparse.SUPPRESS, help='force the number of audio channels')
 
     pgroup = app.parser.add_argument_group('Actions')
-    pgroup.add_argument('--rip', dest='rip_dir', help='directory to rip device to')
+    pgroup.add_argument('--rip', dest='rip_dir', nargs='+', default=(), help='directory to rip device to')
     pgroup.add_argument('--hb', dest='hb_files', nargs='+', default=(), help='files to run through HandBrake')
     pgroup.add_argument('--mux', dest='mux_files', nargs='+', default=(), help='files to mux')
     pgroup.add_argument('--update', dest='update_dirs', nargs='+', default=(), help='directories to update mux parameters for')
@@ -498,8 +502,8 @@ def main():
         reprlib.aRepr.maxdict = 100
 
     did_something = False
-    if app.args.rip_dir:
-        action_rip(app.args.rip_dir, app.args.device, in_tags=in_tags)
+    for rip_dir in  app.args.rip_dir:
+        action_rip(rip_dir, app.args.device, in_tags=in_tags)
         did_something = True
     for inputfile in getattr(app.args, 'hb_files', ()):
         action_hb(inputfile, in_tags=in_tags)
@@ -861,11 +865,11 @@ def action_rip(rip_dir, device, in_tags):
         os.mkdir(rip_dir)
 
     minlength = app.args.minlength
-    if minlength is None:
+    if minlength is Auto:
         if in_tags.type == 'tvshow':
-            minlength = qip.utils.Timestamp('20m')
+            minlength = default_minlength_tvshow
         else:
-            minlength = qip.utils.Timestamp('60m')
+            minlength = default_minlength_movie
 
     from qip.makemkv import makemkvcon
     try:
@@ -900,7 +904,7 @@ def action_rip(rip_dir, device, in_tags):
                 app.args.mux_files += (os.path.join(rip_dir, entry.name),)
 
 def pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
-    if app.args.force_field_order is not None:
+    if getattr(app.args, 'force_field_order', None) is not None:
         return app.args.force_field_order
 
     mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
@@ -941,7 +945,7 @@ def pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediai
 
 
 def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, *, field_order=None):
-    if app.args.force_framerate is not None:
+    if getattr(app.args, 'force_framerate', None) is not None:
         return app.args.force_framerate
 
     ffprobe_r_framerate = FrameRate(ffprobe_stream_json['r_frame_rate'])
@@ -1083,7 +1087,8 @@ def action_mux(inputfile, in_tags):
     app.log.info('Muxing %s...', inputfile)
     inputfile = SoundFile.new_by_file_name(inputfile)
     inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
-    outputdir = app.args.project or "%s" % (inputfile_base,)
+    outputdir = "%s" % (inputfile_base,) \
+        if app.args.project is Auto else app.args.project
     if app.args.chain:
         app.args.optimize_dirs += (outputdir,)
 
@@ -1253,7 +1258,7 @@ def action_mux(inputfile, in_tags):
                             os.path.join(outputdir, output_track_file_name),
                         )]
                 elif app.args.track_extract_tool == 'ffmpeg' \
-                    or (app.args.track_extract_tool is None
+                    or (app.args.track_extract_tool is Auto
                         and stream_codec_name in (
                             'vp8',
                             'vp9',
@@ -1284,7 +1289,7 @@ def action_mux(inputfile, in_tags):
                         ffmpeg(*ffmpeg_args,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
-                elif app.args.track_extract_tool in ('mkvextract', None):
+                elif app.args.track_extract_tool in ('mkvextract', Auto):
                     app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
                     mkvextract_tracks_args += [
                         '%d:%s' % (
@@ -1765,18 +1770,18 @@ def action_optimize(inputdir, in_tags):
                 else:
                     raise NotImplementedError(field_order)
 
-                if app.args.crop in (None, True):
-                    if app.args.crop_wh:
+                if app.args.crop in (Auto, True):
+                    if getattr(app.args, 'crop_wh', None) is not None:
                         w, h = app.args.crop_wh
                         l, t = (mediainfo_width - w) // 2, (mediainfo_height - h) // 2
                         stream_crop_whlt = w, h, l, t
                         stream_crop = True
-                    elif app.args.crop_whlt:
+                    elif getattr(app.args, 'crop_whlt', None) is not None:
                         stream_crop_whlt = app.args.crop_whlt
                         stream_crop = True
                     else:
                         stream_crop_whlt = None
-                        stream_crop = getattr(app.args, 'crop', None)
+                        stream_crop = app.args.crop
                     if stream_crop is not False:
                         if not stream_crop_whlt and 'original_crop' not in stream_dict:
                             stream_crop_whlt = ffmpeg.cropdetect(
@@ -1798,7 +1803,7 @@ def action_optimize(inputdir, in_tags):
                             storage_aspect_ratio = Ratio(w, h)
                             pixel_aspect_ratio = Ratio(stream_dict['pixel_aspect_ratio'])  # invariable
                             display_aspect_ratio = pixel_aspect_ratio * storage_aspect_ratio
-                            if stream_crop is None:
+                            if stream_crop is Auto:
                                 if display_aspect_ratio in common_aspect_ratios:
                                     app.log.warning('Crop detection result accepted: --crop-whlt %s w/ common DAR %s',
                                                     ' '.join(str(e) for e in stream_crop_whlt),
@@ -2261,7 +2266,7 @@ def action_optimize(inputdir, in_tags):
 
                 if False:
                     subrip_matrix = app.args.subrip_matrix
-                    if not subrip_matrix:
+                    if subrip_matrix is Auto:
                         subrip_matrix_dir = os.path.expanduser('~/.cache/SubRip/Matrices')
                         if not app.args.dry_run:
                             os.makedirs(subrip_matrix_dir, exist_ok=True)
@@ -2592,7 +2597,8 @@ def action_demux(inputdir, in_tags):
     webm = app.args.webm
 
     output_file = MkvFile(
-            app.args.output_file or '%s.demux%s' % (inputdir.rstrip('/\\'), '.webm' if webm else '.mkv'))
+        '%s.demux%s' % (inputdir.rstrip('/\\'), '.webm' if webm else '.mkv')
+        if app.args.output_file is Auto else app.args.output_file)
     attachment_counts = collections.defaultdict(lambda: 0)
 
     external_stream_file_names_seen = set()

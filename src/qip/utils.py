@@ -1,4 +1,5 @@
 __all__ = (
+    'Constants',
     'KwVarsObject',
     'TypedKeyDict',
     'TypedValueDict',
@@ -13,15 +14,26 @@ __all__ = (
     'round_half_away_from_zero',
 )
 
-import math
+from decimal import Decimal
+from fractions import Fraction
 import abc
 import collections
-from fractions import Fraction
-from decimal import Decimal
+import enum
 import functools
-import re
 import logging
+import math
+import re
 log = logging.getLogger(__name__)
+
+
+class Constants(enum.Enum):
+    Auto = 1
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.name
 
 
 class KwVarsObject(object):
@@ -77,7 +89,7 @@ class Timestamp(object):
     def __bool__(self):
         return bool(self.seconds)
 
-    def __str__(self):
+    def canonical_str(self):
         s = self.seconds
         if s < 0.0:
             sign = '-'
@@ -88,10 +100,15 @@ class Timestamp(object):
         s = s - m * 60
         h = m // 60
         m = m - h * 60
+        s = '%.9f' % (s,)
         if h:
-            string = '%dh%02dm%s' % (h, m, ('%.9f' % (s + 100.0,))[1:])
+            if s[1] == '.':
+                s = '0'+ s
+            string = '%dh%02dm%s' % (h, m, s)
         elif m:
-            string = '%dm%s' % (m, ('%.9f' % (s + 100.0,))[1:])
+            if s[1] == '.':
+                s = '0'+ s
+            string = '%dm%s' % (m, s)
         else:
             string = '%.9f' % (s,)
         if string.endswith('000'):
@@ -100,6 +117,42 @@ class Timestamp(object):
             else:
                 string = string[:-3]
         return sign + string + 's'
+
+    def friendly_str(self):
+        s = self.seconds
+        if s < 0.0:
+            sign = '-'
+            s = -s
+        else:
+            sign = ''
+        m = s // 60
+        s = s - m * 60
+        h = m // 60
+        m = m - h * 60
+        string = ''
+        if h:
+            string += '%dh' % (h,)
+        if m:
+            string += '%dm' % (m,)
+        if s:
+            s = '%.9f' % (s,)
+            if string and s[1] == '.':
+                s = '0' + s
+            if s.endswith('000'):
+                if s.endswith('000000'):
+                    if s.endswith('.000000000'):
+                        s = s[:-10]
+                    else:
+                        s = s[:-6]
+                else:
+                    s = s[:-3]
+            string += '%ss' % (s,)
+        if not string:
+            string = '0'
+        return sign + string
+
+    def __str__(self):
+        return self.canonical_str()
 
     def __repr__(self):
         return '%s(%r)' % (self.__class__.__name__, str(self))
