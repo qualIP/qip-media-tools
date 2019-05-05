@@ -2556,6 +2556,30 @@ def action_extract_music(inputdir, in_tags):
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
+def external_subtitle_file_name(output_file, stream_file_name, stream_dict):
+    # stream_file_name = stream_dict['file_name']
+    stream_language = isolang(stream_dict.get('language', 'und'))
+    external_stream_file_name = my_splitext(output_file.file_name)[0]
+    external_stream_file_name += "." + stream_language.code3
+    if stream_dict['disposition'].get('hearing_impaired', None):
+        external_stream_file_name += '.hearing_impaired'
+    if stream_dict['disposition'].get('visual_impaired', None):
+        external_stream_file_name += '.visual_impaired'
+    if stream_dict['disposition'].get('karaoke', None):
+        external_stream_file_name += '.karaoke'
+    if stream_dict['disposition'].get('dub', None):
+        external_stream_file_name += '.dub'
+    if stream_dict['disposition'].get('lyrics', None):
+        external_stream_file_name += '.lyrics'
+    if stream_dict['disposition'].get('comment', None):
+        external_stream_file_name += '.comment'
+    if stream_dict['disposition'].get('forced', None):
+        external_stream_file_name += '.forced'
+    elif stream_dict['disposition'].get('closed_caption', None):
+        external_stream_file_name += '.cc'
+    external_stream_file_name += my_splitext(stream_file_name)[1]
+    return external_stream_file_name
+
 def action_demux(inputdir, in_tags):
     app.log.info('Demuxing %s...', inputdir)
     outputdir = inputdir
@@ -2601,8 +2625,14 @@ def action_demux(inputdir, in_tags):
             stream_characteristics = (stream_codec_type, stream_language)
             if stream_codec_type == 'subtitle':
                 stream_characteristics += (
-                    'forced' if stream_dict['disposition'].get('forced', None) else '',
                     'hearing_impaired' if stream_dict['disposition'].get('hearing_impaired', None) else '',
+                    'visual_impaired' if stream_dict['disposition'].get('visual_impaired', None) else '',
+                    'karaoke' if stream_dict['disposition'].get('karaoke', None) else '',
+                    'dub' if stream_dict['disposition'].get('dub', None) else '',
+                    'lyrics' if stream_dict['disposition'].get('lyrics', None) else '',
+                    'comment' if stream_dict['disposition'].get('comment', None) else '',
+                    'forced' if stream_dict['disposition'].get('forced', None) else '',
+                    'closed_caption' if stream_dict['disposition'].get('closed_caption', None) else '',
                 )
             if stream_characteristics in stream_characteristics_seen:
                 raise ValueError(f'Stream #{stream_index} characteristics already seen: {stream_characteristics!r}')
@@ -2613,12 +2643,10 @@ def action_demux(inputdir, in_tags):
                     if my_splitext(stream_dict['file_name'])[1] == '.sub':
                         stream_file_names.append(my_splitext(stream_file_name)[0] + '.idx')
                     for stream_file_name in stream_file_names:
-                        external_stream_file_name = '{base}{language}{forced}{ext}'.format(
-                            base=my_splitext(output_file.file_name)[0],
-                            language='.%s' % (stream_language.code3,),
-                            forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
-                            ext=my_splitext(stream_file_name)[1],
-                        )
+                        external_stream_file_name = external_subtitle_file_name(
+                            output_file=output_file,
+                            stream_file_name=stream_file_name,
+                            stream_dict=stream_dict)
                         app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
                         if external_stream_file_name in external_stream_file_names_seen:
                             raise ValueError(f'Stream {stream_index} External subtitle file already created: {external_stream_file_name}')
@@ -2764,12 +2792,20 @@ def action_demux(inputdir, in_tags):
             stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             stream_codec_type = stream_dict['codec_type']
             stream_language = isolang(stream_dict.get('language', 'und'))
+            stream_title = stream_dict.get('title', None)
             stream_characteristics = (stream_codec_type, stream_language)
             if stream_codec_type == 'subtitle':
                 stream_characteristics += (
                     'forced' if stream_dict['disposition'].get('forced', None) else '',
                     'hearing_impaired' if stream_dict['disposition'].get('hearing_impaired', None) else '',
                 )
+            if stream_codec_type == 'audio':
+                if stream_dict['disposition'].get('comment', None):
+                    if stream_title is None:
+                        stream_title = 'Commentary'
+                    stream_characteristics += (
+                        ('comment', stream_title),
+                    )
             if stream_codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_characteristics += ('external',)
@@ -2777,12 +2813,10 @@ def action_demux(inputdir, in_tags):
                     if my_splitext(stream_dict['file_name'])[1] == '.sub':
                         stream_file_names.append(my_splitext(stream_file_name)[0] + '.idx')
                     for stream_file_name in stream_file_names:
-                        external_stream_file_name = '{base}{language}{forced}{ext}'.format(
-                            base=my_splitext(str(output_file))[0],
-                            language='.%s' % (isolang(stream_dict['language']).code3,),
-                            forced='.forced' if stream_dict['disposition'].get('forced', None) else '',
-                            ext=my_splitext(stream_file_name)[1],
-                        )
+                        external_stream_file_name = external_subtitle_file_name(
+                            output_file=output_file,
+                            stream_file_name=stream_file_name,
+                            stream_dict=stream_dict)
                         app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
                         if external_stream_file_name in external_stream_file_names_seen:
                             raise ValueError(f'Stream {stream_index} External subtitle file already created: {external_stream_file_name}')
@@ -2824,6 +2858,10 @@ def action_demux(inputdir, in_tags):
             new_stream_index += 1
             disposition_flags = []
             for k, v in stream_dict['disposition'].items():
+                if k in (
+                        'closed_caption',
+                ):
+                    continue
                 if v:
                     disposition_flags.append(k)
             ffmpeg_output_args += [
@@ -2833,6 +2871,8 @@ def action_demux(inputdir, in_tags):
             stream_language = isolang(stream_dict.get('language', 'und'))
             if stream_language is not isolang('und'):
                 ffmpeg_output_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (stream_language.code3,),]
+            if stream_title:
+                ffmpeg_output_args += ['-metadata:s:%d' % (new_stream_index,), 'title=%s' % (stream_title,),]
             display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
             if display_aspect_ratio:
                 ffmpeg_output_args += ['-aspect:%d' % (new_stream_index,), display_aspect_ratio]
