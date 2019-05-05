@@ -1434,7 +1434,6 @@ def load_mux_dict(input_mux_file_name, in_tags):
         if not isinstance(mux_tags, AlbumTags):
             mux_dict['tags'] = mux_tags = AlbumTags(mux_tags)
         mux_tags.update(in_tags)
-    app.log.debug('1:mux_tags.keys(): %r', set(mux_tags.keys()))
     return mux_dict
 
 def action_update(inputdir, in_tags):
