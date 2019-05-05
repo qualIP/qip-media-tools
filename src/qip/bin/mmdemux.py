@@ -418,6 +418,7 @@ def main():
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', dest='subrip_matrix', default=None, help='SubRip OCR matrix file')
     pgroup.add_argument('--external-subtitles', dest='external_subtitles', action='store_true', help='Keep unoptimized subtitles as external files')
+    pgroup.add_argument('--no-external-subtitles', dest='external_subtitles', default=argparse.SUPPRESS, action='store_false', help='Do not keep unoptimized subtitles as external files')
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='output_file', default=None, help='specify the output (demuxed) file name')
