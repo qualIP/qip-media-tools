@@ -2892,12 +2892,15 @@ def action_demux(inputdir, in_tags):
                 if stream_file_ext in ('.vp9', '.vp9.ivf',):
                     # ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
                     tmp_stream_file_name = stream_file_name + '.mkv'
-                    ffmpeg(*[
-                        '-i', os.path.join(inputdir, stream_file_name),
-                        '-codec', 'copy',
-                        '-y',
-                        os.path.join(inputdir, tmp_stream_file_name),
-                        ])
+                    ffmpeg(
+                        *[
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-codec', 'copy',
+                            os.path.join(inputdir, tmp_stream_file_name),
+                        ],
+                        dry_run=app.args.dry_run,
+                        y=True,  # TODO temp file
+                    )
                     stream_file_name = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 elif stream_file_ext.endswith('.mkv'):
