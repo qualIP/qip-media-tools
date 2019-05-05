@@ -1805,10 +1805,12 @@ def action_optimize(inputdir, in_tags):
                                                     ' '.join(str(e) for e in stream_crop_whlt),
                                                     display_aspect_ratio)
                                 else:
+                                    raise RuntimeError('Crop detection! --crop or --no-crop or --crop-whlt %s w/ DAR %s' % (
+                                                  ' '.join(str(e) for e in stream_crop_whlt),
+                                                  display_aspect_ratio))
                                     app.log.error('Crop detection! --crop or --no-crop or --crop-whlt %s w/ DAR %s',
                                                   ' '.join(str(e) for e in stream_crop_whlt),
                                                   display_aspect_ratio)
-                                    raise RuntimeError
                             stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
 
                 if video_filter_specs:
