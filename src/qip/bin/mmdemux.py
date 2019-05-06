@@ -790,7 +790,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
     name_scan_str = os.path.basename(inputfile_base)
     name_scan_str = re.sub(r'_t\d+$', '', name_scan_str)
     m = (
-            re.match(r'^(?P<tvshow>.+) S(?P<season>\d\d)(?P<str_episodes>(?:E\d\d)+) (?P<title>.+)$', name_scan_str)
+            re.match(r'^(?P<tvshow>.+) S(?P<season>\d+)E(?P<str_episodes>\d+(?:E\d+)*) (?P<title>.+)$', name_scan_str)
          or re.match(r'^(?P<title>.+)$', name_scan_str)
         )
     if m:
