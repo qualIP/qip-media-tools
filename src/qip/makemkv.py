@@ -252,6 +252,7 @@ class MakemkvconSpawn(_exec_spawn):
             (r'^AV sync issue in stream (?P<stream_no>' + re_stream_no + ') at (?P<timestamp>\S+) *: (?P<num_frames>\d+) frame\(?s?\)? dropped to reduce audio skew to (?P<audio_skew>\S+)' + re_eol, self.generic_warning),
             (r'^AV sync issue in stream (?P<stream_no>' + re_stream_no + ') at (?P<timestamp>\S+) *: video stream has (?P<num_frames>\d+) frame\(?s?\)? with invalid timecodes' + re_eol, self.generic_warning),
             (r'^Angle #(?P<angle_no>\d+) was added for title #(?P<title_no>' + re_title_no + ')' + re_eol, self.generic_info),
+            (r'^Calculated BUP offset for VTS #(?P<vts_no>\d+) does not match one in IFO header\.' + re_eol, self.generic_warning),
             (r'[^\n]*?' + re_eol, self.unknown_line),
             (pexpect.EOF, False),
         ])
