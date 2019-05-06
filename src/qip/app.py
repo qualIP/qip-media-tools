@@ -153,7 +153,7 @@ class App(object):
                 )
             self.init_parser.add_argument("--config", "-c", metavar="FILE",
                                           dest='config_file',
-                                          default=self.default_config_file(),
+                                          default=argparse.DefaultStringWrapper(self.default_config_file()),
                                           type=argparse.FileType('r'),
                                           help="Specify config file")
             self.init_parser.add_argument("--no-config",
@@ -205,14 +205,18 @@ class App(object):
             coloredlogs.set_level(level)
 
     def default_config_file(self):
+        if not self.prog:
+            return None
         config_file = None
-        if self.prog:
-            config_home = os.environ.get('XDG_CONFIG_HOME', None) \
-                or os.path.expanduser('~/.config')
-            config_file = f'{config_home}/{self.prog}/config'
-            if not os.path.exists(config_file):
-                config_file = os.path.expanduser(f'~/.{self.prog}.conf')
-        return config_file
+        config_home = os.environ.get('XDG_CONFIG_HOME', None) \
+            or os.path.expanduser('~/.config')
+        config_file1 = f'{config_home}/{self.prog}/config'
+        if os.path.exists(config_file1):
+            return config_file1
+        config_file2 = os.path.expanduser(f'~/.{self.prog}.conf')
+        if os.path.exists(config_file2):
+            return config_file2
+        return config_file1  # The default that doesn't exist
 
     def parse_args(self, args=None, namespace=None):
         if HAVE_ARGCOMPLETE:

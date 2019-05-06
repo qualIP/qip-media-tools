@@ -175,7 +175,11 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
             namespace = Namespace()
         if process_config_file:
             namespace = self.process_config_file_args(args, namespace)
-        return super().parse_known_args(args=args, namespace=namespace)
+        args, argv = super().parse_known_args(args=args, namespace=namespace)
+        for k, v in args.__dict__.items():
+            if isinstance(v, DefaultStringWrapper):
+                setattr(args, k, str(v))
+        return args, argv
 
     @trace
     def process_config_file_args(self, args, namespace):
@@ -228,5 +232,17 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
 
         # return the modified argument list
         return new_arg_strings
+
+class DefaultStringWrapper(object):
+
+    def __init__(self, str):
+        self.str = str
+        super().__init__()
+
+    def __str__(self):
+        return self.str
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.str!r})'
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
