@@ -110,7 +110,7 @@ class Timestamp(object):
                 s = '0'+ s
             string = '%dm%s' % (m, s)
         else:
-            string = '%.9f' % (s,)
+            string = s
         if string.endswith('000'):
             if string.endswith('000000'):
                 string = string[:-6]
