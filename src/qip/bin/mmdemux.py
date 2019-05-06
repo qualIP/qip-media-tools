@@ -1141,6 +1141,7 @@ def action_mux(inputfile, in_tags):
         mkvextract_tracks_args = []
         mkvextract_attachments_args = []
 
+        stream_dict_cache = []
         attachment_index = 0  # First attachment is index 1
         for stream_dict in ffprobe_dict['streams']:
             stream_out_dict = {}
@@ -1300,6 +1301,10 @@ def action_mux(inputfile, in_tags):
                 else:
                     raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
 
+                stream_dict_cache .append({
+                    'stream_dict': stream_out_dict,
+                    'file': File.new_by_file_name(os.path.join(outputdir, output_track_file_name)),
+                })
                 mux_dict['streams'].append(stream_out_dict)
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
@@ -1315,6 +1320,36 @@ def action_mux(inputfile, in_tags):
                 cmd = [
                     'mkvextract', 'attachments', inputfile.file_name,
                     ] + mkvextract_attachments_args
+
+        # Detect duplicates
+        if not app.args.dry_run:
+            for cache_dict_i, cache_dict1 in enumerate(stream_dict_cache):
+                stream_dict1 = cache_dict1['stream_dict']
+                if stream_dict1.get('skip', False):
+                    continue
+                stream_codec_type1 = stream_dict1['codec_type']
+                stream_language1 = isolang(stream_dict1.get('language', 'und'))
+                stream_file1 = cache_dict1['file']
+                for cache_dict2 in stream_dict_cache[cache_dict_i + 1:]:
+                    stream_dict2 = cache_dict2['stream_dict']
+                    if stream_dict2.get('skip', False):
+                        continue
+                    stream_codec_type2 = stream_dict2['codec_type']
+                    if stream_codec_type2 != stream_codec_type1:
+                        continue
+                    stream_language2 = isolang(stream_dict2.get('language', 'und'))
+                    if stream_language2 != stream_language1:
+                        continue
+                    stream_file2 = cache_dict2['file']
+                    if stream_file2.getsize() != stream_file1.getsize():
+                        continue
+                    if stream_file2.md5.hexdigest() != stream_file1.md5.hexdigest():
+                        continue
+                    app.log.warning('%s identical to %s; Marking as skip',
+                                    stream_dict2['file_name'],
+                                    stream_dict1['file_name'],
+                                    )
+                    stream_dict2['skip'] = True
 
         # Pre-stream post-processing
         if not app.args.dry_run:
