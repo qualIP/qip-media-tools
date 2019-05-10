@@ -461,7 +461,7 @@ class MatroskaFile(MediaFile):
                 log.debug(f'tag_info = %r', tag_info)
                 break
             else:
-                raise NotImplementedError(f'Tag not supported in Matroska: {tag}')
+                raise NotImplementedError(f'Tag not supported in Matroska w/ type {self.deduce_type()}: {tag}')
 
             if tag_info.TargetTypeValue is None:
                 tag_info = tag_info._replace(
