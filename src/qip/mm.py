@@ -1367,17 +1367,24 @@ class ContentType(enum.Enum):
     # https://matroska.org/technical/specs/tagging/index.html
     # http://wiki.webmproject.org/webm-metadata/global-metadata
     # https://support.plex.tv/articles/205568377-adding-local-artist-and-music-videos/
-    behind_the_scenes = 'Behind The Scenes'
+    # https://support.plex.tv/articles/200220677-local-media-assets-movies/
+    behind_the_scenes = 'Behind The Scenes'  # movie, artist video
     cartoon = 'Cartoon'
-    concert = 'Concert Performance'
+    concert = 'Concert Performance'  # artist video
+    deleted = 'Deleted'  # movie
     documentary = 'Documentary'
-    feature_film = 'Feature Film'
-    interview = 'Artist Interview'
-    live_music_video = 'Live Music Video'
-    lyrics_music_video = 'Lyrics Music Video'
-    music = 'Music'
-    music_video = 'Music Video'
+    feature_film = 'Feature Film'  # movie (default)
+    featurette = 'Featurette'  # movie
+    interview = 'Interview'  # movie, artist video
+    live = 'Live'  # artist video
+    lyrics = 'Lyrics'  # artist video, music video
+    music = 'Music'  # music (default)
+    other = 'Other'  # movie
+    scene = 'Scene'  # movie
+    short = 'Short'  # movie
     sound_fx = 'Sound FX'
+    trailer = 'Trailer'  # movie
+    video = 'Video'  # artist video (default), music video (default)
 
     def __hash__(self):
         return hash(id(self))
@@ -1401,8 +1408,6 @@ for _e in ContentType:
     ContentType._value2member_map_[_e.value.lower()] = _e
     ContentType._value2member_map_[_e.name.lower()] = _e
     ContentType._value2member_map_[_e.name.lower().replace('_', '')] = _e
-ContentType._value2member_map_['live'] = ContentType.live_music_video
-ContentType._value2member_map_['lyrics'] = ContentType.lyrics_music_video
 ContentType._value2member_map_['sfx'] = ContentType.sound_fx
 
 # }}}
