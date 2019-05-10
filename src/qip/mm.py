@@ -1463,7 +1463,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     disk_slash_disks = propex(
         name='disk_slash_disks',
-        type=(_tNullTag, int, _tReMatchGroups(r'^0*(?P<disk>\d+)(?:(?: of |/)0*(?P<disks>\d+))?')))
+        type=(_tNullTag,
+              _tReMatchGroups(r'^(\d+|=|)(?:(?: +of +|/)(\d+|=|))?'),
+              ))
 
     @disk_slash_disks.getter
     def disk_slash_disks(self):
@@ -1482,15 +1484,20 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     @disk_slash_disks.setter
     def disk_slash_disks(self, value):
         if value is None:
+            value = ('', '')
+        v1, v2 = value
+        if v1 == '=':
+            pass
+        elif v1 == '':
             self.disk = None
-            self.disks = None
-        elif type(value) is int:
-            self.disk = value
-            self.disks = None
-        elif type(value) is tuple:
-            self.disk, self.disks = value
         else:
-            raise RuntimeError(value)
+            self.disk = int(v1)
+        if v2 == '=':
+            pass
+        elif v2 == '':
+            self.disk = None
+        else:
+            self.disk = int(v2)
 
     @disk_slash_disks.deleter
     def disk_slash_disks(self):
@@ -1513,7 +1520,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     track_slash_tracks = propex(
         name='track_slash_tracks',
-        type=(_tNullTag, int, _tReMatchGroups(r'^0*(?P<track>\d+)(?:(?: of |/)0*(?P<tracks>\d+))?')))
+        type=(_tNullTag,
+              _tReMatchGroups(r'^(\d+|=|)(?:(?: +of +|/)(\d+|=|))?'),
+              ))
 
     @track_slash_tracks.getter
     def track_slash_tracks(self):
@@ -1532,15 +1541,20 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     @track_slash_tracks.setter
     def track_slash_tracks(self, value):
         if value is None:
+            value = ('', '')
+        v1, v2 = value
+        if v1 == '=':
+            pass
+        elif v1 == '':
             self.track = None
-            self.tracks = None
-        elif type(value) is int:
-            self.track = value
-            self.tracks = None
-        elif type(value) is tuple:
-            self.track, self.tracks = value
         else:
-            raise RuntimeError(value)
+            self.track = int(v1)
+        if v2 == '=':
+            pass
+        elif v2 == '':
+            self.track = None
+        else:
+            self.track = int(v2)
 
     @track_slash_tracks.deleter
     def track_slash_tracks(self):
@@ -1567,7 +1581,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     part_slash_parts = propex(
         name='part_slash_parts',
-        type=(_tNullTag, int, _tReMatchGroups(r'^0*(?P<part>\d+)(?:(?: of |/)0*(?P<parts>\d+))?')))
+        type=(_tNullTag,
+              _tReMatchGroups(r'^(\d+|=|)(?:(?: +of +|/)(\d+|=|))?'),
+              ))
 
     @part_slash_parts.getter
     def part_slash_parts(self):
@@ -1586,15 +1602,20 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     @part_slash_parts.setter
     def part_slash_parts(self, value):
         if value is None:
+            value = ('', '')
+        v1, v2 = value
+        if v1 == '=':
+            pass
+        elif v1 == '':
             self.part = None
-            self.parts = None
-        elif type(value) is int:
-            self.part = value
-            self.parts = None
-        elif type(value) is tuple:
-            self.part, self.parts = value
         else:
-            raise RuntimeError(value)
+            self.part = int(v1)
+        if v2 == '=':
+            pass
+        elif v2 == '':
+            self.part = None
+        else:
+            self.part = int(v2)
 
     @part_slash_parts.deleter
     def part_slash_parts(self):
@@ -1635,7 +1656,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     season_slash_seasons = propex(
         name='season_slash_seasons',
-        type=(_tNullTag, int, _tReMatchGroups(r'^0*(?P<season>\d+)(?:(?: of |/)0*(?P<seasons>\d+))?')))
+        type=(_tNullTag,
+              _tReMatchGroups(r'^(\d+|=|)(?:(?: +of +|/)(\d+|=|))?'),
+              ))
 
     @season_slash_seasons.getter
     def season_slash_seasons(self):
@@ -1654,15 +1677,20 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     @season_slash_seasons.setter
     def season_slash_seasons(self, value):
         if value is None:
+            value = ('', '')
+        v1, v2 = value
+        if v1 == '=':
+            pass
+        elif v1 == '':
             self.season = None
-            self.seasons = None
-        elif type(value) is int:
-            self.season = value
-            self.seasons = None
-        elif type(value) is tuple:
-            self.season, self.seasons = value
         else:
-            raise RuntimeError(value)
+            self.season = int(v1)
+        if v2 == '=':
+            pass
+        elif v2 == '':
+            self.season = None
+        else:
+            self.season = int(v2)
 
     @season_slash_seasons.deleter
     def season_slash_seasons(self):
@@ -1689,7 +1717,10 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     episode_slash_episodes = propex(
         name='episode_slash_episodes',
-        type=(_tNullTag, _tIntOrList, _tReMatchGroups(r'^0*(?P<episode>\d+(?:,\d+)*)(?:(?: of |/)0*(?P<episodes>\d+))?')))
+        type=(_tNullTag,
+              _tReMatchGroups(r'^(\d+(?:,\d+)*|=|)(?:(?: +of +|/)(\d+|=|))?'),
+              _tReMatchGroups(r'^(\d+(?: \d+)+)(?:(?: +of +|/)(\d+|=|))?'),
+              ))
 
     @episode_slash_episodes.getter
     def episode_slash_episodes(self):
@@ -1708,15 +1739,20 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     @episode_slash_episodes.setter
     def episode_slash_episodes(self, value):
         if value is None:
+            value = ('', '')
+        v1, v2 = value
+        if v1 == '=':
+            pass
+        elif v1 == '':
             self.episode = None
-            self.episodes = None
-        elif isinstance(value, (int, str)):
-            self.episode = value
-            self.episodes = None
-        elif type(value) is tuple:
-            self.episode, self.episodes = value
         else:
-            raise RuntimeError(value)
+            self.episode = _tIntOrList(v1)
+        if v2 == '=':
+            pass
+        elif v2 == '':
+            self.episode = None
+        else:
+            self.episode = int(v2)
 
     @episode_slash_episodes.deleter
     def episode_slash_episodes(self):
