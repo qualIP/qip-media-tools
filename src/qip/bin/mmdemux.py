@@ -859,6 +859,7 @@ def do_edit_tags(tags):
 
 def action_rip(rip_dir, device, in_tags):
     device = os.path.realpath(device)  # makemkv is picky!
+    app.log.info('Ripping %s from %s...', rip_dir, device)
 
     if app.args.dry_run:
         app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', rip_dir]))
@@ -887,6 +888,8 @@ def action_rip(rip_dir, device, in_tags):
                 os.rmdir(rip_dir)
             except OSError:
                 pass
+            else:
+                app.log.info('Ripping failed; Removed %s.', rip_dir)
         raise
 
     if app.args.eject:
