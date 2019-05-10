@@ -36,6 +36,8 @@ from qip.mm import *
 from qip.utils import byte_decode
 from qip.mm import MediaFile
 import qip.mm
+import qip.utils
+Auto = qip.utils.Constants.Auto
 
 # replace_html_entities {{{
 
@@ -57,7 +59,6 @@ def main():
             contact='jst@qualipsoft.com',
             )
 
-    # TODO app.parser.add_argument('--help', '-h', action='help')
     app.parser.add_argument('--version', '-V', action='version')
 
     pgroup = app.parser.add_argument_group('Program Control')
@@ -71,24 +72,53 @@ def main():
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
 
     pgroup.add_argument('--apply-suggestions', dest='apply_suggestions', default=False, action='store_true', help='apply suggestions')
-    pgroup.add_argument('--music', '--normal', dest='library_mode', default=None, action='store_const', const='normal', help='Normal (Music) mode (<albumartist>/<albumtitle>/<track>)')
-    pgroup.add_argument('--musicvideo', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='musicvideo', help='Music Video mode (Plex: <albumartist>/<albumartist>/<track> - <comment>-video; Emby: same as music)')
-    pgroup.add_argument('--movie', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='movie', help='Movie mode (<title>/<file>)')
-    pgroup.add_argument('--tvshow', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='tvshow', help='TV show mode (<title>/<file>)')
+
     pgroup.add_argument('--contenttype', help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
     pgroup.add_argument('--app', default='plex', choices=['emby', 'plex'], help='App compatibility mode')
-    pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files (default)')
+    pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files')
     pgroup.add_argument('--no-aux', dest='aux', default=argparse.SUPPRESS, action='store_false', help='Do not handle auxiliary files')
+
+    pgroup = app.parser.add_argument_group('Library Mode')
+    pgroup.add_argument('--music', '--normal', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='normal', help='Normal (Music) mode')
+    pgroup.add_argument('--musicvideo', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='musicvideo', help='Music Video mode')
+    pgroup.add_argument('--movie', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='movie', help='Movie mode')
+    pgroup.add_argument('--tvshow', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='tvshow', help='TV show mode')
+    pgroup.add_argument('--audiobook', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='audiobook', help='Audiobook mode')
+
+#TODO
+#    app.parser.epilog = ''
+#    app.parser.epilog += '''
+#How Library Modes Affect Organization:
+#
+#  - music:
+#            <albumartist>/<albumtitle>/<disk>-<track> <title>
+#            Compilations/<albumtitle>/<disk>-<track> <title>
+#  - musicvideo:
+#    - Plex:
+#            <albumartist>/<albumtitle>/<disk>-<track> <title> - <comment>-<contenttype>
+#    - Emby:
+#            <albumartist>/<albumtitle>/<disk>-<track> <title>
+#  - movie:
+#    - Plex:
+#            <title> (<year>)/<title> (<year>)
+#            <title> [<subtitle>] (<year>)/<title> (<year>)
+#    - Emby:
+#            <title> (<year>)/<title> (<year>)
+#            <title> (<year>)/<title> (<year>) - <subtitle>
+#  - tvshow:
+#            <tvshow>/Season <season>/<tvshow> S##E## <title>
+#            <tvshow>/Specials/<tvshow> S00E## <title>
+#'''
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='outputdir', default=argparse.SUPPRESS, help='specify the output directory')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--ascii-compat', dest='ascii_compat', default=True, action='store_true', help='ASCII compatibility (default)')
-    xgroup.add_argument('--no-ascii-compat', dest='ascii_compat', default=argparse.SUPPRESS, action='store_false', help='ASCII compatibility (disable)')
+    xgroup.add_argument('--ascii-compat', dest='ascii_compat', default=True, action='store_true', help='Enable ASCII compatibility')
+    xgroup.add_argument('--no-ascii-compat', dest='ascii_compat', default=argparse.SUPPRESS, action='store_false', help='Disable ASCII compatibility')
 
-    app.parser.add_argument('inputfiles', nargs='*', default=None, help='input sound files')
+    app.parser.add_argument('inputfiles', nargs='*', default=(), help='input sound files')
 
     app.parse_args()
 
@@ -248,6 +278,57 @@ def do_suggest_tags(inputfile, *, suggest_tags):
             inputfile.write_tags(tags=suggest_tags, dry_run=app.args.dry_run, run_func=do_exec_cmd)
             inputfile.tags.update(suggest_tags)
 
+def format_part_suffix(inputfile):
+
+    dst_file_base = ''
+
+    if inputfile.tags.disk and inputfile.tags.disks and \
+            inputfile.tags.disks > 1:
+        disk = "%0*d" % (len(str(inputfile.tags.disks or 1)), inputfile.tags.disk)
+    else:
+        disk = None
+    if inputfile.tags.track is not None:
+        track = "%0*d" % (len(str(inputfile.tags.tracks or 99)), inputfile.tags.track)
+    else:
+        track = None
+    if inputfile.tags.part is not None:
+        part = "%0*d" % (len(str(inputfile.tags.parts or 1)), inputfile.tags.part)
+    else:
+        part = None
+
+    if app.args.app == 'plex':
+        # - [DISK]
+        # - [PART]
+        # - [TRACK]
+        if disk:
+            dst_file_base += ' - disk{disk}'.format(
+                disk=disk)
+        if part:
+            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
+            dst_file_base += ' - part{part}'.format(
+                part=part)
+        elif track:
+            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
+            dst_file_base += ' - part{track}'.format(
+                track=track)
+    elif app.args.app == 'emby':
+        # -[DISK]
+        # -[PART]
+        # -[TRACK]
+        if disk:
+            dst_file_base += '-disk{disk}'.format(
+                disk=disk)
+        if part:
+            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
+            dst_file_base += '-part{part}'.format(
+                part=part)
+        elif track:
+            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
+            dst_file_base += '-part{track}'.format(
+                track=track)
+
+    return dst_file_base
+
 def organize_music(inputfile, *, suggest_tags):
 
     # ARTIST
@@ -392,6 +473,31 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     return dst_dir, dst_file_base
 
+def get_plex_contenttype_suffix(inputfile, default=None):
+    contenttype = inputfile.tags.contenttype or default
+    try:
+        return {
+            qip.mm.ContentType.behind_the_scenes: '-behindthescenes',
+            #qip.mm.ContentType.cartoon: '-TODO',
+            qip.mm.ContentType.concert: '-concert',
+            qip.mm.ContentType.deleted: '-deleted',
+            #qip.mm.ContentType.documentary: '-TODO',
+            #qip.mm.ContentType.feature_film: '-TODO',
+            qip.mm.ContentType.featurette: '-featurette',
+            qip.mm.ContentType.interview: '-interview',
+            qip.mm.ContentType.live: '-live',
+            qip.mm.ContentType.lyrics: '-lyrics',
+            #qip.mm.ContentType.music: '-TODO',
+            qip.mm.ContentType.other: '-other',
+            qip.mm.ContentType.scene: '-scene',
+            qip.mm.ContentType.short: '-short',
+            #qip.mm.ContentType.sound_fx: '-TODO',
+            qip.mm.ContentType.trailer: '-trailer',
+            qip.mm.ContentType.video: '-video',
+        }[contenttype]
+    except KeyError:
+        raise ValueError(f'contenttype = {contenttype}')
+
 def organize_inline_musicvideo(inputfile, *, suggest_tags):
 
     dst_dir, dst_file_base = organize_music(inputfile, suggest_tags=suggest_tags)
@@ -403,14 +509,9 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
         dst_file_base += ' - %s' % (inputfile.tags.comment[0],)
 
     # -video
-    dst_file_base += {
-        qip.mm.ContentType.behind_the_scenes: '-behindthescenes',
-        qip.mm.ContentType.concert: '-concert',
-        qip.mm.ContentType.interview: '-interview',
-        qip.mm.ContentType.live_music_video: '-live',
-        qip.mm.ContentType.lyrics_music_video: '-lyrics',
-        qip.mm.ContentType.music_video: '-video',
-    }.get(inputfile.tags.contenttype, '-video')
+    dst_file_base += get_plex_contenttype_suffix(
+        inputfile,
+        default=qip.mm.ContentType.video)
 
     dst_file_base += dst_file_base_ext
 
@@ -457,64 +558,34 @@ def organize_movie(inputfile, *, suggest_tags):
 
     dst_file_base = ''
 
-    if inputfile.tags.disk and inputfile.tags.disks and \
-            inputfile.tags.disks > 1:
-        disk = "%0*d" % (len(str(inputfile.tags.disks or 1)), inputfile.tags.disk)
-    else:
-        disk = None
-    if inputfile.tags.track is not None:
-        track = "%0*d" % (len(str(inputfile.tags.tracks or 99)), inputfile.tags.track)
-    else:
-        track = None
-    if inputfile.tags.part is not None:
-        part = "%0*d" % (len(str(inputfile.tags.parts or 1)), inputfile.tags.part)
-    else:
-        part = None
+    if inputfile.tags.contenttype in (None, qip.mm.ContentType.feature_film):
+        # TITLE (YEAR)
+        dst_file_base += inputfile.tags.title
+        if inputfile.tags.year:
+            dst_file_base += ' (%d)' % (inputfile.tags.year,)
 
-    # TITLE (YEAR)
-    dst_file_base += inputfile.tags.title
-    if inputfile.tags.year:
-        dst_file_base += ' (%d)' % (inputfile.tags.year,)
-
-    # https://support.plex.tv/articles/200381043-multi-version-movies/
-    if inputfile.tags.subtitle:
-        dst_file_base += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
-
-    # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
-
-    if app.args.app == 'plex':
-        # - [DISK]
-        # - [PART]
-        # - [TRACK]
-        if disk:
-            dst_file_base += ' - disk{disk}'.format(
-                disk=disk)
-        if part:
-            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
-            dst_file_base += ' - part{part}'.format(
-                part=part)
-        elif track:
-            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
-            dst_file_base += ' - part{track}'.format(
-                track=track)
-    elif app.args.app == 'emby':
-        # - [SUBTITLE]
+        # https://support.plex.tv/articles/200381043-multi-version-movies/
         if inputfile.tags.subtitle:
-            dst_dir += ' - %s' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
-        # -[DISK]
-        # -[PART]
-        # -[TRACK]
-        if disk:
-            dst_file_base += '-disk{disk}'.format(
-                disk=disk)
-        if part:
-            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
-            dst_file_base += '-part{part}'.format(
-                part=part)
-        elif track:
-            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
-            dst_file_base += '-part{track}'.format(
-                track=track)
+            dst_file_base += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+
+        # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
+
+        if app.args.app == 'emby':
+            # - [SUBTITLE]
+            if inputfile.tags.subtitle:
+                dst_dir += ' - %s' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+
+    else:
+        # COMMENT
+        if inputfile.tags.comment:
+            # - [comment]
+            dst_file_base = '%s' % (inputfile.tags.comment[0],)
+        else:
+            dst_file_base = str(inputfile.tags.contenttype)
+
+        dst_file_base += get_plex_contenttype_suffix(inputfile)
+
+    dst_file_base += format_part_suffix(inputfile)
 
     dst_file_base += os.path.splitext(inputfile.file_name)[1]
 
@@ -569,16 +640,6 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
     dst_file_base = ''
 
-    if inputfile.tags.disk and inputfile.tags.disks and \
-            inputfile.tags.disks > 1:
-        disk = "%0*d" % (len(str(inputfile.tags.disks or 1)), inputfile.tags.disk)
-    else:
-        disk = None
-    if inputfile.tags.track is not None:
-        track = "%0*d" % (len(str(inputfile.tags.tracks or 99)), inputfile.tags.track)
-    else:
-        track = None
-
     # TVSHOW S01E01 [TITLE]
     dst_file_base += inputfile.tags.tvshow
     dst_file_base += ' S%02d' % (
@@ -599,16 +660,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
-    if inputfile.tags.type not in ('normal', 'audiobook', 'musicvideo'):
-        # -[DISK]
-        # -[TRACK]
-        if disk:
-            dst_file_base += '-disk{disk}'.format(
-                disk=disk)
-        if track:
-            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
-            dst_file_base += '-part{track}'.format(
-                track=track)
+    dst_file_base += format_part_suffix(inputfile)
 
     dst_file_base += os.path.splitext(inputfile.file_name)[1]
 
@@ -642,7 +694,7 @@ def organize(inputfile):
 
     if app.args.contenttype:
         inputfile.tags.contenttype = app.args.contenttype
-    if app.args.library_mode:
+    if getattr(app.args, 'library_mode', None):
         inputfile.tags.type = app.args.library_mode
     inputfile.tags.type = inputfile.deduce_type()
     app.log.debug('type = %r', inputfile.tags.type)
