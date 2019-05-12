@@ -546,27 +546,42 @@ def organize_movie(inputfile, *, suggest_tags):
 
     # https://github.com/MediaBrowser/Wiki/wiki/Movie-naming
     # https://support.plex.tv/articles/200381023-naming-movie-files/
-    # TITLE [SUBTITLE] (YEAR)/
+    # plex: TITLE [SUBTITLE] (YEAR)/
+    # emby: TITLE (YEAR)/
+
+    # TITLE
     dst_dir += '%s' % (clean_file_name(inputfile.tags.title, keep_ext=False),)
+
     if app.args.app == 'plex':
         # https://support.plex.tv/articles/200381043-multi-version-movies/
         if inputfile.tags.subtitle:
+            # [SUBTITLE]
             dst_dir += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+
     if inputfile.tags.year:
+        # (YEAR)
         dst_dir += ' (%d)' % (inputfile.tags.year,)
+
     dst_dir += '/'
 
     dst_file_base = ''
 
     if inputfile.tags.contenttype in (None, qip.mm.ContentType.feature_film):
-        # TITLE (YEAR)
-        dst_file_base += inputfile.tags.title
-        if inputfile.tags.year:
-            dst_file_base += ' (%d)' % (inputfile.tags.year,)
+        # plex: TITLE [SUBTITLE] (YEAR)
+        # emby: TITLE (YEAR) - [SUBTITLE]
 
-        # https://support.plex.tv/articles/200381043-multi-version-movies/
-        if inputfile.tags.subtitle:
-            dst_file_base += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+        # TITLE
+        dst_file_base += inputfile.tags.title
+
+        if app.args.app == 'plex':
+            # https://support.plex.tv/articles/200381043-multi-version-movies/
+            if inputfile.tags.subtitle:
+                # [SUBTITLE]
+                dst_file_base += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+
+        if inputfile.tags.year:
+            # (YEAR)
+            dst_file_base += ' (%d)' % (inputfile.tags.year,)
 
         # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
@@ -578,9 +593,10 @@ def organize_movie(inputfile, *, suggest_tags):
     else:
         # COMMENT
         if inputfile.tags.comment:
-            # - [comment]
+            # COMMENT
             dst_file_base = '%s' % (inputfile.tags.comment[0],)
         else:
+            # ContentType
             dst_file_base = str(inputfile.tags.contenttype)
 
         dst_file_base += get_plex_contenttype_suffix(inputfile)
