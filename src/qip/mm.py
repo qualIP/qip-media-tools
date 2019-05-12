@@ -1495,9 +1495,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         if v2 == '=':
             pass
         elif v2 == '':
-            self.disk = None
+            self.disks = None
         else:
-            self.disk = int(v2)
+            self.disks = int(v2)
 
     @disk_slash_disks.deleter
     def disk_slash_disks(self):
@@ -1552,9 +1552,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         if v2 == '=':
             pass
         elif v2 == '':
-            self.track = None
+            self.tracks = None
         else:
-            self.track = int(v2)
+            self.tracks = int(v2)
 
     @track_slash_tracks.deleter
     def track_slash_tracks(self):
@@ -1613,9 +1613,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         if v2 == '=':
             pass
         elif v2 == '':
-            self.part = None
+            self.parts = None
         else:
-            self.part = int(v2)
+            self.parts = int(v2)
 
     @part_slash_parts.deleter
     def part_slash_parts(self):
@@ -1688,9 +1688,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         if v2 == '=':
             pass
         elif v2 == '':
-            self.season = None
+            self.seasons = None
         else:
-            self.season = int(v2)
+            self.seasons = int(v2)
 
     @season_slash_seasons.deleter
     def season_slash_seasons(self):
@@ -1750,9 +1750,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         if v2 == '=':
             pass
         elif v2 == '':
-            self.episode = None
+            self.episodes = None
         else:
-            self.episode = int(v2)
+            self.episodes = int(v2)
 
     @episode_slash_episodes.deleter
     def episode_slash_episodes(self):
