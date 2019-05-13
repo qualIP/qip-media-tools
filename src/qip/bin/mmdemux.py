@@ -413,6 +413,8 @@ def main():
     pgroup.add_argument('--parallel-chapters', dest='parallel_chapters', default=False, action='store_true', help='enable per-chapter parallel processing (default)')
     pgroup.add_argument('--no-parallel-chapters', dest='parallel_chapters', default=argparse.SUPPRESS, action='store_false', help='disable per-chapter parallel processing')
     pgroup.add_argument('--cropdetect-duration', dest='cropdetect_duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(300), help='cropdetect duration (seconds)')
+    pgroup.add_argument('--cropdetect-skip-frame-nokey', dest='cropdetect_skip_frame_nokey', default=True, action='store_true', help='cropdetect skips frames w/o keys')
+    pgroup.add_argument('--no-cropdetect-skip-frame-nokey', dest='cropdetect_skip_frame_nokey', default=argparse.SUPPRESS, action='store_false', help='cropdetect uses frames w/o keys')
     pgroup.add_argument('--video-language', '--vlang', dest='video_language', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
     pgroup.add_argument('--video-rate-control-mode', dest='video_rate_control_mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
     pgroup.add_argument('--force-framerate', dest='force_framerate', default=argparse.SUPPRESS, type=FrameRate, help='Ignore heuristics and force framerate')
@@ -1826,6 +1828,7 @@ def action_optimize(inputdir, in_tags):
                         if not stream_crop_whlt and 'original_crop' not in stream_dict:
                             stream_crop_whlt = ffmpeg.cropdetect(
                                 input_file=os.path.join(inputdir, stream_file_name),
+                                skip_frame_nokey=app.args.cropdetect_skip_frame_nokey,
                                 # Seek 5 minutes in
                                 #cropdetect_seek=max(0.0, min(300.0, float(mediainfo_duration) - 300.0)),
                                 cropdetect_duration=app.args.cropdetect_duration,
