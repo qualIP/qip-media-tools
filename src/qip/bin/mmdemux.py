@@ -793,6 +793,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
     inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
 
     name_scan_str = os.path.basename(inputfile_base)
+    name_scan_str = name_scan_str.strip()
     name_scan_str = re.sub(r'_t\d+$', '', name_scan_str)
     m = (
             re.match(r'^(?P<tvshow>.+) S(?P<season>\d+)E(?P<str_episodes>\d+(?:E\d+)*) (?P<title>.+)$', name_scan_str)
@@ -800,6 +801,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
         )
     if m:
         d = m.groupdict()
+        d = {k: v and v.strip() for k, v in d.items()}
         if d.get('title', None) == 'title':
             del d['title']
         try:
