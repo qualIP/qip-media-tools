@@ -32,7 +32,18 @@ class RawTextHelpFormatter(_argparse.RawTextHelpFormatter, RawDescriptionHelpFor
     pass
 
 class ArgumentDefaultsHelpFormatter(_argparse.ArgumentDefaultsHelpFormatter, HelpFormatter):
-    pass
+
+    def _get_help_string(self, action):
+        help = action.help
+        if '%(default)' not in action.help:
+            if action.default is not SUPPRESS:
+                defaulting_nargs = [OPTIONAL, ZERO_OR_MORE]
+                if action.option_strings or action.nargs in defaulting_nargs:
+                    if isinstance(action, _argparse._StoreTrueAction) and action.default is True:
+                        return help + ' (default)'
+                    elif isinstance(action, _argparse._StoreFalseAction) and action.default is False:
+                        return help + ' (default)'
+        return super()._get_help_string(action)
 
 class MetavarTypeHelpFormatter(_argparse.MetavarTypeHelpFormatter, HelpFormatter):
     pass
@@ -96,6 +107,72 @@ class _ActionsContainer(_argparse._ActionsContainer):
         group = _MutuallyExclusiveGroup(self, **kwargs)
         self._mutually_exclusive_groups.append(group)
         return group
+
+    def add_bool_argument(self, *args, **kwargs):
+
+        kwargs = self._get_optional_kwargs(*args, **kwargs)
+
+        option_strings = kwargs.pop('option_strings')
+        assert option_strings
+        try:
+            neg_option_strings = kwargs.pop('neg_option_strings')
+        except KeyError:
+            long_option_strings = [option_string
+                                   for option_string in option_strings
+                                   if len(option_string) > 1 and option_string[1] in self.prefix_chars]
+            assert long_option_strings
+            neg_option_strings = [
+                f'{option_string[:2]}no{option_string[1]}{option_string[2:]}'
+                for option_string in long_option_strings]
+        assert neg_option_strings
+
+        # if no default was supplied, use the parser-level default
+        if 'default' not in kwargs:
+            dest = kwargs['dest']
+            if dest in self._defaults:
+                kwargs['default'] = self._defaults[dest]
+            elif self.argument_default is not None:
+                kwargs['default'] = self.argument_default
+        default = kwargs.pop('default', False)
+        neg_default = SUPPRESS
+
+        help = kwargs.pop('help', None)
+        neg_help = kwargs.pop('neg_help', None)
+        if help and not neg_help:
+            help, neg_help = (
+                _('enable {help}').format(help=help),
+                _('disable {help}').format(help=help))
+
+        action = kwargs.pop('action', 'store_true')
+        action_class = self._registry_get('action', action, action)
+        try:
+            neg_action = kwargs.pop('neg_action')
+        except KeyError:
+            if issubclass(action_class, _argparse._StoreTrueAction):
+                neg_action = 'store_false'
+            elif issubclass(action_class, _argparse._StoreFalseAction):
+                neg_action = 'store_true'
+            else:
+                args = {'option': option_strings[0],
+                        'action': action_class}
+                msg = _('unsupported action %(action)r for option string %(option)r: '
+                        'provide both action and neg_action')
+                raise ValueError(msg % args)
+        neg_action_class = self._registry_get('action', neg_action, neg_action)
+
+        if issubclass(neg_action_class, _argparse._StoreFalseAction) and default is False:
+            default, neg_default = neg_default, default
+
+        self.add_argument(*option_strings,
+                          default=default,
+                          action=action,
+                          help=help,
+                          **kwargs)
+        self.add_argument(*neg_option_strings,
+                          default=neg_default,
+                          action=neg_action,
+                          help=neg_help,
+                          **kwargs)
 
 class _ArgumentGroup(_argparse._ArgumentGroup, _ActionsContainer):
     pass
