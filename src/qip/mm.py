@@ -1494,7 +1494,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             self.disk = int(v1)
         if v2 == '=':
             pass
-        elif v2 == '':
+        elif v2 in ('', None):
             self.disks = None
         else:
             self.disks = int(v2)
@@ -1551,7 +1551,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             self.track = int(v1)
         if v2 == '=':
             pass
-        elif v2 == '':
+        elif v2 in ('', None):
             self.tracks = None
         else:
             self.tracks = int(v2)
@@ -1612,7 +1612,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             self.part = int(v1)
         if v2 == '=':
             pass
-        elif v2 == '':
+        elif v2 in ('', None):
             self.parts = None
         else:
             self.parts = int(v2)
@@ -1687,7 +1687,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             self.season = int(v1)
         if v2 == '=':
             pass
-        elif v2 == '':
+        elif v2 in ('', None):
             self.seasons = None
         else:
             self.seasons = int(v2)
@@ -1749,7 +1749,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             self.episode = _tIntOrList(v1)
         if v2 == '=':
             pass
-        elif v2 == '':
+        elif v2 in ('', None):
             self.episodes = None
         else:
             self.episodes = int(v2)
