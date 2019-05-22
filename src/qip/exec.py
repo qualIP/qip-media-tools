@@ -22,8 +22,10 @@ __all__ = [
         ]
 
 import abc
+import enum
 import errno
 import functools
+import logging
 import os
 import pexpect
 import re
@@ -32,7 +34,6 @@ import subprocess
 import sys
 import time
 import types
-import logging
 import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
@@ -223,9 +224,20 @@ def clean_cmd_output(out):
 
 # }}}
 
+class IoniceClass(enum.IntEnum):
+    # None = 0
+    Realtime = 1
+    BestEffort = 2
+    Idle = 3
+
+
 class Executable(metaclass=abc.ABCMeta):
 
     run_func = None
+
+    ionice_class = None
+    ionice_level = None
+    ionice_ignore = True
 
     @property
     @abc.abstractmethod
@@ -267,9 +279,28 @@ class Executable(metaclass=abc.ABCMeta):
         return cmdargs
 
     def build_cmd(self, *args, **kwargs):
-        return [self.which()] \
-                + list(str(e) for e in args) \
-                + self.kwargs_to_cmdargs(**kwargs)
+        ionice_class = kwargs.pop('ionice_class', self.ionice_class)
+        ionice_level = kwargs.pop('ionice_level', self.ionice_level)
+        ionice_ignore = kwargs.pop('ionice_ignore', self.ionice_ignore)
+
+        cmd = [self.which()] \
+            + list(str(e) for e in args) \
+            + self.kwargs_to_cmdargs(**kwargs)
+
+        if ionice_class is not None or ionice_level is not None:
+            if ionice_class is not None:
+                ionice_class = int(IoniceClass(ionice_class))
+            if ionice_level is not None:
+                ionice_level = int(ionice_level)
+            if ionice_ignore is not None:
+                ionice_ignore = bool(ionice_ignore)
+            cmd = ionice.build_cmd(*cmd,
+                                   _class=ionice_class,
+                                   classdata=ionice_level,
+                                   ignore=ionice_ignore,
+                                   )
+
+        return cmd
 
     def _run(self, *args, run_func=None, dry_run=False, **kwargs):
         d = types.SimpleNamespace()
@@ -314,6 +345,20 @@ class PipedScript(PipedExecutable):
 
 class PipedPortableScript(PipedScript):
     pass
+
+class Ionice(Executable):
+
+    name = 'ionice'
+
+    kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
+
+    def build_cmd(self, *args, **kwargs):
+        cmd = [self.which()] \
+            + self.kwargs_to_cmdargs(**kwargs) \
+            + list(str(e) for e in args)
+        return cmd
+
+ionice = Ionice()
 
 def do_srun_cmd(cmd,
         stdin=None, stdin_file=None,
