@@ -247,6 +247,25 @@ class Executable(metaclass=abc.ABCMeta):
             raise ValueError('Unsupported keyword arguments: %r' % (kwargs,))
         return []
 
+    @classmethod
+    def kwargs_to_cmdargs_gnu_getopt(cls, **kwargs):
+        cmdargs = []
+        for k, v in kwargs.items():
+            if v in (None, False):
+                # Dropped for ease of passing unused arguments
+                continue
+            k = {
+                '_class': 'class',
+                '_continue': 'continue',
+            }.get(k, k)
+            if len(k) == 1:
+                cmdargs.append('-' + k)
+            else:
+                cmdargs.append('--' + k)
+            if v is not True:
+                cmdargs.append(str(v))
+        return cmdargs
+
     def build_cmd(self, *args, **kwargs):
         return [self.which()] \
                 + list(str(e) for e in args) \

@@ -17,19 +17,7 @@ class Mencoder(Executable):
 
     run_func = staticmethod(do_spawn_cmd)
 
-    @classmethod
-    def kwargs_to_cmdargs(cls, **kwargs):
-        cmdargs = []
-        for k, v in kwargs.items():
-            if v is False:
-                continue
-            if True or len(k) == 1:
-                cmdargs.append('-' + k)
-            else:
-                cmdargs.append('--' + k)
-            if v is not True:
-                cmdargs.append(str(v))
-        return cmdargs
+    kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
 
     def _run(self, *args, run_func=None, dry_run=False,
             slurm=False, slurm_cpus_per_task=None,

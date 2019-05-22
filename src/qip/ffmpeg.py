@@ -78,9 +78,14 @@ class _Ffmpeg(Executable):
     def kwargs_to_cmdargs(cls, **kwargs):
         cmdargs = []
         for k, v in kwargs.items():
-            if v is False:
+            if v in (None, False):
+                # Dropped for ease of passing unused arguments
                 continue
-            if True or len(k) == 1:
+            k = {
+                '_class': 'class',
+                '_continue': 'continue',
+            }.get(k, k)
+            if True or len(k) == 1:  # Always a single dash
                 cmdargs.append('-' + k)
             else:
                 cmdargs.append('--' + k)

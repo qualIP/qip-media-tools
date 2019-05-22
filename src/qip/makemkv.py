@@ -267,23 +267,13 @@ class MakemkvconSpawn(_exec_spawn):
 class Makemkvcon(Executable):
     # http://www.makemkv.com/developers/usage.txt
 
-    run_func = staticmethod(do_makemkvcon_spawn_cmd)
-
     name = 'makemkvcon'
 
-    @classmethod
-    def kwargs_to_cmdargs(cls, **kwargs):
-        cmdargs = []
-        for k, v in kwargs.items():
-            if v is False:
-                continue
-            if len(k) == 1:
-                cmdargs.append('-' + k)
-            else:
-                cmdargs.append('--' + k)
-            if v is not True:
-                cmdargs.append(str(v))
-        return cmdargs
+    run_func = staticmethod(do_makemkvcon_spawn_cmd)
+
+    spawn = MakemkvconSpawn
+
+    kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
 
     def build_cmd(self, *args, **kwargs):
         args = list(args)
@@ -294,8 +284,6 @@ class Makemkvcon(Executable):
             kwargs['progress'] = '-stdout'
 
         return super().build_cmd(*args, **kwargs)
-
-    spawn = MakemkvconSpawn
 
     def mkv(self, *, source, dest_dir, title_id='all', **kwargs):
         return self('mkv', source, title_id, dest_dir, **kwargs)

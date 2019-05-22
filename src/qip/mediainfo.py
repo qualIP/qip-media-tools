@@ -21,8 +21,13 @@ class Mediainfo(Executable):
     def kwargs_to_cmdargs(cls, **kwargs):
         cmdargs = []
         for k, v in kwargs.items():
-            if v is False:
+            if v in (None, False):
+                # Dropped for ease of passing unused arguments
                 continue
+            k = {
+                '_class': 'class',
+                '_continue': 'continue',
+            }.get(k, k)
             arg = '-' + k if len(k) == 1 else '--' + k
             if v is True:
                 cmdargs.append(arg)

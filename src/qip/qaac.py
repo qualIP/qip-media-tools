@@ -46,19 +46,7 @@ class Qaac(Executable):
         def __str__(self):
             return self.name
 
-    @classmethod
-    def kwargs_to_cmdargs(cls, **kwargs):
-        cmdargs = []
-        for k, v in kwargs.items():
-            if v is False:
-                continue
-            if len(k) == 1:
-                cmdargs.append('-' + k)
-            else:
-                cmdargs.append('--' + k)
-            if v is not True:
-                cmdargs.append(str(v))
-        return cmdargs
+    kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
 
     def encode(self, file_name, output_file_name=None, preset=Preset.itunes_plus, run_func=None, **kwargs):
         args = []
