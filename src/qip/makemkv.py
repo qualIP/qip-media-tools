@@ -218,7 +218,7 @@ class MakemkvconSpawn(_exec_spawn):
             (r'^Operation successfully completed' + re_eol, True),
             (r'^Saving (?P<title_count>\d+) titles into directory (?P<dest_dir>[^\r\n]+)' + re_eol, self.saving_titles_count),
             (r'^Title #(?P<title_no>' + re_title_no + r') has length of (?P<length>\d+) seconds which is less than minimum title length of (?P<min_length>\d+) seconds and was therefore skipped' + re_eol, True),
-            (r'^Title (?P<title_no1>\d+) in VTS (?P<vts_no>\d+) is equal to title (?P<title_no2>\d+) and was skipped' + re_eol, True),
+            (r'^Title (?P<title_no1>' + re_title_no + r')(?: in VTS (?P<vts_no>\d+))? is equal to title (?P<title_no2>' + re_title_no + r') and was skipped' + re_eol, True),
             (r'^Using direct disc access mode' + re_eol, True),
             (r'^Downloading latest SDF to (?P<dest_dir>[^\n]+) \.\.\.' + re_eol, True),
             (r'^Using LibreDrive mode \(v(?P<version>\d+) id=(?P<id>[0-9a-fA-F]+)\)' + re_eol, True),
@@ -253,6 +253,7 @@ class MakemkvconSpawn(_exec_spawn):
             (r'^AV sync issue in stream (?P<stream_no>' + re_stream_no + ') at (?P<timestamp>\S+) *: video stream has (?P<num_frames>\d+) frame\(?s?\)? with invalid timecodes' + re_eol, self.generic_warning),
             (r'^Angle #(?P<angle_no>\d+) was added for title #(?P<title_no>' + re_title_no + ')' + re_eol, self.generic_info),
             (r'^Calculated BUP offset for VTS #(?P<vts_no>\d+) does not match one in IFO header\.' + re_eol, self.generic_warning),
+            (r'^LibreDrive firmware support is not yet available for this drive \(id=(?P<drive_id>[A-Fa-f0-9]+)\)' + re_eol, self.generic_warning),
             (r'[^\n]*?' + re_eol, self.unknown_line),
             (pexpect.EOF, False),
         ])
