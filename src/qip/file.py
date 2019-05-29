@@ -13,13 +13,14 @@ __all__ = [
 
 import contextlib
 import hashlib
-import os
-import urllib.parse
-import urllib.request
 import io
-import tempfile
+import os
 import shutil
 import subprocess
+import sys
+import tempfile
+import urllib.parse
+import urllib.request
 
 import logging
 log = logging.getLogger(__name__)
@@ -55,15 +56,16 @@ class _argparse_type(object):
             mode = kwargs['mode']
             if 'r' in mode:
                 s_file_name = '<stdin>'
-                fp = _sys.stdin
+                fp = sys.stdin
             elif 'w' in mode:
                 s_file_name = '<stdout>'
-                fp = _sys.stdout
+                fp = sys.stdout
             else:
                 msg = _('argument "-" with mode %r') % mode
                 raise ValueError(msg)
-
-        file = file_cls.new_by_file_name(file_name)
+            file = file_cls(file_name=None)
+        else:
+            file = file_cls.new_by_file_name(file_name)
 
         if fp is None:
             try:
