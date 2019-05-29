@@ -100,6 +100,7 @@ def main():
     xgroup.add_argument('--set', dest='action', default=None, action='store_const', const='set', help='set tags')
     xgroup.add_argument('--edit', dest='action', default=argparse.SUPPRESS, action='store_const', const='edit', help='edit tags')
     xgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
+    xgroup.add_argument('--apply', dest='action', default=argparse.SUPPRESS, action='store_const', const='apply', help='apply tags')
     xgroup.add_argument('--find-lyrics', dest='action', default=argparse.SUPPRESS, action='store_const', const='find_lyrics', help='find lyrics')
 
     pgroup = app.parser.add_argument_group('Compatibility')
@@ -107,6 +108,9 @@ def main():
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--ipod-compat', dest='ipod_compat', default=True, action='store_true', help='iPod compatibility (default)')
     xgroup.add_argument('--no-ipod-compat', dest='ipod_compat', default=argparse.SUPPRESS, action='store_false', help='iPod compatibility (disable)')
+
+    pgroup = app.parser.add_argument_group('Other')
+    pgroup.add_argument('--format', default='human', choices=('human', 'json'), help='Output list format')
 
     pgroup = app.parser.add_argument_group('Lyrics')
     pgroup.add_argument('--genius-timeout', dest='genius_timeout', default=5, type=int, help='Genius API timeout')
@@ -118,6 +122,7 @@ def main():
     pgroup.add_argument('--lyrics-embed', dest='lyrics_embed', action='store_true', help='Embed lyrics in sound file if found')
 
     pgroup = app.parser.add_argument_group('Tags')
+    xgroup.add_argument('--import', dest='import_file', default=None, type=qip.file.File.argparse_type(), help='import tags')
     pgroup.add_argument('--grouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
@@ -154,6 +159,28 @@ def main():
     app.parser.add_argument('files', nargs='*', default=None, help='sound files')
 
     app.parse_args()
+
+    if app.args.import_file:
+        if getattr(app.args, 'action', None) is None:
+            app.args.action = 'set'
+        import_content = None
+        if app.args.import_file.file_name is None:
+            import_content = app.args.import_file.read()
+            app.args.import_file.close()
+            if import_content.startswith('{'):
+                app.args.import_file = json.JsonFile(file_name='<stdin>')
+        if isinstance(app.args.import_file, json.JsonFile):
+            if import_content is None:
+                import_content = json.load(app.args.import_file.fp)
+                app.args.import_file.close()
+            else:
+                import_content = json.loads(import_content)
+            if not isinstance(import_content, TrackTags):
+                import_content = TrackTags(import_content)
+            app.log.debug('Imported tags: %r', import_content)
+            in_tags.update(import_content)
+        else:
+            raise NotImplementedError(f'Unrecognized import file format')
 
     if getattr(app.args, 'action', None) is None:
         app.args.action = 'set' if in_tags else 'edit'
@@ -199,7 +226,7 @@ def main():
             raise Exception('No files provided')
         for file_name in app.args.files:
             with perfcontext('list'):
-                taglist(file_name)
+                taglist(file_name, app.args.format)
 
         # }}}
     elif app.args.action == 'find_lyrics':
@@ -534,14 +561,21 @@ def tageditor(file_name):
         return True
     raise NotImplementedError(mm_file)
 
-def taglist(file_name):
-    app.log.info('Listing %s...', file_name)
+def taglist(file_name, format):
+    if format == 'human':
+        app.log.info('Listing %s...', file_name)
     mm_file = MediaFile.new_by_file_name(file_name)
     app.log.debug('mm_file = %r', mm_file)
     tags = mm_file.load_tags()
     assert tags is not None
-    dump_tags(tags)
-    sys.stdout.flush()  # Sync with logging
+    if format == 'human':
+        dump_tags(tags)
+        sys.stdout.flush()  # Sync with logging
+    elif format == 'json':
+        json.dump(tags, fp=sys.stdout)
+        sys.stdout.flush()  # Sync with logging
+    else:
+        raise NotImplementedError(format)
     return True
 
 if __name__ == "__main__":
