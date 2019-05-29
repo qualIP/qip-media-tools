@@ -651,9 +651,8 @@ def organize_tvshow(inputfile, *, suggest_tags):
             dst_file_base += '-E%02d' % (episodes[-1],)
     if inputfile.tags.title and inputfile.tags.title != inputfile.tags.tvshow:
         dst_file_base += ' %s' % (inputfile.tags.title,)
-
     else:
-        raise ValueError('type = %r' % (inputfile.tags.type,))
+        pass  # Could be the episode name is not known.
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
