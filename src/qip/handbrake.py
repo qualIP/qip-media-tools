@@ -20,9 +20,9 @@ class CHandBrake(Executable):
 
     @classmethod
     def kwargs_to_cmdargs(cls, **kwargs):
-        return Executable.kwargs_to_cmdargs_gnu_getopt(
-            {k.replace('_', '-'): v
-             for k, v in kwargs.items()})
+        return cls.kwargs_to_cmdargs_gnu_getopt(
+            **{k.replace('_', '-'): v
+               for k, v in kwargs.items()})
 
     def parse_json_output(self, out, sections={'JSON Title Set'}, load=True):
         out = byte_decode(out)
