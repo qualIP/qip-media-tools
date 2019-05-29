@@ -204,7 +204,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
 
             app.log.debug('Analyzing %d video frames...', len(video_frames))
 
-            video_frames = video_frames[10:]  # Skip first frames; Seen need for 1-9
+            video_frames = video_frames[app.args.video_analyze_skip_frames:]  # Skip first frames; Often padded with different field order
+            assert video_frames
 
             # video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
             # XXXJST:
@@ -446,6 +447,7 @@ def main():
     pgroup.add_argument('--force-framerate', default=argparse.SUPPRESS, type=FrameRate, help='Ignore heuristics and force framerate')
     pgroup.add_argument('--force-field-order', default=argparse.SUPPRESS, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
     pgroup.add_argument('--video-analyze-duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(60), help='video analysis duration (seconds)')
+    pgroup.add_argument('--video-analyze-skip-frames', type=int, default=10, help='number of frames to skip from video analysis')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', default=Auto, help='SubRip OCR matrix file')
