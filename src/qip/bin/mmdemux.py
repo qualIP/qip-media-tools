@@ -1131,8 +1131,11 @@ def action_mux(inputfile, in_tags):
         app.args.optimize_dirs += (outputdir,)
 
     if os.path.isdir(outputdir):
+        if app.args.chain:
+            app.log.warning('Directory exists: %r; Just chaining', outputdir)
+            return True
         if app.args._continue:
-            app.log.warning('Directory exists: %r: ignoring', outputdir)
+            app.log.warning('Directory exists: %r; Ignoring', outputdir)
             return True
         raise OSError(errno.EEXIST, outputdir)
 
