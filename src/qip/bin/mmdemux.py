@@ -103,10 +103,36 @@ class FieldOrderUnknownError(NotImplementedError):
         super().__init__((mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order))
 
 common_aspect_ratios = {
-    Ratio(4, 3),
-    Ratio(16, 9),   # 1.78:1 1920x1080 "FHD"
-    Ratio(40, 17),  # 2.35:1 1920x816  "CinemaScope"
-    Ratio(12, 5),   # 2.40:1 1920x800  "CinemaScope"
+    # Ratio(4, 3),
+    # Ratio(16, 9),   # 1.78:1 1920x1080 "FHD"
+    # Ratio(40, 17),  # 2.35:1 1920x816  "CinemaScope"
+    # Ratio(12, 5),   # 2.40:1 1920x800  "CinemaScope"
+}
+
+common_resolutions = {
+    # SD (https://en.wikipedia.org/wiki/Standard-definition_television)
+    (704, 480),   # 480i (horizontal blanking cropped)  DAR  4:3 / PAR 10:11 -> 640×480
+    (720, 480),   # 480i (full frame)                   DAR  4:3 / PAR 10:11 -> 654×480
+    (704, 480),   # 480i (horizontal blanking cropped)  DAR 16:9 / PAR 40:33 -> 854×480
+    (720, 480),   # 480i (full frame)                   DAR 16:9 / PAR 40:33 -> 872×480
+    (704, 576),   # 576i (horizontal blanking cropped)  DAR  4:3 / PAR 12:11 -> 768×576
+    (720, 576),   # 576i (full frame)                   DAR  4:3 / PAR 12:11 -> 786×576
+    (704, 576),   # 576i (horizontal blanking cropped)  DAR 16:9 / PAR 16:11 -> 1024×576
+    (720, 576),   # 576i (full frame)                   DAR 16:9 / PAR 16:11 -> 1048×576
+    # Other
+    (720, 362),   # Anamorphic Widescreen
+    # HD (https://en.wikipedia.org/wiki/High-definition_video)
+    (1280, 720),  # HD Ready
+    (1920, 816),  # 2.35:1 "CinemaScope"
+    (1920, 800),  # 2.40:1 "CinemaScope"
+    # 2K (https://en.wikipedia.org/wiki/2K_resolution)
+    (2048, 1080), # DCI 2K (native resolution)     1.90:1 (256:135, ~17:9)
+    (1998, 1080), # DCI 2K (flat cropped)          1.85:1
+    (2048, 858),  # DCI 2K (CinemaScope cropped)   2.39:1
+    # 4K (https://en.wikipedia.org/wiki/4K_resolution)
+    (4096, 2160), # (full frame)       256∶135 or ≈1.90∶1
+    (3996, 2160), # (flat crop)                    1.85∶1
+    (4096, 1716), # (CinemaScope crop)            ≈2.39∶1
 }
 
 def MOD_ROUND(v, m):
@@ -1850,7 +1876,8 @@ def action_optimize(inputdir, in_tags):
                             pixel_aspect_ratio = Ratio(stream_dict['pixel_aspect_ratio'])  # invariable
                             display_aspect_ratio = pixel_aspect_ratio * storage_aspect_ratio
                             if stream_crop is Auto:
-                                if display_aspect_ratio in common_aspect_ratios:
+                                if display_aspect_ratio in common_aspect_ratios or \
+                                        (w, h) in common_resolutions:
                                     app.log.warning('Crop detection result accepted: --crop-whlt %s w/ common DAR %s',
                                                     ' '.join(str(e) for e in stream_crop_whlt),
                                                     display_aspect_ratio)
