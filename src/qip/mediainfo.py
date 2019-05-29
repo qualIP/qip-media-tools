@@ -67,9 +67,9 @@ class Mediainfo(Executable):
                 if line == '':
                     break
                 m = (
-                        re.match(r'^(?P<k>[^:]+): (?P<v>.*)$', line) or
-                        re.match(r'^(?P<k>\d\d:\d\d:\d\d.\d\d\d) *: (?P<v>.*)$', line)  # (Menu) 00:00:00.000  : en:Chapter 01
-                        )
+                    re.match(r'^(?P<k>[^:]+):(?: |$)(?P<v>.*)$', line) or
+                    re.match(r'^(?P<k>\d\d:\d\d:\d\d.\d\d\d) *:(?: |$)(?P<v>.*)$', line)  # (Menu) 00:00:00.000  : en:Chapter 01
+                )
                 assert m, line
                 k, v = m.group('k').strip(), m.group('v').strip()
                 if k == 'ID':
