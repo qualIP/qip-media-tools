@@ -400,6 +400,13 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             if mp4v2_data_type == 'utf-8':
                 if mp4_tag == 'xid':
                     mp4_value = [str(v) for v in value]
+                elif mp4_tag == '©cmt':
+                    if isinstance(value, tuple):
+                        mp4_value = '\n'.join(value)
+                    elif isinstance(value, str):
+                        mp4_value = value
+                    else:
+                        raise NotImplementedError(value)
                 else:
                     mp4_value = str(value)
                     if mp4_tag.startswith('----:'):
