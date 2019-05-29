@@ -201,25 +201,6 @@ def clean_file_name(file_name, keep_ext=True, extra=''):
 
 # }}}
 
-def dump_tags(tags, *, deep=True, heading='Tags:'):
-    if heading:
-        print(heading)
-    for tag_info in mp4tags.tag_args_info:
-        # Force None values to actually exist
-        if tags[tag_info.tag_enum] is None:
-            tags[tag_info.tag_enum] = None
-    tags_keys = tags.keys() if deep else tags.keys(deep=False)
-    for tag in sorted(tags_keys, key=functools.cmp_to_key(dictionarycmp)):
-        value = tags[tag]
-        if isinstance(value, str):
-            tags[tag] = value = replace_html_entities(tags[tag])
-        if value is not None:
-            if type(value) not in (int, str, bool, tuple):
-                value = str(value)
-            print('    %-13s = %r' % (tag.value, value))
-    for track_no, track_tags in tags.tracks_tags.items() if isinstance(tags, AlbumTags) else ():
-        dump_tags(track_tags, deep=False, heading='- Track %d' % (track_no,))
-
 supported_audio_exts = \
         set(qip.mm.get_mp4v2_app_support().extensions_can_read) | \
         set(qip.mm.get_sox_app_support().extensions_can_read) | \
@@ -704,6 +685,7 @@ def organize(inputfile):
     inputfile.extract_info(need_actual_duration=False)
     #inputfile.tags = inputfile.load_tags()  # Already done by extract_info
     if app.log.isEnabledFor(logging.DEBUG):
+        from qip.bin.taged import dump_tags
         dump_tags(inputfile.tags)
 
     suggest_tags = TrackTags()
