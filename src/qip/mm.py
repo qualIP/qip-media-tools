@@ -256,6 +256,8 @@ class MediaFile(BinaryFile):
             return self._load_tags_mf_id3(mf)
         if isinstance(mf.tags, mutagen.mp4.MP4Tags):
             return self._load_tags_mf_MP4Tags(mf)
+        if isinstance(mf.tags, mutagen.flac.VCFLACDict):
+            return self._load_tags_mf_VCFLACDict(mf)
         raise NotImplementedError(mf.tags.__class__.__name__)
 
     def _load_tags_mf_id3(self, mf):
@@ -358,6 +360,38 @@ class MediaFile(BinaryFile):
                 tags.xids = tag_value
             else:
                 tags.set_tag(mapped_tag, tag_value)
+        return tags
+
+    def _load_tags_mf_VCFLACDict(self, mf):
+        # import mutagen
+        tags = TrackTags(album_tags=AlbumTags())
+        for flac_tag, tag_value in mf.items():
+            try:
+                mapped_tag = {
+                    'title': 'title',
+                    'composer': 'composer',
+                    'date': 'date',
+                    'albumartist': 'albumartist',
+                    'tracknumber': 'track',
+                    'artist': 'artist',
+                    'comment': 'comment',
+                    'album': 'album',
+                    'genre': 'genre',
+                }[flac_tag]
+            except KeyError:
+                raise NotImplementedError(f'{flac_tag} = {tag_value!r}')
+            if isinstance(tag_value, list):
+                if len(tag_value) == 1:
+                    tag_value = tag_value[0]
+                    if isinstance(tag_value, str):
+                        pass
+                    else:
+                        raise NotImplementedError(f'{flac_tag} / {mapped_tag} = {tag_value!r}')
+                else:
+                    raise NotImplementedError(f'{flac_tag} / {mapped_tag} = {tag_value!r}')
+            else:
+                raise NotImplementedError(f'{flac_tag} / {mapped_tag} = {tag_value!r}')
+            tags.set_tag(mapped_tag, tag_value)
         return tags
 
     def load_tags(self):
