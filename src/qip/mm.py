@@ -866,12 +866,12 @@ class FrameRate(Fraction):
                     raise NotImplementedError(numerator)
         return super().__new__(cls, numerator, denominator, **kwargs)
 
-    def round_common(self):
+    def round_common(self, *, delta=0.001):
         for framerate in common_framerates:
             abs_diff = abs(self - framerate)
-            if abs_diff <= 0.001:
+            if abs_diff <= delta:
                 return framerate
-        raise ValueError(self)
+        raise ValueError(f'{self} is not near a common framerate')
 
 
 common_framerates = sorted([
@@ -880,6 +880,8 @@ common_framerates = sorted([
     FrameRate(25000, 1000),
     FrameRate(30000, 1001),
     FrameRate(30000, 1000),
+    FrameRate(60000, 1001),
+    FrameRate(60000, 1000),
     ])
 
 def _tIntRange(value, rng):
