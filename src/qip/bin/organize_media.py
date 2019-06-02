@@ -781,10 +781,12 @@ def organize(inputfile):
                 app.log.info('  Rename aux %s. (dry-run)', dst_aux_file_name)
         else:
             app.log.info('  Rename to %s.', dst_file_name)
-            shutil.move(inputfile.file_name, dst_file_name)
+            shutil.move(inputfile.file_name, dst_file_name,
+                        copy_function=qip.utils.progress_copy2)
             for aux_file_name, dst_aux_file_name in aux_moves:
                 app.log.info('  Rename aux %s.', dst_aux_file_name)
-                shutil.move(aux_file_name, dst_aux_file_name)
+                shutil.move(aux_file_name, dst_aux_file_name,
+                            copy_function=qip.utils.progress_copy2)
             inputdir = os.path.dirname(inputfile.file_name)
             if inputdir not in ('.', '') and dir_empty(inputdir):
                 app.log.info('Remove %s.', inputdir)
