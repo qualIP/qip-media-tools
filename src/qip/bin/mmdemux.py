@@ -171,7 +171,9 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             prev_frame.pkt_duration = 0
             with perfcontext('frames iteration'):
                 if HAVE_PROGRESS_BAR:
-                    bar = progress.bar.Bar('iterate frames', max=float(app.args.video_analyze_duration))
+                    bar = progress.bar.Bar('iterate frames',
+                                           max=float(app.args.video_analyze_duration),
+                                           suffix='%(index)d/%(max)d (%(eta_td)s remaining)')
                 for frame in ffprobe.iter_frames(stream_file_name):
                     if frame.media_type != 'video':
                         continue
@@ -193,7 +195,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
 
                     video_frames.append(frame)
                     if HAVE_PROGRESS_BAR:
-                        bar.goto(float(frame.pkt_dts_time))
+                        if int(bar.index) != int(float(frame.pkt_dts_time)):
+                            bar.goto(float(frame.pkt_dts_time))
                     if float(frame.pkt_dts_time) >= app.args.video_analyze_duration:
                         break
                     prev_frame = frame
