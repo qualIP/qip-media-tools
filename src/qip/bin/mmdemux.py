@@ -323,7 +323,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
                     else:
                         app.log.debug('Mix of interlaced and non-interlaced frames found.')
-                    assert framerate == pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
+                    v_pick_framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
+                    assert framerate == v_pick_framerate, f'constant framerate ({framerate}) does not match picked framerate ({v_pick_framerate})'
                 else:
                     app.log.debug('Variable fps found.')
 
@@ -1020,11 +1021,12 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
         # Common 2:3 Pulldown cases; mediainfo is right.
         return mediainfo_framerate
 
+    rounded_ffprobe_avg_framerate = ffprobe_avg_framerate  # ffprobe_avg_framerate.round_common(delta=0.002)
     assert (
-        ffprobe_r_framerate == ffprobe_avg_framerate
-        or ffprobe_r_framerate == ffprobe_avg_framerate * 2), \
-        (ffprobe_r_framerate, ffprobe_avg_framerate, mediainfo_framerate, mediainfo_original_framerate)
-    framerate = ffprobe_avg_framerate
+        ffprobe_r_framerate == rounded_ffprobe_avg_framerate
+        or ffprobe_r_framerate == rounded_ffprobe_avg_framerate * 2), \
+        f'ffprobe says r_frame_rate is {ffprobe_r_framerate} after interlace adjustment avg_frame_rate is {ffprobe_avg_framerate} (~{rounded_ffprobe_avg_framerate}); Which is it? (Use --force-framerate)'
+    framerate = rounded_ffprobe_avg_framerate
 
     if mediainfo_format in ('FFV1',):
         # mediainfo's ffv1 framerate is all over the place (24 instead of 23.976 for .ffv1.mkv and total number of frames for .ffv1.avi)
@@ -1032,7 +1034,7 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
     else:
         assert mediainfo_original_framerate is None \
             or mediainfo_framerate == mediainfo_original_framerate, \
-            (ffprobe_r_framerate, ffprobe_avg_framerate, mediainfo_framerate, mediainfo_original_framerate)
+            (ffprobe_r_framerate, rounded_ffprobe_avg_framerate, mediainfo_framerate, mediainfo_original_framerate)
         if framerate != mediainfo_framerate:
             if field_order == 'progressive':
                 pass
