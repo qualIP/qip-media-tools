@@ -18,6 +18,7 @@ from decimal import Decimal
 from fractions import Fraction
 import abc
 import collections
+import datetime
 import enum
 import functools
 import logging
@@ -128,11 +129,11 @@ if HAVE_PROGRESS_BAR:
 
         @property
         def end(self):
-            return int(ceil(self.avg * self.max))
+            return int(math.ceil(self.avg * self.max))
 
         @property
         def end_td(self):
-            return timedelta(seconds=self.end)
+            return datetime.timedelta(seconds=self.end)
 
         @property
         def rate(self):
