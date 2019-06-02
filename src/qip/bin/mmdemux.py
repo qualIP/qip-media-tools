@@ -79,7 +79,7 @@ import qip.mm
 import qip.utils
 Auto = qip.utils.Constants.Auto
 
-default_minlength_tvshow = qip.utils.Timestamp('20m')
+default_minlength_tvshow = qip.utils.Timestamp('15m')
 default_minlength_movie = qip.utils.Timestamp('60m')
 
 #map_RatioConverter = {
