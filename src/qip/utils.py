@@ -22,9 +22,162 @@ import enum
 import functools
 import logging
 import math
+import os
 import re
+import shutil
+import stat
+import time
 log = logging.getLogger(__name__)
 
+# https://eklitzke.org/efficient-file-copying-on-linux
+# http://git.savannah.gnu.org/cgit/coreutils.git/tree/src/ioblksize.h
+IO_BUFSIZE = 128 * 1024
+
+HAVE_PROGRESS_BAR = False
+try:
+    import progress.bar
+    HAVE_PROGRESS_BAR = True
+except ImportError:
+    pass
+
+def progress_copy2(src, dst, *, follow_symlinks=True):
+    """Copy data and metadata. Return the file's destination.
+
+    Metadata is copied with copystat(). Please see the copystat function
+    for more information.
+
+    The destination may be a directory.
+
+    If follow_symlinks is false, symlinks won't be followed. This
+    resembles GNU's "cp -P src dst".
+
+    NOTE: Same as Python 3.7ś shutil.copy2 but with progress bar support
+    """
+    if os.path.isdir(dst):
+        dst = os.path.join(dst, os.path.basename(src))
+    progress_copyfile(src, dst, follow_symlinks=follow_symlinks)
+    shutil.copystat(src, dst, follow_symlinks=follow_symlinks)
+    return dst
+
+def progress_copyfile(src, dst, *, follow_symlinks=True):
+    """Copy data from src to dst.
+
+    If follow_symlinks is not set and src is a symbolic link, a new
+    symlink will be created instead of copying the file it points to.
+
+    NOTE: Same as Python 3.7ś shutil.copyfile but with progress bar support
+    """
+    if shutil._samefile(src, dst):
+        raise SameFileError("{!r} and {!r} are the same file".format(src, dst))
+
+    for fn in [src, dst]:
+        try:
+            st = os.stat(fn)
+        except OSError:
+            # File most likely does not exist
+            pass
+        else:
+            # XXX What about other special files? (sockets, devices...)
+            if stat.S_ISFIFO(st.st_mode):
+                raise SpecialFileError("`%s` is a named pipe" % fn)
+
+    if not follow_symlinks and os.path.islink(src):
+        os.symlink(os.readlink(src), dst)
+    else:
+        with open(src, 'rb') as fsrc:
+            with open(dst, 'wb') as fdst:
+                progress_copyfileobj(fsrc, fdst)
+    return dst
+
+def progress_copyfileobj(fsrc, fdst, length=IO_BUFSIZE):
+    """copy data from file-like object fsrc to file-like object fdst
+
+    NOTE: Same as Python 3.7's shutil.copyfileobj but with progress bar support
+    """
+    if HAVE_PROGRESS_BAR and fsrc.seekable():
+        # With progress bar
+        pos = fsrc.tell()
+        fsrc.seek(0, 2)
+        siz = fsrc.tell()
+        fsrc.seek(pos, 0)
+        bar = BytesBar('Copying', max=siz)
+        try:
+            while 1:
+                buf = fsrc.read(length)
+                if not buf or int(time.monotonic()) != int(bar._ts):
+                    bar.goto(fsrc.tell())
+                if not buf:
+                    break
+                fdst.write(buf)
+        finally:
+            bar.finish()
+    else:
+        # Without progress bar
+        while 1:
+            buf = fsrc.read(length)
+            if not buf:
+                break
+            fdst.write(buf)
+
+if HAVE_PROGRESS_BAR:
+
+    class BytesBar(progress.bar.Bar):
+        suffix_start = '%(percent)d%%, %(humanindex)s/%(humanmax)s, %(humanrate)s/s, %(elapsed_td)s/%(end_td)s'
+        suffix_finish = '%(percent)d%%, %(humanindex)s, %(humanrate)s/s, %(elapsed_td)s'
+        suffix = suffix_start
+
+        @property
+        def end(self):
+            return int(ceil(self.avg * self.max))
+
+        @property
+        def end_td(self):
+            return timedelta(seconds=self.end)
+
+        @property
+        def rate(self):
+            return 1 / self.avg if self.avg else 0
+
+        @property
+        def humanindex(self):
+            return humanbytes(self.index)
+
+        @property
+        def humanmax(self):
+            return humanbytes(self.max)
+
+        @property
+        def humanrate(self):
+            return humanbytes(self.rate)
+
+        def start(self):
+            self.suffix = self.suffix_start
+            super().start()
+
+        def finish(self):
+            self.suffix = self.suffix_finish
+            self.update()
+            super().finish()
+
+KB = float(1024)
+MB = float(KB ** 2) # 1,048,576
+GB = float(KB ** 3) # 1,073,741,824
+TB = float(KB ** 4) # 1,099,511,627,776
+
+def humanbytes(B):
+   'Return the given bytes as a human friendly KB, MB, GB, or TB string'
+   B = float(B)
+
+   if B < KB:
+      return '{0} {1}'.format(B,'Bytes' if 0 == B > 1 else 'Byte')
+   elif KB <= B < MB:
+      return '{0:.2f}KB'.format(B/KB)
+   elif MB <= B < GB:
+      return '{0:.2f}MB'.format(B/MB)
+   elif GB <= B < TB:
+      return '{0:.2f}GB'.format(B/GB)
+   elif TB <= B:
+      return '{0:.2f}TB'.format(B/TB)
 
 class Constants(enum.Enum):
     Auto = 1
