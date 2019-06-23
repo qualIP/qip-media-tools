@@ -871,7 +871,7 @@ class FrameRate(Fraction):
             abs_diff = abs(self - framerate)
             if abs_diff <= delta:
                 return framerate
-        raise ValueError(f'{self} is not near a common framerate')
+        raise ValueError(f'{self} ({float(self)}) is not near a common framerate')
 
 
 common_framerates = sorted([
