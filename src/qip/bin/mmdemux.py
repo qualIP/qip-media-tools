@@ -120,6 +120,7 @@ common_resolutions = {
     (704, 576),   # 576i (horizontal blanking cropped)  DAR 16:9 / PAR 16:11 -> 1024×576
     (720, 576),   # 576i (full frame)                   DAR 16:9 / PAR 16:11 -> 1048×576
     # Other
+    (720, 360),   # Anamorphic Widescreen
     (720, 362),   # Anamorphic Widescreen
     # HD (https://en.wikipedia.org/wiki/High-definition_video)
     (1280, 720),  # HD Ready
@@ -133,6 +134,10 @@ common_resolutions = {
     (4096, 2160), # (full frame)       256∶135 or ≈1.90∶1
     (3996, 2160), # (flat crop)                    1.85∶1
     (4096, 1716), # (CinemaScope crop)            ≈2.39∶1
+}
+
+cropdetect_autocorrect_whlt = {
+    (1920, 804, 0, 138): (1920, 800, 0, 140),  # 2.40:1 "CinemaScope"
 }
 
 def MOD_ROUND(v, m):
@@ -1878,27 +1883,43 @@ def action_optimize(inputdir, in_tags):
                             stream_crop_whlt = None
                         stream_dict.setdefault('original_crop', stream_crop_whlt)
                         if stream_crop_whlt:
-                            w, h, l, t = stream_crop_whlt
-                            video_filter_specs.append('crop={w}:{h}:{l}:{t}'.format(
-                                        w=w, h=h, l=l, t=t))
-                            # extra_args += ['-aspect', XXX]
                             stream_dict.setdefault('original_display_aspect_ratio', stream_dict['display_aspect_ratio'])
-                            storage_aspect_ratio = Ratio(w, h)
                             pixel_aspect_ratio = Ratio(stream_dict['pixel_aspect_ratio'])  # invariable
+                            w, h, l, t = stream_crop_whlt
+                            storage_aspect_ratio = Ratio(w, h)
                             display_aspect_ratio = pixel_aspect_ratio * storage_aspect_ratio
+                            orig_stream_crop_whlt = stream_crop_whlt
+                            orig_storage_aspect_ratio = storage_aspect_ratio
+                            orig_display_aspect_ratio = display_aspect_ratio
+                            if stream_crop is Auto:
+                                try:
+                                    stream_crop_whlt = cropdetect_autocorrect_whlt[stream_crop_whlt]
+                                except KeyError:
+                                    pass
+                                else:
+                                    w, h, l, t = stream_crop_whlt
+                                    storage_aspect_ratio = Ratio(w, h)
+                                    display_aspect_ratio = pixel_aspect_ratio * storage_aspect_ratio
+                                    app.log.warning('Crop detection result accepted: --crop-whlt %s w/ DAR %s, auto-corrected from %s w/ DAR %s',
+                                                    ' '.join(str(e) for e in display_aspect_ratio),
+                                                    display_aspect_ratio,
+                                                    ' '.join(str(e) for e in orig_display_aspect_ratio),
+                                                    orig_display_aspect_ratio)
+                                    stream_crop = True
                             if stream_crop is Auto:
                                 if display_aspect_ratio in common_aspect_ratios or \
                                         (w, h) in common_resolutions:
-                                    app.log.warning('Crop detection result accepted: --crop-whlt %s w/ common DAR %s',
+                                    app.log.warning('Crop detection result accepted: --crop-whlt %s w/ DAR %s, common',
                                                     ' '.join(str(e) for e in stream_crop_whlt),
                                                     display_aspect_ratio)
-                                else:
-                                    raise RuntimeError('Crop detection! --crop or --no-crop or --crop-whlt %s w/ DAR %s' % (
-                                                  ' '.join(str(e) for e in stream_crop_whlt),
-                                                  display_aspect_ratio))
-                                    app.log.error('Crop detection! --crop or --no-crop or --crop-whlt %s w/ DAR %s',
-                                                  ' '.join(str(e) for e in stream_crop_whlt),
-                                                  display_aspect_ratio)
+                                    stream_crop = True
+                            if stream_crop is Auto:
+                                raise RuntimeError('Crop detection! --crop or --no-crop or --crop-whlt %s w/ DAR %s' % (
+                                              ' '.join(str(e) for e in stream_crop_whlt),
+                                              display_aspect_ratio))
+                            video_filter_specs.append('crop={w}:{h}:{l}:{t}'.format(
+                                        w=w, h=h, l=l, t=t))
+                            # extra_args += ['-aspect', XXX]
                             stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
 
                 if video_filter_specs:
