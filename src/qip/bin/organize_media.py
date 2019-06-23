@@ -464,7 +464,7 @@ def get_plex_contenttype_suffix(inputfile, default=None):
             #qip.mm.ContentType.cartoon: '-TODO',
             qip.mm.ContentType.concert: '-concert',
             qip.mm.ContentType.deleted: '-deleted',
-            #qip.mm.ContentType.documentary: '-TODO',
+            qip.mm.ContentType.documentary: '-extra',  # TODO documentary support in Local TV Extras
             #qip.mm.ContentType.feature_film: '-TODO',
             qip.mm.ContentType.featurette: '-featurette',
             qip.mm.ContentType.interview: '-interview',
