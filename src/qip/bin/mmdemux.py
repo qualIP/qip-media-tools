@@ -501,6 +501,7 @@ def main():
     pgroup.add_argument('--xid', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
 
     pgroup = app.parser.add_argument_group('Options')
+    pgroup.add_bool_argument('--beep', default=False, help='beep when done')
     pgroup.add_bool_argument('--eject', default=False, help='ejecting cdrom when done')
     pgroup.add_argument('--project', default=Auto, help='project name')
     pgroup.add_bool_argument('--chain', help='chaining actions toward demux')
