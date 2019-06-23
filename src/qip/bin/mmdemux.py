@@ -1706,6 +1706,7 @@ def action_optimize(inputdir, in_tags):
     for stream_dict in mux_dict['streams']:
         if stream_dict.get('skip', False):
             continue
+        do_skip = False
         stream_index = stream_dict['index']
         stream_codec_type = stream_dict['codec_type']
         orig_stream_file_name = stream_file_name = stream_dict['file_name']
@@ -2460,42 +2461,70 @@ def action_optimize(inputdir, in_tags):
                         do_spawn_cmd(cmd)
 
                 else:
-                    with perfcontext('Convert %s -> %s w/ SubtitleEdit' % (stream_file_ext, new_stream_file_name)):
-                        if False:
-                            cmd = [
-                                'SubtitleEdit', '/convert',
-                                os.path.join(inputdir, stream_file_name),
-                                'subrip',  # format
-                                ]
-                            do_spawn_cmd(cmd)
-                        else:
+                    while True:
+                        with perfcontext('Convert %s -> %s w/ SubtitleEdit' % (stream_file_ext, new_stream_file_name)):
                             if False:
-                                app.log.warning('Run OCR and save as SubRip (.srt) format: %s' % (
-                                    byte_decode(dbg_exec_cmd(['winepath', '-w', os.path.join(inputdir, new_stream_file_name)])).strip(),
-                                    ))
-                            cmd = [
-                                'SubtitleEdit',
-                                os.path.join(inputdir, stream_file_name),
-                                ]
-                            do_spawn_cmd(cmd)
-                            assert os.path.isfile(os.path.join(inputdir, new_stream_file_name)), \
-                                    'File not found: %r' % (os.path.join(inputdir, new_stream_file_name),)
-                cmd = [
-                    os.path.join(os.path.dirname(__file__), 'fix-subtitles'),
-                    os.path.join(inputdir, new_stream_file_name),
-                    ]
-                out = dbg_exec_cmd(cmd)
-                if not app.args.dry_run:
-                    out = clean_cmd_output(out)
-                    File.new_by_file_name(os.path.join(inputdir, new_stream_file_name)) \
-                            .write(out)
-                    if app.args.interactive:
-                        edfile(os.path.join(inputdir, new_stream_file_name))
+                                cmd = [
+                                    'SubtitleEdit', '/convert',
+                                    os.path.join(inputdir, stream_file_name),
+                                    'subrip',  # format
+                                    ]
+                                do_spawn_cmd(cmd)
+                            else:
+                                if False:
+                                    app.log.warning('Run OCR and save as SubRip (.srt) format: %s' % (
+                                        byte_decode(dbg_exec_cmd(['winepath', '-w', os.path.join(inputdir, new_stream_file_name)])).strip(),
+                                        ))
+                                cmd = [
+                                    'SubtitleEdit',
+                                    os.path.join(inputdir, stream_file_name),
+                                    ]
+                                do_spawn_cmd(cmd)
+                        if not os.path.isfile(os.path.join(inputdir, new_stream_file_name)):
+                            try:
+                                raise OSError(errno.ENOENT,
+                                              'File not found: %r' % (os.path.join(inputdir, new_stream_file_name),),
+                                              os.path.join(inputdir, new_stream_file_name))
+                            except OSError as e:
+                                if app.args.interactive:
+                                    print(f'{e}:')
+                                    print(' s - skip this subtitle stream')
+                                    print(' r - retry')
+                                    print(' q - quit')
+                                    c = input('Choice: ')
+                                    if c == 's':
+                                        do_skip = True
+                                        break
+                                    elif c == 'r':
+                                        continue
+                                    elif c == 'q':
+                                        raise
+                                    else:
+                                        app.log.error('Invalid input')
+                                raise
+                        break
 
-                temp_files.append(os.path.join(inputdir, stream_file_name))
-                stream_dict.setdefault('original_file_name', stream_file_name)
-                stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+                if not do_skip:
+                    cmd = [
+                        os.path.join(os.path.dirname(__file__), 'fix-subtitles'),
+                        os.path.join(inputdir, new_stream_file_name),
+                        ]
+                    out = dbg_exec_cmd(cmd)
+                    if not app.args.dry_run:
+                        out = clean_cmd_output(out)
+                        File.new_by_file_name(os.path.join(inputdir, new_stream_file_name)) \
+                                .write(out)
+                        if app.args.interactive:
+                            edfile(os.path.join(inputdir, new_stream_file_name))
+
+                if do_skip:
+                    stream_dict['skip'] = True
+                    app.log.info('Stream #%d %s: setting to be skipped', stream_index, stream_file_name)
+                else:
+                    temp_files.append(os.path.join(inputdir, stream_file_name))
+                    stream_dict.setdefault('original_file_name', stream_file_name)
+                    stream_dict['file_name'] = stream_file_name = new_stream_file_name
+                    stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 if not app.args.dry_run:
                     output_mux_file_name = '%s/mux.json' % (outputdir,)
                     with open(output_mux_file_name, 'w') as fp:
@@ -2504,6 +2533,8 @@ def action_optimize(inputdir, in_tags):
                         for file_name in temp_files:
                             os.unlink(file_name)
                         temp_files = []
+                if do_skip:
+                    continue
 
             # NOTE:
             #  WebVTT format exported by SubtitleEdit is same as ffmpeg .srt->.vtt except ffmpeg's timestamps have more 0-padding
