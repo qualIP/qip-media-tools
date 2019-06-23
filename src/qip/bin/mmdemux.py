@@ -2631,6 +2631,7 @@ def action_extract_music(inputdir, in_tags):
     chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=False))
     while chaps and chaps[0].no < num_skip_chapters:
         chaps.pop(0)
+    chaps = [chap for chap in chaps if chap.title]
     tracks_total = len(chaps)
 
     for track_no, chap in enumerate(chaps, start=1):
