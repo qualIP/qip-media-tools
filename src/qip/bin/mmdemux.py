@@ -841,21 +841,46 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
     name_scan_str = name_scan_str.strip()
     name_scan_str = re.sub(r'_t\d+$', '', name_scan_str)
     m = (
-            re.match(r'^(?P<tvshow>.+) S(?P<season>\d+)E(?P<str_episodes>\d+(?:E\d+)*) (?P<title>.+)$', name_scan_str)
-         or re.match(r'^(?P<title>.+)$', name_scan_str)
-        )
+        re.match(r'^(?P<tvshow>.+) S(?P<season>\d+)E(?P<str_episodes>\d+(?:E\d+)*)(?: (?P<title>.+))?$', name_scan_str)
+        or re.match(r'^(?P<title>.+)$', name_scan_str)
+    )
     if m:
         d = m.groupdict()
         d = {k: v and v.strip() for k, v in d.items()}
-        if d.get('title', None) == 'title':
-            del d['title']
+        try:
+            if d['title'] in (None, 'title'):
+                del d['title']
+        except KeyError:
+            pass
         try:
             str_episodes = d.pop('str_episodes')
         except KeyError:
             pass
         else:
             d['episode'] = [int(e) for e in str_episodes.split('E') if e]
+        try:
+            if d['season'] == '0':
+                d['season'] = None
+        except KeyError:
+            pass
+        try:
+            if d['episode'] == [0]:
+                d['episode'] = None
+        except KeyError:
+            pass
         inputfile.tags.update(d)
+        try:
+            m = re.match('^(?P<contenttype>[^:]+:) (?P<title>.+)$', d['title'])
+        except KeyError:
+            pass
+        else:
+            if m:
+                try:
+                    d['contenttype'] = ContentType(m.group('contenttype').strip())
+                except ValueError:
+                    pass
+                else:
+                    d['title'] = m.group('title').strip()
 
     if inputfile.exists():
         inputfile.tags.update(inputfile.load_tags())
