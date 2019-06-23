@@ -334,14 +334,20 @@ class App(object):
                 if self.log.isEnabledFor(logging.DEBUG):
                     etype, value, tb = sys.exc_info()
                     self.log.debug(''.join(traceback.format_exception(etype, value, tb)))
-                exit(1)
+                app.exit(1)
             if ret is True or ret is None:
-                exit(0)
+                app.exit(0)
             elif ret is False:
-                exit(1)
+                app.exit(1)
             else:
-                exit(ret)
+                app.exit(ret)
         return wrapper
+
+    def exit(self, ret):
+        if getattr(self.args, 'beep', False):
+            from qip.utils import beep
+            beep()
+        exit(ret)
 
 app = App()
 

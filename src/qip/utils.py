@@ -1,4 +1,5 @@
 __all__ = (
+    'beep',
     'Constants',
     'KwVarsObject',
     'TypedKeyDict',
@@ -29,6 +30,9 @@ import shutil
 import stat
 import time
 log = logging.getLogger(__name__)
+
+def beep():
+    print('\a', end='')
 
 # https://eklitzke.org/efficient-file-copying-on-linux
 # http://git.savannah.gnu.org/cgit/coreutils.git/tree/src/ioblksize.h
