@@ -174,41 +174,44 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             prev_frame.pkt_dts = 0
             prev_frame.pkt_pts = 0
             prev_frame.pkt_duration = 0
+            prev_frame.interlaced_frame = False
             with perfcontext('frames iteration'):
                 if HAVE_PROGRESS_BAR:
                     bar = progress.bar.Bar('iterate frames',
                                            max=float(app.args.video_analyze_duration),
                                            suffix='%(index)d/%(max)d (%(eta_td)s remaining)')
-                for frame in ffprobe.iter_frames(stream_file_name):
-                    if frame.media_type != 'video':
-                        continue
-                    assert frame.stream_index == 0
+                try:
+                    for frame in ffprobe.iter_frames(stream_file_name):
+                        if frame.media_type != 'video':
+                            continue
+                        assert frame.stream_index == 0
 
-                    if frame.pkt_pts_time is None:
-                        frame.pkt_pts_time = frame.pkt_dts_time
-                    if frame.pkt_pts_time is None:
-                        frame.pkt_pts_time = prev_frame.pkt_pts_time + prev_frame.pkt_duration_time
-                    if frame.pkt_dts_time is None:
-                        frame.pkt_dts_time = frame.pkt_pts_time
+                        if frame.pkt_pts_time is None:
+                            frame.pkt_pts_time = frame.pkt_dts_time
+                        if frame.pkt_pts_time is None:
+                            frame.pkt_pts_time = prev_frame.pkt_pts_time + prev_frame.pkt_duration_time
+                        if frame.pkt_dts_time is None:
+                            frame.pkt_dts_time = frame.pkt_pts_time
 
-                    if frame.pkt_pts is None:
-                        frame.pkt_pts = frame.pkt_dts
-                    if frame.pkt_pts is None:
-                        frame.pkt_pts = prev_frame.pkt_pts + prev_frame.pkt_duration
-                    if frame.pkt_dts is None:
-                        frame.pkt_dts = frame.pkt_pts
+                        if frame.pkt_pts is None:
+                            frame.pkt_pts = frame.pkt_dts
+                        if frame.pkt_pts is None:
+                            frame.pkt_pts = prev_frame.pkt_pts + prev_frame.pkt_duration
+                        if frame.pkt_dts is None:
+                            frame.pkt_dts = frame.pkt_pts
 
-                    video_frames.append(frame)
+                        video_frames.append(frame)
+                        if HAVE_PROGRESS_BAR:
+                            if int(bar.index) != int(float(frame.pkt_dts_time)):
+                                bar.goto(float(frame.pkt_dts_time))
+                        if float(frame.pkt_dts_time) >= app.args.video_analyze_duration:
+                            break
+                        prev_frame = frame
+                    #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
+                    #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
+                finally:
                     if HAVE_PROGRESS_BAR:
-                        if int(bar.index) != int(float(frame.pkt_dts_time)):
-                            bar.goto(float(frame.pkt_dts_time))
-                    if float(frame.pkt_dts_time) >= app.args.video_analyze_duration:
-                        break
-                    prev_frame = frame
-                #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
-                #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
-                if HAVE_PROGRESS_BAR:
-                    bar.finish()
+                        bar.finish()
 
             app.log.debug('Analyzing %d video frames...', len(video_frames))
 
