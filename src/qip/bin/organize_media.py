@@ -614,13 +614,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
     do_suggest_tags(inputfile, suggest_tags=suggest_tags)
 
     for tag in (
-            'season',   # Must be set but can be 0
-            ):
-        if tag and getattr(inputfile.tags, tag) is None:
-            raise MissingMediaTagError(tag, file=inputfile)
-    for tag in (
             'tvshow',   # Not allowed to be empty
-            'episode',  # Not allowed to be an empty list
             ):
         if tag and not getattr(inputfile.tags, tag):
             raise MissingMediaTagError(tag, file=inputfile)
@@ -628,33 +622,76 @@ def organize_tvshow(inputfile, *, suggest_tags):
     dst_dir = ''
 
     # https://github.com/MediaBrowser/Wiki/wiki/TV-naming
-    # TVSHOW/SEASON 01/
+    # TVSHOW/
     dst_dir += '%s/' % (clean_file_name(inputfile.tags.tvshow, keep_ext=False),)
-    if inputfile.tags.season is not None:
+
+    if inputfile.tags.season is None:
+        assert inputfile.tags.episode is None
+        if inputfile.tags.contenttype is None:
+            raise MissingMediaTagError('contenttype', file=inputfile)
+
+        dst_file_base = ''
+
+    else:
+        # https://github.com/MediaBrowser/Wiki/wiki/TV-naming
+        # .../Season 1/
+        # .../Specials/
         if inputfile.tags.season == 0:
             # https://support.plex.tv/articles/200220707-naming-tv-show-specials/
             dst_dir += 'Specials/'
         else:
             dst_dir += 'Season %d/' % (inputfile.tags.season,)
 
+
     dst_file_base = ''
 
-    # TVSHOW S01E01 [TITLE]
-    dst_file_base += inputfile.tags.tvshow
-    dst_file_base += ' S%02d' % (
-        inputfile.tags.season,
-        )
-    episodes = inputfile.tags.episode
-    if episodes is not None:
-        episodes = sorted(episodes)
-        dst_file_base += 'E%02d' % (episodes[0],)
-        if len(episodes) > 1:
-            # https://support.plex.tv/articles/200220687-naming-series-season-based-tv-shows/
-            dst_file_base += '-E%02d' % (episodes[-1],)
-    if inputfile.tags.title and inputfile.tags.title != inputfile.tags.tvshow:
-        dst_file_base += ' %s' % (inputfile.tags.title,)
+    if inputfile.tags.episode is None:
+        # Show/Season extra
+        # https://github.com/contrary-cat/LocalTVExtras.bundle
+        if inputfile.tags.contenttype is None:
+            raise MissingMediaTagError('contenttype', file=inputfile)
+        # COMMENT
+        if inputfile.tags.comment:
+            # COMMENT
+            dst_file_base = '%s' % (inputfile.tags.comment[0],)
+        else:
+            # ContentType
+            dst_file_base = str(inputfile.tags.contenttype)
+
+        dst_file_base += get_plex_contenttype_suffix(inputfile)
+
     else:
-        pass  # Could be the episode name is not known.
+        if inputfile.tags.season is None:
+            raise MissingMediaTagError('season', file=inputfile)
+        # TVSHOW S01E01 [TITLE]
+        dst_file_base += inputfile.tags.tvshow
+        dst_file_base += ' S%02d' % (
+            inputfile.tags.season,
+            )
+        episodes = inputfile.tags.episode
+        if episodes is not None:
+            episodes = sorted(episodes)
+            dst_file_base += 'E%02d' % (episodes[0],)
+            if len(episodes) > 1:
+                # https://support.plex.tv/articles/200220687-naming-series-season-based-tv-shows/
+                dst_file_base += '-E%02d' % (episodes[-1],)
+        if inputfile.tags.title and inputfile.tags.title != inputfile.tags.tvshow:
+            dst_file_base += ' %s' % (inputfile.tags.title,)
+        else:
+            pass  # Could be the episode name is not known.
+
+        if inputfile.tags.contenttype is not None:
+            # Episode extra
+            # https://github.com/contrary-cat/LocalTVExtras.bundle
+            # COMMENT
+            if inputfile.tags.comment:
+                # COMMENT
+                dst_file_base += '-%s' % (inputfile.tags.comment[0],)
+            else:
+                # ContentType
+                dst_file_base = str(inputfile.tags.contenttype)
+
+            dst_file_base += get_plex_contenttype_suffix(inputfile)
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
