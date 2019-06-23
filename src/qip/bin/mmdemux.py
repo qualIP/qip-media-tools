@@ -405,6 +405,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
 
     return field_order, framerate
 
+num_batch_skips = 0
+
 @app.main_wrapper
 def main():
 
@@ -574,6 +576,8 @@ def main():
         did_something = True
     if not did_something:
         raise ValueError('Nothing to do!')
+    if num_batch_skips:
+        raise Exception(f'BATCH MODE SKIP: {num_batch_skips} actions skipped.')
 
 def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_stream_dict=None):
     if mediainfo_track_dict:
@@ -2369,6 +2373,7 @@ def action_optimize(inputdir, in_tags):
                 if app.args.batch:
                     app.log.warning('BATCH MODE SKIP: Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
                     do_chain = False
+                    num_batch_skips += 1
                     continue
                 app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
