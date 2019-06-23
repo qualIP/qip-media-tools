@@ -276,6 +276,7 @@ def format_part_suffix(inputfile):
         part = "%0*d" % (len(str(inputfile.tags.parts or 1)), inputfile.tags.part)
     else:
         part = None
+    app.log.debug('disk=%r, track=%r, part=%r', disk, track, part)
 
     if app.args.app == 'plex':
         # - [DISK]
@@ -763,8 +764,10 @@ def organize(inputfile):
         ores = organize_audiobook(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'musicvideo':
         if app.args.app == 'emby':
+            app.log.debug('emby: musicvideo -> music')
             ores = organize_music(inputfile, suggest_tags=suggest_tags)
         else:
+            app.log.debug('plex: musicvideo -> inline musicvideo')
             ores = organize_inline_musicvideo(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'movie':
         ores = organize_movie(inputfile, suggest_tags=suggest_tags)
