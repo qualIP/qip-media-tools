@@ -1,5 +1,6 @@
 __all__ = (
     'beep',
+    'humanbytes',
     'Constants',
     'KwVarsObject',
     'TypedKeyDict',
@@ -126,9 +127,14 @@ def progress_copyfileobj(fsrc, fdst, length=IO_BUFSIZE):
 
 if HAVE_PROGRESS_BAR:
 
+    __all__ += (
+        'BytesBar',
+    )
+
     class BytesBar(progress.bar.Bar):
-        suffix_start = '%(percent)d%%, %(humanindex)s/%(humanmax)s, %(humanrate)s/s, %(elapsed_td)s/%(end_td)s'
-        suffix_finish = '%(percent)d%%, %(humanindex)s, %(humanrate)s/s, %(elapsed_td)s'
+        # 86.4% (16.3 GiB / 18.9 GiB) 26.2 MiB/s remaining 0:01:40
+        suffix_start = '%(percent)d%% (%(humanindex)s / %(humanmax)s) %(humanrate)s/s remaining %(eta_td)s / %(end_td)s'
+        suffix_finish = '%(percent)d%% (%(humanmax)s) %(humanrate)s/s %(elapsed_td)s'
         suffix = suffix_start
 
         @property
