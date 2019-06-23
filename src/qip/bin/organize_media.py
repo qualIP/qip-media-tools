@@ -385,6 +385,8 @@ def organize_music(inputfile, *, suggest_tags):
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
+    dst_file_base += format_part_suffix(inputfile)
+
     dst_file_base += os.path.splitext(inputfile.file_name)[1]
 
     return dst_dir, dst_file_base
