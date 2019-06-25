@@ -409,6 +409,7 @@ num_batch_skips = 0
 
 @app.main_wrapper
 def main():
+    global num_batch_skips
 
     app.init(
             version='1.0',
@@ -1660,6 +1661,7 @@ def my_splitext(file_name):
     return base, ext
 
 def action_optimize(inputdir, in_tags):
+    global num_batch_skips
     app.log.info('Optimizing %s...', inputdir)
     outputdir = inputdir
     do_chain = app.args.chain
