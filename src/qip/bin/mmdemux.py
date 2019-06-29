@@ -121,7 +121,8 @@ common_resolutions = {
     (720, 576),   # 576i (full frame)                   DAR 16:9 / PAR 16:11 -> 1048×576
     # Other
     (720, 360),   # Anamorphic Widescreen
-    (720, 362),   # Anamorphic Widescreen
+    (720, 362),   # Common Anamorphic Widescreen
+    (720, 368),   # Common Anamorphic Widescreen  DAR 160:69
     # HD (https://en.wikipedia.org/wiki/High-definition_video)
     (1280, 720),  # HD Ready
     (1920, 816),  # 2.35:1 "CinemaScope"
