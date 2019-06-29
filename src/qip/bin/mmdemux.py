@@ -1731,8 +1731,25 @@ def action_optimize(inputdir, in_tags):
                     break
 
                 mediainfo_dict = stream_file.extract_mediainfo_dict()
-                mediainfo_general_dict, mediainfo_track_dict = mediainfo_dict['media']['track']
-                assert mediainfo_track_dict['@type'] == 'Video'
+                mediainfo_general_dict = None
+                mediainfo_track_dict = None
+                mediainfo_text_dict = None
+                for d in mediainfo_dict['media']['track']:
+                    if d['@type'] == 'General':
+                        assert mediainfo_general_dict is None
+                        mediainfo_general_dict = d
+                    elif d['@type'] == 'Video':
+                        assert mediainfo_track_dict is None
+                        mediainfo_track_dict = d
+                    elif d['@type'] == 'Text':
+                        assert mediainfo_text_dict is None
+                        mediainfo_text_dict = d
+                    else:
+                        raise ValueError(d['@type'])
+                assert mediainfo_general_dict
+                assert mediainfo_track_dict
+                # ffprobe -f lavfi -i movie=Sentinel/title_t00/track-00-video.mpeg2.mp2v,readeia608 -show_entries frame=pkt_pts_time:frame_tags=lavfi.readeia608.0.cc,lavfi.readeia608.1.cc -of csv > Sentinel/title_t00/track-00-video.cc.csv
+                #assert not mediainfo_text_dict
 
                 field_order, framerate = analyze_field_order_and_framerate(
                     os.path.join(inputdir, stream_file_name),
