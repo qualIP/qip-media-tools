@@ -259,20 +259,20 @@ def do_suggest_tags(inputfile, *, suggest_tags):
             inputfile.write_tags(tags=suggest_tags, dry_run=app.args.dry_run, run_func=do_exec_cmd)
             inputfile.tags.update(suggest_tags)
 
-def format_part_suffix(inputfile):
+def format_part_suffix(inputfile, which={'disk', 'track', 'part'}):
 
     dst_file_base = ''
 
-    if inputfile.tags.disk and inputfile.tags.disks and \
+    if 'disk' in which and inputfile.tags.disk and inputfile.tags.disks and \
             inputfile.tags.disks > 1:
         disk = "%0*d" % (len(str(inputfile.tags.disks or 1)), inputfile.tags.disk)
     else:
         disk = None
-    if inputfile.tags.track is not None:
+    if 'track' in which and inputfile.tags.track is not None:
         track = "%0*d" % (len(str(inputfile.tags.tracks or 99)), inputfile.tags.track)
     else:
         track = None
-    if inputfile.tags.part is not None:
+    if 'part' in which and inputfile.tags.part is not None:
         part = "%0*d" % (len(str(inputfile.tags.parts or 1)), inputfile.tags.part)
     else:
         part = None
@@ -497,6 +497,8 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
         inputfile,
         default=qip.mm.ContentType.video)
 
+    dst_file_base += format_part_suffix(inputfile, which={'part'})
+
     dst_file_base += dst_file_base_ext
 
     return dst_dir, dst_file_base
@@ -644,7 +646,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
             dst_dir += 'Season %d/' % (inputfile.tags.season,)
 
 
-    dst_file_base = ''
+        dst_file_base = ''
 
     if inputfile.tags.episode is None:
         # Show/Season extra
@@ -694,11 +696,11 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
             dst_file_base += get_plex_contenttype_suffix(inputfile)
 
-    # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
+        # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
-    dst_file_base += format_part_suffix(inputfile)
+        dst_file_base += format_part_suffix(inputfile)
 
-    dst_file_base += os.path.splitext(inputfile.file_name)[1]
+        dst_file_base += os.path.splitext(inputfile.file_name)[1]
 
     return dst_dir, dst_file_base
 
