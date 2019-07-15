@@ -311,7 +311,7 @@ def format_part_suffix(inputfile, which={'disk', 'track', 'part'}):
 
     return dst_file_base
 
-def organize_music(inputfile, *, suggest_tags):
+def organize_music(inputfile, *, suggest_tags, dbtype='music'):
 
     # ARTIST
     if not inputfile.tags.artist:
@@ -319,7 +319,9 @@ def organize_music(inputfile, *, suggest_tags):
 
     # ALBUMARTIST
     if not inputfile.tags.albumartist and inputfile.tags.artist:
-        suggest_tags.albumartist = inputfile.tags.albumartist = inputfile.tags.artist
+        inputfile.tags.albumartist = inputfile.tags.artist
+        if dbtype == 'music':
+            suggest_tags.albumartist = inputfile.tags.albumartist
 
     # TITLE
     if not inputfile.tags.title:
@@ -487,7 +489,8 @@ def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
 
 def organize_inline_musicvideo(inputfile, *, suggest_tags):
 
-    dst_dir, dst_file_base = organize_music(inputfile, suggest_tags=suggest_tags)
+    dst_dir, dst_file_base = organize_music(inputfile, suggest_tags=suggest_tags,
+                                            dbtype='musicvideo')
     dst_file_base, dst_file_base_ext = os.path.splitext(dst_file_base)
 
     # COMMENT
@@ -774,7 +777,8 @@ def organize(inputfile):
     elif inputfile.tags.type == 'musicvideo':
         if app.args.app == 'emby':
             app.log.debug('emby: musicvideo -> music')
-            ores = organize_music(inputfile, suggest_tags=suggest_tags)
+            ores = organize_music(inputfile, suggest_tags=suggest_tags,
+                                  dbtype='musicvideo')
         else:
             app.log.debug('plex: musicvideo -> inline musicvideo')
             ores = organize_inline_musicvideo(inputfile, suggest_tags=suggest_tags)
