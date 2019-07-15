@@ -2137,14 +2137,17 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         elif tag == 'comment':
             if value == '<p>':
                 return False
-            try:
-                l = self[tag] or []
-            except KeyError:
-                l = []
-                pass
-            if value not in l:
-                l.append(value)
-            value = l
+            if value == 'None':
+                value = None
+            else:
+                try:
+                    l = self[tag] or []
+                except KeyError:
+                    l = []
+                    pass
+                if value not in l:
+                    l.append(value)
+                value = l
 
         elif tag == 'type':
             if type(value) is int or value.isdigit():
