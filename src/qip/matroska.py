@@ -110,6 +110,7 @@ default_tag_map = (
     TagInfo(None, None, 'DATE_RELEASED', 'date'),
     #TagInfo(None, None, 'TODO', 'country'),
     TagInfo(None, None, 'RECORDING_LOCATION', 'recording_location'),
+    TagInfo(None, None, 'DATE_RECORDED', 'recording_date'),
     # XXXJST CONFLICT TagInfo(None, None, 'PART_NUMBER', 'disk'),
     # XXXJST CONFLICT TagInfo(None, None, 'TOTAL_PARTS', 'disks'),
     # XXXJST CONFLICT TagInfo(None, None, 'PART_NUMBER', 'track'),

@@ -147,6 +147,7 @@ def main():
     pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--recording-location', dest='recording_location', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--recording-date', dest='recording_date', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--compilation', '-K', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--sort-grouping', dest='sortgrouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)

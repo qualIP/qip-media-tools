@@ -276,7 +276,6 @@ class MediaFile(BinaryFile):
                     'COMM:iTunPGAP',  # TODO
                     'COMM:iTunSMPB',  # TODO
                     'COMM:iTunes_CDDB_IDs',  # TODO
-                    'TDRC',  # TODO
                     'UFID:http://www.cddb.com/id3/taginfo1.html',  # TODO
                     'TXXX:OverDrive MediaMarkers',  # TODO
                     ):
@@ -1186,7 +1185,9 @@ class MediaTagEnum(enum.Enum):
     year = 'year'  # NUM  Set the release date (*from date)
 
     country = 'country'  # STR  None|IsoCountry
+
     recording_location = 'recording_location'  # STR  CC, STATE, CITY[, XXX]
+    recording_date = 'recording_date'  # None|MediaTagDate
 
     disk = 'disk'  # NUM  Set the disk number
     disks = 'disks'  # NUM  Set the number of disks
@@ -1704,6 +1705,10 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         type=(_tNullTag,
               _tMatroskaLocation,
               ))
+
+    recording_date = propex(
+        name='recording_date',
+        type=(_tNullDate, MediaTagDate))
 
     season = propex(
         name='season',
@@ -3950,6 +3955,9 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     # date = mp4v2 year
     ["Release Date",           "©day",                     "utf-8",                    "date",                     "TDA",                      "TDAT",           ["releaseDate", "Date", "date", 'DATE_RELEASED']],
     ["Year",                   None,                       None,                       None,                       "TYE",                      "TYER",           ["year"]],
+    ["Recording Date",         None,                       None,                       "recording_date",           None,                       "TRDA",           ["recordingDate",
+                                                                                                                                                                  "TDRC"  # Just the simple form
+                                                                                                                                                                  ]],
     ["Track Number",           "trkn",                     "binary",                   "track",                    None,                       None,             []],
     ["Total Tracks",           None,                       "int32",                    "tracks",                   None,                       None,             []],
     ["track_slash_tracks",     None,                       "utf-8",                    None,                       "TRK",                      "TRCK",           []],
