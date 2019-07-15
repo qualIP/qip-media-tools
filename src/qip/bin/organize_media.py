@@ -457,7 +457,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     return dst_dir, dst_file_base
 
-def get_plex_contenttype_suffix(inputfile, default=None):
+def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
     contenttype = inputfile.tags.contenttype or default
     try:
         return {
@@ -465,7 +465,10 @@ def get_plex_contenttype_suffix(inputfile, default=None):
             #qip.mm.ContentType.cartoon: '-TODO',
             qip.mm.ContentType.concert: '-concert',
             qip.mm.ContentType.deleted: '-deleted',
-            qip.mm.ContentType.documentary: '-extra',  # TODO documentary support in Local TV Extras
+            qip.mm.ContentType.documentary:
+                # https://github.com/contrary-cat/LocalTVExtras.bundle
+                '-extra' if dbtype == 'tvshow'
+                else '-other',  # TODO documentary support in Local TV Extras
             #qip.mm.ContentType.feature_film: '-TODO',
             qip.mm.ContentType.featurette: '-featurette',
             qip.mm.ContentType.interview: '-interview',
@@ -495,7 +498,8 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
     # -video
     dst_file_base += get_plex_contenttype_suffix(
         inputfile,
-        default=qip.mm.ContentType.video)
+        default=qip.mm.ContentType.video,
+        dbtype='musicvideo')
 
     dst_file_base += format_part_suffix(inputfile, which={'part'})
 
@@ -585,7 +589,8 @@ def organize_movie(inputfile, *, suggest_tags):
             # ContentType
             dst_file_base = str(inputfile.tags.contenttype)
 
-        dst_file_base += get_plex_contenttype_suffix(inputfile)
+        dst_file_base += get_plex_contenttype_suffix(inputfile,
+                                                     dbtype='movie')
 
     dst_file_base += format_part_suffix(inputfile)
 
@@ -661,7 +666,8 @@ def organize_tvshow(inputfile, *, suggest_tags):
             # ContentType
             dst_file_base = str(inputfile.tags.contenttype)
 
-        dst_file_base += get_plex_contenttype_suffix(inputfile)
+        dst_file_base += get_plex_contenttype_suffix(inputfile,
+                                                     dbtype='tvshow')
 
     else:
         if inputfile.tags.season is None:
@@ -694,7 +700,8 @@ def organize_tvshow(inputfile, *, suggest_tags):
                 # ContentType
                 dst_file_base = str(inputfile.tags.contenttype)
 
-            dst_file_base += get_plex_contenttype_suffix(inputfile)
+            dst_file_base += get_plex_contenttype_suffix(inputfile,
+                                                         dbtype='tvshow')
 
         # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
