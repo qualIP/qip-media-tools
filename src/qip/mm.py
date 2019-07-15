@@ -1463,6 +1463,7 @@ for _e in ContentType:
     ContentType._value2member_map_[_e.name.lower()] = _e
     ContentType._value2member_map_[_e.name.lower().replace('_', '')] = _e
 ContentType._value2member_map_['sfx'] = ContentType.sound_fx
+ContentType._value2member_map_['live music video'] = ContentType.live
 
 # }}}
 
