@@ -1215,6 +1215,7 @@ class MediaTagEnum(enum.Enum):
     hdvideo = 'hdvideo'  # NUM  Set the HD flag (1\0)
 
     genre = 'genre'  # STR  Set the genre name
+    genreID = 'genreID'  # NUM  Set the genre ID
     type = 'type'  # STR  Set the Media Type(tvshow, movie, music, ...)
     mediatype = 'mediatype'  # STR  Set the Physical Media Type(CD, DVD, BD, ...)
     contenttype = 'contenttype'  # STR  Set the Content Type(Documentary, Feature Film, Cartoon, Music Video, Music, Sound FX, ...)
@@ -1830,6 +1831,10 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     compilation = propex(
         name='compilation',
         type=(_tNullTag, _tBool))
+
+    genreID = propex(
+        name='genreID',
+        type=(_tNullTag, int))
 
     podcast = propex(
         name='podcast',
