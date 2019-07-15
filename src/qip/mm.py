@@ -907,12 +907,12 @@ def _tDay(value):
 
 class _tReMatchTest(object):
 
-    def __init__(self, expr, flags=None):
+    def __init__(self, expr, flags=0):
         self.expr = expr
         self.flags = flags
 
     def __call__(self, value):
-        m = re.match(self.expr, value, flags)
+        m = re.match(self.expr, value, self.flags)
         if not m:
             raise ValueError('Doesn\'t match r.e. {!r}'.format(self.expr))
         return value
@@ -923,6 +923,20 @@ class _tReMatchTest(object):
             self.expr,
             ', {}'.format(self.flags) if self.flags is not None else '',
         )
+
+re_MatroskaLocation = (
+    r'^' +
+    r'(?P<country>[A-Z][A-Z])?' +
+    r'(?:, ' +
+    r'(?P<state>[^ ,][^,]*)?' +
+    r'(?:, ' +
+    r'(?P<city>[^ ,][^,]*)?' +
+    r'(?:, ' +
+    r'(?P<details>[^ ].*)?' +
+    r')?)?)?' +
+    r'$')
+
+_tMatroskaLocation = _tReMatchTest(re_MatroskaLocation)
 
 
 class MissingMediaTagError(Exception):
@@ -1170,7 +1184,9 @@ class MediaTagEnum(enum.Enum):
 
     date = 'date'  # None|MediaTagDate
     year = 'year'  # NUM  Set the release date (*from date)
+
     country = 'country'  # STR  None|IsoCountry
+    recording_location = 'recording_location'  # STR  CC, STATE, CITY[, XXX]
 
     disk = 'disk'  # NUM  Set the disk number
     disks = 'disks'  # NUM  Set the number of disks
@@ -1681,6 +1697,12 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     country = propex(
         name='country',
         type=(_tNullTag, isocountry))
+
+    recording_location = propex(
+        name='recording_location',
+        type=(_tNullTag,
+              _tMatroskaLocation,
+              ))
 
     season = propex(
         name='season',
