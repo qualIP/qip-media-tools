@@ -2086,7 +2086,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             value = value.strip()
             if value in ('', 'null', 'XXX'):
                 return False
-        if tag in ('genre', 'genreID'):
+        if tag in ('genre', 'itunesgenreid'):
             if isinstance(value, str):
                 value = re.sub(r'^\((\d+)\)$', r'\1', value)
                 if value.isdigit():
@@ -2118,11 +2118,11 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                         if value not in mp4v2_genres:
                             raise ValueError('Not a valid mp4v2 genre')
             if isinstance(value, int):
-                tag = 'genreID'
+                tag = 'itunesgenreid'
                 self.pop('genre', None)
             else:
                 tag = 'genre'
-                self.pop('genreID', None)
+                self.pop('itunesgenreid', None)
 
         elif tag in ('disk', 'track', 'part', 'season'):
             if isinstance(value, (list, tuple)):
@@ -4002,6 +4002,10 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     ["Physical Media Type",    None,                       None,                       "mediatype",                "TMT",                      "TMED",           []],  # ["mediaType", "media_type"]],
     ["Content Rating",         "rtng",                     "int8",                     "contentRating",            None,                       None,             ['rating']],
     ["Gapless Playback",       "pgap",                     "bool8",                    "gapless",                  None,                       None,             ['gapless_playback']],
+    # TODO iTunSMPB -- https://sourceforge.net/p/mediainfo/feature-requests/398/
+    # The format of the iTunSMPB is explained here (http://yabb.jriver.com/interact/index.php?topic=65076.msg436101#msg436101).
+    # The reason why AAC files have encoder delay is explained here (http://www.hydrogenaudio.org/forums/index.php?showtopic=85135&view=findpost&p=820727)
+    # The reason for the AAC End Padding is because AAC frame size is 1024 samples, so all AAC encoders add padding to fill up the last AAC frame until the total sample count is divisable by 1024. That is why all AAC files are supposed to have sample count divisable by 1024.
     ["iTunes Gapless Info",    "----:com.apple.iTunes:iTunSMPB", "binary",             "iTunesGaplessInfo",        None,                       None,             ['iTunSMPB']],
     ["iTunes Purchase Account", "apID",                    "utf-8",                    "iTunesAccount",            None,                       None,             ['account_id']],
     ["iTunes Account Type",    "akID",                     "int8",                     "iTunesAccountType",        None,                       None,             []],
@@ -4679,7 +4683,7 @@ class Mp4tags(Executable):
         TagArgInfo('-Z', '-composerid', MediaTagEnum.itunescomposerid, NUM, 'Set the composer ID'),
         # Custom: https://code.google.com/archive/p/mp4v2/issues/170
         TagArgInfo('-Q', '-gapless', MediaTagEnum.gapless, NUM, 'Set gapless flag (0 false, non-zero true)'),
-        #TagArgInfo('-J', '-genretype', MediaTagEnum.itunesgenreid, NUM, 'Set the genre type'),
+        #TagArgInfo('-J', '-genretype', MediaTagEnum.genretype, NUM, 'Set the genre type'),
         TagArgInfo('-K', '-compilation', MediaTagEnum.compilation, NUM, 'Set the compilation flag (0 false, non-zero true)'),
     )
 
