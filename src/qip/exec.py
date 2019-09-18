@@ -247,7 +247,7 @@ class Executable(metaclass=abc.ABCMeta):
     def which(self, mode=os.F_OK | os.X_OK, path=None, assert_found=True):
         cmd = shutil.which(self.name, mode=mode, path=path)
         if cmd is None and assert_found:
-            raise OSError(errno.ENOENT, '{}: command not found'.format(self.name), self.name)
+            raise OSError(errno.ENOENT, 'Command not found', self.name)
         return cmd
 
     def clean_cmd_output(self, out):
@@ -360,6 +360,15 @@ class Ionice(Executable):
 
 ionice = Ionice()
 
+
+def SlurmError(Exception):
+
+    def __init__(msg, *, cmd, out):
+        self.cmd = cmd
+        self.out = out
+        super().__init__(msg)
+
+
 def do_srun_cmd(cmd,
         stdin=None, stdin_file=None,
         stdout=None, stdout_file=None,
@@ -406,7 +415,13 @@ def do_srun_cmd(cmd,
 
     slurm_args.extend(cmd)
     slurm_args = [str(e) for e in slurm_args]
-    do_exec_cmd(slurm_args, dry_run=dry_run)
+    out = do_exec_cmd(slurm_args, dry_run=dry_run)
+    out = byte_decode(out)
+    m = re.search(r'srun: error: .*', out)
+    if m:
+        err = m.group(0).strip()
+        raise SlurmError(err, cmd=slurm_args, out=out)
+    return out
 
 def do_sbatch_cmd(cmd,
         stdin=None, stdin_file=None,
@@ -455,7 +470,7 @@ def do_sbatch_cmd(cmd,
 
     slurm_args.extend(cmd)
     slurm_args = [str(e) for e in slurm_args]
-    do_exec_cmd(slurm_args)
+    return do_exec_cmd(slurm_args)
 
 class Editor(Executable):
 
