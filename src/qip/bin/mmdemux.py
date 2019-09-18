@@ -418,7 +418,7 @@ def main():
             contact='jst@qualipsoft.com',
             )
 
-    app.cache_dir = os.path.abspath('mmdemux-cache')
+    app.cache_dir = os.path.abspath('mmdemux-cache')  # in current directory!
 
     in_tags = AlbumTags()
 
@@ -842,6 +842,8 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
     name_scan_str = os.path.basename(inputfile_base)
     name_scan_str = name_scan_str.strip()
     name_scan_str = re.sub(r'_t\d+$', '', name_scan_str)
+    if re.match(r'^[A-Z0-9]+( +[A-Z0-9]+)*$', name_scan_str):
+        name_scan_str = name_scan_str.title()
     m = (
         re.match(r'^(?P<tvshow>.+) S(?P<season>\d+)E(?P<str_episodes>\d+(?:E\d+)*)(?: (?P<title>.+))?$', name_scan_str)
         or re.match(r'^(?P<title>.+)$', name_scan_str)
@@ -870,19 +872,24 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
                 d['episode'] = None
         except KeyError:
             pass
-        inputfile.tags.update(d)
-        try:
-            m = re.match('^(?P<contenttype>[^:]+:) (?P<title>.+)$', d['title'])
-        except KeyError:
-            pass
-        else:
+        if 'title' in d:
+            m = (
+                re.match('^(?P<contenttype>[^:]+:) (?P<comment>.+)$', d['title'])
+                or re.match('^(?P<contenttype>[^:]+)(?P<comment>)$', d['title'])
+            )
             if m:
                 try:
                     d['contenttype'] = ContentType(m.group('contenttype').strip())
                 except ValueError:
                     pass
                 else:
-                    d['title'] = m.group('title').strip()
+                    d['comment'] = m.group('comment').strip() or None
+                    del d['title']
+        if 'title' in d:
+            m = re.match('^(?P<title>.+) \((?P<date>\d{4})\)$', d['title'])
+            if m:
+                d.update(m.groupdict())
+        inputfile.tags.update(d)
 
     if inputfile.exists():
         inputfile.tags.update(inputfile.load_tags())
@@ -1291,6 +1298,10 @@ def action_mux(inputfile, in_tags):
                     stream_title = stream_out_dict['title'] = stream_dict['tags']['title']
                 except KeyError:
                     pass
+                else:
+                    if stream_codec_type == 'audio' \
+                            and re.match(r'^(Stereo|Mono|Surround [0-9.]+)$', stream_title):
+                        del stream_out_dict['title']
 
                 try:
                     stream_language = stream_dict['tags']['language']
@@ -1464,6 +1475,7 @@ def action_mux(inputfile, in_tags):
                     stream_forced = stream_disposition_dict.get('forced', None)
                     if stream_forced:
                         has_forced_subtitle = True
+                    # TODO Detect closed_caption
                     if stream_file_ext in ('.sub', '.sup'):
                         d = ffprobe(i=os.path.join(outputdir, stream_file_name), show_frames=True)
                         out = d.out
