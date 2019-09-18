@@ -39,6 +39,8 @@ import qip.mm
 import qip.utils
 Auto = qip.utils.Constants.Auto
 
+all_part_names = {'disk', 'track', 'part'}
+
 # replace_html_entities {{{
 
 def replace_html_entities(s):
@@ -259,7 +261,7 @@ def do_suggest_tags(inputfile, *, suggest_tags):
             inputfile.write_tags(tags=suggest_tags, dry_run=app.args.dry_run, run_func=do_exec_cmd)
             inputfile.tags.update(suggest_tags)
 
-def format_part_suffix(inputfile, which={'disk', 'track', 'part'}):
+def format_part_suffix(inputfile, which=all_part_names):
 
     dst_file_base = ''
 
@@ -388,7 +390,7 @@ def organize_music(inputfile, *, suggest_tags, dbtype='music'):
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
-    dst_file_base += format_part_suffix(inputfile)
+    dst_file_base += format_part_suffix(inputfile, which=all_part_names - {'disk', 'track'})
 
     dst_file_base += os.path.splitext(inputfile.file_name)[1]
 
@@ -504,7 +506,7 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
         default=qip.mm.ContentType.video,
         dbtype='musicvideo')
 
-    dst_file_base += format_part_suffix(inputfile, which={'part'})
+    dst_file_base += format_part_suffix(inputfile, which=all_part_names - {'disk', 'track'})
 
     dst_file_base += dst_file_base_ext
 
