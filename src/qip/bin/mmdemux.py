@@ -2743,9 +2743,21 @@ def action_extract_music(inputdir, in_tags):
 
                 m4a = M4aFile(my_splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
                 m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
+                m4a.album_tags = copy.copy(mux_dict['tags'])
                 m4a.tags.track = track_no  # Since a copy was taken and not fully connected to album_tags anymore
                 m4a.tags.tracks = tracks_total
                 m4a.tags.title = chap.title
+                m4a.tags.type = 'normal'
+                try:
+                    del m4a.tags.album_tags.recording_location
+                except AttributeError:
+                    pass
+                if m4a.tags.date is None and m4a.tags.recording_date is not None:
+                    m4a.tags.date = m4a.tags.recording_date
+                try:
+                    del m4a.tags.album_tags.recording_date
+                except AttributeError:
+                    pass
 
                 if src_picture != m4a.tags.picture:
                     src_picture = m4a.tags.picture
