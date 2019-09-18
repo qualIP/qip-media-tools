@@ -292,6 +292,8 @@ class Ffmpeg(_Ffmpeg):
                     frames_count += 1
                     last_cropdetect_match = m
             if not last_cropdetect_match:
+		# Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)
+		# -> skip_frame_nokey=False
                 raise ValueError('Crop detection failed')
             if skip_frame_nokey and frames_count < 2:
                 return self.cropdetect(input_file,
@@ -368,10 +370,10 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
             run_func = functools.partial(run_func, **run_kwargs)
 
         return super()._run(
-                *args,
-                dry_run=dry_run,
-                run_func=run_func,
-                **kwargs)
+            *args,
+            dry_run=dry_run,
+            run_func=run_func,
+            **kwargs)
 
 
 ffmpeg_2pass_pipe = Ffmpeg2passPipe()
@@ -481,6 +483,12 @@ class Ffprobe(_Ffmpeg):
             # 'timecode': TODO,  # 00:00:00:00
         }
 
+    class Timecode(types.SimpleNamespace):
+
+        _attr_convs = {
+            # 'value': TODO,  # 00:00:00:00
+        }
+
     class Subtitle(types.SimpleNamespace):
 
         _attr_convs = {
@@ -530,6 +538,25 @@ class Ffprobe(_Ffmpeg):
                                     pass
                                 else:
                                     setattr(side_data, attr, value)
+                                    continue
+                                if line == '[TIMECODE]':
+                                    for line in parser:
+                                        line = line.strip()
+                                        try:
+                                            attr, value = line.split('=', maxsplit=1)
+                                        except ValueError:
+                                            pass
+                                        else:
+                                            if attr == 'value':
+                                                side_data.timecode = value
+                                            else:
+                                                raise ValueError('Unrecognized TIMECODE attribute line %d: %s' % (parser.line_no, line))
+                                            continue
+                                        if line == '[/TIMECODE]':
+                                            break
+                                        raise ValueError('Unrecognized TIMECODE line %d: %s' % (parser.line_no, line))
+                                    else:
+                                        raise ValueError('Unclosed TIMECODE near line %d' % (parser.line_no,))
                                     continue
                                 if line == '[/SIDE_DATA]':
                                     break
