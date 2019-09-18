@@ -1332,36 +1332,27 @@ def action_mux(inputfile, in_tags):
                             )
                 stream_out_dict['file_name'] = output_track_file_name
 
-                if stream_file_ext == '.vtt':
-                    app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
-                    # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
-                    # (mkvextract expects S_TEXT/WEBVTT)
-                    with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
-                        ffmpeg_args = [
-                            '-i', inputfile.file_name,
-                            '-map_metadata', '-1',
-                            '-map_chapters', '-1',
-                            '-map', '0:%d' % (stream_index,),
-                            '-codec', 'copy',
-                            os.path.join(outputdir, output_track_file_name),
-                            ]
-                        ffmpeg(*ffmpeg_args,
-                               dry_run=app.args.dry_run,
-                               y=app.args.yes)
-                elif stream_disposition_dict['attached_pic']:
+                if stream_disposition_dict['attached_pic']:
                     app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
                     mkvextract_attachments_args += [
                         '%d:%s' % (
                             attachment_index,
                             os.path.join(outputdir, output_track_file_name),
                         )]
-                elif app.args.track_extract_tool == 'ffmpeg' \
-                    or (app.args.track_extract_tool is Auto
-                        and stream_codec_name in (
-                            'vp8',
-                            'vp9',
-                        )):
-                    # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
+                elif (
+                        app.args.track_extract_tool == 'ffmpeg'
+                        # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
+                        # (mkvextract expects S_TEXT/WEBVTT)
+                        or stream_file_ext == '.vtt'
+                        # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
+                        # https://www.makemkv.com/forum/viewtopic.php?t=2530
+                        or stream_codec_name == 'pcm_s16le'
+                        or (app.args.track_extract_tool is Auto
+                            # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
+                            and stream_codec_name in (
+                                'vp8',
+                                'vp9',
+                                ))):
                     app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
                     with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
                         force_format = None
