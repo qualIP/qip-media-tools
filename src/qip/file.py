@@ -72,7 +72,7 @@ class _argparse_type(object):
                 fp = file.open(**kwargs)
             except OSError as e:
                 message = _("can't open %s: %s")
-                raise ArgumentTypeError(message % (s_file_name, e))
+                raise TypeError(message % (s_file_name, e))
 
         file.fp = fp
         return file
