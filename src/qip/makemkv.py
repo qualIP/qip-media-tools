@@ -208,6 +208,7 @@ class MakemkvconSpawn(_exec_spawn):
                 self.progress_bar.makemkv_action_percent = 0
                 self.progress_bar.suffix = '%(makemkv_action_percent)d%% of %(makemkv_action)s, %(makemkv_operation_percent)d%% of %(makemkv_operation)s'
                 self.progress_bar.goto(self.progress_bar.makemkv_action_percent)
+        re_dot = r'[^\r\n]'  # To be used instead of r'.'
         re_eol = r'\r?\n'
         re_title_no = r'(?:[0-9/]+|\d+\.m2ts|\d+\.mpls(?:\(\d+\))?)'  # "1", "1/0/1", "00040.m2ts" "00081.mpls" "00081.mpls(1)"
         re_stream_no = r'(?:\d+(?:,\d+)*)'  # "1", "1,2"
@@ -219,11 +220,14 @@ class MakemkvconSpawn(_exec_spawn):
             (fr'^Saving (?P<title_count>\d+) titles into directory (?P<dest_dir>[^\r\n]+){re_eol}', self.saving_titles_count),
             (fr'^Title #(?P<title_no>{re_title_no}) has length of (?P<length>\d+) seconds which is less than minimum title length of (?P<min_length>\d+) seconds and was therefore skipped{re_eol}', True),
             (fr'^Title (?P<title_no1>{re_title_no})(?: in VTS (?P<vts_no>\d+))? is equal to title (?P<title_no2>{re_title_no}) and was skipped{re_eol}', True),
+            (fr'^Subtitle stream #(?P<stream_no>{re_stream_no}) is identical to stream #(?P<stream_no2>{re_stream_no}) and was skipped{re_eol}', True),
             (fr'^Using direct disc access mode{re_eol}', True),
             (fr'^Downloading latest SDF to (?P<dest_dir>[^\n]+) \.\.\.{re_eol}', True),
             (fr'^Using LibreDrive mode \(v(?P<version>\d+) id=(?P<id>[0-9a-fA-F]+)\){re_eol}', True),
             (fr'^Loaded content hash table, will verify integrity of M2TS files\.{re_eol}', True),
-            (fr'^Cells (?P<num_cells>\d+)-end were skipped due to cell commands \(structure protection\?\){re_eol}', True),
+            (fr'^Cells (?P<cell_no1>\d+)-(?P<cell_no2>\d+|end) were skipped due to cell commands \(structure protection\?\){re_eol}', True),
+            (fr'^Cells (?P<cell_no1>\d+)-(?P<cell_no2>\d+|end) were removed from (?P<from>title start|title end){re_eol}', True),
+            (fr'^CellWalk algorithm failed \(structure protection is too tough\?\), trying CellTrim algorithm{re_eol}', self.generic_warning),
             (fr'^Complex multiplex encountered - (?P<num_cells>\d+) cells and (?P<num_vobus>\d+) VOBUs have to be scanned\. This may take some time, please be patient - it can\'t be avoided\.{re_eol}', True),
             (fr'^Region setting of drive (?P<drive_label>[^\n]+) does not match the region of currently inserted disc, trying to work around\.\.\.{re_eol}', True),
             (fr'^Title #(?P<title_no>{re_title_no}) was added \((?P<num_cells>\d+) cell\(s\), (?P<time>[0-9:]+)\){re_eol}', True),
@@ -245,6 +249,8 @@ class MakemkvconSpawn(_exec_spawn):
             (fr'^Copy complete\. (?P<num_tiltes_saved>\d+) titles saved, (?P<num_tiltes_failed>\d+) failed\.{re_eol}', self.parse_titles_saved),
             (fr'^Track #(?P<track_no>\d+) turned out to be empty and was removed from output file{re_eol}', self.generic_warning),
             (fr'^Forced subtitles track #(?P<track_no>\d+) turned out to be empty and was removed from output file{re_eol}', self.generic_warning),
+            (fr'^Title #(?P<title_no>\d+) declared length is (?P<declared_length>\S+) while its real length is (?P<real_length>\S+) - assuming fake title{re_eol}', self.generic_warning),
+            (fr'^Can\'t locate a cell for VTS (?P<vts>\d+) TTN (?P<ttn>\d+) PGCN (?P<pgcn>\d+) PGN (?P<pgn>\d+){re_eol}', self.generic_warning),
             (fr'^AV synchronization issues were found in file \'(?P<file_name>[^\n]+)\' \(title #(?P<title_no>{re_title_no})\){re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: audio gap - (?P<missing_frames>\S+) missing frame\(s\){re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: (?P<action>encountered overlapping frame|short audio gap was removed), audio skew is (?P<audio_skew>\S+){re_eol}', self.generic_warning),
@@ -252,11 +258,20 @@ class MakemkvconSpawn(_exec_spawn):
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: (?P<overlapping_frames>\d+) overlapping frame\(s\) dropped at segment boundary{re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: (?P<num_frames>\d+) frame\(?s?\)? dropped to reduce audio skew to (?P<audio_skew>\S+){re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: video stream has (?P<num_frames>\d+) frame\(?s?\)? with invalid timecodes{re_eol}', self.generic_warning),
+            (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: video frame timecode differs by (?P<video_timecode_skew>\S+){re_eol}', self.generic_warning),
+            (fr'^Too many AV synchronization issues in file \'(?P<file_out>[^\n]+)\' \(title #(?P<title_no>{re_title_no})\) ?, future messages will be printed only to log file{re_eol}', self.generic_warning),
             (fr'^Angle #(?P<angle_no>\d+) was added for title #(?P<title_no>{re_title_no}){re_eol}', self.generic_info),
             (fr'^Calculated BUP offset for VTS #(?P<vts_no>\d+) does not match one in IFO header\.{re_eol}', self.generic_warning),
             (fr'^LibreDrive firmware support is not yet available for this drive \(id=(?P<drive_id>[A-Fa-f0-9]+)\){re_eol}', self.generic_warning),
-            (fr'^Using Java runtime from (?P<path>.+){re_eol}', self.generic_warning),
-            (fr'^CellWalk algorithm failed \(structure protection is too tough\?\), trying CellTrim algorithm{re_eol}', self.generic_warning),
+            (fr'^Using Java runtime from (?P<path>{re_dot}+){re_eol}', self.generic_warning),
+            (fr'^Loaded (?P<num_svq_files>\d+) SVQ file\(s\){re_eol}', self.generic_warning),
+            (fr'^Processing BD\+ code, please be patient - this may take up to few minutes{re_eol}', self.generic_warning),
+            (fr'^Processing BD\+ code using generic SVQ from (?P<svq_source_file>\S+){re_eol}', self.generic_warning),
+            (fr'^Processing BD\+ code using disc-specific SVQ from (?P<svq_source_file>\S+){re_eol}', self.generic_warning),
+            (fr'^BD\+ code processed, got (?P<num_futs>\d+) FUT\(s\) for (?P<num_clips>\d+) clip\(s\){re_eol}', self.generic_warning),
+            (fr'^BD\+ code processed, got (?P<num_futs>\d+) FUT\(s\) for (?P<num_clips>\d+) clip\(s\){re_eol}', self.generic_warning),
+            (fr'^Program reads data faster than it can write to disk, consider upgrading your hard drive if you see many of these messages\.{re_eol}', self.generic_warning),
+            (fr'^(?P<exec>{re_dot}+): (?P<lib>{re_dot}+): no version information available \(required by (?P<req_by>{re_dot}+)\){re_eol}', self.generic_warning),
             (fr'[^\n]*?{re_eol}', self.unknown_line),
             (pexpect.EOF, False),
         ])
