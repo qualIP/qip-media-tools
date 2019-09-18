@@ -561,7 +561,9 @@ def organize_movie(inputfile, *, suggest_tags):
 
     dst_file_base = ''
 
-    if inputfile.tags.contenttype in (None, qip.mm.ContentType.feature_film):
+    if inputfile.tags.contenttype in (None,
+                                      qip.mm.ContentType.feature_film,
+                                      qip.mm.ContentType.cartoon):
         # plex: TITLE [SUBTITLE] (YEAR)
         # emby: TITLE (YEAR) - [SUBTITLE]
 
@@ -586,6 +588,9 @@ def organize_movie(inputfile, *, suggest_tags):
                 dst_dir += ' - %s' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
 
     else:
+        # plex: behindthescenes, deleted, featurette, interview, scene, short, trailer, other
+        #       https://support.plex.tv/articles/200220677-local-media-assets-movies/
+
         # COMMENT
         if inputfile.tags.comment:
             # COMMENT
@@ -694,7 +699,11 @@ def organize_tvshow(inputfile, *, suggest_tags):
         else:
             pass  # Could be the episode name is not known.
 
-        if inputfile.tags.contenttype is not None:
+        if inputfile.tags.contenttype in (
+                None,
+                qip.mm.ContentType.cartoon):
+            pass  # Ok
+        else:
             # Episode extra
             # https://github.com/contrary-cat/LocalTVExtras.bundle
             # COMMENT
