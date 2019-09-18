@@ -501,6 +501,24 @@ class Ffprobe(_Ffmpeg):
             'num_rects': int,  # 1
         }
 
+    class Packet(types.SimpleNamespace):
+
+        _attr_convs = {
+            # 'codec_type': TODO,  # video
+            'stream_index': int,  # 0
+            'pts': NA_or_int,  # 33
+            'pts_time': NA_or_Decimal,  # 0.033000
+            'dts': NA_or_int,  # -33
+            'dts_time': NA_or_Decimal,  # -0.033000
+            'duration': NA_or_int,  # 33
+            'duration_time': NA_or_Decimal,  # 0.033000
+            'convergence_duration': NA_or_int,  # N/A
+            'convergence_duration_time': NA_or_Decimal,  # N/A
+            'size': int,  # 67192
+            'pos': int,  # 4033
+            # 'flags': TODO,  # K_
+            }
+
     def iter_frames(self, file, *, dry_run=False):
         from qip.parser import lines_parser
         ffprobe_args = [
@@ -592,6 +610,42 @@ class Ffprobe(_Ffmpeg):
                     else:
                         raise ValueError('Unclosed SUBTITLE near line %d' % (parser.line_no,))
                     yield subtitle
+                    continue
+                raise ValueError('Unrecognized line %d: %s' % (parser.line_no, line))
+
+    def iter_packets(self, file, *, dry_run=False):
+        from qip.parser import lines_parser
+        ffprobe_args = [
+            '-loglevel', 'panic', '-hide_banner',
+            '-i', str(file),
+            '-show_packets',
+        ]
+        with self.popen(*ffprobe_args,
+                        stdout=subprocess.PIPE, text=True,
+                        dry_run=dry_run) as p:
+            parser = lines_parser(p.stdout)
+            for line in parser:
+                line = line.strip()
+                if line == '[PACKET]':
+                    packet = Ffprobe.Packet()
+                    for line in parser:
+                        line = line.strip()
+                        try:
+                            attr, value = line.split('=', maxsplit=1)
+                        except ValueError:
+                            pass
+                        else:
+                            conv = frame._attr_convs.get(attr, None)
+                            if conv:
+                                value = conv(value)
+                            setattr(frame, attr, value)
+                            continue
+                        if line == '[/PACKET]':
+                            break
+                        raise ValueError('Unrecognized PACKET line %d: %s' % (parser.line_no, line))
+                    else:
+                        raise ValueError('Unclosed PACKET near line %d' % (parser.line_no,))
+                    yield frame
                     continue
                 raise ValueError('Unrecognized line %d: %s' % (parser.line_no, line))
 
