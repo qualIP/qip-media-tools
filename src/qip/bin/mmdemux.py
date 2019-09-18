@@ -1673,6 +1673,19 @@ def my_splitext(file_name):
             ext = ext2 + ext
     return base, ext
 
+def test_out_file(out_file):
+    if not app.args.dry_run:
+        if not os.path.exists(out_file):
+            raise OSError(errno.ENOENT,
+                          'File not found: %r' % (out_file,),
+                          out_file)
+        siz = os.path.getsize(out_file)
+        app.log.debug(f'{out_file} has size {siz}')
+        if siz == 0:
+            raise OSError(errno.ENOENT,
+                          'File empty: %r' % (out_file,),
+                          out_file)
+
 def action_optimize(inputdir, in_tags):
     global num_batch_skips
     app.log.info('Optimizing %s...', inputdir)
@@ -1701,6 +1714,8 @@ def action_optimize(inputdir, in_tags):
         nonlocal new_stream_file_name
         nonlocal outputdir
         nonlocal mux_dict
+
+        test_out_file(os.path.join(inputdir, new_stream_file_name))
 
         temp_files.append(os.path.join(inputdir, stream_file_name))
         stream_dict.setdefault('original_file_name', stream_file_name)
@@ -2221,6 +2236,7 @@ def action_optimize(inputdir, in_tags):
                                         slurm=True,
                                         dry_run=app.args.dry_run,
                                         y=app.args.yes)
+                        test_out_file(os.path.join(inputdir, new_stream_file_name))
 
                 temp_files.append(os.path.join(inputdir, stream_file_name))
                 stream_dict.setdefault('original_file_name', stream_file_name)
@@ -3159,7 +3175,9 @@ def action_demux(inputdir, in_tags):
     output_file.write_tags(tags=mux_dict['tags'],
             dry_run=app.args.dry_run,
             run_func=do_exec_cmd)
-    app.log.info('DONE writing %s', output_file.file_name)
+    app.log.info('DONE writing %s%s',
+                 output_file.file_name,
+                 ' (dry-run)' if app.args.dry_run else '')
 
     if app.args.cleanup:
         app.log.info('Cleaning up %s', inputdir)
