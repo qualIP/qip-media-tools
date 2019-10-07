@@ -639,6 +639,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
     dst_dir = ''
 
+    # https://support.plex.tv/articles/naming-and-organizing-your-tv-show-files/
     # https://github.com/MediaBrowser/Wiki/wiki/TV-naming
     # TVSHOW/
     dst_dir += '%s/' % (clean_file_name(inputfile.tags.tvshow, keep_ext=False),)
@@ -655,7 +656,6 @@ def organize_tvshow(inputfile, *, suggest_tags):
         # .../Season 1/
         # .../Specials/
         if inputfile.tags.season == 0:
-            # https://support.plex.tv/articles/200220707-naming-tv-show-specials/
             dst_dir += 'Specials/'
         else:
             dst_dir += 'Season %d/' % (inputfile.tags.season,)
@@ -692,7 +692,6 @@ def organize_tvshow(inputfile, *, suggest_tags):
             episodes = sorted(episodes)
             dst_file_base += 'E%02d' % (episodes[0],)
             if len(episodes) > 1:
-                # https://support.plex.tv/articles/200220687-naming-series-season-based-tv-shows/
                 dst_file_base += '-E%02d' % (episodes[-1],)
         if inputfile.tags.title and inputfile.tags.title != inputfile.tags.tvshow:
             dst_file_base += ' %s' % (inputfile.tags.title,)
