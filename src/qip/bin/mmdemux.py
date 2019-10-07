@@ -477,6 +477,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='output_file', default=Auto, help='specify the output (demuxed) file name')
+    pgroup.add_bool_argument('--remux', help='remux original files')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     xgroup.add_bool_argument('--webm', default=True, help='webm output format')
@@ -1188,14 +1189,19 @@ def action_mux(inputfile, in_tags):
     if app.args.chain:
         app.args.optimize_dirs += (outputdir,)
 
+    remux = False
     if os.path.isdir(outputdir):
-        if app.args.chain:
-            app.log.warning('Directory exists: %r; Just chaining', outputdir)
-            return True
-        if app.args._continue:
-            app.log.warning('Directory exists: %r; Ignoring', outputdir)
-            return True
-        raise OSError(errno.EEXIST, outputdir)
+        if app.args.remux:
+            app.log.warning('Directory exists: %r; Just remuxing', outputdir)
+            remux = True
+        else:
+            if app.args.chain:
+                app.log.warning('Directory exists: %r; Just chaining', outputdir)
+                return True
+            if app.args._continue:
+                app.log.warning('Directory exists: %r; Ignoring', outputdir)
+                return True
+            raise OSError(errno.EEXIST, outputdir)
 
     mux_dict = {
         'streams': [],
@@ -1218,13 +1224,14 @@ def action_mux(inputfile, in_tags):
                         mediainfo_dict=mediainfo_dict)
     mux_dict['tags'] = inputfile.tags
 
-    if app.args.interactive and not (app.args.rip_dir and outputdir in app.args.rip_dir):
+    if app.args.interactive and not remux and not (app.args.rip_dir and outputdir in app.args.rip_dir):
         mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
 
-    if app.args.dry_run:
-        app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
-    else:
-        os.mkdir(outputdir)
+    if not remux:
+        if app.args.dry_run:
+            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
+        else:
+            os.mkdir(outputdir)
 
     if inputfile_ext in (
             '.mkv',
@@ -1513,46 +1520,48 @@ def action_mux(inputfile, in_tags):
             output_chapters_file_name = '%s/chapters.xml' % (
                     outputdir,
                     )
-            with perfcontext('mkvextract chapters'):
-                cmd = [
-                    'mkvextract', 'chapters', inputfile.file_name,
-                    ]
-                chapters_out = do_exec_cmd(cmd,
-                                  log_append=' > %s' % (output_chapters_file_name,),
-                                  #stderr=subprocess.STDOUT,
-                                 )
-            if not app.args.dry_run:
-                chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
-                chapters_root = chapters_xml.getroot()
-                for eEditionEntry in chapters_root.findall('EditionEntry'):
-                    for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
-                        e = eChapterAtom.find('ChapterTimeStart')
-                        v = ffmpeg.Timestamp(e.text)
-                        if v != 0.0:
-                            # In case initial frame is a I frame to be displayed after
-                            # subqequent P or B frames, the start time will be
-                            # incorrect.
-                            app.log.warning('Fixing first chapter start time %s to 0', v)
-                            if False:
-                                # mkvpropedit doesn't like unknown elements
-                                e.tag = 'orig_ChapterTimeStart'
-                                e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
-                            e.text = str(ffmpeg.Timestamp(0))
-                            chapters_xml_io = io.StringIO()
-                            chapters_xml.write(chapters_xml_io,
-                                               xml_declaration=True,
-                                               encoding='unicode',  # Force string
-                                               )
-                            chapters_out = chapters_xml_io.getvalue()
-                        break
-                safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
+            if not remux:
+                with perfcontext('mkvextract chapters'):
+                    cmd = [
+                        'mkvextract', 'chapters', inputfile.file_name,
+                        ]
+                    chapters_out = do_exec_cmd(cmd,
+                                      log_append=' > %s' % (output_chapters_file_name,),
+                                      #stderr=subprocess.STDOUT,
+                                     )
+                if not app.args.dry_run:
+                    chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
+                    chapters_root = chapters_xml.getroot()
+                    for eEditionEntry in chapters_root.findall('EditionEntry'):
+                        for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
+                            e = eChapterAtom.find('ChapterTimeStart')
+                            v = ffmpeg.Timestamp(e.text)
+                            if v != 0.0:
+                                # In case initial frame is a I frame to be displayed after
+                                # subqequent P or B frames, the start time will be
+                                # incorrect.
+                                app.log.warning('Fixing first chapter start time %s to 0', v)
+                                if False:
+                                    # mkvpropedit doesn't like unknown elements
+                                    e.tag = 'orig_ChapterTimeStart'
+                                    e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
+                                e.text = str(ffmpeg.Timestamp(0))
+                                chapters_xml_io = io.StringIO()
+                                chapters_xml.write(chapters_xml_io,
+                                                   xml_declaration=True,
+                                                   encoding='unicode',  # Force string
+                                                   )
+                                chapters_out = chapters_xml_io.getvalue()
+                            break
+                    safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
             mux_dict['chapters']['file_name'] = os.path.basename(output_chapters_file_name)
 
     else:
         raise ValueError('Unsupported extension %r' % (inputfile_ext,))
 
     if not app.args.dry_run:
-        output_mux_file_name = '%s/mux.json' % (outputdir,)
+        output_mux_file_name = '%s/mux%s.json' % (outputdir,
+                                                  '.remux' if remux else '')
         with open(output_mux_file_name, 'w') as fp:
             json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
 
