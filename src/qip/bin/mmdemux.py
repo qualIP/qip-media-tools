@@ -1424,6 +1424,7 @@ def action_mux(inputfile, in_tags):
                 cmd = [
                     'mkvextract', 'attachments', inputfile.file_name,
                     ] + mkvextract_attachments_args
+                do_spawn_cmd(cmd)
 
         # Detect duplicates
         if not app.args.dry_run:
