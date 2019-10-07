@@ -31,6 +31,7 @@ import pexpect
 import re
 import shutil
 import subprocess
+import threading
 import sys
 import time
 import types
@@ -56,23 +57,35 @@ class spawn(pexpect.spawn):
             k, v = pattern_kv_list[idx]
             yield v
 
-def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
+def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_CompletedProcess=False, **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
-    return subprocess.check_output(cmd + hidden_args, **kwargs)
+    # return subprocess.check_output(cmd + hidden_args, **kwargs)
+    if 'input' in kwargs and kwargs['input'] is None:
+        # Explicitly passing input=None was previously equivalent to passing an
+        # empty string. That is maintained here for backwards compatibility.
+        kwargs['input'] = '' if kwargs.get('universal_newlines', False) else b''
+    run_out = subprocess.run(cmd + hidden_args, stdout=subprocess.PIPE, check=True, **kwargs)
+    if return_CompletedProcess:
+        return run_out
+    else:
+        return run_out.stdout
 
-def do_exec_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
+def do_exec_cmd(cmd, *, dry_run=None, log_append='', return_CompletedProcess=False, **kwargs):
     if dry_run is None:
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
-        return ''
+        if return_CompletedProcess:
+            return subprocess.CompletedProcess(args=None, returncode=0, stdout='', stderr='')
+        else:
+            return ''
     else:
-        return dbg_exec_cmd(cmd, log_append=log_append, **kwargs)
+        return dbg_exec_cmd(cmd, log_append=log_append, return_CompletedProcess=return_CompletedProcess, **kwargs)
 
 def suggest_exec_cmd(cmd, dry_run=None, **kwargs):
     log.info('SUGGEST: %s', subprocess.list2cmdline(cmd))
@@ -361,6 +374,40 @@ class Ionice(Executable):
 ionice = Ionice()
 
 
+class PipeRecordThread(threading.Thread):
+
+    def __init__(self, file_r=None, text=False, blocksize=1024*8, target=None, **kwargs):
+        if file_r is None:
+            r, w = os.pipe()
+            self.file_r = os.fdopen(r, mode='r' + ('t' if text else 'b'), closefd=True)
+            self.file_w = os.fdopen(w, mode='w' + ('t' if text else 'b'), closefd=True)
+        self.text = text
+        if self.text:
+            self.output = ''
+        else:
+            self.output = b''
+            self.blocksize = blocksize
+        super().__init__(**kwargs)
+
+    def run(self):
+        file_r = self.file_r
+        target = self.target
+        if self.text:
+            for line in file_r:
+                line = byte_decode(line)
+                self.output += line
+                if target:
+                    target(line)
+        else:
+            blocksize = self.blocksize
+            while True:
+                out = file_r.read(blocksize)
+                if not out:
+                    break
+                self.output += out
+                if target:
+                    target(out)
+
 def SlurmError(Exception):
 
     def __init__(msg, *, cmd, out):
@@ -415,13 +462,24 @@ def do_srun_cmd(cmd,
 
     slurm_args.extend(cmd)
     slurm_args = [str(e) for e in slurm_args]
-    out = do_exec_cmd(slurm_args, dry_run=dry_run)
-    out = byte_decode(out)
-    m = re.search(r'srun: error: .*', out)
+    thread = PipeRecordThread(text=True)
+    def stderr_copier(out):
+        print(out, end='', file=sys.stderr, flush=True)
+    thread.target = stderr_copier
+    thread.start()
+    try:
+        run_out = do_exec_cmd(slurm_args, dry_run=dry_run,
+                              return_CompletedProcess=True, stderr=thread.file_w)
+    finally:
+        thread.file_w.close()
+        thread.join()
+    run_out.stderr = thread.output
+    err = byte_decode(run_out.stderr)
+    m = re.search(r'srun: error: .*', err)
     if m:
         err = m.group(0).strip()
-        raise SlurmError(err, cmd=slurm_args, out=out)
-    return out
+        raise SlurmError(err, cmd=slurm_args, out=err)
+    return run_out.stdout
 
 def do_sbatch_cmd(cmd,
         stdin=None, stdin_file=None,
