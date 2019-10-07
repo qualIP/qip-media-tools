@@ -176,10 +176,16 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             prev_frame.pkt_pts = 0
             prev_frame.pkt_duration = 0
             prev_frame.interlaced_frame = False
+            video_analyze_duration = app.args.video_analyze_duration
+            try:
+                video_analyze_duration = min(qip.utils.Timestamp(mediainfo_track_dict['Duration']),
+                                             video_analyze_duration)
+            except KeyError:
+                pass
             with perfcontext('frames iteration'):
                 if HAVE_PROGRESS_BAR:
                     bar = progress.bar.Bar('iterate frames',
-                                           max=float(app.args.video_analyze_duration),
+                                           max=float(video_analyze_duration),
                                            suffix='%(index)d/%(max)d (%(eta_td)s remaining)')
                 try:
                     for frame in ffprobe.iter_frames(stream_file_name):
@@ -205,7 +211,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                         if HAVE_PROGRESS_BAR:
                             if int(bar.index) != int(float(frame.pkt_dts_time)):
                                 bar.goto(float(frame.pkt_dts_time))
-                        if float(frame.pkt_dts_time) >= app.args.video_analyze_duration:
+                        if float(frame.pkt_dts_time) >= video_analyze_duration:
                             break
                         prev_frame = frame
                     #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
@@ -300,7 +306,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                         framerate = framerate.round_common()
                         app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
                     else:
-                        assert len(video_frames) > 1000  # To make sure there's enough precision
+                        assert len(video_frames) > 5, f'Not enough precision, only {len(video_frames)} frames analyzed.'
                         pts_diff = (
                             video_frames[-2].pkt_pts  # Last frame may not have either dts and pts
                             - video_frames[0].pkt_pts)
