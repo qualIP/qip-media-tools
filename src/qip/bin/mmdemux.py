@@ -881,13 +881,14 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
             pass
         if 'title' in d:
             m = (
-                re.match('^(?P<contenttype>[^:]+:) (?P<comment>.+)$', d['title'])
+                re.match('^(?P<contenttype>[^:]+): (?P<comment>.+)$', d['title'])
                 or re.match('^(?P<contenttype>[^:]+)(?P<comment>)$', d['title'])
             )
             if m:
                 try:
                     d['contenttype'] = ContentType(m.group('contenttype').strip())
-                except ValueError:
+                except ValueError as err:
+                    app.log.debug('err=%r', err)
                     pass
                 else:
                     d['comment'] = m.group('comment').strip() or None
