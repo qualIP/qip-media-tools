@@ -2812,6 +2812,10 @@ def action_extract_music(inputdir, in_tags):
                 raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
 def external_subtitle_file_name(output_file, stream_file_name, stream_dict):
+    try:
+        return stream_dict['external_stream_file_name']
+    except KeyError:
+        pass
     # stream_file_name = stream_dict['file_name']
     stream_language = isolang(stream_dict.get('language', 'und'))
     external_stream_file_name = my_splitext(output_file.file_name)[0]
@@ -2832,6 +2836,10 @@ def external_subtitle_file_name(output_file, stream_file_name, stream_dict):
         external_stream_file_name += '.forced'
     elif stream_dict['disposition'].get('closed_caption', None):
         external_stream_file_name += '.cc'
+    try:
+        external_stream_file_name += stream_dict['external_stream_file_name_suffix']
+    except KeyError:
+        pass
     external_stream_file_name += my_splitext(stream_file_name)[1]
     return external_stream_file_name
 
