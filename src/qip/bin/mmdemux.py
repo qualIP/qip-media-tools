@@ -911,9 +911,11 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
                 ):
             if mediainfo_dict is None:
                 mediainfo_dict = inputfile.extract_mediainfo_dict()
-            mediainfo_track_dict, = (mediainfo_track_dict
+            mediainfo_video_track_dicts = [mediainfo_track_dict
                     for mediainfo_track_dict in mediainfo_dict['media']['track']
-                    if mediainfo_track_dict['@type'] == 'Video') or ({},)
+                    if mediainfo_track_dict['@type'] == 'Video']
+            assert len(mediainfo_video_track_dicts) == 1, "%d video tracks found" % (len(mediainfo_video_track_dicts),)
+            mediainfo_track_dict, = mediainfo_video_track_dicts
             mediainfo_mediatype = mediainfo_track_dict.get('OriginalSourceMedium', None)
             if mediainfo_mediatype is None:
                 pass
