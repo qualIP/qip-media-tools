@@ -536,6 +536,7 @@ def main():
     pgroup.add_argument('--rip', dest='rip_dir', nargs='+', default=(), help='directory to rip device to')
     pgroup.add_argument('--hb', dest='hb_files', nargs='+', default=(), help='files to run through HandBrake')
     pgroup.add_argument('--mux', dest='mux_files', nargs='+', default=(), help='files to mux')
+    pgroup.add_argument('--verify', dest='verify_files', nargs='+', default=(), help='files to verify')
     pgroup.add_argument('--update', dest='update_dirs', nargs='+', default=(), help='directories to update mux parameters for')
     pgroup.add_argument('--chop', dest='chop_dirs', nargs='+', default=(), help='directories to chop into chapters')
     pgroup.add_argument('--extract-music', dest='extract_music_dirs', nargs='+', default=(), help='directories to extract music from')
@@ -567,6 +568,9 @@ def main():
         did_something = True
     for inputfile in getattr(app.args, 'mux_files', ()):
         action_mux(inputfile, in_tags=in_tags)
+        did_something = True
+    for inputfile in getattr(app.args, 'verify_files', ()):
+        action_verify(inputfile, in_tags=in_tags)
         did_something = True
     for inputdir in getattr(app.args, 'update_dirs', ()):
         action_update(inputdir, in_tags=in_tags)
@@ -1105,7 +1109,7 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
 
 def action_hb(inputfile, in_tags):
     app.log.info('HandBrake %s...', inputfile)
-    inputfile = SoundFile.new_by_file_name(inputfile)
+    inputfile = MediaFile.new_by_file_name(inputfile)
     inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
     outputfile_name = "%s.hb.mkv" % (inputfile_base,)
     if app.args.chain:
@@ -1185,7 +1189,8 @@ def action_hb(inputfile, in_tags):
 
 def action_mux(inputfile, in_tags):
     app.log.info('Muxing %s...', inputfile)
-    inputfile = SoundFile.new_by_file_name(inputfile)
+    if not isinstance(inputfile, MediaFile):
+        inputfile = MediaFile.new_by_file_name(inputfile)
     inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
     outputdir = "%s" % (inputfile_base,) \
         if app.args.project is Auto else app.args.project
@@ -1201,10 +1206,11 @@ def action_mux(inputfile, in_tags):
             if app.args.chain:
                 app.log.warning('Directory exists: %r; Just chaining', outputdir)
                 return True
-            if app.args._continue:
+            elif app.args._continue:
                 app.log.warning('Directory exists: %r; Ignoring', outputdir)
                 return True
-            raise OSError(errno.EEXIST, outputdir)
+            else:
+                raise OSError(errno.EEXIST, outputdir)
 
     mux_dict = {
         'streams': [],
@@ -1568,6 +1574,84 @@ def action_mux(inputfile, in_tags):
                                                   '.remux' if remux else '')
         with open(output_mux_file_name, 'w') as fp:
             json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+    return True
+
+def action_verify(inputfile, in_tags):
+    app.log.info('Verifying %s...', inputfile)
+    if not isinstance(inputfile, MediaFile):
+        inputfile = MediaFile.new_by_file_name(inputfile)
+    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    outputdir = "%s" % (inputfile_base,) \
+        if app.args.project is Auto else app.args.project
+
+    dir_existed = False
+    if os.path.isdir(outputdir):
+        if app.args._continue:
+            app.log.warning('Directory exists: %r; Just verifying', outputdir)
+            dir_existed = True
+        else:
+            raise OSError(errno.EEXIST, outputdir)
+
+    if not dir_existed:
+        assert action_mux(inputfile, in_tags=in_tags)
+    inputdir = outputdir
+
+    input_mux_file_name = os.path.join(inputdir, 'mux.json')
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+
+    stream_file_durations = []
+
+    for stream_dict in mux_dict['streams']:
+        if stream_dict.get('skip', False):
+            continue
+        stream_index = stream_dict['index']
+        stream_codec_type = stream_dict['codec_type']
+        stream_file_name = stream_dict['file_name']
+        stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+        if stream_codec_type in ('video', 'audio'):
+
+            stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
+
+            mediainfo_dict = stream_file.extract_mediainfo_dict()
+            mediainfo_general_dict = None
+            mediainfo_track_dict = None
+            mediainfo_text_dict = None
+            for d in mediainfo_dict['media']['track']:
+                if d['@type'] == 'General':
+                    assert mediainfo_general_dict is None
+                    mediainfo_general_dict = d
+                elif d['@type'] == 'Audio':
+                    assert mediainfo_track_dict is None
+                    mediainfo_track_dict = d
+                elif d['@type'] == 'Video':
+                    assert mediainfo_track_dict is None
+                    mediainfo_track_dict = d
+                elif d['@type'] == 'Text':
+                    assert mediainfo_text_dict is None
+                    mediainfo_text_dict = d
+                else:
+                    raise ValueError(d['@type'])
+            assert mediainfo_general_dict
+            assert mediainfo_track_dict
+            # ffprobe -f lavfi -i movie=Sentinel/title_t00/track-00-video.mpeg2.mp2v,readeia608 -show_entries frame=pkt_pts_time:frame_tags=lavfi.readeia608.0.cc,lavfi.readeia608.1.cc -of csv > Sentinel/title_t00/track-00-video.cc.csv
+            #assert not mediainfo_text_dict
+
+            app.log.debug('mediainfo_track_dict=%r', mediainfo_track_dict)
+            stream_duration = qip.utils.Timestamp(mediainfo_track_dict['Duration'])
+            app.log.info('%s: duration = %s', stream_file, stream_duration)
+            stream_file_durations.append((stream_file, stream_duration))
+
+    min_stream_duration = min(stream_duration
+                              for stream_file, stream_duration in stream_file_durations)
+    max_stream_duration = max(stream_duration
+                              for stream_file, stream_duration in stream_file_durations)
+    if max_stream_duration - min_stream_duration > 5:
+        raise ValueError(f'{inputdir}: Large discrepancy in stream durations!')
+
+    if not dir_existed:
+        app.log.info('Cleaning up %s', inputdir)
+        shutil.rmtree(inputdir)
 
     return True
 
