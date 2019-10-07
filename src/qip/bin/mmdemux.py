@@ -69,7 +69,7 @@ from qip.isolang import isolang
 from qip.mp4 import M4aFile
 from qip.mediainfo import *
 from qip.matroska import *
-from qip.mm import MediaFile, Chapters, FrameRate
+from qip.mm import MediaFile, Chapter, Chapters, FrameRate
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
 from qip.mm import *
@@ -2667,10 +2667,18 @@ def action_extract_music(inputdir, in_tags):
 
     num_skip_chapters = app.args.num_skip_chapters
 
-    chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=False))
-    while chaps and chaps[0].no < num_skip_chapters:
-        chaps.pop(0)
-    chaps = [chap for chap in chaps if chap.title]
+    try:
+        chapters_file_name = mux_dict['chapters']['file_name']
+    except KeyError:
+        has_chapters = False
+        chap = Chapter(0, 0, title=mux_dict['tags'].title, no=1)
+        chaps = [chap]
+    else:
+        has_chapters = True
+        chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, chapters_file_name), add_pre_gap=False))
+        while chaps and chaps[0].no < num_skip_chapters:
+            chaps.pop(0)
+        chaps = [chap for chap in chaps if chap.title]
     tracks_total = len(chaps)
 
     for track_no, chap in enumerate(chaps, start=1):
@@ -2707,30 +2715,33 @@ def action_extract_music(inputdir, in_tags):
                 except ValueError:
                     pass
 
-                stream_chapter_tmp_file = SoundFile.new_by_file_name(
-                        os.path.join(inputdir, '%s-%02d%s' % (
-                            stream_file_base,
-                            chap.no,
-                            stream_file_ext)))
+                if has_chapters:
+                    stream_chapter_tmp_file = SoundFile.new_by_file_name(
+                            os.path.join(inputdir, '%s-%02d%s' % (
+                                stream_file_base,
+                                chap.no,
+                                stream_file_ext)))
 
-                with perfcontext('Chop w/ ffmpeg'):
-                    ffmpeg_args = [
-                        '-start_at_zero', '-copyts',
-                        '-i', os.path.join(inputdir, stream_file_name),
-                        '-codec', 'copy',
-                        '-ss', chap.start,
-                        '-to', chap.end,
-                        ]
-                    if force_format:
-                        ffmpeg_args += [
-                            '-f', force_format,
+                    with perfcontext('Chop w/ ffmpeg'):
+                        ffmpeg_args = [
+                            '-start_at_zero', '-copyts',
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-codec', 'copy',
+                            '-ss', chap.start,
+                            '-to', chap.end,
                             ]
-                    ffmpeg_args += [
-                        stream_chapter_tmp_file.file_name,
-                        ]
-                    ffmpeg(*ffmpeg_args,
-                           dry_run=app.args.dry_run,
-                           y=app.args.yes)
+                        if force_format:
+                            ffmpeg_args += [
+                                '-f', force_format,
+                                ]
+                        ffmpeg_args += [
+                            stream_chapter_tmp_file.file_name,
+                            ]
+                        ffmpeg(*ffmpeg_args,
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
+                else:
+                    stream_chapter_tmp_file = snd_file
 
                 m4a = M4aFile(my_splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
                 m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
