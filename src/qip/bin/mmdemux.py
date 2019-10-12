@@ -1581,19 +1581,24 @@ def action_mux(inputfile, in_tags):
 
 def action_verify(inputfile, in_tags):
     app.log.info('Verifying %s...', inputfile)
-    if not isinstance(inputfile, MediaFile):
-        inputfile = MediaFile.new_by_file_name(inputfile)
-    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
-    outputdir = "%s" % (inputfile_base,) \
-        if app.args.project is Auto else app.args.project
 
     dir_existed = False
-    if os.path.isdir(outputdir):
-        if app.args._continue:
-            app.log.warning('Directory exists: %r; Just verifying', outputdir)
-            dir_existed = True
-        else:
-            raise OSError(errno.EEXIST, outputdir)
+    if os.path.isdir(inputfile):
+        outputdir = inputfile
+        dir_existed = True
+    else:
+        if not isinstance(inputfile, MediaFile):
+            inputfile = MediaFile.new_by_file_name(inputfile)
+        inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+        outputdir = "%s" % (inputfile_base,) \
+            if app.args.project is Auto else app.args.project
+
+        if os.path.isdir(outputdir):
+            if app.args._continue:
+                app.log.warning('Directory exists: %r; Just verifying', outputdir)
+                dir_existed = True
+            else:
+                raise OSError(errno.EEXIST, outputdir)
 
     if not dir_existed:
         assert action_mux(inputfile, in_tags=in_tags)
