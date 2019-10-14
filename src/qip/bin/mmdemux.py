@@ -1189,7 +1189,7 @@ def action_hb(inputfile, in_tags):
     else:
         raise ValueError('Unsupported extension %r' % (inputfile_ext,))
 
-def action_mux(inputfile, in_tags):
+def action_mux(inputfile, in_tags, mux_subtitles=True):
     app.log.info('Muxing %s...', inputfile)
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
@@ -1264,6 +1264,10 @@ def action_mux(inputfile, in_tags):
             stream_out_dict = {}
             stream_index = stream_out_dict['index'] = int(stream_dict['index'])
             stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
+
+            if not mux_subtitles and stream_codec_type == 'subtitle':
+                app.log.warning('Not muxing %s stream #%d...', stream_codec_type, stream_index)
+                continue
 
             if stream_codec_type in ('video', 'audio', 'subtitle'):
                 stream_codec_name = stream_dict['codec_name']
@@ -1601,7 +1605,7 @@ def action_verify(inputfile, in_tags):
                 raise OSError(errno.EEXIST, outputdir)
 
     if not dir_existed:
-        assert action_mux(inputfile, in_tags=in_tags)
+        assert action_mux(inputfile, in_tags=in_tags, mux_subtitles=False)
     inputdir = outputdir
 
     input_mux_file_name = os.path.join(inputdir, 'mux.json')
