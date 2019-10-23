@@ -478,6 +478,7 @@ def main():
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='output_file', default=Auto, help='specify the output (demuxed) file name')
     pgroup.add_bool_argument('--remux', help='remux original files')
+    pgroup.add_bool_argument('--auto-verify', help='Auto-verify created files')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     xgroup.add_bool_argument('--webm', default=True, help='webm output format')
@@ -1189,7 +1190,9 @@ def action_hb(inputfile, in_tags):
     else:
         raise ValueError('Unsupported extension %r' % (inputfile_ext,))
 
-def action_mux(inputfile, in_tags, mux_subtitles=True):
+def action_mux(inputfile, in_tags,
+               mux_attached_pic=True,
+               mux_subtitles=True):
     app.log.info('Muxing %s...', inputfile)
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
@@ -1264,10 +1267,6 @@ def action_mux(inputfile, in_tags, mux_subtitles=True):
             stream_out_dict = {}
             stream_index = stream_out_dict['index'] = int(stream_dict['index'])
             stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
-
-            if not mux_subtitles and stream_codec_type == 'subtitle':
-                app.log.warning('Not muxing %s stream #%d...', stream_codec_type, stream_index)
-                continue
 
             if stream_codec_type in ('video', 'audio', 'subtitle'):
                 stream_codec_name = stream_dict['codec_name']
@@ -1360,62 +1359,68 @@ def action_mux(inputfile, in_tags, mux_subtitles=True):
                             )
                 stream_out_dict['file_name'] = output_track_file_name
 
-                if stream_disposition_dict['attached_pic']:
-                    app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
-                    mkvextract_attachments_args += [
-                        '%d:%s' % (
-                            attachment_index,
-                            os.path.join(outputdir, output_track_file_name),
-                        )]
-                elif (
-                        app.args.track_extract_tool == 'ffmpeg'
-                        # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
-                        # (mkvextract expects S_TEXT/WEBVTT)
-                        or stream_file_ext == '.vtt'
-                        # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
-                        # https://www.makemkv.com/forum/viewtopic.php?t=2530
-                        or stream_codec_name == 'pcm_s16le'
-                        or (app.args.track_extract_tool is Auto
-                            # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
-                            and stream_codec_name in (
-                                'vp8',
-                                'vp9',
-                                ))):
-                    app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
-                    with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
-                        force_format = None
-                        try:
-                            force_format = ext_to_container(stream_file_ext)
-                        except ValueError:
-                            pass
-                        ffmpeg_args = [
-                            '-i', inputfile.file_name,
-                            '-map_metadata', '-1',
-                            '-map_chapters', '-1',
-                            '-map', '0:%d' % (stream_index,),
-                            '-codec', 'copy',
-                            '-start_at_zero',
-                            ]
-                        if force_format:
-                            ffmpeg_args += [
-                                '-f', force_format,
-                                ]
-                        ffmpeg_args += [
-                            os.path.join(outputdir, output_track_file_name),
-                            ]
-                        ffmpeg(*ffmpeg_args,
-                               dry_run=app.args.dry_run,
-                               y=app.args.yes)
-                elif app.args.track_extract_tool in ('mkvextract', Auto):
-                    app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
-                    mkvextract_tracks_args += [
-                        '%d:%s' % (
-                            stream_index,
-                            os.path.join(outputdir, output_track_file_name),
-                        )]
-                    # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
+                if (
+                        (not mux_attached_pic and stream_disposition_dict['attached_pic']) or
+                        (not mux_subtitles and stream_codec_type == 'subtitle')):
+                    app.log.warning('Not muxing %s stream #%d...', stream_codec_type, stream_index)
                 else:
-                    raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
+
+                    if stream_disposition_dict['attached_pic']:
+                        app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
+                        mkvextract_attachments_args += [
+                            '%d:%s' % (
+                                attachment_index,
+                                os.path.join(outputdir, output_track_file_name),
+                            )]
+                    elif (
+                            app.args.track_extract_tool == 'ffmpeg'
+                            # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
+                            # (mkvextract expects S_TEXT/WEBVTT)
+                            or stream_file_ext == '.vtt'
+                            # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
+                            # https://www.makemkv.com/forum/viewtopic.php?t=2530
+                            or stream_codec_name == 'pcm_s16le'
+                            or (app.args.track_extract_tool is Auto
+                                # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
+                                and stream_codec_name in (
+                                    'vp8',
+                                    'vp9',
+                                    ))):
+                        app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
+                        with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
+                            force_format = None
+                            try:
+                                force_format = ext_to_container(stream_file_ext)
+                            except ValueError:
+                                pass
+                            ffmpeg_args = [
+                                '-i', inputfile.file_name,
+                                '-map_metadata', '-1',
+                                '-map_chapters', '-1',
+                                '-map', '0:%d' % (stream_index,),
+                                '-codec', 'copy',
+                                '-start_at_zero',
+                                ]
+                            if force_format:
+                                ffmpeg_args += [
+                                    '-f', force_format,
+                                    ]
+                            ffmpeg_args += [
+                                os.path.join(outputdir, output_track_file_name),
+                                ]
+                            ffmpeg(*ffmpeg_args,
+                                   dry_run=app.args.dry_run,
+                                   y=app.args.yes)
+                    elif app.args.track_extract_tool in ('mkvextract', Auto):
+                        app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
+                        mkvextract_tracks_args += [
+                            '%d:%s' % (
+                                stream_index,
+                                os.path.join(outputdir, output_track_file_name),
+                            )]
+                        # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
+                    else:
+                        raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
 
                 stream_dict_cache .append({
                     'stream_dict': stream_out_dict,
@@ -1491,7 +1496,7 @@ def action_mux(inputfile, in_tags, mux_subtitles=True):
                     stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
                     stream_dict['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
 
-                elif stream_codec_type == 'subtitle':
+                if mux_subtitles and stream_codec_type == 'subtitle':
                     stream_forced = stream_disposition_dict.get('forced', None)
                     if stream_forced:
                         has_forced_subtitle = True
@@ -1521,7 +1526,7 @@ def action_mux(inputfile, in_tags, mux_subtitles=True):
                     subtitle_counts.append(
                         (stream_dict, subtitle_count))
 
-        if not has_forced_subtitle and subtitle_counts:
+        if mux_subtitles and not has_forced_subtitle and subtitle_counts:
             max_subtitle_size = max(subtitle_count
                                     for stream_dict, subtitle_count in subtitle_counts)
             for stream_dict, subtitle_count in subtitle_counts:
@@ -1587,7 +1592,7 @@ def action_verify(inputfile, in_tags):
     app.log.info('Verifying %s...', inputfile)
 
     dir_existed = False
-    if os.path.isdir(inputfile):
+    if not isinstance(inputfile, MediaFile) and os.path.isdir(inputfile):
         outputdir = inputfile
         dir_existed = True
     else:
@@ -1605,7 +1610,9 @@ def action_verify(inputfile, in_tags):
                 raise OSError(errno.EEXIST, outputdir)
 
     if not dir_existed:
-        assert action_mux(inputfile, in_tags=in_tags, mux_subtitles=False)
+        assert action_mux(inputfile, in_tags=in_tags,
+                          mux_attached_pic=False,
+                          mux_subtitles=False)
     inputdir = outputdir
 
     input_mux_file_name = os.path.join(inputdir, 'mux.json')
@@ -3321,6 +3328,16 @@ def action_demux(inputdir, in_tags):
     app.log.info('DONE writing %s%s',
                  output_file.file_name,
                  ' (dry-run)' if app.args.dry_run else '')
+
+    if app.args.auto_verify:
+        old_interactive, app.args.interactive = app.args.interactive, False
+        try:
+            action_verify(output_file, in_tags=AlbumTags())
+        finally:
+            app.args.interactive = old_interactive
+        app.log.info('DONE writing & verifying %s%s',
+                     output_file.file_name,
+                     ' (dry-run)' if app.args.dry_run else '')
 
     if app.args.cleanup:
         app.log.info('Cleaning up %s', inputdir)
