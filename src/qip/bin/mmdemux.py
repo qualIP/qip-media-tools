@@ -233,7 +233,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             temporal_string = ''.join([
                 ('T' if frame.top_field_first else 'B') + ('3' if frame.repeat_pict else '2')
                 for frame in video_frames])
-            #app.log.debug('temporal_string: %r', temporal_string)
+            app.log.debug('temporal_string: %r', temporal_string)
 
             if field_order is None and '3' in temporal_string:
                 # libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
