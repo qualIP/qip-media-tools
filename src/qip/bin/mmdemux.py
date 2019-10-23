@@ -1824,40 +1824,45 @@ def action_optimize(inputdir, in_tags):
     input_mux_file_name = os.path.join(inputdir, 'mux.json')
     mux_dict = load_mux_dict(input_mux_file_name, in_tags)
 
-    def done_optimize_iter():
+    def optimize_stream(stream_dict, stream_index, is_sub_stream=False):
         nonlocal temp_files
         nonlocal inputdir
-        nonlocal stream_dict
-        nonlocal stream_file_name
-        nonlocal stream_file_base
-        nonlocal stream_file_ext
-        nonlocal new_stream_file_name
         nonlocal outputdir
-        nonlocal mux_dict
 
-        test_out_file(os.path.join(inputdir, new_stream_file_name))
+        def done_optimize_iter():
+            nonlocal temp_files
+            nonlocal inputdir
+            nonlocal outputdir
+            nonlocal stream_dict
+            nonlocal stream_file_name
+            nonlocal stream_file_base
+            nonlocal stream_file_ext
+            nonlocal new_stream_file_name
+            nonlocal mux_dict
+            nonlocal is_sub_stream
 
-        temp_files.append(os.path.join(inputdir, stream_file_name))
-        stream_dict.setdefault('original_file_name', stream_file_name)
-        stream_dict['file_name'] = stream_file_name = new_stream_file_name
-        stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-        if not app.args.dry_run:
-            output_mux_file_name = '%s/mux.json' % (outputdir,)
-            with open(output_mux_file_name, 'w') as fp:
-                json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
-            if not app.args.save_temps:
-                for file_name in temp_files:
-                    os.unlink(file_name)
-                temp_files = []
-        if app.args.step:
-            app.log.warning('Step done; Exit.')
-            exit(0)
+            test_out_file(os.path.join(inputdir, new_stream_file_name))
 
-    for stream_dict in mux_dict['streams']:
+            if not is_sub_stream:
+                temp_files.append(os.path.join(inputdir, stream_file_name))
+            stream_dict.setdefault('original_file_name', stream_file_name)
+            stream_dict['file_name'] = stream_file_name = new_stream_file_name
+            stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+            if not app.args.dry_run:
+                output_mux_file_name = '%s/mux.json' % (outputdir,)
+                with open(output_mux_file_name, 'w') as fp:
+                    json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                if not app.args.save_temps:
+                    for file_name in temp_files:
+                        os.unlink(file_name)
+                    temp_files = []
+            if app.args.step:
+                app.log.warning('Step done; Exit.')
+                exit(0)
+
         if stream_dict.get('skip', False):
-            continue
+            return
         do_skip = False
-        stream_index = stream_dict['index']
         stream_codec_type = stream_dict['codec_type']
         orig_stream_file_name = stream_file_name = stream_dict['file_name']
         stream_file_base, stream_file_ext = my_splitext(stream_file_name)
@@ -1875,7 +1880,7 @@ def action_optimize(inputdir, in_tags):
                 stream_codec_name = ffprobe_stream_json['codec_name']
 
                 if stream_codec_name in target_codec_names:
-                    app.log.verbose('Stream #%d %s OK', stream_index, stream_codec_name)
+                    app.log.verbose('Stream #%s %s OK', stream_index, stream_codec_name)
                     break
 
                 mediainfo_dict = stream_file.extract_mediainfo_dict()
@@ -1916,7 +1921,7 @@ def action_optimize(inputdir, in_tags):
                                                         if e not in ('23pulldown',)) \
                             + '.pullup' + new_stream_file_ext
                         new_stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, new_stream_file_name))
-                        app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                        app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                         if stream_file_ext == '.y4m':
                             assert framerate == FrameRate(30000, 1001)
@@ -2010,7 +2015,7 @@ def action_optimize(inputdir, in_tags):
                             new_stream_file_ext = '.ffv1.avi'
                         new_stream_file_name = stream_file_base + '.pullup' + new_stream_file_ext
                         new_stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, new_stream_file_name))
-                        app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                        app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                         mencoder_args = [
                             '-aspect', display_aspect_ratio,
@@ -2032,7 +2037,7 @@ def action_optimize(inputdir, in_tags):
 
                 new_stream_file_ext = '.vp9.ivf'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 ffprobe_stream_json = ffprobe_json['streams'][0]
                 app.log.debug(ffprobe_stream_json)
@@ -2062,7 +2067,7 @@ def action_optimize(inputdir, in_tags):
                 else:
                     raise NotImplementedError(field_order)
 
-                if app.args.crop in (Auto, True):
+                if not is_sub_stream and app.args.crop in (Auto, True):
                     if getattr(app.args, 'crop_wh', None) is not None:
                         w, h = app.args.crop_wh
                         l, t = (mediainfo_width - w) // 2, (mediainfo_height - h) // 2
@@ -2342,7 +2347,7 @@ def action_optimize(inputdir, in_tags):
                             '-codec', 'copy',
                             ] + ffmpeg_concat_args + [
                             '-start_at_zero',
-                            '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                            '-f', ext_to_container(new_stream_file_name), os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
                                dry_run=app.args.dry_run,
@@ -2355,7 +2360,7 @@ def action_optimize(inputdir, in_tags):
                         ffmpeg_args = [
                             '-i', os.path.join(inputdir, stream_file_name),
                             ] + ffmpeg_conv_args + [
-                            '-f', 'ivf', os.path.join(inputdir, new_stream_file_name),
+                            '-f', ext_to_container(new_stream_file_name), os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg.run2pass(*ffmpeg_args,
                                         slurm=True,
@@ -2398,7 +2403,7 @@ def action_optimize(inputdir, in_tags):
             if stream_file_ext not in ok_formats + opusenc_formats:
                 new_stream_file_ext = '.wav'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
                     ffmpeg_args = [
@@ -2441,7 +2446,7 @@ def action_optimize(inputdir, in_tags):
                 # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
                 new_stream_file_ext = '.opus.ogg'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 audio_bitrate = 640000 if channels >= 4 else 384000
                 audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
@@ -2473,11 +2478,11 @@ def action_optimize(inputdir, in_tags):
 
             if stream_file_ext in ok_formats:
                 if stream_file_name == orig_stream_file_name:
-                    app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
             else:
                 new_stream_file_ext = '.opus.ogg'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 audio_bitrate = 640000 if channels >= 4 else 384000
                 audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
@@ -2520,7 +2525,7 @@ def action_optimize(inputdir, in_tags):
             if False and stream_file_ext in ('.sup',):
                 new_stream_file_ext = '.sub'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 if False:
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
@@ -2564,17 +2569,17 @@ def action_optimize(inputdir, in_tags):
 
             if stream_file_ext in ('.sup', '.sub',):
                 if app.args.external_subtitles and not stream_dict['disposition'].get('forced', None):
-                    app.log.warning('Stream #%d %s -> [external]', stream_index, stream_file_ext)
-                    continue
+                    app.log.warning('Stream #%s %s -> [external]', stream_index, stream_file_ext)
+                    return
 
                 new_stream_file_ext = '.srt'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
                 if app.args.batch:
-                    app.log.warning('BATCH MODE SKIP: Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                    app.log.warning('BATCH MODE SKIP: Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
                     do_chain = False
                     num_batch_skips += 1
-                    continue
-                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                    return
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 if False:
                     subrip_matrix = app.args.subrip_matrix
@@ -2692,7 +2697,7 @@ def action_optimize(inputdir, in_tags):
 
                 if do_skip:
                     stream_dict['skip'] = True
-                    app.log.info('Stream #%d %s: setting to be skipped', stream_index, stream_file_name)
+                    app.log.info('Stream #%s %s: setting to be skipped', stream_index, stream_file_name)
                 else:
                     temp_files.append(os.path.join(inputdir, stream_file_name))
                     stream_dict.setdefault('original_file_name', stream_file_name)
@@ -2707,14 +2712,14 @@ def action_optimize(inputdir, in_tags):
                             os.unlink(file_name)
                         temp_files = []
                 if do_skip:
-                    continue
+                    return
 
             # NOTE:
             #  WebVTT format exported by SubtitleEdit is same as ffmpeg .srt->.vtt except ffmpeg's timestamps have more 0-padding
             if stream_file_ext in ('.srt',):
                 new_stream_file_ext = '.vtt'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
                     ffmpeg_args = [
@@ -2741,7 +2746,7 @@ def action_optimize(inputdir, in_tags):
 
             if stream_file_ext in ('.vtt',):
                 if stream_file_name == orig_stream_file_name:
-                    app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
             else:
                 raise ValueError('Unsupported subtitle extension %r' % (stream_file_ext,))
 
@@ -2755,11 +2760,11 @@ def action_optimize(inputdir, in_tags):
 
             if stream_file_ext in ok_formats:
                 if stream_file_name == orig_stream_file_name:
-                    app.log.verbose('Stream #%d %s OK', stream_index, stream_file_ext)
+                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
             else:
                 new_stream_file_ext = '.png'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%d %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
                     ffmpeg_args = [
@@ -2788,6 +2793,10 @@ def action_optimize(inputdir, in_tags):
 
         else:
             raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+    for stream_dict in mux_dict['streams']:
+        stream_index = stream_dict['index']
+        optimize_stream(stream_dict, stream_index)
 
     if do_chain:
         app.args.demux_dirs += (outputdir,)
