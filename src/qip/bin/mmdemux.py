@@ -467,6 +467,7 @@ def main():
     pgroup.add_argument('--video-language', '--vlang', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
     pgroup.add_argument('--video-rate-control-mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
     pgroup.add_argument('--force-framerate', default=argparse.SUPPRESS, type=FrameRate, help='Ignore heuristics and force framerate')
+    pgroup.add_argument('--force-output-framerate', default=argparse.SUPPRESS, type=FrameRate, help='Force output framerate')
     pgroup.add_argument('--force-field-order', default=argparse.SUPPRESS, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
     pgroup.add_argument('--video-analyze-duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(60), help='video analysis duration (seconds)')
     pgroup.add_argument('--video-analyze-skip-frames', type=int, default=10, help='number of frames to skip from video analysis')
@@ -1915,11 +1916,15 @@ def action_optimize(inputdir, in_tags):
                 if field_order == '23pulldown':
 
                     if True:
+                        # -> ffmpeg+yuvkineco -> .ffv1
+                        deinterlace_using_ffmpeg = True
+                        fieldmatch_using_ffmpeg = False
 
                         new_stream_file_ext = '.ffv1.mkv'
-                        new_stream_file_name = '.'.join(e for e in stream_file_base.split('.')
+                        new_stream_file_name_base = '.'.join(e for e in stream_file_base.split('.')
                                                         if e not in ('23pulldown',)) \
-                            + '.pullup' + new_stream_file_ext
+                            + '.yuvkineco-pullup'
+                        new_stream_file_name = new_stream_file_name_base + new_stream_file_ext
                         new_stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, new_stream_file_name))
                         app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
@@ -1927,11 +1932,34 @@ def action_optimize(inputdir, in_tags):
                             assert framerate == FrameRate(30000, 1001)
                             framerate = FrameRate(24000, 1001)
                             app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
+
+                        orig_framerate = framerate * 30 / 24
+
+                        if stream_file_ext == '.y4m':
                             ffmpeg_dec_args = None
                         else:
                             ffmpeg_dec_args = [
                                 '-i', os.path.join(inputdir, stream_file_name),
-                                '-vf', 'fieldmatch,yadif=deint=interlaced',
+                                ]
+                            ffmpeg_video_filter_args = []
+                            if False:
+                                ffmpeg_video_filter_args += [
+                                    'dejudder',
+                                    f'fps={orig_framerate}',
+                                    ]
+                            if fieldmatch_using_ffmpeg:
+                                ffmpeg_video_filter_args += [
+                                    'fieldmatch',
+                                    ]
+                            if deinterlace_using_ffmpeg:
+                                ffmpeg_video_filter_args += [
+                                    'yadif=deint=interlaced',
+                                    ]
+                            if ffmpeg_video_filter_args:
+                                ffmpeg_dec_args += [
+                                    '-vf', ','.join(ffmpeg_video_filter_args),
+                                    ]
+                            ffmpeg_dec_args += [
                                 '-pix_fmt', 'yuv420p',
                                 '-nostats',  # will expect progress on output
                                 # '-vcodec', 'yuv4',  # yuv4mpegpipe ERROR: Codec not supported.
@@ -1948,14 +1976,17 @@ def action_optimize(inputdir, in_tags):
                         yuvkineco_cmd = [
                             'yuvkineco',
                         ]
+                        framerate = getattr(app.args, 'force_output_framerate', framerate)
                         if framerate == FrameRate(24000, 1001):
                             yuvkineco_cmd += ['-F', '1']
                         elif framerate == FrameRate(30000, 1001):
                             yuvkineco_cmd += ['-F', '4']
                         else:
                             raise NotImplementedError(framerate)
-                        yuvkineco_cmd += ['-n', '2']  # Noise level (default: 10)
-                        yuvkineco_cmd += ['-i', '-1']  # Disable deinterlacing
+                        #yuvkineco_cmd += ['-n', '2']  # Noise level (default: 10)
+                        if deinterlace_using_ffmpeg:
+                            yuvkineco_cmd += ['-i', '-1']  # Disable deinterlacing
+                        yuvkineco_cmd += ['-C', os.path.join(inputdir, new_stream_file_name_base + '.23c')]  # pull down cycle list file
 
                         ffmpeg_enc_args = [
                             '-i', 'pipe:0',
@@ -2013,7 +2044,9 @@ def action_optimize(inputdir, in_tags):
                         else:
                             # mencoder seems to mess up the encoder frame rate in avi (total-frames/1), ffmpeg's r_frame_rate seems accurate.
                             new_stream_file_ext = '.ffv1.avi'
-                        new_stream_file_name = stream_file_base + '.pullup' + new_stream_file_ext
+                        new_stream_file_name = '.'.join(e for e in stream_file_base.split('.')
+                                                        if e not in ('23pulldown',)) \
+                            + '.mencoder-pullup' + new_stream_file_ext
                         new_stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, new_stream_file_name))
                         app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
@@ -2022,7 +2055,8 @@ def action_optimize(inputdir, in_tags):
                             stream_file,
                             '-ofps', framerate,
                             '-vf', 'pullup,softskip,harddup',
-                            '-ovc', 'lavc', '-lavcopts', 'vcodec=ffv1:slices=12:threads=4',
+                            #'-ovc', 'lavc', '-lavcopts', 'vcodec=ffv1:slices=12:threads=4',
+                            '-ovc', 'lavc', '-lavcopts', 'vcodec=ffv1:threads=4',
                             '-of', 'lavf', '-lavfopts', 'format=%s' % (ext_to_mencoder_libavcodec_format(new_stream_file_ext),),
                             '-o', new_stream_file,
                         ]
@@ -2210,7 +2244,6 @@ def action_optimize(inputdir, in_tags):
                     ] + extra_args + [
                     ]
 
-                ffmpeg_concat_args = []
 
                 if mux_dict['chapters']:
                     chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=True))
@@ -2220,6 +2253,7 @@ def action_optimize(inputdir, in_tags):
                         and len(chaps) > 1
                         and chaps[0].start == 0
                         and stream_file_ext in ('.mpeg2', '.mpeg2.mp2v')):  # Chopping using segment muxer is reliable (tested with mpeg2)
+                    ffmpeg_concat_args = []
                     with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
                         chapter_stream_file_ext = {
                                 '.mpeg2': '.mpegts',
