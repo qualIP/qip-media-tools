@@ -470,6 +470,7 @@ def main():
     pgroup.add_argument('--force-field-order', default=argparse.SUPPRESS, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
     pgroup.add_argument('--video-analyze-duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(60), help='video analysis duration (seconds)')
     pgroup.add_argument('--video-analyze-skip-frames', type=int, default=10, help='number of frames to skip from video analysis')
+    pgroup.add_argument('--limit-duration', type=qip.utils.Timestamp, default=argparse.SUPPRESS, help='limit conversion duration (for testing purposes)')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', default=Auto, help='SubRip OCR matrix file')
@@ -1866,6 +1867,7 @@ def action_optimize(inputdir, in_tags):
 
             expected_framerate = None
             while True:
+                limit_duration = getattr(app.args, 'limit_duration', None)
 
                 stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
                 ffprobe_json = stream_file.extract_ffprobe_json()
@@ -1928,6 +1930,10 @@ def action_optimize(inputdir, in_tags):
                                 '-pix_fmt', 'yuv420p',
                                 '-nostats',  # will expect progress on output
                                 # '-vcodec', 'yuv4',  # yuv4mpegpipe ERROR: Codec not supported.
+                                ]
+                            if limit_duration:
+                                ffmpeg_dec_args += ['-t', ffmpeg.Timestamp(limit_duration)]
+                            ffmpeg_dec_args += [
                                 '-f', ext_to_container('.y4m'),
                                 '--', 'pipe:',
                             ]
