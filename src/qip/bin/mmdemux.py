@@ -939,10 +939,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
         except KeyError:
             pass
         if 'title' in d:
-            m = (
-                re.match('^(?P<contenttype>[^:]+): (?P<comment>.+)$', d['title'])
-                or re.match('^(?P<contenttype>[^:]+)(?P<comment>)$', d['title'])
-            )
+            m = re.match(r'^(?:(?P<title>.+) -- )?(?P<contenttype>[^:]+)(?:: (?P<comment>.+))?$', d['title'])
             if m:
                 try:
                     d['contenttype'] = ContentType(m.group('contenttype').strip())
@@ -950,8 +947,10 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
                     app.log.debug('err=%r', err)
                     pass
                 else:
-                    d['comment'] = m.group('comment').strip() or None
-                    del d['title']
+                    d['comment'] = (m.group('comment') or '').strip() or None
+                    d['title'] = (m.group('title') or '').strip() or None
+                    if not d['title']:
+                        del d['title']
         if 'title' in d:
             m = re.match('^(?P<title>.+) \((?P<date>\d{4})\)$', d['title'])
             if m:
