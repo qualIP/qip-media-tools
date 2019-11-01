@@ -388,6 +388,11 @@ def NA_or_Decimal(value):
         return None
     return Decimal(value)
 
+def NA_or_Ratio(value):
+    if value == 'N/A':
+        return None
+    return Ratio(value)
+
 def str_to_bool(value):
     if value == '0':
         return False
@@ -454,14 +459,14 @@ class Ffprobe(_Ffmpeg):
             'nb_samples': int,  # 1536
             'pkt_dts': NA_or_int,  # 0
             'pkt_dts_time': NA_or_Decimal,  # 0.000000
-            'pkt_duration': int,  # 32
-            'pkt_duration_time': Decimal,  # 0.032000
+            'pkt_duration': NA_or_int,  # 32
+            'pkt_duration_time': NA_or_Decimal,  # 0.032000
             'pkt_pos': int,  # 13125
             'pkt_pts': NA_or_int,  # 0
             'pkt_pts_time': NA_or_Decimal,  # 0.000000
             'pkt_size': int,  # 1536
             'repeat_pict': str_to_bool,  # 0
-            'sample_aspect_ratio': Ratio,  # 186:157
+            'sample_aspect_ratio': NA_or_Ratio,  # 186:157
             'stream_index': int,  # 1
             'top_field_first': str_to_bool,  # 1
             'width': int,  # 720
@@ -543,7 +548,10 @@ class Ffprobe(_Ffmpeg):
                         else:
                             conv = frame._attr_convs.get(attr, None)
                             if conv:
-                                value = conv(value)
+                                try:
+                                    value = conv(value)
+                                except Exception as err:
+                                    raise ValueError('%s = %s: (%s) %s' % (attr, value, err.__class__.__name__, err))
                             setattr(frame, attr, value)
                             continue
                         if line == '[SIDE_DATA]':
