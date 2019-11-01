@@ -1915,6 +1915,7 @@ def action_optimize(inputdir, in_tags):
     mux_dict = load_mux_dict(input_mux_file_name, in_tags)
 
     def optimize_stream(stream_dict, stream_index, is_sub_stream=False):
+        global num_batch_skips
         nonlocal temp_files
         nonlocal inputdir
         nonlocal outputdir
