@@ -102,6 +102,13 @@ class FieldOrderUnknownError(NotImplementedError):
         self.ffprobe_field_order = ffprobe_field_order
         super().__init__((mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order))
 
+class StreamCharacteristicsSeenError(ValueError):
+
+    def __init__(self, stream_index, stream_characteristics):
+        self.stream_index = stream_index
+        self.stream_characteristics = stream_characteristics
+        super().__init__(f'Stream #{stream_index} characteristics already seen: {stream_characteristics!r}')
+
 common_aspect_ratios = {
     # Ratio(4, 3),
     # Ratio(16, 9),   # 1.78:1 1920x1080 "FHD"
@@ -3073,6 +3080,61 @@ def action_demux(inputdir, in_tags):
     external_stream_file_names_seen = set()
     stream_characteristics_seen = set()
 
+    def handle_StreamCharacteristicsSeenError(e):
+        nonlocal stream_dict
+        update_mux_conf = False
+        return_retry = False
+
+        if not app.args.interactive:
+            raise
+
+        print(f'{e}:')
+        while True:
+            print(' s  - skip this stream -- done')
+            if stream_codec_type in ('subtitle',):
+                print(' tf - toggle forced disposition (%r)' % (True if stream_dict['disposition'].get('forced', None) else False,))
+                print(' th - toggle hearing_impaired disposition (%r)' % (True if stream_dict['disposition'].get('hearing_impaired', None) else False,))
+            if stream_codec_type in ('audio', 'subtitle'):
+                print(' tc - toggle comment disposition (%r)' % (True if stream_dict['disposition'].get('comment', None) else False,))
+            if stream_codec_type in ('audio',):
+                print(' et - edit title (%s)' % (stream_dict.get('title', None),))
+            print(' r  - retry this stream -- done')
+            print(' q  - quit')
+            c = input('Choice: ')
+            if c == 's':
+                stream_dict['skip'] = True
+                return_retry = False
+                update_mux_conf = True
+                break
+            elif c == 'r':
+                return_retry = True
+                break
+            elif c == 'tc':
+                stream_dict['disposition']['comment'] = not stream_dict['disposition'].get('comment', None)
+                update_mux_conf = True
+            elif c == 'th':
+                stream_dict['disposition']['hearing_impaired'] = not stream_dict['disposition'].get('hearing_impaired', None)
+                update_mux_conf = True
+            elif c == 'tf':
+                stream_dict['disposition']['forced'] = not stream_dict['disposition'].get('forced', None)
+                update_mux_conf = True
+            elif c == 'et':
+                stream_title = input('Title: ')
+                if stream_title == 'None':
+                    stream_dict.pop('title', None)
+                else:
+                    stream_dict['title'] = stream_title
+                update_mux_conf = True
+            elif c == 'q':
+                raise
+            else:
+                app.log.error('Invalid input')
+
+        if update_mux_conf:
+            with open(input_mux_file_name, 'w') as fp:
+                json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+        return return_retry
+
     if use_mkvmerge:
         post_process_subtitles = []
         cmd = [
@@ -3089,10 +3151,13 @@ def action_demux(inputdir, in_tags):
             ]
         # --title handled with write_tags
         new_stream_index = -1
-        for stream_index, stream_dict in sorted((stream_dict['index'], stream_dict)
-                                                for stream_dict in mux_dict['streams']):
+        streams_todo = sorted(mux_dict['streams'],
+                              key=lambda stream_dict: stream_dict['index'])
+        while streams_todo:
+            stream_dict = streams_todo.pop(0)
             if stream_dict.get('skip', False):
                 continue
+            stream_index = stream_dict['index']
             stream_file_name = stream_dict['file_name']
             stream_codec_type = stream_dict['codec_type']
             stream_language = isolang(stream_dict.get('language', 'und'))
@@ -3109,7 +3174,13 @@ def action_demux(inputdir, in_tags):
                     'closed_caption' if stream_dict['disposition'].get('closed_caption', None) else '',
                 )
             if stream_characteristics in stream_characteristics_seen:
-                raise ValueError(f'Stream #{stream_index} characteristics already seen: {stream_characteristics!r}')
+                try:
+                    raise StreamCharacteristicsSeenError(stream_index=stream_index,
+                                                         stream_characteristics=stream_characteristics)
+                except StreamCharacteristicsSeenError as e:
+                    if handle_StreamCharacteristicsSeenError(e):
+                        streams_todo.insert(0, stream_dict)
+                    continue
             stream_characteristics_seen.add(stream_characteristics)
             if stream_codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
@@ -3258,7 +3329,10 @@ def action_demux(inputdir, in_tags):
         has_opus_streams = any(
                 my_splitext(stream_dict['file_name'])[1] in ('.opus', '.opus.ogg')
                 for stream_dict in mux_dict['streams'])
-        for stream_dict in sorted(mux_dict['streams'], key=lambda stream_dict: stream_dict['index']):
+        streams_todo = sorted(mux_dict['streams'],
+                              key=lambda stream_dict: stream_dict['index'])
+        while streams_todo:
+            stream_dict = streams_todo.pop(0)
             if stream_dict.get('skip', False):
                 continue
             stream_index = stream_dict['index']
@@ -3312,7 +3386,13 @@ def action_demux(inputdir, in_tags):
                     stream_file_name = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             if stream_characteristics in stream_characteristics_seen:
-                raise ValueError(f'Stream #{stream_index} characteristics already seen: {stream_characteristics!r}')
+                try:
+                    raise StreamCharacteristicsSeenError(stream_index=stream_index,
+                                                         stream_characteristics=stream_characteristics)
+                except StreamCharacteristicsSeenError as e:
+                    if handle_StreamCharacteristicsSeenError(e):
+                        streams_todo.insert(0, stream_dict)
+                    continue
             stream_characteristics_seen.add(stream_characteristics)
             if stream_codec_type == 'image':
                 attachment_type = stream_dict['attachment_type']
