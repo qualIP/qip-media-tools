@@ -668,10 +668,13 @@ def organize_tvshow(inputfile, *, suggest_tags):
         # https://github.com/contrary-cat/LocalTVExtras.bundle
         if inputfile.tags.contenttype is None:
             raise MissingMediaTagError('contenttype', file=inputfile)
-        # COMMENT
+        # COMMENT|TITLE
         if inputfile.tags.comment:
             # COMMENT
             dst_file_base = '%s' % (inputfile.tags.comment[0],)
+        elif inputfile.tags.title:
+            # TITLE
+            dst_file_base = '%s' % (inputfile.tags.title,)
         else:
             # ContentType
             dst_file_base = str(inputfile.tags.contenttype)
@@ -720,7 +723,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
         dst_file_base += format_part_suffix(inputfile)
 
-        dst_file_base += os.path.splitext(inputfile.file_name)[1]
+    dst_file_base += os.path.splitext(inputfile.file_name)[1]
 
     return dst_dir, dst_file_base
 
