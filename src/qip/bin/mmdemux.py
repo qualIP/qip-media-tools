@@ -2061,12 +2061,12 @@ def action_optimize(inputdir, in_tags):
                                 '--', 'pipe:',
                             ]
 
-                        app.log.verbose('pullup framerate: %s', framerate)
+                        framerate = getattr(app.args, 'force_output_framerate', framerate)
+                        app.log.verbose('pullup with final framerate %s (%.3f)', framerate, framerate)
 
                         yuvkineco_cmd = [
                             'yuvkineco',
                         ]
-                        framerate = getattr(app.args, 'force_output_framerate', framerate)
                         if framerate == FrameRate(24000, 1001):
                             yuvkineco_cmd += ['-F', '1']
                         elif framerate == FrameRate(30000, 1001):
@@ -2124,6 +2124,47 @@ def action_optimize(inputdir, in_tags):
                         continue
 
                         # ffmpeg -i input.1080i.ts -vf fieldmatch,yadif=deint=interlaced -f yuv4mpegpipe -pix_fmt yuv420p - | yuvkineco -F 1 -n 2 -i -1 | x264 --demuxer y4m -o out.mp4 -
+
+                    elif True:
+                        # -> ffmpeg -> .ffv1
+
+                        new_stream_file_ext = '.ffv1.mkv'
+                        new_stream_file_name = '.'.join(e for e in stream_file_base.split('.')
+                                                        if e not in ('23pulldown',)) \
+                            + '.ffmpeg-pullup' + new_stream_file_ext
+                        new_stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, new_stream_file_name))
+                        app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+
+                        if stream_file_ext == '.y4m':
+                            assert framerate == FrameRate(30000, 1001)
+                            framerate = FrameRate(24000, 1001)
+                            app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
+
+                        ffmpeg_args = [
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-vf', f'pullup,fps={framerate}',
+                            '-r', framerate,
+                            '-vcodec', 'ffv1',
+                            '-slices', 12, '-threads', 4,
+                            ]
+                        if limit_duration:
+                            ffmpeg_args += ['-t', ffmpeg.Timestamp(limit_duration)]
+                        ffmpeg_args += [
+                            '-f', ext_to_container(new_stream_file_ext),
+                            os.path.join(inputdir, new_stream_file_name),
+                        ]
+
+                        with perfcontext('Pullup w/ -> ffmpeg -> .ffv1'):
+                            ffmpeg(*ffmpeg_args,
+                                   slurm=True,
+                                   #slurm_cpus_per_task=2, # ~230-240%
+                                   dry_run=app.args.dry_run,
+                                   y=app.args.yes)
+
+                        expected_framerate = framerate
+
+                        done_optimize_iter()
+                        continue
 
                     else:
                         # -> mencoder -> .ffv1
