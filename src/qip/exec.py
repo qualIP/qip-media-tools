@@ -19,6 +19,9 @@ __all__ = [
         'EDITOR',
         'edfile',
         'edvar',
+        'nice',
+        'renice',
+        'ionice',
         ]
 
 import abc
@@ -248,6 +251,7 @@ class Executable(metaclass=abc.ABCMeta):
 
     run_func = None
 
+    nice_adjustment = None
     ionice_class = None
     ionice_level = None
     ionice_ignore = True
@@ -292,6 +296,7 @@ class Executable(metaclass=abc.ABCMeta):
         return cmdargs
 
     def build_cmd(self, *args, **kwargs):
+        nice_adjustment = kwargs.pop('nice_adjustment', self.nice_adjustment)
         ionice_class = kwargs.pop('ionice_class', self.ionice_class)
         ionice_level = kwargs.pop('ionice_level', self.ionice_level)
         ionice_ignore = kwargs.pop('ionice_ignore', self.ionice_ignore)
@@ -312,6 +317,13 @@ class Executable(metaclass=abc.ABCMeta):
                                    classdata=ionice_level,
                                    ignore=ionice_ignore,
                                    )
+
+        if nice_adjustment is not None:
+            if nice_adjustment is not None:
+                nice_adjustment = int(nice_adjustment)
+            cmd = nice.build_cmd(*cmd,
+                                 adjustment=nice_adjustment,
+                                 )
 
         return cmd
 
@@ -359,6 +371,45 @@ class PipedScript(PipedExecutable):
 class PipedPortableScript(PipedScript):
     pass
 
+
+class Nice(Executable):
+
+    name = 'nice'
+
+    kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
+
+    def build_cmd(self, *args, **kwargs):
+        cmd = [self.which()] \
+            + self.kwargs_to_cmdargs(**kwargs) \
+            + list(str(e) for e in args)
+        return cmd
+
+nice = Nice()
+
+
+class Renice(Executable):
+
+    name = 'renice'
+
+    kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
+
+    def build_cmd(self, *args, **kwargs):
+        keys1 = set(kwargs.keys())
+        keys2 = keys1 & {
+            'g', 'pgrp',
+            'p', 'pid',
+            'u', 'user',
+        }
+        keys1 -= keys2
+        cmd = [self.which()] \
+            + self.kwargs_to_cmdargs(**{k: v for k, v in kwargs.items() if k in keys1}) \
+            + self.kwargs_to_cmdargs(**{k: v for k, v in kwargs.items() if k in keys2}) \
+            + list(str(e) for e in args)
+        return cmd
+
+renice = Renice()
+
+
 class Ionice(Executable):
 
     name = 'ionice'
@@ -366,8 +417,15 @@ class Ionice(Executable):
     kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
 
     def build_cmd(self, *args, **kwargs):
+        keys1 = set(kwargs.keys())
+        keys2 = keys1 & {
+            'p', 'pid',
+            'P', 'pgid',
+        }
+        keys1 -= keys2
         cmd = [self.which()] \
-            + self.kwargs_to_cmdargs(**kwargs) \
+            + self.kwargs_to_cmdargs(**{k: v for k, v in kwargs.items() if k in keys1}) \
+            + self.kwargs_to_cmdargs(**{k: v for k, v in kwargs.items() if k in keys2}) \
             + list(str(e) for e in args)
         return cmd
 

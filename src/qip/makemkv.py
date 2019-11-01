@@ -293,7 +293,8 @@ class Makemkvcon(Executable):
 
     name = 'makemkvcon'
 
-    ionice_level = 7  # lowest priority
+    nice_adjustment = 19  # the nicest
+    ionice_level = 7      # lowest priority
 
     run_func = staticmethod(do_makemkvcon_spawn_cmd)
 

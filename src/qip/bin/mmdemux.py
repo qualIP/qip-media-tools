@@ -451,6 +451,8 @@ def main():
 
     pgroup = app.parser.add_argument_group('Tools Control')
     pgroup.add_argument('--track-extract-tool', default=Auto, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
+    pgroup.add_argument('--ionice', default=None, type=int, help='ionice process level')
+    pgroup.add_argument('--nice', default=None, type=int, help='nice process adjustment')
 
     pgroup = app.parser.add_argument_group('Ripping Control')
     pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')

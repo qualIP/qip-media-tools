@@ -271,10 +271,28 @@ class App(object):
                         namespace.config_file = None
 
         namespace = self.parser.parse_args(
-            args=config_args + remaining_args,
+            args=config_args,
+            namespace=namespace)
+
+        namespace = self.parser.parse_args(
+            args=remaining_args,
             namespace=namespace)
 
         self.args = namespace
+
+        nice = getattr(self.args, 'nice', None)
+        if nice is not None:
+            import qip.exec
+            qip.exec.renice(pid=os.getpid(),
+                            priority=nice)
+
+        ionice = getattr(self.args, 'ionice', None)
+        if ionice is not None:
+            import qip.exec
+            qip.exec.ionice(pid=os.getpid(),
+                            _class=2,  # best-effort
+                            classdata=ionice)
+
         return self.args
 
     def read_config_file(self, config_file):
