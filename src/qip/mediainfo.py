@@ -55,6 +55,7 @@ class Mediainfo(Executable):
             assert track_type in (
                 'General',
                 'Video',
+                'Image',
                 'Audio',
                 'Text',
                 'Menu',

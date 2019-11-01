@@ -159,6 +159,12 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
 
     video_frames = []
 
+    if mediainfo_track_dict['@type'] == 'Image':
+        if field_order is None:
+            field_order = 'progressive'
+        if framerate is None:
+            framerate = FrameRate(1, 1)
+
     if field_order is None:
         with perfcontext('analyze field_order'):
 
@@ -223,7 +229,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             app.log.debug('Analyzing %d video frames...', len(video_frames))
 
             video_frames = video_frames[app.args.video_analyze_skip_frames:]  # Skip first frames; Often padded with different field order
-            assert video_frames
+            assert video_frames, "No video frames found to analyze!"
 
             # video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
             # XXXJST:
@@ -638,6 +644,11 @@ def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_st
     mediainfo_track_dict = mediainfo_dict['media']['track'][1]
     return get_codec_encoding_delay(file_name, mediainfo_track_dict=mediainfo_track_dict)
 
+still_image_exts = {
+    '.png',
+    '.jpg', '.jepg',
+}
+
 def codec_name_to_ext(codec_name):
     try:
         codec_ext = {
@@ -653,6 +664,8 @@ def codec_name_to_ext(codec_name):
             'h265': '.h265',
             'vp8': '.vp8.ivf',
             'vp9': '.vp9.ivf',
+            # image
+            'png': '.png',
             # audio
             'ac3': '.ac3',
             'mp3': '.mp3',
@@ -1272,8 +1285,20 @@ def action_mux(inputfile, in_tags,
             stream_index = stream_out_dict['index'] = int(stream_dict['index'])
             stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
 
+            mediainfo_track_dict, = (mediainfo_track_dict
+                    for mediainfo_track_dict in mediainfo_dict['media']['track']
+                    if int(mediainfo_track_dict.get('ID', 0)) == stream_index + 1)
+
             if stream_codec_type in ('video', 'audio', 'subtitle'):
                 stream_codec_name = stream_dict['codec_name']
+                EstimatedFrameCount = None
+                if stream_codec_type == 'video':
+                    # Test using mediainfo's Duration as ffmpeg's can be the whole length of the movie
+                    if 'Duration' in mediainfo_track_dict:
+                        EstimatedFrameCount = int(round_half_away_from_zero(qip.utils.Timestamp(mediainfo_track_dict['Duration']) * Fraction(mediainfo_track_dict['FrameRate'])))
+                    elif stream_codec_name in still_image_exts:
+                        EstimatedFrameCount = 1
+                app.log.debug('EstimatedFrameCount=%r', EstimatedFrameCount)
                 if (
                         stream_codec_type == 'video'
                         and stream_codec_name == 'mjpeg'
@@ -1281,6 +1306,11 @@ def action_mux(inputfile, in_tags,
                     stream_codec_type = stream_out_dict['codec_type'] = 'image'
                     stream_file_ext = '.jpg'
                     stream_out_dict['attachment_type'] = my_splitext(stream_dict['tags']['filename'])[0]
+                elif (
+                    stream_codec_type == 'video'
+                    and EstimatedFrameCount == 1):
+                    stream_file_ext = '.png'
+                    app.log.warning('Detected %s stream #%d is still image', stream_codec_type, stream_index)
                 else:
                     stream_file_ext = codec_name_to_ext(stream_codec_name)
 
@@ -1384,6 +1414,8 @@ def action_mux(inputfile, in_tags,
                             # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
                             # https://www.makemkv.com/forum/viewtopic.php?t=2530
                             or stream_codec_name == 'pcm_s16le'
+                            # Avoid mkvextract error: Track 0 with the CodecID 'V_MS/VFW/FOURCC' is missing the "default duration" element and cannot be extracted.
+                            or stream_file_ext in still_image_exts
                             or (app.args.track_extract_tool is Auto
                                 # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
                                 and stream_codec_name in (
@@ -1402,7 +1434,16 @@ def action_mux(inputfile, in_tags,
                                 '-map_metadata', '-1',
                                 '-map_chapters', '-1',
                                 '-map', '0:%d' % (stream_index,),
-                                '-codec', 'copy',
+                                ]
+                            if stream_file_ext in still_image_exts:
+                                ffmpeg_args += [
+                                    '-frames:v', 1,
+                                    ]
+                            else:
+                                ffmpeg_args += [
+                                    '-codec', 'copy',
+                                    ]
+                            ffmpeg_args += [
                                 '-start_at_zero',
                                 ]
                             if force_format:
@@ -1631,6 +1672,8 @@ def action_verify(inputfile, in_tags):
         stream_codec_type = stream_dict['codec_type']
         stream_file_name = stream_dict['file_name']
         stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+        if stream_codec_type == 'video' and stream_file_ext in still_image_exts:
+            continue
         if stream_codec_type in ('video', 'audio'):
 
             stream_file = MediaFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
@@ -1816,10 +1859,10 @@ def action_optimize(inputdir, in_tags):
     do_chain = app.args.chain
 
     target_codec_names = set((
+        'png', 'mjpeg',
         'vp8', 'vp9',
         'opus',
         'webvtt',
-        # 'mjpeg',
     ))
 
     temp_files = []
@@ -1894,7 +1937,7 @@ def action_optimize(inputdir, in_tags):
                     if d['@type'] == 'General':
                         assert mediainfo_general_dict is None
                         mediainfo_general_dict = d
-                    elif d['@type'] == 'Video':
+                    elif d['@type'] in ('Video', 'Image'):
                         assert mediainfo_track_dict is None
                         mediainfo_track_dict = d
                     elif d['@type'] == 'Text':
@@ -2117,14 +2160,17 @@ def action_optimize(inputdir, in_tags):
                         stream_crop = app.args.crop
                     if stream_crop is not False:
                         if not stream_crop_whlt and 'original_crop' not in stream_dict:
-                            stream_crop_whlt = ffmpeg.cropdetect(
-                                input_file=os.path.join(inputdir, stream_file_name),
-                                skip_frame_nokey=app.args.cropdetect_skip_frame_nokey,
-                                # Seek 5 minutes in
-                                #cropdetect_seek=max(0.0, min(300.0, float(mediainfo_duration) - 300.0)),
-                                cropdetect_duration=app.args.cropdetect_duration,
-                                video_filter_specs=video_filter_specs,
-                                dry_run=app.args.dry_run)
+                            if mediainfo_track_dict['@type'] == 'Image':
+                                pass  # Not supported
+                            else:
+                                stream_crop_whlt = ffmpeg.cropdetect(
+                                    input_file=os.path.join(inputdir, stream_file_name),
+                                    skip_frame_nokey=app.args.cropdetect_skip_frame_nokey,
+                                    # Seek 5 minutes in
+                                    #cropdetect_seek=max(0.0, min(300.0, float(mediainfo_duration) - 300.0)),
+                                    cropdetect_duration=app.args.cropdetect_duration,
+                                    video_filter_specs=video_filter_specs,
+                                    dry_run=app.args.dry_run)
                         if stream_crop_whlt and (stream_crop_whlt[0], stream_crop_whlt[1]) == (mediainfo_width, mediainfo_height):
                             stream_crop_whlt = None
                         stream_dict.setdefault('original_crop', stream_crop_whlt)
@@ -2178,74 +2224,78 @@ def action_optimize(inputdir, in_tags):
                     # -start_at_zero, -dropts and various -vsync options don't
                     # seem to work, only -vsync drop.
                     # XXXJST assumes constant frame rate (at least after pullup)
-                    extra_args += ['-vsync', 'drop']
-
-                # https://trac.ffmpeg.org/wiki/Encode/VP9
-                # https://developers.google.com/media/vp9/settings/vod/
-                video_target_bit_rate = get_vp9_target_bitrate(
-                    width=mediainfo_width, height=mediainfo_height,
-                    frame_rate=framerate,
-                    )
-                video_target_bit_rate = int(video_target_bit_rate * 1.5)  # 1800 * 1.5 = 2700
-                video_target_quality = get_vp9_target_quality(
-                    width=mediainfo_width, height=mediainfo_height,
-                    frame_rate=framerate,
-                    )
-                vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
-                    width=mediainfo_width, height=mediainfo_height,
-                    )
+                    if new_stream_file_ext in ('.ffv1.mkv',):
+                        # -vsync drop would lose timestamps and just apply the 1/1000 timebase!
+                        pass
+                    else:
+                        extra_args += ['-vsync', 'drop']
 
                 ffmpeg_conv_args = []
 
-                ffmpeg_conv_args += [
-                    '-c:v', 'libvpx-vp9',
-                ]
-                if app.args.video_rate_control_mode == 'Q':
-                    ffmpeg_conv_args += [
-                        '-b:v', 0,
-                        '-crf', str(video_target_quality),
-                        '-quality', 'good',
-                        '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
-                    ]
-                elif app.args.video_rate_control_mode == 'CQ':
-                    ffmpeg_conv_args += [
-                        '-b:v', '%dk' % (video_target_bit_rate,),
-                        '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
-                        '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
-                        '-crf', str(video_target_quality),
-                        '-quality', 'good',
-                        '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
-                    ]
-                elif app.args.video_rate_control_mode == 'CBR':
-                    ffmpeg_conv_args += [
-                        '-b:v', '%dk' % (video_target_bit_rate,),
-                        '-minrate', '%dk' % (video_target_bit_rate,),
-                        '-maxrate', '%dk' % (video_target_bit_rate,),
-                    ]
-                elif app.args.video_rate_control_mode == 'VBR':
-                    ffmpeg_conv_args += [
-                        '-b:v', '%dk' % (video_target_bit_rate,),
-                        '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
-                        '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
-                        '-quality', 'good',
-                        '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
-                    ]
-                elif app.args.video_rate_control_mode == 'lossless':
-                    ffmpeg_conv_args += [
-                        '-lossless', 1,
-                    ]
-                else:
-                    raise NotImplementedError(app.args.video_rate_control_mode)
-                ffmpeg_conv_args += [
-                    '-tile-columns', str(vp9_tile_columns),
-                    '-row-mt', '1',
-                    '-threads', str(vp9_threads),
-                ]
-                ffmpeg_conv_args += [
-                    '-g', int(app.args.keyint * framerate),
-                    ] + extra_args + [
-                    ]
+                if new_stream_file_ext == '.vp9.ivf':
+                    # https://trac.ffmpeg.org/wiki/Encode/VP9
+                    # https://developers.google.com/media/vp9/settings/vod/
+                    video_target_bit_rate = get_vp9_target_bitrate(
+                        width=mediainfo_width, height=mediainfo_height,
+                        frame_rate=framerate,
+                        )
+                    video_target_bit_rate = int(video_target_bit_rate * 1.5)  # 1800 * 1.5 = 2700
+                    video_target_quality = get_vp9_target_quality(
+                        width=mediainfo_width, height=mediainfo_height,
+                        frame_rate=framerate,
+                        )
+                    vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
+                        width=mediainfo_width, height=mediainfo_height,
+                        )
 
+                    ffmpeg_conv_args += [
+                        '-c:v', 'libvpx-vp9',
+                    ]
+                    if app.args.video_rate_control_mode == 'Q':
+                        ffmpeg_conv_args += [
+                            '-b:v', 0,
+                            '-crf', str(video_target_quality),
+                            '-quality', 'good',
+                            '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
+                        ]
+                    elif app.args.video_rate_control_mode == 'CQ':
+                        ffmpeg_conv_args += [
+                            '-b:v', '%dk' % (video_target_bit_rate,),
+                            '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                            '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
+                            '-crf', str(video_target_quality),
+                            '-quality', 'good',
+                            '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
+                        ]
+                    elif app.args.video_rate_control_mode == 'CBR':
+                        ffmpeg_conv_args += [
+                            '-b:v', '%dk' % (video_target_bit_rate,),
+                            '-minrate', '%dk' % (video_target_bit_rate,),
+                            '-maxrate', '%dk' % (video_target_bit_rate,),
+                        ]
+                    elif app.args.video_rate_control_mode == 'VBR':
+                        ffmpeg_conv_args += [
+                            '-b:v', '%dk' % (video_target_bit_rate,),
+                            '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                            '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
+                            '-quality', 'good',
+                            '-speed', '1' if ffprobe_stream_json['height'] <= 480 else '2',
+                        ]
+                    elif app.args.video_rate_control_mode == 'lossless':
+                        ffmpeg_conv_args += [
+                            '-lossless', 1,
+                        ]
+                    else:
+                        raise NotImplementedError(app.args.video_rate_control_mode)
+                    ffmpeg_conv_args += [
+                        '-tile-columns', str(vp9_tile_columns),
+                        '-row-mt', '1',
+                        '-threads', str(vp9_threads),
+                    ]
+                    ffmpeg_conv_args += [
+                        '-g', int(app.args.keyint * framerate),
+                        ] + extra_args + [
+                        ]
 
                 if mux_dict['chapters']:
                     chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=True))
@@ -2419,13 +2469,13 @@ def action_optimize(inputdir, in_tags):
 
         elif stream_codec_type == 'audio':
 
-            ok_formats = (
+            ok_exts = (
                     '.opus',
                     '.opus.ogg',
                     #'.mp3',
                     )
 
-            if stream_file_ext not in ok_formats:
+            if stream_file_ext not in ok_exts:
                 snd_file = SoundFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
                 ffprobe_json = snd_file.extract_ffprobe_json()
                 app.log.debug(ffprobe_json['streams'][0])
@@ -2436,7 +2486,7 @@ def action_optimize(inputdir, in_tags):
 
             # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
             opusenc_formats = ('.wav', '.aiff', '.flac', '.ogg', '.pcm')
-            if stream_file_ext not in ok_formats + opusenc_formats:
+            if stream_file_ext not in ok_exts + opusenc_formats:
                 new_stream_file_ext = '.wav'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
                 app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
@@ -2478,7 +2528,7 @@ def action_optimize(inputdir, in_tags):
                             os.unlink(file_name)
                         temp_files = []
 
-            if stream_file_ext not in ok_formats and stream_file_ext in opusenc_formats:
+            if stream_file_ext not in ok_exts and stream_file_ext in opusenc_formats:
                 # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
                 new_stream_file_ext = '.opus.ogg'
                 new_stream_file_name = stream_file_base + new_stream_file_ext
@@ -2512,7 +2562,7 @@ def action_optimize(inputdir, in_tags):
                             os.unlink(file_name)
                         temp_files = []
 
-            if stream_file_ext in ok_formats:
+            if stream_file_ext in ok_exts:
                 if stream_file_name == orig_stream_file_name:
                     app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
             else:
@@ -2789,12 +2839,12 @@ def action_optimize(inputdir, in_tags):
         elif stream_codec_type == 'image':
 
             # https://matroska.org/technical/cover_art/index.html
-            ok_formats = (
+            ok_exts = (
                     '.png',
-                    '.jpg',
+                    '.jpg', '.jpeg',
                     )
 
-            if stream_file_ext in ok_formats:
+            if stream_file_ext in ok_exts:
                 if stream_file_name == orig_stream_file_name:
                     app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
             else:
@@ -3329,6 +3379,8 @@ def action_demux(inputdir, in_tags):
                     stream_file_name = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 elif stream_file_ext.endswith('.mkv'):
+                    pass
+                elif stream_file_ext in still_image_exts:
                     pass
                 else:
                     raise NotImplementedError(stream_file_ext)
