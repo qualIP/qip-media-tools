@@ -1531,6 +1531,10 @@ def action_mux(inputfile, in_tags,
                 if stream_dict1.get('skip', False):
                     continue
                 stream_codec_type1 = stream_dict1['codec_type']
+                if stream_codec_type1 == 'video' and stream_dict1['disposition']['attached_pic'] and not mux_attached_pic:
+                    continue
+                if stream_codec_type1 == 'subtitle' and not mux_subtitles:
+                    continue
                 stream_language1 = isolang(stream_dict1.get('language', 'und'))
                 stream_file1 = cache_dict1['file']
                 for cache_dict2 in stream_dict_cache[cache_dict_i + 1:]:
@@ -1539,6 +1543,10 @@ def action_mux(inputfile, in_tags,
                         continue
                     stream_codec_type2 = stream_dict2['codec_type']
                     if stream_codec_type2 != stream_codec_type1:
+                        continue
+                    if stream_codec_type2 == 'video' and stream_dict2['disposition']['attached_pic'] and not mux_attached_pic:
+                        continue
+                    if stream_codec_type2 == 'subtitle' and not mux_subtitles:
                         continue
                     stream_language2 = isolang(stream_dict2.get('language', 'und'))
                     if stream_language2 != stream_language1:
