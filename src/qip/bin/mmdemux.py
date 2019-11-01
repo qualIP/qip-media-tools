@@ -528,7 +528,7 @@ def main():
     pgroup.add_bool_argument('--auto-verify', help='Auto-verify created files')
 
     pgroup = app.parser.add_argument_group('Compatibility')
-    xgroup.add_bool_argument('--webm', default=True, help='webm output format')
+    pgroup.add_bool_argument('--webm', default=True, help='webm output format')
 
     pgroup = app.parser.add_argument_group('Encoding')
     pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
