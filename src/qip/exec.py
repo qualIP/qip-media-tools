@@ -466,7 +466,7 @@ class PipeRecordThread(threading.Thread):
                 if target:
                     target(out)
 
-def SlurmError(Exception):
+class SlurmError(Exception):
 
     def __init__(self, msg, *, cmd, out):
         self.cmd = cmd
@@ -535,8 +535,8 @@ def do_srun_cmd(cmd,
     err = byte_decode(run_out.stderr)
     m = re.search(r'srun: error: .*', err)
     if m:
-        err = m.group(0).strip()
-        raise SlurmError(err, cmd=slurm_args, out=run_out.stderr)
+        err_msg = m.group(0).strip()
+        raise SlurmError(err_msg, cmd=slurm_args, out=run_out.stderr)
     return run_out.stdout
 
 def do_sbatch_cmd(cmd,
