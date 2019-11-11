@@ -1317,14 +1317,23 @@ def action_mux(inputfile, in_tags,
 
         stream_dict_cache = []
         attachment_index = 0  # First attachment is index 1
+        iter_mediainfo_track_dicts = iter(mediainfo_track_dict
+                                          for mediainfo_track_dict in mediainfo_dict['media']['track']
+                                          if 'ID' in mediainfo_track_dict)
         for stream_dict in ffprobe_dict['streams']:
             stream_out_dict = {}
             stream_index = stream_out_dict['index'] = int(stream_dict['index'])
             stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
 
-            mediainfo_track_dict, = (mediainfo_track_dict
-                    for mediainfo_track_dict in mediainfo_dict['media']['track']
-                    if int(mediainfo_track_dict.get('ID', 0)) == stream_index + 1)
+            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+            if stream_codec_type == 'video':
+                assert mediainfo_track_dict['@type'] == 'Video'
+            elif stream_codec_type == 'audio':
+                assert mediainfo_track_dict['@type'] == 'Audio'
+            elif stream_codec_type == 'subtitle':
+                assert mediainfo_track_dict['@type'] == 'Text'
+            else:
+                raise NotImplementedError(stream_codec_type)
 
             if stream_codec_type in ('video', 'audio', 'subtitle'):
                 stream_codec_name = stream_dict['codec_name']
@@ -1566,16 +1575,32 @@ def action_mux(inputfile, in_tags,
         # Pre-stream post-processing
         if not app.args.dry_run:
 
+            iter_mediainfo_track_dicts = iter(mediainfo_track_dict
+                                              for mediainfo_track_dict in mediainfo_dict['media']['track']
+                                              if 'ID' in mediainfo_track_dict)
             for stream_dict in mux_dict['streams']:
-                if stream_dict.get('skip', False):
-                    continue
                 stream_index = stream_dict['index']
                 stream_codec_type = stream_dict['codec_type']
+
+                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                if stream_codec_type == 'video':
+                    assert mediainfo_track_dict['@type'] == 'Video'
+                elif stream_codec_type == 'audio':
+                    assert mediainfo_track_dict['@type'] == 'Audio'
+                elif stream_codec_type == 'subtitle':
+                    assert mediainfo_track_dict['@type'] == 'Text'
+                else:
+                    raise NotImplementedError(stream_codec_type)
+
+                if stream_dict.get('skip', False):
+                    continue
+
                 stream_file_name = stream_dict['file_name']
                 stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 stream_disposition_dict = stream_dict['disposition']
 
                 if stream_codec_type == 'video':
+
                     mediainfo_track_dict, = (mediainfo_track_dict
                             for mediainfo_track_dict in mediainfo_dict['media']['track']
                             if int(mediainfo_track_dict.get('ID', 0)) == stream_index + 1)
