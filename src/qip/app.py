@@ -68,7 +68,7 @@ class App(object):
 
     log = logging.getLogger('__main__')
 
-    init_parser = None
+    config_parser = None
     parser = None
     args = None
     config_parser = None
@@ -146,21 +146,21 @@ class App(object):
 
         parser_parents = []
         if allow_config_file:
-            self.init_parser = argparse.ArgumentParser(
+            self.config_parser = argparse.ArgumentParser(
                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                 description=description,
                 add_help=False
                 )
-            self.init_parser.add_argument("--config", "-c", metavar="FILE",
+            self.config_parser.add_argument("--config", "-c", metavar="FILE",
                                           dest='config_file',
                                           default=argparse.DefaultStringWrapper(self.default_config_file()),
                                           type=argparse.FileType('r'),
                                           help="Specify config file")
-            self.init_parser.add_argument("--no-config",
+            self.config_parser.add_argument("--no-config",
                                           default=argparse.SUPPRESS,
                                           action='store_false',
                                           help="Disable config file")
-            parser_parents.append(self.init_parser)
+            parser_parents.append(self.config_parser)
 
         self.parser = argparse.ArgumentParser(
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -233,8 +233,8 @@ class App(object):
 
         config_args = []
 
-        if self.init_parser:
-            namespace, remaining_args = self.init_parser.parse_known_args(
+        if self.config_parser:
+            namespace, remaining_args = self.config_parser.parse_known_args(
                 args=remaining_args,
                 namespace=namespace)
 
@@ -270,9 +270,15 @@ class App(object):
                     except AttributeError:
                         namespace.config_file = None
 
-        namespace = self.parser.parse_args(
-            args=config_args,
-            namespace=namespace)
+        if config_args:
+            orig_actions = self.parser._actions
+            try:
+                self.parser._actions = self.parser._get_optional_actions()
+                namespace = self.parser.parse_args(
+                    args=config_args,
+                    namespace=namespace)
+            finally:
+                self.parser._actions = orig_actions
 
         namespace = self.parser.parse_args(
             args=remaining_args,
