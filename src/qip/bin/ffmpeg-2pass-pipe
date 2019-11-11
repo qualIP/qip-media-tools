@@ -14,7 +14,7 @@ cleanup() {
     return 0
 }
 trap "cleanup" 0
-trap "exit 255" 1 2 9 15
+trap "cleanup ; exit 255" 1 2 9 15
 
 mkdir "$prog_tmp_dir"
 tmp_input_file="$prog_tmp_dir/input"
