@@ -2418,12 +2418,16 @@ def action_optimize(inputdir, in_tags):
                 if (app.args.parallel_chapters
                         and len(chaps) > 1
                         and chaps[0].start == 0
-                        and stream_file_ext in ('.mpeg2', '.mpeg2.mp2v')):  # Chopping using segment muxer is reliable (tested with mpeg2)
+                        and stream_file_ext in (
+                            '.mpeg2', '.mpeg2.mp2v',  # Chopping using segment muxer is reliable (tested with mpeg2)
+                            '.ffv1.mkv',
+                        )):
                     ffmpeg_concat_args = []
                     with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
                         chapter_stream_file_ext = {
                                 '.mpeg2': '.mpegts',
                                 '.mpeg2.mp2v': '.mpegts',
+                                '.ffv1.mkv': '.ffv1.mkv',
                             }.get(stream_file_ext, stream_file_ext)
                         stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, chapter_stream_file_ext)
                         new_stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, new_stream_file_ext)
