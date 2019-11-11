@@ -1,5 +1,6 @@
 
 __all__ = [
+        'SpawnedProcessError',
         'dbg_exec_cmd',
         'do_exec_cmd',
         'suggest_exec_cmd',
@@ -43,6 +44,13 @@ log = logging.getLogger(__name__)
 
 from qip.app import app  # Also setup log.verbose
 from qip.utils import byte_decode
+
+class SpawnedProcessError(subprocess.CalledProcessError):
+
+    def __init__(self, returncode, cmd, output=None, stderr=None, spawn=None):
+        self.spawn = spawn
+        super().__init__(returncode=returncode, cmd=cmd, output=output, stderr=stderr)
+
 
 class spawn(pexpect.spawn):
 

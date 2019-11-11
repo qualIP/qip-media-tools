@@ -9,6 +9,7 @@ import pexpect
 import progress
 import subprocess
 import sys
+import time
 log = logging.getLogger(__name__)
 
 from qip.app import app  # Also setup log.verbose
@@ -16,6 +17,7 @@ from .perf import perfcontext
 from .exec import *
 from .exec import spawn as _exec_spawn
 from qip.utils import byte_decode
+from qip.collections import OrderedSet
 
 def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False, logfile=None):
     if app.log.isEnabledFor(logging.DEBUG):
@@ -46,10 +48,11 @@ def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False,
     if p.signalstatus is not None:
         raise Exception('Command exited due to signal %r' % (p.signalstatus,))
     if not no_status and p.exitstatus:
-        raise subprocess.CalledProcessError(
+        raise SpawnedProcessError(
             returncode=p.exitstatus,
             cmd=subprocess.list2cmdline(cmd),
-            output=out)
+            output=out,
+            spawn=p)
 
     assert p.num_errors == 0, 'makemkvcon errors found'
     assert p.num_tiltes_saved not in (0, None), 'No tiles saved!'
@@ -76,8 +79,12 @@ class MakemkvconSpawn(_exec_spawn):
     progress_bar = None
     makemkv_operation = None
     makemkv_action = None
+    operations_performed = None
+    errors_seen = None
 
     def __init__(self, *args, timeout=60 * 60, **kwargs):
+        self.operations_performed = OrderedSet()
+        self.errors_seen = OrderedSet()
         super().__init__(*args, timeout=timeout, **kwargs)
 
     def current_progress(self, str):
@@ -103,6 +110,7 @@ class MakemkvconSpawn(_exec_spawn):
         task_type = byte_decode(self.match.group('task_type'))
         need_update = False
         if task_type == 'operation':
+            self.operations_performed.add(task)
             if 0 < self.progress_bar.makemkv_action_percent < 100:
                 self.progress_bar.makemkv_action_percent = 100
                 need_update = True
@@ -152,6 +160,7 @@ class MakemkvconSpawn(_exec_spawn):
             print('')
         log.error(str.strip('\r\n'))
         self.num_errors += 1
+        self.errors_seen.add(str)
         return True
 
     def generic_info(self, str):
@@ -314,6 +323,22 @@ class Makemkvcon(Executable):
 
     def mkv(self, *, source, dest_dir, title_id='all', **kwargs):
         return self('mkv', source, title_id, dest_dir, **kwargs)
+
+    def _run(self, *args, retry_no_cd=False, **kwargs):
+        if retry_no_cd is True:
+            retry_no_cd = 8
+        while True:
+            try:
+                return super()._run(*args, **kwargs)
+            except SpawnedProcessError as e:
+                if retry_no_cd and e.returncode == 11 \
+                        and e.spawn.num_errors == 1 and list(e.spawn.errors_seen) == ['Failed to open disc'] \
+                        and 'Reading Disc information' not in e.spawn.operations_performed:
+                    time.sleep(2)
+                    retry_no_cd -= 1
+                    continue
+                raise
+            break
 
 makemkvcon = Makemkvcon()
 

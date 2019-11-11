@@ -1034,6 +1034,7 @@ def action_rip(rip_dir, device, in_tags):
             source='dev:%s' % (device,),
             dest_dir=rip_dir,
             minlength=int(minlength),
+            retry_no_cd=True,
         )
     except:
         if app.args.dry_run:
