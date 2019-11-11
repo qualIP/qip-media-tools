@@ -1924,6 +1924,7 @@ def test_out_file(out_file):
 
 def action_optimize(inputdir, in_tags):
     global num_batch_skips
+    this_num_batch_skips = 0
     app.log.info('Optimizing %s...', inputdir)
     outputdir = inputdir
     do_chain = app.args.chain
@@ -1942,6 +1943,7 @@ def action_optimize(inputdir, in_tags):
 
     def optimize_stream(stream_dict, stream_index, is_sub_stream=False):
         global num_batch_skips
+        nonlocal this_num_batch_skips
         nonlocal temp_files
         nonlocal inputdir
         nonlocal outputdir
@@ -2776,6 +2778,7 @@ def action_optimize(inputdir, in_tags):
                     app.log.warning('BATCH MODE SKIP: Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
                     do_chain = False
                     num_batch_skips += 1
+                    this_num_batch_skips += 1
                     return
                 app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
@@ -2996,7 +2999,7 @@ def action_optimize(inputdir, in_tags):
         stream_index = stream_dict['index']
         optimize_stream(stream_dict, stream_index)
 
-    if do_chain:
+    if not this_num_batch_skips and do_chain:
         app.args.demux_dirs += (outputdir,)
 
 def action_extract_music(inputdir, in_tags):
