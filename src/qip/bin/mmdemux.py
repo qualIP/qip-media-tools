@@ -910,11 +910,31 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
 
     name_scan_str = os.path.basename(inputfile_base)
     name_scan_str = name_scan_str.strip()
-    name_scan_str = re.sub(r'_t\d+$', '', name_scan_str)
-    if re.match(r'^[A-Z0-9]+( +[A-Z0-9]+)*$', name_scan_str):
+    # title_t00 -> 0
+    name_scan_str = re.sub(r'_t0\d+$', '', name_scan_str)
+    # FILE_NAME -> FILE NAME
+    name_scan_str = re.sub(r'_', ' ', name_scan_str)
+    # FILE   NAME -> FILE NAME
+    name_scan_str = re.sub(r'\s+', ' ', name_scan_str)
+    # FILE NAME ALL CAPS -> File Name All Caps
+    if re.match(r'^[A-Z0-9]+( [A-Z0-9]+)*$', name_scan_str):
         name_scan_str = name_scan_str.title()
     m = (
-        re.match(r'^(?P<tvshow>.+) S(?P<season>\d+)E(?P<str_episodes>\d+(?:E\d+)*)(?: (?P<title>.+))?$', name_scan_str)
+        # TVSHOW S01E02 TITLE
+        # TVSHOW S01E02-03 TITLE
+        # TVSHOW S01E02
+        # TVSHOW S01E02-03
+        re.match(r'^(?P<tvshow>.+) S(?P<season>\d+)E(?P<str_episodes>\d+(?:-?E\d+)*)(?: (?P<title>.+))?$', name_scan_str)
+        # TVSHOW 1x2 TITLE
+        # TVSHOW 1x2-3 TITLE
+        # TVSHOW -- 1x2 TITLE
+        # TVSHOW 1x2
+        # TVSHOW -- 1x2
+        or re.match(r'^(?P<tvshow>.+) (?:-- )?(?P<season>\d+)x(?P<str_episodes>\d+(?:-?\d+)*)(?: (?P<title>.+))?$', name_scan_str)
+        # TVSHOW -- TITLE 1x2
+        # TVSHOW -- TITLE 1x2-3
+        or re.match(r'^(?P<tvshow>.+) -- (?P<title>.+) (?P<season>\d+)x(?P<str_episodes>\d+(?:-?\d+)*)$', name_scan_str)
+        # TITLE
         or re.match(r'^(?P<title>.+)$', name_scan_str)
     )
     if m:
@@ -930,18 +950,17 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
         except KeyError:
             pass
         else:
-            d['episode'] = [int(e) for e in str_episodes.split('E') if e]
-        try:
-            if d['season'] == '0':
-                d['season'] = None
-        except KeyError:
-            pass
+            d['episode'] = [int(e) for e in str_episodes.replace('-', '').split('E') if e]
         try:
             if d['episode'] == [0]:
                 d['episode'] = None
         except KeyError:
             pass
         if 'title' in d:
+            # TITLE -- CONTENTTYPE: COMMENT
+            # TITLE -- CONTENTTYPE
+            # CONTENTTYPE: COMMENT
+            # CONTENTTYPE
             m = re.match(r'^(?:(?P<title>.+) -- )?(?P<contenttype>[^:]+)(?:: (?P<comment>.+))?$', d['title'])
             if m:
                 try:
@@ -955,6 +974,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
                     if not d['title']:
                         del d['title']
         if 'title' in d:
+            # TITLE (1987)
             m = re.match('^(?P<title>.+) \((?P<date>\d{4})\)$', d['title'])
             if m:
                 d.update(m.groupdict())
