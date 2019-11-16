@@ -2445,6 +2445,7 @@ def action_optimize(inputdir, in_tags):
                             '.mpeg2', '.mpeg2.mp2v',  # Chopping using segment muxer is reliable (tested with mpeg2)
                             '.ffv1.mkv',
                         )):
+                    concat_list_file = ffmpeg.ConcatScriptFile(os.path.join(inputdir, f'{new_stream_file_name}.concat.txt'))
                     ffmpeg_concat_args = []
                     with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
                         chapter_stream_file_ext = {
@@ -2455,14 +2456,14 @@ def action_optimize(inputdir, in_tags):
                         stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, chapter_stream_file_ext)
                         new_stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, new_stream_file_ext)
 
-                        concat_list_file = TempFile.mkstemp(suffix='.concat.txt', open=True, text=True)
                         threads = []
 
                         def encode_chap():
                             app.log.verbose('Chapter %s', chap)
                             stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
                             new_stream_chapter_file_name = new_stream_chapter_file_name_pat % (chap.no,)
-                            print('file \'%s\'' % (os.path.abspath(os.path.join(inputdir, new_stream_chapter_file_name)),), file=concat_list_file.fp)
+                            # https://ffmpeg.org/ffmpeg-all.html#concat-1
+                            concat_list_file.files.append(concat_list_file.File(os.path.abspath(os.path.join(inputdir, new_stream_chapter_file_name))))
 
                             if app.args._continue and os.path.exists(new_stream_chapter_file_name):
                                 app.log.warning('%s exists: continue...')
@@ -2556,7 +2557,7 @@ def action_optimize(inputdir, in_tags):
                                 temp_files.append(os.path.join(inputdir, stream_chapter_file_name))
 
                         # Join
-                        concat_list_file.close()
+                        concat_list_file.create()
                         exc = None
                         while threads:
                             thread = threads.pop()

@@ -67,12 +67,43 @@ class Timestamp(_BaseTimestamp):
 
 Timestamp.MAX = Timestamp('99:59:59.99999999')
 
+class ConcatScriptFile(TextFile):
+
+    ffconcat_version = 1.0
+    files = None
+
+    class File(object):
+
+        def __init__(self, name, duration=None):
+            if isinstance(name, File):
+                name = str(name)
+            if not (isinstance(name, str) and name):
+                raise ValueError(name)
+            self.name = name
+            self.duration = None if duration is None else Timestamp(duration)
+
+    def __init__(self, file_name):
+        self.files = []
+        super().__init__(file_name)
+
+    def create(self, file=None):
+        if file is None:
+            with self.open('w', encoding='utf-8') as file:
+                return self.create(file=file)
+        if self.ffconcat_version is not None:
+            print(f'ffconcat version {self.ffconcat_version}', file=file)
+        for file_entry in self.files:
+            esc_file = file_entry.name.replace(r"'", r"'\''")
+            print(f'file \'{esc_file}\'', file=file)
+            if file_entry.duration is not None:
+                print(f'duration {file_entry.duration}', file=file)
 
 class _Ffmpeg(Executable):
 
     run_func = staticmethod(do_spawn_cmd)
 
     Timestamp = Timestamp
+    ConcatScriptFile = ConcatScriptFile
 
     @classmethod
     def kwargs_to_cmdargs(cls, **kwargs):
