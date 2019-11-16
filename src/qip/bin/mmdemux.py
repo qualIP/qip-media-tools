@@ -191,10 +191,13 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             prev_frame.interlaced_frame = False
             video_analyze_duration = app.args.video_analyze_duration
             try:
-                video_analyze_duration = min(qip.utils.Timestamp(mediainfo_track_dict['Duration']),
-                                             video_analyze_duration)
+                mediainfo_duration = qip.utils.Timestamp(mediainfo_track_dict['Duration'])
             except KeyError:
                 pass
+            else:
+                # Sometimes mediainfo'd Duration is just the first frame duration
+                if False and mediainfo_duration >= 1.0:
+                    video_analyze_duration = min(mediainfo_duration, video_analyze_duration)
             with perfcontext('frames iteration'):
                 if HAVE_PROGRESS_BAR:
                     bar = progress.bar.Bar('iterate frames',
