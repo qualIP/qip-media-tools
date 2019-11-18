@@ -553,15 +553,45 @@ class Ratio(Fraction):
 
 
 def prettyxml(sXml, *, indent="  "):
-    import xml.dom.minidom
-    import xml.etree.ElementTree
-    if isinstance(sXml, str):
+    try:
+        return prettyxml_bs4(sXml, indent=indent)
+    except ImportError:
         pass
-    elif isinstance(sXml, xml.etree.ElementTree.ElementTree):
-        sXml = xml.etree.ElementTree.tostring(sXml.getroot())
-    else:
-        raise TypeError(sXml)
-    return xml.dom.minidom.parseString(sXml).toprettyxml(indent=indent)
+    try:
+        return prettyxml_minidom(sXml, indent=indent)
+    except ImportError:
+        pass
+    raise NotImplementedError('No XML beautifier module detected')
+
+def prettyxml_bs4(sXml, *, indent="  "):
+    from bs4 import BeautifulSoup
+    if not isinstance(sXml, (str, bytes)):
+        try:
+            import xml.etree.ElementTree
+        except ImportError:
+            pass
+        else:
+            if isinstance(sXml, xml.etree.ElementTree.ElementTree):
+                sXml = xml.etree.ElementTree.tostring(sXml.getroot())
+        if not isinstance(sXml, (str, bytes)):
+            raise TypeError(sXml)
+    bs = BeautifulSoup(sXml, 'xml')
+    return bs.prettify()
+
+def prettyxml_minidom(sXml, *, indent="  "):
+    import xml.dom.minidom
+    if not isinstance(sXml, str):
+        try:
+            import xml.etree.ElementTree
+        except ImportError:
+            pass
+        else:
+            if isinstance(sXml, xml.etree.ElementTree.ElementTree):
+                sXml = xml.etree.ElementTree.tostring(sXml.getroot())
+        if not isinstance(sXml, str):
+            raise TypeError(sXml)
+    doc = xml.dom.minidom.parseString(sXml)
+    return doc.toprettyxml(indent=indent)
 
 
 def round_up(n, decimals=0):
