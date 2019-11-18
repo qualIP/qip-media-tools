@@ -552,9 +552,9 @@ class Ratio(Fraction):
         return super().__deepcopy__()
 
 
-def prettyxml(sXml, *, indent="  "):
+def prettyxml(sXml, *, indent="  ", preserve_whitespace_tags=None):
     try:
-        return prettyxml_bs4(sXml, indent=indent)
+        return prettyxml_bs4(sXml, indent=indent, preserve_whitespace_tags=preserve_whitespace_tags)
     except ImportError:
         pass
     try:
@@ -563,8 +563,8 @@ def prettyxml(sXml, *, indent="  "):
         pass
     raise NotImplementedError('No XML beautifier module detected')
 
-def prettyxml_bs4(sXml, *, indent="  "):
-    from bs4 import BeautifulSoup
+def prettyxml_bs4(sXml, *, indent="  ", preserve_whitespace_tags=None):
+    import bs4
     if not isinstance(sXml, (str, bytes)):
         try:
             import xml.etree.ElementTree
@@ -575,7 +575,12 @@ def prettyxml_bs4(sXml, *, indent="  "):
                 sXml = xml.etree.ElementTree.tostring(sXml.getroot())
         if not isinstance(sXml, (str, bytes)):
             raise TypeError(sXml)
-    bs = BeautifulSoup(sXml, 'xml')
+    builder = bs4.builder.builder_registry.lookup('xml')
+    if preserve_whitespace_tags is None:
+        preserve_whitespace_tags = builder.USE_DEFAULT
+    builder = builder(
+        preserve_whitespace_tags=preserve_whitespace_tags)
+    bs = bs4.BeautifulSoup(sXml, builder=builder)
     return bs.prettify()
 
 def prettyxml_minidom(sXml, *, indent="  "):

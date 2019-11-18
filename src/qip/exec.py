@@ -634,7 +634,8 @@ def edfile(file):
 # }}}
 # edvar {{{
 
-def edvar(value, *, json=None, suffix=None, encoding='utf-8'):
+def edvar(value, *, json=None, suffix=None, encoding='utf-8',
+          preserve_whitespace_tags=None):
     from qip.file import TempFile
     import tempfile
     orig_value = value
@@ -648,7 +649,7 @@ def edvar(value, *, json=None, suffix=None, encoding='utf-8'):
             xml = True
             from qip.utils import prettyxml
             suffix = suffix or '.xml'
-            value = prettyxml(value)
+            value = prettyxml(value, preserve_whitespace_tags=preserve_whitespace_tags)
         else:
             json = True
             suffix = suffix or '.json'

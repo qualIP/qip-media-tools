@@ -165,6 +165,16 @@ class MatroskaFile(MediaFile):
     def tag_writer(self):
         return taged
 
+    XML_VALUE_ELEMENTS = set((
+        'Binary',
+        'Name',
+        'String',
+        'TagLanguage',
+        'TargetType',
+        'TargetTypeValue',
+        'TrackUID',
+    ))
+
     # <Tags>
     #   <Tag>
     #     <Targets>

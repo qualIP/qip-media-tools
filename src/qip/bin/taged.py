@@ -565,7 +565,9 @@ def tageditor(file_name):
     import qip.matroska
     if isinstance(mm_file, qip.matroska.MatroskaFile):
         tags_xml = mm_file.get_tags_xml()
-        modified, tags_xml = edvar(tags_xml)
+        modified, tags_xml = edvar(
+            tags_xml,
+            preserve_whitespace_tags=qip.matroska.MatroskaFile.XML_VALUE_ELEMENTS)
         if modified:
             mm_file.set_tags_xml(tags_xml)
         return True
