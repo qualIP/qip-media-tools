@@ -1464,6 +1464,9 @@ for _e in ContentType:
     ContentType._value2member_map_[_e.name.lower().replace('_', '')] = _e
 ContentType._value2member_map_['sfx'] = ContentType.sound_fx
 ContentType._value2member_map_['live music video'] = ContentType.live
+ContentType._value2member_map_['artist video'] = ContentType.video
+ContentType._value2member_map_['music video'] = ContentType.video
+ContentType._value2member_map_['movie'] = ContentType.feature_film
 
 # }}}
 
@@ -1493,10 +1496,17 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     def deduce_type(self):
         if self.type is not None:
             return self.type
-        if 'Music Video' in str(self.contenttype) \
-                or 'Concert' in str(self.contenttype):
+        if self.contenttype in (
+                ContentType.video,
+                ContentType.concert,
+                ContentType.live,
+        ):
             return 'musicvideo'
-        elif self.tvshow is not None:
+        if self.contenttype in (
+                ContentType.feature_film,
+        ):
+            return 'movie'
+        if self.tvshow is not None:
             return 'tvshow'
         raise MissingMediaTagError(MediaTagEnum.type)
 
