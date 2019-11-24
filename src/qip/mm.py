@@ -2135,6 +2135,8 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 self.pop('itunesgenreid', None)
 
         elif tag in ('disk', 'track', 'part', 'season'):
+            if isinstance(value, int):
+                value = (value, None)
             if isinstance(value, (list, tuple)):
                 value, n = value
                 self[tag + 's'] = n
