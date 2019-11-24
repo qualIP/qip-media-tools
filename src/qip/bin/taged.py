@@ -421,8 +421,12 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                 if mp4_tag == 'sfID':
                     # raise ValueError('value %r = %r -> %s' % (type(value), value, value))
                     mp4_value = [qip.mm.mp4_country_map[value]]
+                elif isinstance(value, tuple):
+                    mp4_value = tuple(int(e) for e in value)
                 else:
                     mp4_value = int(value)
+                    if mp4_tag in ('tvsn',):
+                        mp4_value = (mp4_value,)
             elif mp4v2_data_type in ('binary',):
                 if mp4_tag == 'disk':  # disk
                     # arg must be a list of 1(or more) tuple of (track, total)
