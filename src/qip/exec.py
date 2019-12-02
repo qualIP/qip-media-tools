@@ -18,8 +18,10 @@ __all__ = [
         'do_srun_cmd',
         'do_sbatch_cmd',
         'EDITOR',
+        'DIFFTOOL',
         'edfile',
         'edvar',
+        'eddiff',
         'nice',
         'renice',
         'ionice',
@@ -623,6 +625,60 @@ class Editor(Executable):
 
 EDITOR = Editor()
 
+class Difftool(Executable):
+
+    _name = None
+    @property
+    def run_func(self):
+        return do_system_cmd
+
+    @property
+    def name(self):
+        difftool = self._name
+        if not difftool:
+            difftool = os.environ.get('DIFFTOOL', None)
+        if not difftool:
+            for e in (
+                    'vimdiff',
+                    # 'araxis',
+                    # 'gvimdiff',
+                    # 'gvimdiff2',
+                    # 'gvimdiff3',
+                    # 'vimdiff2',
+                    # 'vimdiff3',
+                    # 'bc',
+                    # 'bc3',
+                    # 'codecompare',
+                    # 'deltawalker',
+                    # 'diffmerge',
+                    # 'diffuse',
+                    # 'ecmerge',
+                    # 'emerge',
+                    # 'examdiff',
+                    # 'guiffy',
+                    # 'kdiff3',
+                    # 'kompare',
+                    # 'meld',
+                    # 'opendiff',
+                    # 'p4merge',
+                    # 'smerge',
+                    # 'tkdiff',
+                    # 'winmerge',
+                    # 'xxdiff',
+            ):
+                difftool = shutil.which(e)
+                if difftool:
+                    break
+        if not difftool:
+            raise Exception('No diff tool found; Please set \'DIFFTOOL\' environment variable.')
+        return difftool
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+
+DIFFTOOL = Difftool()
+
 # edfile {{{
 
 def edfile(file):
@@ -680,6 +736,15 @@ def edvar(value, *, json=None, suffix=None, encoding='utf-8',
     #if type(new_value) is not type(value):
     #    raise ValueError(new_value)
     return (True, new_value)
+
+# }}}
+# eddiff {{{
+
+def eddiff(files):
+    files = [str(e) for e in files]
+    #startMtime = os.path.getmtime(file)
+    DIFFTOOL(*files)
+    #return os.path.getmtime(file) != startMtime
 
 # }}}
 

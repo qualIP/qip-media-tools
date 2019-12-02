@@ -1807,6 +1807,13 @@ def action_mux(inputfile, in_tags,
         with open(output_mux_file_name, 'w') as fp:
             json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
 
+        if remux and app.args.interactive:
+            eddiff([
+                '%s/mux%s.json' % (outputdir, ''),
+                '%s/mux%s.json' % (outputdir, '.remux'),
+            ])
+
+
     return True
 
 def action_verify(inputfile, in_tags):
