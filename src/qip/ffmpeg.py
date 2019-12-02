@@ -134,11 +134,13 @@ class _Ffmpeg(Executable):
 
         if 'loglevel' not in kwargs and '-loglevel' not in args:
             if log.isEnabledFor(logging.DEBUG):
-                kwargs['loglevel'] = 'verbose'
+                kwargs['loglevel'] = 'level+verbose'
             elif log.isEnabledFor(logging.VERBOSE):
                 kwargs['loglevel'] = 'info'
+                # kwargs.setdefault('stats', True)  # included in info
             else:
-                kwargs['loglevel'] = 'info'
+                kwargs['loglevel'] = 'warning'
+                kwargs.setdefault('stats', True)
 
         if 'hide_banner' not in kwargs and '-hide_banner' not in args:
             if not log.isEnabledFor(logging.VERBOSE):
@@ -310,8 +312,19 @@ class Ffmpeg(_Ffmpeg):
             ffmpeg_args += [
                 '-f', 'null', '-',
                 ]
+
+            if log.isEnabledFor(logging.DEBUG):
+                loglevel = 'level+verbose'
+            elif log.isEnabledFor(logging.VERBOSE):
+                loglevel = 'info'
+                # kwargs.setdefault('stats', True)  # included in info
+            else:
+                loglevel = 'info'  # 'warning'
+                # kwargs.setdefault('stats', True)  # included in info
+
             out = self(*ffmpeg_args,
-                       dry_run=dry_run)
+                       dry_run=dry_run,
+                       loglevel=loglevel)
         if not dry_run:
             frames_count = 0
             last_cropdetect_match = None
@@ -558,12 +571,16 @@ class Ffprobe(_Ffmpeg):
     def iter_frames(self, file, *, dry_run=False):
         from qip.parser import lines_parser
         ffprobe_args = [
-            '-loglevel', 'panic', '-hide_banner',
+            '-loglevel', 'level+error', '-hide_banner',
             '-i', str(file),
             '-show_frames',
         ]
+        error_lines = []
+        re_error_line = re.compile(r'\[(error|panic)\] .+')
         with self.popen(*ffprobe_args,
-                        stdout=subprocess.PIPE, text=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
                         dry_run=dry_run) as p:
             parser = lines_parser(p.stdout)
             for line in parser:
@@ -650,7 +667,17 @@ class Ffprobe(_Ffmpeg):
                         raise ValueError('Unclosed SUBTITLE near line %d' % (parser.line_no,))
                     yield subtitle
                     continue
+                m = re_error_line(line)
+                if m:
+                    error_lines.append(line)
+                    continue
                 raise ValueError('Unrecognized line %d: %s' % (parser.line_no, line))
+            if error_lines or p.returncode:
+                raise subprocess.CalledProcessError(
+                        returncode=p.returncode,
+                        cmd=subprocess.list2cmdline(ffprobe_args),
+                        output='\n'.join(error_lines))
+
 
     def iter_packets(self, file, *, dry_run=False):
         from qip.parser import lines_parser
