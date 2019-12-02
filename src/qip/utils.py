@@ -14,6 +14,7 @@ __all__ = (
     'round_half_up',
     'round_half_down',
     'round_half_away_from_zero',
+    'compile_pattern_list',
 )
 
 from decimal import Decimal
@@ -627,5 +628,28 @@ def round_half_away_from_zero(n, decimals=0):
     '''See: https://realpython.com/python-rounding/'''
     rounded_abs = round_half_up(abs(n), decimals)
     return math.copysign(rounded_abs, n)
+
+def compile_pattern_list(pattern_list, *, compile_flags=re.DOTALL, ignorecase=False, filter_out_expect=False):
+    import pexpect
+    # Similar to pexpect's compile_pattern_list
+    if ignorecase:
+        compile_flags = compile_flags | re.IGNORECASE
+    compiled_pattern_list = []
+    compiled_re_type = type(re.compile(''))
+    for p in pattern_list:
+        if isinstance(p, (str, bytes)):
+            p = byte_decode(p)
+            compiled_pattern_list.append(re.compile(p, compile_flags))
+        elif p is pexpect.EOF:
+            if not filter_out_expect:
+                compiled_pattern_list.append(pexpect.EOF)
+        elif p is pexpect.TIMEOUT:
+            if not filter_out_expect:
+                compiled_pattern_list.append(pexpect.TIMEOUT)
+        elif isinstance(p, compiled_re_type):
+            compiled_pattern_list.append(p)
+        else:
+            raise TypeError(p)
+    return compiled_pattern_list
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
