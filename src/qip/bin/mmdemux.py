@@ -2526,7 +2526,7 @@ def action_optimize(inputdir, in_tags):
                         ] + extra_args + [
                         ]
 
-                if mux_dict['chapters']:
+                if mux_dict.get('chapters', None):
                     chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=True))
                 else:
                     chaps = []
@@ -3471,7 +3471,7 @@ def action_demux(inputdir, in_tags):
                 if stream_codec_type == 'subtitle' and my_splitext(stream_file_name)[1] == '.sub':
                     cmd += [os.path.join(inputdir, '%s.idx' % (my_splitext(stream_file_name)[0],))]
                 cmd += [os.path.join(inputdir, stream_file_name)]
-        if mux_dict['chapters']:
+        if mux_dict.get('chapters', None):
             cmd += ['--chapters', os.path.join(inputdir, mux_dict['chapters']['file_name'])]
         else:
             cmd += ['--no-chapters']
@@ -3709,7 +3709,7 @@ def action_demux(inputdir, in_tags):
             ffmpeg(*ffmpeg_args,
                    dry_run=app.args.dry_run,
                    y=app.args.yes)
-        if mux_dict['chapters']:
+        if mux_dict.get('chapters', None):
             chapters_xml_file = TextFile(os.path.join(inputdir, mux_dict['chapters']['file_name']))
             if time_offset:
                 chapters_xml = ET.parse(chapters_xml_file.file_name)
