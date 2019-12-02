@@ -2,7 +2,7 @@ __all__ = [
         'lines_parser',
         ]
 
-import collections
+import collections.abc
 import itertools
 import re
 
@@ -16,7 +16,7 @@ class lines_parser(object):
     next_line_no = 1
 
     def __init__(self, lines):
-        self.lines_iter = lines if isinstance(lines, collections.Iterator) else iter(lines)
+        self.lines_iter = lines if isinstance(lines, collections.abc.Iterator) else iter(lines)
 
     def advance(self):
         try:
