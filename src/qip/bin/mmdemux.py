@@ -2211,11 +2211,6 @@ def action_optimize(inputdir, in_tags):
                                 '-i', os.path.join(inputdir, stream_file_name),
                                 ]
                             ffmpeg_video_filter_args = []
-                            if False:
-                                ffmpeg_video_filter_args += [
-                                    'dejudder',
-                                    f'fps={orig_framerate}',
-                                    ]
                             if fieldmatch_using_ffmpeg:
                                 ffmpeg_video_filter_args += [
                                     'fieldmatch',
