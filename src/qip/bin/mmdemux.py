@@ -2115,6 +2115,46 @@ def action_optimize(inputdir, in_tags):
                     app.log.verbose('Stream #%s %s OK', stream_index, stream_codec_name)
                     break
 
+                if 'concat_streams' in stream_dict:
+                    new_stream_file_ext = '.ffv1.mkv'
+                    if stream_file_ext == new_stream_file_ext:
+                        pass
+                    else:
+                        for sub_stream_dict in stream_dict['concat_streams']:
+                            sub_stream_index = sub_stream_dict['index']
+                            optimize_stream(sub_stream_dict,
+                                            f'{stream_index}.{sub_stream_dict}',
+                                            is_sub_stream=True)
+
+                        new_stream_file_name = stream_file_base + new_stream_file_ext
+                        app.log.verbose('Stream #%s concat -> %s', stream_index, new_stream_file_name)
+
+                        stream_file_concat_file_name = f'{stream_file_base}.concat.lst'
+                        stream_file_concat_file = TextFile(stream_file_concat_file_name)
+                        if not app.args.dry_run:
+                            with stream_file_concat_file.open(mode='w') as fp:
+                                print('ffconcat version 1.0', file=fp)
+                                for sub_stream_dict in stream_dict['concat_streams']:
+                                    #assert sub_stream_dict['file_name'].endswith(new_stream_file_name)
+                                    print('file \'%s\'' % (
+                                        sub_stream_dict['file_name'].replace('\\', '\\\\').replace('\'', '\'\\\'\''),
+                                        ), file=fp)
+
+                        ffmpeg_args = [
+                            '-f', 'concat', '-safe', 0,
+                            '-i', stream_file_concat_file_name,
+                            '-codec', 'copy',
+                            os.path.join(inputdir, new_stream_file_name),
+                        ]
+
+                        with perfcontext('Concat w/ ffmpeg'):
+                            ffmpeg(*ffmpeg_args,
+                                   dry_run=app.args.dry_run,
+                                   y=app.args.yes)
+
+                        done_optimize_iter()
+                        continue
+
                 mediainfo_dict = stream_file.extract_mediainfo_dict()
                 mediainfo_general_dict = None
                 mediainfo_track_dict = None
@@ -2163,8 +2203,6 @@ def action_optimize(inputdir, in_tags):
                             assert framerate == FrameRate(30000, 1001)
                             framerate = FrameRate(24000, 1001)
                             app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
-
-                        orig_framerate = framerate * 30 / 24
 
                         if stream_file_ext == '.y4m':
                             ffmpeg_dec_args = None
@@ -2281,6 +2319,8 @@ def action_optimize(inputdir, in_tags):
                             framerate = FrameRate(24000, 1001)
                             app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
 
+                        orig_framerate = framerate * 30 / 24
+
                         ffmpeg_args = [
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-vf', f'pullup,fps={framerate}',
@@ -2341,8 +2381,15 @@ def action_optimize(inputdir, in_tags):
                         done_optimize_iter()
                         continue
 
-                new_stream_file_ext = '.vp9.ivf'
-                new_stream_file_name = stream_file_base + new_stream_file_ext
+                if is_sub_stream:
+                    new_stream_file_ext = '.ffv1.mkv'
+                    if field_order == 'progressive':
+                        app.log.verbose('Stream #%s %s OK', stream_index, stream_codec_name)
+                        break
+                    new_stream_file_name = stream_file_base + '.progressive' + new_stream_file_ext
+                else:
+                    new_stream_file_ext = '.vp9.ivf'
+                    new_stream_file_name = stream_file_base + new_stream_file_ext
                 app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 ffprobe_stream_json = ffprobe_json['streams'][0]
