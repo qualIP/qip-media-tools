@@ -7,9 +7,11 @@ set -x
 prog=$(basename "$0")
 
 prog_tmp_dir="${TMPDIR:-/tmp}/$prog.$$.tmp"
+tmp_running_file="$prog_tmp_dir/running"
 
 cleanup() {
     set +u
+    lockfile-remove "$tmp_running_file" || true
     rm -Rf "$prog_tmp_dir"
     return 0
 }
@@ -20,6 +22,10 @@ mkdir "$prog_tmp_dir"
 tmp_input_file="$prog_tmp_dir/input"
 tmp_pass1output_file="$prog_tmp_dir/pass1output"
 passlogfile_file="$prog_tmp_dir/passlogfile"
+
+lockfile-create --verbose --use-pid "$tmp_running_file" < /dev/null
+lockfile-touch "$tmp_running_file" &
+BADGER_PID="$!"
 
 tee "$tmp_input_file" | \
 ffmpeg -i pipe:0 \
@@ -32,3 +38,5 @@ ffmpeg -i "$tmp_input_file" \
     -pass 2 -passlogfile "$passlogfile_file" \
     "$@" \
     -- pipe: < /dev/null
+
+kill $BADGER_PID

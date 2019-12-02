@@ -33,3 +33,5 @@ mjpegtools
 tesseract-ocr-eng
 tesseract-ocr-fra
 libtesseract-dev
+
+lockfile-progs
