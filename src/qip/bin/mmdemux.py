@@ -3015,22 +3015,54 @@ def action_optimize(inputdir, in_tags):
                                               'File not found: %r' % (os.path.join(inputdir, new_stream_file_name),),
                                               os.path.join(inputdir, new_stream_file_name))
                             except OSError as e:
-                                if app.args.interactive:
-                                    print(f'{e}:')
-                                    print(' s - skip this subtitle stream')
-                                    print(' r - retry')
-                                    print(' q - quit')
-                                    c = input('Choice: ')
-                                    if c == 's':
+                                if not app.args.interactive:
+                                    raise
+
+                                do_retry = False
+
+                                from prompt_toolkit.formatted_text import FormattedText
+                                from prompt_toolkit.completion import WordCompleter
+                                completer = WordCompleter([
+                                    'help',
+                                    'skip',
+                                    'continue',
+                                    'retry',
+                                    'quit',
+                                ])
+                                print('')
+                                app.print(
+                                    FormattedText([
+                                        ('class:error', str(e)),
+                                    ]))
+                                while True:
+                                    print('{codec_type} stream #{index}: title={title!r}, disposition=({disposition})'.format(
+                                        codec_type=stream_codec_type,
+                                        index=stream_dict['index'],
+                                        title=stream_dict.get('title', None),
+                                        disposition=', '.join(k for k, v in stream_dict['disposition'].items() if v),
+                                    ))
+                                    c = app.prompt(completer=completer)
+                                    if c in ('help', 'h', '?'):
+                                        print('')
+                                        print('List of commands:')
+                                        print('')
+                                        print('help -- Print this help')
+                                        print('skip -- Skip this stream -- done')
+                                        print('continue -- Continue/retry processing this stream -- done')
+                                        print('quit -- Quit')
+                                    elif c in ('skip', 's'):
                                         do_skip = True
                                         break
-                                    elif c == 'r':
-                                        continue
-                                    elif c == 'q':
+                                    elif c in ('continue', 'c', 'retry'):
+                                        do_retry = True
+                                        break
+                                    elif c in ('quit', 'q'):
                                         raise
                                     else:
                                         app.log.error('Invalid input')
-                                raise
+
+                                if do_retry:
+                                    continue
                         break
 
                 if not do_skip:
@@ -3346,45 +3378,85 @@ def action_demux(inputdir, in_tags):
         if not app.args.interactive:
             raise
 
-        print(f'{e}:')
+        stream_codec_type = stream_dict['codec_type']
+
+        from prompt_toolkit.formatted_text import FormattedText
+        from prompt_toolkit.completion import WordCompleter
+        completer = WordCompleter([
+            'help',
+            'skip',
+            'continue',
+            'retry',
+            'quit',
+            'forced',
+            'hearing_impaired',
+            'comment',
+            'karaoke',
+            'title',
+        ])
+        print('')
+        app.print(
+            FormattedText([
+                ('class:error', str(e)),
+            ]))
         while True:
-            print(' s  - skip this stream -- done')
-            if stream_codec_type in ('subtitle',):
-                print(' tf - toggle forced disposition (%r)' % (True if stream_dict['disposition'].get('forced', None) else False,))
-                print(' th - toggle hearing_impaired disposition (%r)' % (True if stream_dict['disposition'].get('hearing_impaired', None) else False,))
-            if stream_codec_type in ('audio', 'subtitle'):
-                print(' tc - toggle comment disposition (%r)' % (True if stream_dict['disposition'].get('comment', None) else False,))
-            if stream_codec_type in ('audio',):
-                print(' et - edit title (%s)' % (stream_dict.get('title', None),))
-            print(' r  - retry this stream -- done')
-            print(' q  - quit')
-            c = input('Choice: ')
-            if c == 's':
+            print('{codec_type} stream #{index}: title={title!r}, disposition=({disposition})'.format(
+                codec_type=stream_codec_type,
+                index=stream_dict['index'],
+                title=stream_dict.get('title', None),
+                disposition=', '.join(k for k, v in stream_dict['disposition'].items() if v),
+            ))
+            c = app.prompt(completer=completer)
+            if c in ('help', 'h', '?'):
+                print('')
+                print('List of commands:')
+                print('')
+                print('help -- Print this help')
+                print('skip -- Skip this stream -- done')
+                if stream_codec_type in ('subtitle',):
+                    print('forced -- Toggle forced disposition (%r)' % (True if stream_dict['disposition'].get('forced', None) else False,))
+                    print('hearing_impaired -- Toggle hearing_impaired disposition (%r)' % (True if stream_dict['disposition'].get('hearing_impaired', None) else False,))
+                if stream_codec_type in ('audio', 'subtitle'):
+                    print('comment -- Toggle comment disposition (%r)' % (True if stream_dict['disposition'].get('comment', None) else False,))
+                    print('karaoke -- Toggle karaoke disposition (%r)' % (True if stream_dict['disposition'].get('karaoke', None) else False,))
+                if stream_codec_type in ('audio',):
+                    print('title -- Edit title (%s)' % (stream_dict.get('title', None),))
+                print('continue -- Continue/retry processing this stream -- done')
+                print('quit -- quit')
+            elif c in ('skip', 's'):
                 stream_dict['skip'] = True
                 return_retry = False
                 update_mux_conf = True
                 break
-            elif c == 'r':
+            elif c in ('continue', 'c', 'retry'):
                 return_retry = True
                 break
-            elif c == 'tc':
-                stream_dict['disposition']['comment'] = not stream_dict['disposition'].get('comment', None)
-                update_mux_conf = True
-            elif c == 'th':
-                stream_dict['disposition']['hearing_impaired'] = not stream_dict['disposition'].get('hearing_impaired', None)
-                update_mux_conf = True
-            elif c == 'tf':
+            elif c in ('quit', 'q'):
+                raise
+            elif c == 'forced':
                 stream_dict['disposition']['forced'] = not stream_dict['disposition'].get('forced', None)
                 update_mux_conf = True
-            elif c == 'et':
-                stream_title = input('Title: ')
-                if stream_title == 'None':
+            elif c == 'hearing_impaired':
+                stream_dict['disposition']['hearing_impaired'] = not stream_dict['disposition'].get('hearing_impaired', None)
+                update_mux_conf = True
+            elif c == 'comment':
+                stream_dict['disposition']['comment'] = not stream_dict['disposition'].get('comment', None)
+                update_mux_conf = True
+            elif c == 'karaoke':
+                stream_dict['disposition']['karaoke'] = not stream_dict['disposition'].get('karaoke', None)
+                update_mux_conf = True
+            elif c == 'title':
+                stream_title = app.prompt(
+                    [
+                        ('class:field', 'Title'),
+                        ('class:cue', ': '),
+                    ],
+                    completer=None)
+                if stream_title == '':
                     stream_dict.pop('title', None)
                 else:
                     stream_dict['title'] = stream_title
                 update_mux_conf = True
-            elif c == 'q':
-                raise
             else:
                 app.log.error('Invalid input')
 
