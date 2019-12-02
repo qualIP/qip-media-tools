@@ -2709,137 +2709,120 @@ def action_optimize(inputdir, in_tags):
                     #'.mp3',
                     )
 
-            if stream_file_ext not in ok_exts:
-                snd_file = SoundFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
-                ffprobe_json = snd_file.extract_ffprobe_json()
-                app.log.debug(ffprobe_json['streams'][0])
-                channels = ffprobe_json['streams'][0]['channels']
-                channel_layout = ffprobe_json['streams'][0].get('channel_layout', None)
-            else:
-                ffprobe_json = {}
+            while True:
+                stream_start_time = ffmpeg.Timestamp(stream_dict.get('start_time', 0))
 
-            # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
-            opusenc_formats = ('.wav', '.aiff', '.flac', '.ogg', '.pcm')
-            if stream_file_ext not in ok_exts + opusenc_formats:
-                new_stream_file_ext = '.wav'
-                new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                if stream_file_ext not in ok_exts \
+                        or stream_start_time:
+                    snd_file = SoundFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
+                    ffprobe_json = snd_file.extract_ffprobe_json()
+                    app.log.debug(ffprobe_json['streams'][0])
+                    channels = ffprobe_json['streams'][0]['channels']
+                    channel_layout = ffprobe_json['streams'][0].get('channel_layout', None)
+                else:
+                    ffprobe_json = {}
 
-                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                    ffmpeg_args = [
-                        '-i', os.path.join(inputdir, stream_file_name),
-                        # '-channel_layout', channel_layout,
-                        ]
-                    ffmpeg_args += [
-                        '-start_at_zero',
-                        #'-codec', 'pcm_s16le',
-                    ]
-                    if False:
-                        # opusenc doesn't like RF64 headers!
-                        # Other option is to pipe wav from ffmpeg to opusenc
-                        ffmpeg_args += [
-                            '-rf64', 'auto',  # Use RF64 header rather than RIFF for large files
-                        ]
-                    ffmpeg_args += [
-                        '-f', 'wav', os.path.join(inputdir, new_stream_file_name),
-                        ]
-                    ffmpeg(*ffmpeg_args,
-                           slurm=True,
-                           slurm_cpus_per_task=2, # ~230-240%
-                           dry_run=app.args.dry_run,
-                           y=app.args.yes)
-
-                temp_files.append(os.path.join(inputdir, stream_file_name))
-                stream_dict.setdefault('original_file_name', stream_file_name)
-                stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-                if not app.args.dry_run:
-                    output_mux_file_name = '%s/mux.json' % (outputdir,)
-                    with open(output_mux_file_name, 'w') as fp:
-                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
-                    if not app.args.save_temps:
-                        for file_name in temp_files:
-                            os.unlink(file_name)
-                        temp_files = []
-
-            if stream_file_ext not in ok_exts and stream_file_ext in opusenc_formats:
                 # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
-                new_stream_file_ext = '.opus.ogg'
-                new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                opusenc_formats = ('.wav', '.aiff', '.flac', '.ogg', '.pcm')
+                if stream_file_ext not in ok_exts + opusenc_formats \
+                        or stream_start_time:
+                    new_stream_file_ext = '.wav'
+                    new_stream_file_name = stream_file_base + new_stream_file_ext
+                    app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
-                audio_bitrate = 640000 if channels >= 4 else 384000
-                audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
-                audio_bitrate = audio_bitrate // 1000
-
-                with perfcontext('Convert %s -> %s w/ opusenc' % (stream_file_ext, new_stream_file_name)):
-                    opusenc_args = [
-                        '--vbr',
-                        '--bitrate', str(audio_bitrate),
-                        os.path.join(inputdir, stream_file_name),
-                        os.path.join(inputdir, new_stream_file_name),
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
+                        ffmpeg_args = [
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            # '-channel_layout', channel_layout,
+                            ]
+                        ffmpeg_args += [
+                            '-start_at_zero',
+                            #'-codec', 'pcm_s16le',
                         ]
-                    opusenc(*opusenc_args,
-                            slurm=True,
-                            dry_run=app.args.dry_run)
+                        if stream_start_time:
+                            ffmpeg_args += [
+                                '-af', 'adelay=delays=%s' % (
+                                    '|'.join(['%fs' % (stream_start_time.seconds,)] * channels),
+                                )
+                            ]
+                            stream_start_time = ffmpeg.Timestamp(0)
+                            stream_dict['start_time'] = str(stream_start_time)
+                        if False:
+                            # opusenc doesn't like RF64 headers!
+                            # Other option is to pipe wav from ffmpeg to opusenc
+                            ffmpeg_args += [
+                                '-rf64', 'auto',  # Use RF64 header rather than RIFF for large files
+                            ]
+                        ffmpeg_args += [
+                            '-f', 'wav', os.path.join(inputdir, new_stream_file_name),
+                            ]
+                        ffmpeg(*ffmpeg_args,
+                               slurm=True,
+                               slurm_cpus_per_task=2, # ~230-240%
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
 
-                temp_files.append(os.path.join(inputdir, stream_file_name))
-                stream_dict.setdefault('original_file_name', stream_file_name)
-                stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-                if not app.args.dry_run:
-                    output_mux_file_name = '%s/mux.json' % (outputdir,)
-                    with open(output_mux_file_name, 'w') as fp:
-                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
-                    if not app.args.save_temps:
-                        for file_name in temp_files:
-                            os.unlink(file_name)
-                        temp_files = []
+                    done_optimize_iter()
+                    continue
 
-            if stream_file_ext in ok_exts:
-                if stream_file_name == orig_stream_file_name:
-                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
-            else:
-                new_stream_file_ext = '.opus.ogg'
-                new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+                if stream_file_ext not in ok_exts and stream_file_ext in opusenc_formats:
+                    # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
+                    new_stream_file_ext = '.opus.ogg'
+                    new_stream_file_name = stream_file_base + new_stream_file_ext
+                    app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
-                audio_bitrate = 640000 if channels >= 4 else 384000
-                audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
-                audio_bitrate = audio_bitrate // 1000
-                if channels > 2:
-                    raise NotImplementedError('Conversion not supported as ffmpeg does not respect the number of channels and channel mapping')
+                    audio_bitrate = 640000 if channels >= 4 else 384000
+                    audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                    audio_bitrate = audio_bitrate // 1000
 
-                with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                    ffmpeg_args = [
-                        '-i', os.path.join(inputdir, stream_file_name),
-                        '-c:a', 'opus',
-                        '-strict', 'experimental',  # for libopus
-                        '-b:a', '%dk' % (audio_bitrate,),
-                        # '-vbr', 'on', '-compression_level', '10',  # defaults
-                        #'-channel', str(channels), '-channel_layout', channel_layout,
-                        #'-channel', str(channels), '-mapping_family', '1', '-af', 'aformat=channel_layouts=%s' % (channel_layout,),
-                        ]
-                    ffmpeg_args += [
-                        '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
-                        ]
-                    ffmpeg(*ffmpeg_args,
-                           slurm=True,
-                           dry_run=app.args.dry_run,
-                           y=app.args.yes)
+                    with perfcontext('Convert %s -> %s w/ opusenc' % (stream_file_ext, new_stream_file_name)):
+                        opusenc_args = [
+                            '--vbr',
+                            '--bitrate', str(audio_bitrate),
+                            os.path.join(inputdir, stream_file_name),
+                            os.path.join(inputdir, new_stream_file_name),
+                            ]
+                        opusenc(*opusenc_args,
+                                slurm=True,
+                                dry_run=app.args.dry_run)
 
-                temp_files.append(os.path.join(inputdir, stream_file_name))
-                stream_dict.setdefault('original_file_name', stream_file_name)
-                stream_dict['file_name'] = stream_file_name = new_stream_file_name
-                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-                if not app.args.dry_run:
-                    output_mux_file_name = '%s/mux.json' % (outputdir,)
-                    with open(output_mux_file_name, 'w') as fp:
-                        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
-                    if not app.args.save_temps:
-                        for file_name in temp_files:
-                            os.unlink(file_name)
-                        temp_files = []
+                    done_optimize_iter()
+                    continue
+
+                if stream_file_ext in ok_exts:
+                    if stream_file_name == orig_stream_file_name:
+                        app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
+                else:
+                    new_stream_file_ext = '.opus.ogg'
+                    new_stream_file_name = stream_file_base + new_stream_file_ext
+                    app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+
+                    audio_bitrate = 640000 if channels >= 4 else 384000
+                    audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                    audio_bitrate = audio_bitrate // 1000
+                    if channels > 2:
+                        raise NotImplementedError('Conversion not supported as ffmpeg does not respect the number of channels and channel mapping')
+
+                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
+                        ffmpeg_args = [
+                            '-i', os.path.join(inputdir, stream_file_name),
+                            '-c:a', 'opus',
+                            '-strict', 'experimental',  # for libopus
+                            '-b:a', '%dk' % (audio_bitrate,),
+                            # '-vbr', 'on', '-compression_level', '10',  # defaults
+                            #'-channel', str(channels), '-channel_layout', channel_layout,
+                            #'-channel', str(channels), '-mapping_family', '1', '-af', 'aformat=channel_layouts=%s' % (channel_layout,),
+                            ]
+                        ffmpeg_args += [
+                            '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
+                            ]
+                        ffmpeg(*ffmpeg_args,
+                               slurm=True,
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
+
+                    done_optimize_iter()
+                    continue
 
         elif stream_codec_type == 'subtitle':
             if False and stream_file_ext in ('.sup',):
