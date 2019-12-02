@@ -310,7 +310,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                                 framerate = FrameRate(24000, 1001)
                             else:
                                 raise ValueError(f'last_frame.pkt_duration_time = {last_frame.pkt_duration_time}')
-                            app.log.warning('Also detected field order progressive or tt at %s (%.3f) fps based on temporal pattern at end of analysis section', field_order, framerate, framerate)
+                            app.log.warning('Also detected field order progressive or tt at %s (%.3f) fps based on temporal pattern at end of analysis section', framerate, framerate)
                         elif temporal_string.endswith('B2' * 12):
                             if last_frame.pkt_duration_time in (
                                         Decimal('0.033367'),
@@ -322,7 +322,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                                 framerate = FrameRate(24000, 1001)
                             else:
                                 raise ValueError(f'last_frame.pkt_duration_time = {last_frame.pkt_duration_time}')
-                            app.log.warning('Also detected field order progressive or bb at %s (%.3f) fps based on temporal pattern at end of analysis section', field_order, framerate, framerate)
+                            app.log.warning('Also detected field order progressive or bb at %s (%.3f) fps based on temporal pattern at end of analysis section', framerate, framerate)
                     else:
                         # ends with pulldown
                         app.log.warning('Detected field order %s at %s (%.3f) fps based on temporal pattern near end of analysis section %r', field_order, framerate, framerate, temporal_pattern)
