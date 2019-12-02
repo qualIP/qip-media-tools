@@ -522,7 +522,7 @@ def main():
     pgroup.add_argument('--video-rate-control-mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
     pgroup.add_argument('--force-framerate', default=argparse.SUPPRESS, type=FrameRate, help='Ignore heuristics and force framerate')
     pgroup.add_argument('--force-output-framerate', default=argparse.SUPPRESS, type=FrameRate, help='Force output framerate')
-    pgroup.add_argument('--force-field-order', default=argparse.SUPPRESS, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown'), help='Ignore heuristics and force input field order')
+    pgroup.add_argument('--force-field-order', default=argparse.SUPPRESS, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown', 'auto-interlaced'), help='Ignore heuristics and force input field order')
     pgroup.add_argument('--video-analyze-duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(60), help='video analysis duration (seconds)')
     pgroup.add_argument('--video-analyze-skip-frames', type=int, default=10, help='number of frames to skip from video analysis')
     pgroup.add_argument('--limit-duration', type=qip.utils.Timestamp, default=argparse.SUPPRESS, help='limit conversion duration (for testing purposes)')
@@ -2273,6 +2273,8 @@ def action_optimize(inputdir, in_tags):
 
                 if field_order == 'progressive':
                     pass
+                elif field_order in ('auto-interlaced',):
+                    video_filter_specs.append('yadif=mode=send_frame:parity=auto:deint=interlaced')
                 elif field_order in ('tt', 'tb'):
                     # ‘tt’ Interlaced video, top field coded and displayed first
                     # ‘tb’ Interlaced video, top coded first, bottom displayed first
