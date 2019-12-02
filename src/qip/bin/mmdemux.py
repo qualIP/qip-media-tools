@@ -681,6 +681,7 @@ def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_st
             '.ac3',
             '.mp3',
             '.dts',
+            '.truehd',
             '.aac',
             '.wav',
             '.sub',
@@ -720,9 +721,11 @@ def codec_name_to_ext(codec_name):
             'ac3': '.ac3',
             'mp3': '.mp3',
             'dts': '.dts',
+            'truehd': '.truehd',
             'opus': '.opus.ogg',
             'aac': '.aac',
             'pcm_s16le': '.wav',
+            'pcm_s24le': '.wav',
             # subtitles
             'dvd_subtitle': '.sub',  # and .idx
             'hdmv_pgs_subtitle': '.sup',
@@ -752,6 +755,7 @@ def ext_to_container(ext):
             # audio
             #'.ac3': 'ac3',
             #'.dts': 'dts',
+            #'.truehd': 'truehd',
             '.opus': 'ogg',
             '.ogg': 'ogg',
             '.mka': 'matroska',
@@ -1561,7 +1565,7 @@ def action_mux(inputfile, in_tags,
                             or stream_file_ext == '.vtt'
                             # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
                             # https://www.makemkv.com/forum/viewtopic.php?t=2530
-                            or stream_codec_name == 'pcm_s16le'
+                            or stream_codec_name in ('pcm_s16le', 'pcm_s24le')
                             # Avoid mkvextract error: Track 0 with the CodecID 'V_MS/VFW/FOURCC' is missing the "default duration" element and cannot be extracted.
                             or stream_file_ext in still_image_exts
                             or (app.args.track_extract_tool is Auto
