@@ -390,8 +390,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
                     else:
                         app.log.debug('Mix of interlaced and non-interlaced frames found.')
-                    v_pick_framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
-                    assert framerate == v_pick_framerate, f'constant framerate ({framerate}) does not match picked framerate ({v_pick_framerate})'
+                    # v_pick_framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
+                    # assert framerate == v_pick_framerate, f'constant framerate ({framerate}) does not match picked framerate ({v_pick_framerate})'
                 else:
                     app.log.debug('Variable fps found.')
 
