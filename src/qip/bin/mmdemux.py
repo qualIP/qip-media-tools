@@ -3612,6 +3612,12 @@ def action_demux(inputdir, in_tags):
                     stream_characteristics += (
                         ('comment', stream_title),
                     )
+                elif stream_dict['disposition'].get('karaoke', None):
+                    if stream_title is None:
+                        stream_title = 'Karaoke'
+                    stream_characteristics += (
+                        ('comment', stream_title),
+                    )
             if stream_codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_characteristics += ('external',)
