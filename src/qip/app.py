@@ -59,6 +59,8 @@ def addLoggingLevelName(level, levelName):
 
 addLoggingLevelName((logging.INFO + logging.DEBUG) // 2, "VERBOSE")
 
+DEFAULT = object()
+
 class App(object):
 
     prog = None
@@ -76,6 +78,11 @@ class App(object):
     cache_dir = None
     _user_agent = None
     _ureg = None
+
+    prompt_session = None
+    prompt_style = None
+    prompt_completer = None
+    prompt_message = None
 
     def __init__(self):
         self.args = argparse.Namespace()
@@ -372,6 +379,46 @@ class App(object):
             from qip.utils import beep
             beep()
         exit(ret)
+
+    def get_prompt_message(self):
+        return [
+            ('class:app', self.prog or ''),
+            ('class:cue', '> '),
+        ]
+
+    def init_prompt_session(self):
+        if self.prompt_session is None:
+
+            self.prompt_message = self.get_prompt_message
+
+            from prompt_toolkit import PromptSession
+            self.prompt_session = PromptSession()
+
+            from prompt_toolkit.styles import Style
+            self.prompt_style = Style.from_dict({
+                '': '#ffffff',
+                'app': '#884444',
+                'cue': '#00aa00',
+                'field': '#884444',
+                'error': '#ff0000 underline',
+            })
+
+    def prompt(self, message=None, *, style=None, completer=None):
+        self.init_prompt_session()
+        c = self.prompt_session.prompt(
+            message=None if message is False else (message or self.prompt_message),
+            style=None if style is False else (style or self.prompt_style),
+            completer=None if completer is False else (completer or self.prompt_completer),
+        )
+        return c
+
+    def print(self, *args, style=DEFAULT, **kwargs):
+        self.init_prompt_session()
+        from prompt_toolkit import print_formatted_text
+        return print_formatted_text(
+            *args, **kwargs,
+            style=self.prompt_style if style is DEFAULT else style,
+        )
 
 app = App()
 
