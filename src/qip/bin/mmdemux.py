@@ -3809,7 +3809,7 @@ def action_demux(inputdir, in_tags):
                 '-map', new_stream_index,
                 ]
         ffmpeg_output_args += [
-            '-f', ext_to_container(my_splitext(output_file.file_name)[1]),
+            '-f', ext_to_container(output_file.file_name),
             output_file.file_name,
             ]
         ffmpeg_args = ffmpeg_input_args + ffmpeg_output_args
