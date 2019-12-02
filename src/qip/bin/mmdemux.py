@@ -591,6 +591,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Actions')
     pgroup.add_argument('--rip', dest='rip_dir', nargs='+', default=(), help='directory to rip device to')
+    pgroup.add_argument('--backup', dest='backup_dir', nargs='+', default=(), help='directory to backup device to')
     pgroup.add_argument('--hb', dest='hb_files', nargs='+', default=(), help='files to run through HandBrake')
     pgroup.add_argument('--mux', dest='mux_files', nargs='+', default=(), help='files to mux')
     pgroup.add_argument('--verify', dest='verify_files', nargs='+', default=(), help='files to verify')
@@ -619,6 +620,9 @@ def main():
     did_something = False
     for rip_dir in  app.args.rip_dir:
         action_rip(rip_dir, app.args.device, in_tags=in_tags)
+        did_something = True
+    for backup_dir in  app.args.backup_dir:
+        action_backup(backup_dir, app.args.device, in_tags=in_tags)
         did_something = True
     for inputfile in getattr(app.args, 'hb_files', ()):
         action_hb(inputfile, in_tags=in_tags)
@@ -1064,6 +1068,75 @@ def action_rip(rip_dir, device, in_tags):
             dest_dir=rip_dir,
             minlength=int(minlength),
             retry_no_cd=True,
+            noscan=True,
+            robot=True,
+        )
+    except:
+        if app.args.dry_run:
+            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['rmdir', rip_dir]))
+        else:
+            try:
+                os.rmdir(rip_dir)
+            except OSError:
+                pass
+            else:
+                app.log.info('Ripping failed; Removed %s.', rip_dir)
+        raise
+
+    if app.args.eject:
+        app.log.info('Ejecting...')
+        cmd = [
+            shutil.which('eject'),
+            device,
+        ]
+        out = do_spawn_cmd(cmd)
+
+    if app.args.chain:
+        with os.scandir(rip_dir) as it:
+            for entry in it:
+                assert os.path.splitext(entry.name)[1] in ('.mkv', '.webm')
+                assert entry.is_file()
+                app.args.mux_files += (os.path.join(rip_dir, entry.name),)
+
+def action_backup(backup_dir, device, in_tags):
+    device = os.path.realpath(device)  # makemkv is picky!
+    app.log.info('Backing up %s from %s...', rip_dir, device)
+
+    if os.path.isdir(backup_dir):
+        raise OSError(errno.EEXIST, backup_dir)
+
+    from qip.makemkv import makemkvcon
+
+    try:
+        makemkvcon.info(
+            source='disc:9999',
+            ignore_failed_to_open_disc=True,
+            noscan=True,
+            robot=True,
+        )
+    except:
+        if app.args.dry_run:
+            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['rmdir', rip_dir]))
+        else:
+            try:
+                os.rmdir(rip_dir)
+            except OSError:
+                pass
+            else:
+                app.log.info('Ripping failed; Removed %s.', rip_dir)
+        raise
+
+    if True:
+        return
+
+    try:
+        makemkvcon.mkv(
+            source='dev:%s' % (device,),
+            dest_dir=rip_dir,
+            minlength=int(minlength),
+            retry_no_cd=True,
+            noscan=True,
+            robot=True,
         )
     except:
         if app.args.dry_run:
