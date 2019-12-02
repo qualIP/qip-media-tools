@@ -173,6 +173,12 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             framerate = FrameRate(1, 1)
 
     if field_order is None:
+        if '.yuvkineco-pullup.' in stream_file_name:
+            field_order = 'progressive'
+        elif '.progressive.' in stream_file_name:
+            field_order = 'progressive'
+
+    if field_order is None:
         with perfcontext('analyze field_order'):
 
             mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
