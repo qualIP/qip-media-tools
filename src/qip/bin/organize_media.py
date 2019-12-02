@@ -23,7 +23,6 @@ import shutil
 import subprocess
 import sys
 import unidecode
-import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
 
 from qip import json
@@ -471,7 +470,7 @@ def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
             qip.mm.ContentType.deleted: '-deleted',
             qip.mm.ContentType.documentary:
                 # https://github.com/contrary-cat/LocalTVExtras.bundle
-                '-extra' if dbtype == 'tvshow'
+                '-extra' if dbtype in ('tvshow',)
                 else '-other',  # TODO documentary support in Local TV Extras
             #qip.mm.ContentType.feature_film: '-TODO',
             qip.mm.ContentType.featurette: '-featurette',
@@ -484,7 +483,9 @@ def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
             qip.mm.ContentType.short: '-short',
             #qip.mm.ContentType.sound_fx: '-TODO',
             qip.mm.ContentType.trailer: '-trailer',
-            qip.mm.ContentType.video: '-video',
+            qip.mm.ContentType.video:
+                '-video' if dbtype in ('musicvideo',)
+                else '-other',
         }[contenttype]
     except KeyError:
         raise ValueError(f'contenttype = {contenttype}')
@@ -626,6 +627,8 @@ def organize_tvshow(inputfile, *, suggest_tags):
             suggest_tags.sorttvshow = v
 
     # SEASON
+    if inputfile.tags.episode == (0,):
+        suggest_tags.episode = inputfile.tags.episode = None
 
     # EPISODE
 
