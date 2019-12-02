@@ -4,6 +4,8 @@ argcomplete
 musicbrainzngs
 unidecode
 progress
-# requires: apt-get-install libdiscid-dev
+# requires: apt-get install python3-bs4
+# requires: apt-get install libdiscid-dev
 # or use: apt-get install python3-libdiscid
 # python-libdiscid
+prompt_toolkit >= 2, < 3
