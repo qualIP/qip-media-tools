@@ -379,6 +379,8 @@ def taged_mf_MP4Tags(file_name, mf, tags):
         if tag in (
                 MediaTagEnum.musicbrainz_releaseid,
                 MediaTagEnum.mediatype,
+                MediaTagEnum.seasons,
+                MediaTagEnum.episodes,
         ):
             continue
         tag = tag.name
