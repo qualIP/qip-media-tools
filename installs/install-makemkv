@@ -1,0 +1,32 @@
+#!/bin/bash
+
+set -e
+
+echo -n "Version: "
+read version
+
+if [[ -z "$version" ]] ; then
+    version=1.14.6
+    echo "Using version $version"
+fi
+
+set -x
+
+sudo true
+
+wget -c http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
+tar xzf makemkv-oss-${version}.tar.gz
+cd makemkv-oss-${version}
+./configure
+make -j
+sudo make install
+cd ..
+
+wget -c http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
+tar xzf makemkv-bin-${version}.tar.gz
+cd makemkv-bin-${version}
+make
+sudo make install
+cd ..
+
+rm -Rf makemkv-oss-${version} makemkv-bin-${version}
