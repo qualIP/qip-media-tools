@@ -283,6 +283,8 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             video_frames = video_frames[app.args.video_analyze_skip_frames:]  # Skip first frames; Often padded with different field order
             assert video_frames, "No video frames found to analyze!"
 
+            field_order_diags = []
+
             # video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
             # XXXJST:
             # Based on libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
@@ -425,11 +427,13 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             field_order = 'progressive'
                             app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
                     else:
-                        app.log.debug('Mix of interlaced and non-interlaced frames found.')
+                        field_order_diags.append('Mix of interlaced and non-interlaced frames found.')
+                        app.log.debug(field_order_diags[-1])
                     # v_pick_framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
                     # assert framerate == v_pick_framerate, f'constant framerate ({framerate}) does not match picked framerate ({v_pick_framerate})'
                 else:
-                    app.log.debug('Variable fps found.')
+                    field_order_diags.append('Variable fps found.')
+                    app.log.debug(field_order_diags[-1])
 
             if False and field_order is None:
                 for time_long, time_short, result_framerate in (
@@ -493,7 +497,9 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                 field_order = pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
 
     if field_order is None:
-        raise NotImplementedError('field_order unknown')
+        raise NotImplementedError('field_order unknown' \
+                                  + (': ' + ' '.join(field_order_diags)
+                                     if field_order_diags else ''))
 
     if framerate is None:
         framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
