@@ -2,19 +2,20 @@
 
 set -e
 
-set -x
+#set -x
 
 prog=$(basename "$0")
 prog=${prog%-clean}
 
 prog_tmp_dir_pat="$prog.*.tmp"
 
-prog_tmp_dirs="$(find "${TMPDIR:-/tmp}" type d -name "$prog_tmp_dir_pat" 2>/dev/null || true)"
+prog_tmp_dirs="$( (set -x ; find "${TMPDIR:-/tmp}" type d -name "$prog_tmp_dir_pat" 2>/dev/null) || true)"
 
 while read prog_tmp_dir ; do
     [[ -n "$prog_tmp_dir" ]] || continue
+    echo
     tmp_running_file="$prog_tmp_dir/running"
-    if ! lockfile-check --verbose --use-pid "$tmp_running_file" ; then
-	rm -Rf "$prog_tmp_dir"
+    if ! (set -x ; lockfile-check --verbose --use-pid "$tmp_running_file") ; then
+        (set -x ; rm -Rf "$prog_tmp_dir")
     fi
 done <<<"$prog_tmp_dirs"
