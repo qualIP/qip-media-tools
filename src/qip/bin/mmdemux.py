@@ -31,6 +31,7 @@
 from decimal import Decimal
 from fractions import Fraction
 import argparse
+import glob
 import collections
 import copy
 import decimal
@@ -67,7 +68,7 @@ from qip.isolang import isolang
 from qip.mp4 import M4aFile
 from qip.mediainfo import *
 from qip.matroska import *
-from qip.mm import MediaFile, Chapter, Chapters, FrameRate
+from qip.mm import MediaFile, MovieFile, Chapter, Chapters, FrameRate
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
 from qip.mm import *
@@ -76,6 +77,9 @@ from qip.utils import byte_decode, Ratio, round_half_away_from_zero
 import qip.mm
 import qip.utils
 Auto = qip.utils.Constants.Auto
+
+tmdb = None
+tvdb = None
 
 default_minlength_tvshow = qip.utils.Timestamp('15m')
 default_minlength_movie = qip.utils.Timestamp('60m')
@@ -92,6 +96,18 @@ default_minlength_movie = qip.utils.Timestamp('60m')
 
 # https://www.ffmpeg.org/ffmpeg.html
 
+def describe_stream_dict(stream_dict):
+    orig_stream_file_name = stream_dict.get('original_file_name', stream_dict['file_name'])
+    desc = '{codec_type} stream #{index}: title={title!r}, language={language}, disposition=({disposition}), ext={orig_ext}'.format(
+        codec_type=stream_dict['codec_type'],
+        index=stream_dict['index'],
+        title=stream_dict.get('title', None),
+        language=isolang(stream_dict.get('language', 'und')),
+        disposition=', '.join(k for k, v in stream_dict['disposition'].items() if v),
+        orig_ext=my_splitext(orig_stream_file_name)[1],
+    )
+    return desc
+
 class FieldOrderUnknownError(NotImplementedError):
 
     def __init__(self, mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order):
@@ -106,6 +122,13 @@ class StreamCharacteristicsSeenError(ValueError):
         self.stream_index = stream_index
         self.stream_characteristics = stream_characteristics
         super().__init__(f'Stream #{stream_index} characteristics already seen: {stream_characteristics!r}')
+
+class StreamExternalSubtitleAlreadyCreated(ValueError):
+
+    def __init__(self, stream_index, external_stream_file_name):
+        self.stream_index = stream_index
+        self.external_stream_file_name = external_stream_file_name
+        super().__init__(f'Stream {stream_index} External subtitle file already created: {external_stream_file_name}')
 
 common_aspect_ratios = {
     # Ratio(4, 3),
@@ -599,6 +622,7 @@ def main():
     pgroup.add_argument('--extract-music', dest='extract_music_dirs', nargs='+', default=(), help='directories to extract music from')
     pgroup.add_argument('--optimize', dest='optimize_dirs', nargs='+', default=(), help='directories to optimize')
     pgroup.add_argument('--demux', dest='demux_dirs', nargs='+', default=(), help='directories to demux')
+    pgroup.add_argument('--tag-episodes', dest='tag_episodes_files', nargs='+', default=(), help='files to tag based on tvshow episodes')
 
     app.parse_args()
 
@@ -646,6 +670,9 @@ def main():
         did_something = True
     for inputdir in getattr(app.args, 'demux_dirs', ()):
         action_demux(inputdir, in_tags=in_tags)
+        did_something = True
+    if getattr(app.args, 'tag_episodes_files', ()):
+        action_tag_episodes_files(app.args.tag_episodes_files, in_tags=in_tags)
         did_something = True
     if not did_something:
         raise ValueError('Nothing to do!')
@@ -1352,6 +1379,7 @@ def action_hb(inputfile, in_tags):
 def action_mux(inputfile, in_tags,
                mux_attached_pic=True,
                mux_subtitles=True):
+    global qip
     app.log.info('Muxing %s...', inputfile)
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
@@ -1398,7 +1426,110 @@ def action_mux(inputfile, in_tags,
     mux_dict['tags'] = inputfile.tags
 
     if app.args.interactive and not remux and not (app.args.rip_dir and outputdir in app.args.rip_dir):
-        mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
+        from prompt_toolkit.formatted_text import FormattedText
+        from prompt_toolkit.completion import WordCompleter
+        completer = WordCompleter([
+            'help',
+            'edit',
+            'search',
+            'continue',
+            'quit',
+        ])
+        print('')
+        while True:
+            print('Initial tags setup')
+            c = app.prompt(completer=completer)
+            if c in ('help', 'h', '?'):
+                print('')
+                print('List of commands:')
+                print('')
+                print('help -- Print this help')
+                print('edit -- Edit tags')
+                print('search -- Search The Movie DB')
+                print('continue -- Continue processing')
+                print('quit -- Quit')
+            elif c in ('continue', 'c'):
+                break
+            elif c in ('quit', 'q'):
+                exit(1)
+            elif c in ('edit',):
+                mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
+            elif c in ('search',):
+                initial_text = mux_dict['tags'].title or os.path.basename(os.path.dirname(inputfile.file_name))
+                initial_text = re.sub(r'(?=[A-Z][a-z])', r' ', initial_text)       # ABCDef -> ABC Def
+                initial_text = re.sub(r'[A-Za-z](?=\d)', r'\g<0> ', initial_text)  # ABC123 -> ABC 123
+                initial_text = re.sub(r'[^A-Za-z0-9]+', r' ', initial_text)        # AB$_12 -> AB 12
+                initial_text = initial_text.strip()                                #  ABC   -> ABC
+                search_query = app.input_dialog(
+                    title=str(inputfile),
+                    text='Please input search query:',
+                    initial_text=initial_text)
+                if search_query:
+                    global tmdb
+                    import qip.tmdb
+                    if tmdb is None:
+                        tmdb = qip.tmdb.TMDb(
+                            apikey='3f8dc1c8cf6cb292c267b3c10179ae84',  # mmdemux
+                            interactive=app.args.interactive,
+                            debug=app.log.isEnabledFor(logging.DEBUG),
+                            language=in_tags.language and in_tags.language.iso639_1,
+                        )
+                    movie_api = qip.tmdb.Movie()
+                    l_movies = movie_api.search(search_query)
+                    i = 0
+                    app.log.debug('l_movies=(%r)%r', type(l_movies), l_movies)
+                    if (True or len(l_movies) > 1) and app.args.interactive:
+                        from prompt_toolkit.shortcuts.dialogs import radiolist_dialog
+                        i = radiolist_dialog(
+                            title='Please select a movie',
+                            values=[(i, '{title}, {release_date} (#{id}) -- {overview}'.format_map(vars(o_movie)))
+                                    for i, o_movie in enumerate(l_movies)],
+                            style=app.prompt_style)
+                        if i is None:
+                            print('Cancelled by user!')
+                            continue
+                    o_movie = l_movies[i]
+
+                    #app.log.debug('o_movie=%r:\n%s', o_movie, pprint.pformat(vars(o_movie)))
+                    #{'adult': False,
+                    # 'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
+                    # 'entries': {'adult': False,
+                    #             'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
+                    #             'genre_ids': [12, 18, 53],
+                    #             'id': 44115,
+                    #             'original_language': 'en',
+                    #             'original_title': '127 Hours',
+                    #             'overview': "The true story of mountain climber Aron Ralston's "
+                    #                         'remarkable adventure to save himself after a fallen '
+                    #                         'boulder crashes on his arm and traps him in an '
+                    #                         'isolated canyon in Utah.',
+                    #             'popularity': 11.822,
+                    #             'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
+                    #             'release_date': '2010-11-05',
+                    #             'title': '127 Hours',
+                    #             'video': False,
+                    #             'vote_average': 7,
+                    #             'vote_count': 4828},
+                    # 'genre_ids': [12, 18, 53],
+                    # 'id': 44115,
+                    # 'original_language': 'en',
+                    # 'original_title': '127 Hours',
+                    # 'overview': "The true story of mountain climber Aron Ralston's remarkable "
+                    #             'adventure to save himself after a fallen boulder crashes on his '
+                    #             'arm and traps him in an isolated canyon in Utah.',
+                    # 'popularity': 11.822,
+                    # 'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
+                    # 'release_date': '2010-11-05',
+                    # 'title': '127 Hours',
+                    # 'video': False,
+                    # 'vote_average': 7,
+                    # 'vote_count': 4828}
+                    mux_dict['tags'].title = o_movie.title
+                    mux_dict['tags'].date = o_movie.release_date
+                    app.log.info('%s: %s', inputfile, mux_dict['tags'].short_str())
+
+            else:
+                app.log.error('Invalid input')
 
     if not remux:
         if app.args.dry_run:
@@ -3327,6 +3458,8 @@ def external_subtitle_file_name(output_file, stream_file_name, stream_dict):
         external_stream_file_name += '.visual_impaired'
     if stream_dict['disposition'].get('karaoke', None):
         external_stream_file_name += '.karaoke'
+    if stream_dict['disposition'].get('original', None):
+        external_stream_file_name += '.original'
     if stream_dict['disposition'].get('dub', None):
         external_stream_file_name += '.dub'
     if stream_dict['disposition'].get('lyrics', None):
@@ -3379,6 +3512,7 @@ def action_demux(inputdir, in_tags):
         completer = WordCompleter([
             'help',
             'skip',
+            'open',
             'continue',
             'retry',
             'quit',
@@ -3386,6 +3520,7 @@ def action_demux(inputdir, in_tags):
             'hearing_impaired',
             'comment',
             'karaoke',
+            'original',
             'title',
         ])
         print('')
@@ -3394,12 +3529,7 @@ def action_demux(inputdir, in_tags):
                 ('class:error', str(e)),
             ]))
         while True:
-            print('{codec_type} stream #{index}: title={title!r}, disposition=({disposition})'.format(
-                codec_type=stream_codec_type,
-                index=stream_dict['index'],
-                title=stream_dict.get('title', None),
-                disposition=', '.join(k for k, v in stream_dict['disposition'].items() if v),
-            ))
+            print(describe_stream_dict(stream_dict))
             c = app.prompt(completer=completer)
             if c in ('help', 'h', '?'):
                 print('')
@@ -3414,14 +3544,23 @@ def action_demux(inputdir, in_tags):
                     print('comment -- Toggle comment disposition (%r)' % (True if stream_dict['disposition'].get('comment', None) else False,))
                     print('karaoke -- Toggle karaoke disposition (%r)' % (True if stream_dict['disposition'].get('karaoke', None) else False,))
                 if stream_codec_type in ('audio',):
+                    print('original -- Toggle original disposition (%r)' % (True if stream_dict['disposition'].get('original', None) else False,))
+                if stream_codec_type in ('audio',):
                     print('title -- Edit title (%s)' % (stream_dict.get('title', None),))
+                print('open -- Open this stream')
                 print('continue -- Continue/retry processing this stream -- done')
                 print('quit -- quit')
+                print('')
             elif c in ('skip', 's'):
                 stream_dict['skip'] = True
                 return_retry = False
                 update_mux_conf = True
                 break
+            elif c in ('open',):
+                try:
+                    xdg_open(os.path.join(inputdir, stream_dict['file_name']))
+                except Exception as e:
+                    app.log.error(e)
             elif c in ('continue', 'c', 'retry'):
                 return_retry = True
                 break
@@ -3439,18 +3578,21 @@ def action_demux(inputdir, in_tags):
             elif c == 'karaoke':
                 stream_dict['disposition']['karaoke'] = not stream_dict['disposition'].get('karaoke', None)
                 update_mux_conf = True
-            elif c == 'title':
-                stream_title = app.prompt(
-                    [
-                        ('class:field', 'Title'),
-                        ('class:cue', ': '),
-                    ],
-                    completer=None)
-                if stream_title == '':
-                    stream_dict.pop('title', None)
-                else:
-                    stream_dict['title'] = stream_title
+            elif c == 'original':
+                stream_dict['disposition']['original'] = not stream_dict['disposition'].get('original', None)
                 update_mux_conf = True
+            elif c == 'title':
+                stream_title = app.input_dialog(
+                    title=describe_stream_dict(stream_dict),
+                    text='Please input stream title:')
+                if stream_title is None:
+                    print('Cancelled by user!')
+                else:
+                    if stream_title == '':
+                        stream_dict.pop('title', None)
+                    else:
+                        stream_dict['title'] = stream_title
+                    update_mux_conf = True
             else:
                 app.log.error('Invalid input')
 
@@ -3684,24 +3826,36 @@ def action_demux(inputdir, in_tags):
                     stream_characteristics += (
                         ('comment', stream_title),
                     )
+                elif stream_dict['disposition'].get('original', None):
+                    if stream_title is None:
+                        stream_title = 'Original'
+                    stream_characteristics += (
+                        ('comment', stream_title),
+                    )
             if stream_codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_characteristics += ('external',)
                     stream_file_names = [stream_file_name]
                     if my_splitext(stream_dict['file_name'])[1] == '.sub':
                         stream_file_names.append(my_splitext(stream_file_name)[0] + '.idx')
-                    for stream_file_name in stream_file_names:
-                        external_stream_file_name = external_subtitle_file_name(
-                            output_file=output_file,
-                            stream_file_name=stream_file_name,
-                            stream_dict=stream_dict)
-                        app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
-                        if external_stream_file_name in external_stream_file_names_seen:
-                            raise ValueError(f'Stream {stream_index} External subtitle file already created: {external_stream_file_name}')
-                        external_stream_file_names_seen.add(external_stream_file_name)
-                        shutil.copyfile(os.path.join(inputdir, stream_file_name),
-                                        external_stream_file_name,
-                                        follow_symlinks=True)
+                    try:
+                        for stream_file_name in stream_file_names:
+                            external_stream_file_name = external_subtitle_file_name(
+                                output_file=output_file,
+                                stream_file_name=stream_file_name,
+                                stream_dict=stream_dict)
+                            app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                            if external_stream_file_name in external_stream_file_names_seen:
+                                raise StreamExternalSubtitleAlreadyCreated(stream_index=stream_index,
+                                                                           external_stream_file_name=external_stream_file_name)
+                            external_stream_file_names_seen.add(external_stream_file_name)
+                            shutil.copyfile(os.path.join(inputdir, stream_file_name),
+                                            external_stream_file_name,
+                                            follow_symlinks=True)
+                    except StreamExternalSubtitleAlreadyCreated as e:
+                        if handle_StreamCharacteristicsSeenError(e):
+                            streams_todo.insert(0, stream_dict)
+                        continue
                     continue
                 if my_splitext(stream_dict['file_name'])[1] == '.sub':
                     # ffmpeg doesn't read the .idx file?? Embed .sub/.idx into a .mkv first
@@ -3858,7 +4012,127 @@ def action_demux(inputdir, in_tags):
 
     return True
 
+def action_tag_episodes_files(episode_file_names, in_tags):
+    tags = copy.copy(in_tags)
+
+    if tags.tvshow is None and app.args.interactive:
+        initial_text = ''
+        if len(episode_file_names) == 1:
+            m = re.search(r'^(.*)S(\d+)/*$', episode_file_names[0])
+            if m:
+                initial_text = m.group(1)
+        tags.tvshow = app.input_dialog(title='Please provide tvshow',
+                                       initial_text=initial_text)
+    if tags.tvshow is None:
+        raise ValueError('Missing tvshow')
+
+    tags.type = tags.deduce_type()
+    assert str(tags.type) == 'tvshow'
+
+    global tvdb
+    if tvdb is None:
+        import qip.thetvdb
+        tvdb = qip.thetvdb.Tvdb(
+            apikey='d38d1a8df34d030f1be077798db952bc',  # mmdemux
+            interactive=app.args.interactive,
+            debug=app.log.isEnabledFor(logging.DEBUG),
+            language=tags.language and tags.language.iso639_1,
+        )
+
+    l_series = tvdb.search(tags.tvshow)
+    app.log.debug('l_series=%r', l_series)
+    assert l_series, "No series!"
+    i = 0
+    if len(l_series) > 1 and app.args.interactive:
+        from prompt_toolkit.shortcuts.dialogs import radiolist_dialog
+        i = radiolist_dialog(
+            title='Please select a series',
+            values=[(i, '{seriesName} [{language}], {network}, {firstAired}, {status} (#{id})'.format_map(d_series))
+                    for i, d_series in enumerate(l_series)],
+            style=app.prompt_style)
+        if i is None:
+            raise ValueError('Cancelled by user!')
+    d_series = l_series[i]
+
+    if tags.season is None and app.args.interactive:
+        initial_text = ''
+        if len(episode_file_names) == 1:
+            m = re.search(r'^(.*)S(\d+)/*$', episode_file_names[0])
+            if m:
+                initial_text = m.group(2)
+        tags.season = app.input_dialog(title='Please provide season number',
+                                       initial_text=initial_text)
+    if tags.season is None:
+        raise ValueError('Missing season number')
+
+    o_show = tvdb[d_series['id']]
+    app.log.debug('o_show=%r', o_show)
+    o_season = o_show[tags.season]
+    app.log.debug('o_season=%r', o_season)
+
+    if len(episode_file_names) == 1 and os.path.isdir(episode_file_names[0]):
+        glob_pattern = os.path.join(episode_file_names[0], '*.mkv')
+        episode_file_names = sorted(glob.iglob(glob_pattern))
+    app.log.debug('episode_file_names=%r', episode_file_names)
+
+    if len(episode_file_names) != len(o_season):
+        raise ValueError(f'Number of files ({len(episode_file_names)}) does not match number of season {tags.season} episodes ({len(o_season)})')
+
+    episode_files = [
+        MovieFile.new_by_file_name(episode_file_name)
+        for episode_file_name in episode_file_names]
+    for episode_file, i_episode in zip(episode_files, o_season.keys()):
+        o_episode = o_season[i_episode]
+        app.log.debug('episode_file=%r, o_episode=%r:\n%s', episode_file, o_episode, pprint.pformat(dict(o_episode)))
+        # {'absoluteNumber': 125,
+        #  'airedEpisodeNumber': 21,
+        #  'airedSeason': 6,
+        #  'airedSeasonID': 13744,
+        #  'airsAfterSeason': None,
+        #  'airsBeforeEpisode': None,
+        #  'airsBeforeSeason': None,
+        #  'contentRating': 'TV-PG',
+        #  'directors': ['Michael Preece'],
+        #  'dvdChapter': None,
+        #  'dvdDiscid': '',
+        #  'dvdEpisodeNumber': 21,
+        #  'dvdSeason': 6,
+        #  'episodeName': 'Hind-Sight',
+        #  'filename': 'http://thetvdb.com/banners/episodes/77847/261278.jpg',
+        #  'firstAired': '1991-05-06',
+        #  'guestStars': ['Barbara E. Russell',
+        #                 'Bruce Harwood',
+        #                 'Bruce McGill',
+        #                 'Linda Darlow',
+        #                 'Michael Des Barres',
+        #                 'Michele Chan'],
+        #  'id': 261278,
+        #  'imdbId': 'tt0638724',
+        #  'isMovie': 0,
+        #  'language': {'episodeName': 'en', 'overview': 'en'},
+        #  'lastUpdated': 1555583455,
+        #  'lastUpdatedBy': 1,
+        #  'overview': 'As Pete waits for glaucoma surgery, he and MacGyver reminisce '
+        #              'about their past adventures and try to figure out who has been '
+        #              'sending some vaguely threatening messages to Pete.',
+        #  'productionCode': '126',
+        #  'seriesId': 77847,
+        #  'showUrl': '',
+        #  'siteRating': 0,
+        #  'siteRatingCount': 0,
+        #  'thumbAdded': '',
+        #  'thumbAuthor': None,
+        #  'thumbHeight': '360',
+        #  'thumbWidth': '640',
+        #  'writers': ['Rick Mittleman']}
+        episode_file.load_tags(file_type='tvshow')
+        episode_file.tags.update(tags)
+        episode_file.tags.episode = o_episode['airedEpisodeNumber']
+        episode_file.tags.title = o_episode['episodeName']
+        episode_file.tags.date = o_episode['firstAired']
+        app.log.info('%s: %s', episode_file, episode_file.tags.short_str())
+        episode_file.write_tags(tags=episode_file.tags,
+                                dry_run=app.args.dry_run)
+
 if __name__ == "__main__":
     main()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

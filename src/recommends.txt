@@ -9,3 +9,5 @@ progress
 # or use: apt-get install python3-libdiscid
 # python-libdiscid
 prompt_toolkit >= 2, < 3
+tmdbv3api
+tvdb_api

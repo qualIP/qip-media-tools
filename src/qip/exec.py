@@ -22,6 +22,7 @@ __all__ = [
         'edfile',
         'edvar',
         'eddiff',
+        'xdg_open',
         'nice',
         'renice',
         'ionice',
@@ -380,6 +381,15 @@ class PipedScript(PipedExecutable):
 
 class PipedPortableScript(PipedScript):
     pass
+
+
+class Xdg_open(Executable):
+
+    name = 'xdg-open'
+
+    kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
+
+xdg_open = Xdg_open()
 
 
 class Nice(Executable):
