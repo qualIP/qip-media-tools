@@ -208,7 +208,7 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
             framerate = FrameRate(1, 1)
 
     if field_order is None:
-        if '.yuvkineco-pullup.' in stream_file_name:
+        if '-pullup.' in stream_file_name:
             field_order = 'progressive'
         elif '.progressive.' in stream_file_name:
             field_order = 'progressive'
@@ -539,6 +539,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Tools Control')
     pgroup.add_argument('--track-extract-tool', default=Auto, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
+    pgroup.add_argument('--pullup-tool', default=Auto, choices=('yuvkineco', 'ffmpeg', 'mencoder'), help='tool to pullup any 23pulldown video tracks')
     pgroup.add_argument('--ionice', default=None, type=int, help='ionice process level')
     pgroup.add_argument('--nice', default=None, type=int, help='nice process adjustment')
 
@@ -2330,8 +2331,13 @@ def action_optimize(inputdir, in_tags):
 
                 if field_order == '23pulldown':
 
-                    if True:
+                    pullup_tool = app.args.pullup_tool
+                    if pullup_tool is Auto:
+                        pullup_tool = 'yuvkineco'
+
+                    if pullup_tool == 'yuvkineco':
                         # -> ffmpeg+yuvkineco -> .ffv1
+
                         deinterlace_using_ffmpeg = True
                         fieldmatch_using_ffmpeg = False
 
@@ -2441,9 +2447,7 @@ def action_optimize(inputdir, in_tags):
                         done_optimize_iter()
                         continue
 
-                        # ffmpeg -i input.1080i.ts -vf fieldmatch,yadif=deint=interlaced -f yuv4mpegpipe -pix_fmt yuv420p - | yuvkineco -F 1 -n 2 -i -1 | x264 --demuxer y4m -o out.mp4 -
-
-                    elif True:
+                    elif pullup_tool == 'ffmpeg':
                         # -> ffmpeg -> .ffv1
 
                         new_stream_file_ext = '.ffv1.mkv'
@@ -2486,7 +2490,7 @@ def action_optimize(inputdir, in_tags):
                         done_optimize_iter()
                         continue
 
-                    else:
+                    elif pullup_tool == 'mencoder':
                         # -> mencoder -> .ffv1
 
                         if True:
@@ -2520,6 +2524,9 @@ def action_optimize(inputdir, in_tags):
                         done_optimize_iter()
                         continue
 
+                    else:
+                        raise NotImplementedError(pullup_tool)
+ 
                 if is_sub_stream:
                     new_stream_file_ext = '.ffv1.mkv'
                     if field_order == 'progressive':
