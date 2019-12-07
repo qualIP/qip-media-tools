@@ -819,6 +819,29 @@ def ext_to_container(ext):
         raise ValueError('Unsupported extension %r' % (ext,)) from err
     return ext_container
 
+def ext_to_codec(ext):
+    ext = my_splitext('x' + ext, strip_container=True)[1]
+    try:
+        ext_container = {
+            # video
+            '.vp9': 'libvpx-vp9',
+            '.ffv1': 'ffv1',
+            '.y4m': 'yuv4',
+        }[ext]
+    except KeyError as err:
+        raise ValueError('Unsupported extension %r' % (ext,)) from err
+    return ext_container
+
+def ext_to_codec_args(ext):
+    codec = ext_to_codec(ext)
+    codec_args = []
+    if codec == 'ffv1':
+        codec_args += [
+            '-slices', 24,
+            '-threads', 8,
+        ]
+    return codec_args
+
 def ext_to_mencoder_libavcodec_format(ext):
     ext = os.path.splitext('x' + ext)[1]
     try:
@@ -2151,7 +2174,7 @@ def action_chop(inputdir, in_tags):
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
-def my_splitext(file_name):
+def my_splitext(file_name, strip_container=False):
     file_name = str(file_name)
     base, ext = os.path.splitext(file_name)
     if ext in (
@@ -2171,7 +2194,10 @@ def my_splitext(file_name):
                 '.opus',
         ):
             base = base2
-            ext = ext2 + ext
+            if strip_container:
+                ext = ext2
+            else:
+                ext = ext2 + ext
     return base, ext
 
 def test_out_file(out_file):
@@ -2383,7 +2409,7 @@ def action_optimize(inputdir, in_tags):
                             ffmpeg_dec_args += [
                                 '-pix_fmt', 'yuv420p',
                                 '-nostats',  # will expect progress on output
-                                # '-vcodec', 'yuv4',  # yuv4mpegpipe ERROR: Codec not supported.
+                                # '-codec:v', ext_to_condec('.y4m'),  # yuv4mpegpipe ERROR: Codec not supported.
                                 ]
                             if limit_duration:
                                 ffmpeg_dec_args += ['-t', ffmpeg.Timestamp(limit_duration)]
@@ -2411,8 +2437,8 @@ def action_optimize(inputdir, in_tags):
 
                         ffmpeg_enc_args = [
                             '-i', 'pipe:0',
-                            '-vcodec', 'ffv1',
-                            '-slices', 12, '-threads', 4,
+                            '-codec:v', ext_to_codec(new_stream_file_ext),
+                        ] + ext_to_codec_args(new_stream_file_ext) + [
                             '-f', ext_to_container(new_stream_file_ext),
                             os.path.join(inputdir, new_stream_file_name),
                         ]
@@ -2475,9 +2501,8 @@ def action_optimize(inputdir, in_tags):
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-vf', f'pullup,fps={framerate}',
                             '-r', framerate,
-                            '-vcodec', 'ffv1',
-                            '-slices', 12, '-threads', 4,
-                            ]
+                            '-codec:v', ext_to_codec(new_stream_file_ext),
+                            ] + ext_to_codec_args(new_stream_file_ext)
                         if limit_duration:
                             ffmpeg_args += ['-t', ffmpeg.Timestamp(limit_duration)]
                         ffmpeg_args += [
@@ -2533,17 +2558,6 @@ def action_optimize(inputdir, in_tags):
 
                     else:
                         raise NotImplementedError(pullup_tool)
- 
-                if is_sub_stream:
-                    new_stream_file_ext = '.ffv1.mkv'
-                    if field_order == 'progressive':
-                        app.log.verbose('Stream #%s %s OK', stream_index, stream_codec_name)
-                        break
-                    new_stream_file_name = stream_file_base + '.progressive' + new_stream_file_ext
-                else:
-                    new_stream_file_ext = '.vp9.ivf'
-                    new_stream_file_name = stream_file_base + new_stream_file_ext
-                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 ffprobe_stream_json = ffprobe_json['streams'][0]
                 app.log.debug(ffprobe_stream_json)
@@ -2551,6 +2565,14 @@ def action_optimize(inputdir, in_tags):
                 #mediainfo_duration = qip.utils.Timestamp(mediainfo_track_dict['Duration'])
                 mediainfo_width = int(mediainfo_track_dict['Width'])
                 mediainfo_height = int(mediainfo_track_dict['Height'])
+
+                if mux_dict.get('chapters', None):
+                    chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=True))
+                else:
+                    chaps = []
+                parallel_chapters = app.args.parallel_chapters \
+                    and len(chaps) > 1 \
+                    and chaps[0].start == 0
 
                 extra_args = []
                 video_filter_specs = []
@@ -2646,6 +2668,27 @@ def action_optimize(inputdir, in_tags):
                 if video_filter_specs:
                     extra_args += ['-filter:v', ','.join(video_filter_specs)]
 
+                if is_sub_stream:
+                    new_stream_file_ext = '.ffv1.mkv'
+                    if field_order == 'progressive':
+                        app.log.verbose('Stream #%s %s OK', stream_index, stream_codec_name)
+                        break
+                    new_stream_file_name = stream_file_base + '.progressive' + new_stream_file_ext
+                elif False and (parallel_chapters
+                      and stream_file_ext not in (
+                          '.mpeg2', '.mpeg2.mp2v',  # Chopping using segment muxer is reliable (tested with mpeg2)
+                          '.ffv1.mkv',
+                      )):
+                    new_stream_file_ext = '.ffv1.mkv'
+                    if field_order == 'progressive':
+                        new_stream_file_name = stream_file_base + new_stream_file_ext
+                    else:
+                        new_stream_file_name = stream_file_base + '.progressive' + new_stream_file_ext
+                else:
+                    new_stream_file_ext = '.vp9.ivf'
+                    new_stream_file_name = stream_file_base + new_stream_file_ext
+                app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+
                 if stream_file_ext in ('.mpeg2', '.mpeg2.mp2v'):
                     # In case initial frame is a I frame to be displayed after
                     # subqequent P or B frames, the start time will be
@@ -2660,6 +2703,9 @@ def action_optimize(inputdir, in_tags):
                         extra_args += ['-vsync', 'drop']
 
                 ffmpeg_conv_args = []
+                ffmpeg_conv_args += [
+                    '-codec:v', ext_to_codec(new_stream_file_ext),
+                ]
 
                 if new_stream_file_ext == '.vp9.ivf':
                     # https://trac.ffmpeg.org/wiki/Encode/VP9
@@ -2677,9 +2723,6 @@ def action_optimize(inputdir, in_tags):
                         width=mediainfo_width, height=mediainfo_height,
                         )
 
-                    ffmpeg_conv_args += [
-                        '-c:v', 'libvpx-vp9',
-                    ]
                     if app.args.video_rate_control_mode == 'Q':
                         ffmpeg_conv_args += [
                             '-b:v', 0,
@@ -2723,16 +2766,13 @@ def action_optimize(inputdir, in_tags):
                     ]
                     ffmpeg_conv_args += [
                         '-g', int(app.args.keyint * framerate),
-                        ] + extra_args + [
                         ]
-
-                if mux_dict.get('chapters', None):
-                    chaps = list(Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=True))
                 else:
-                    chaps = []
-                if (app.args.parallel_chapters
-                        and len(chaps) > 1
-                        and chaps[0].start == 0
+                    ffmpeg_conv_args += ext_to_codec_args(new_stream_file_ext)
+
+                ffmpeg_conv_args += extra_args
+
+                if (parallel_chapters
                         and stream_file_ext in (
                             '.mpeg2', '.mpeg2.mp2v',  # Chopping using segment muxer is reliable (tested with mpeg2)
                             '.ffv1.mkv',
@@ -2882,10 +2922,21 @@ def action_optimize(inputdir, in_tags):
                             ] + ffmpeg_conv_args + [
                             '-f', ext_to_container(new_stream_file_name), os.path.join(inputdir, new_stream_file_name),
                             ]
-                        ffmpeg.run2pass(*ffmpeg_args,
-                                        slurm=True,
-                                        dry_run=app.args.dry_run,
-                                        y=app.args.yes)
+                        if new_stream_file_ext in (
+                                '.vp8.ivf',
+                                '.vp9.ivf',
+                                '.av1.ivf',
+                                # '.ffv1.mkv',  # no need for better compression
+                        ):
+                            ffmpeg.run2pass(*ffmpeg_args,
+                                            slurm=True,
+                                            dry_run=app.args.dry_run,
+                                            y=app.args.yes)
+                        else:
+                            ffmpeg(*ffmpeg_args,
+                                   slurm=True,
+                                   dry_run=app.args.dry_run,
+                                   y=app.args.yes)
                         test_out_file(os.path.join(inputdir, new_stream_file_name))
 
                 temp_files.append(os.path.join(inputdir, stream_file_name))
@@ -2912,8 +2963,12 @@ def action_optimize(inputdir, in_tags):
             while True:
                 stream_start_time = ffmpeg.Timestamp(stream_dict.get('start_time', 0))
 
-                if stream_file_ext not in ok_exts \
-                        or stream_start_time:
+                if stream_file_ext in ok_exts \
+                        and not stream_start_time:
+                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
+                    break
+
+                if True:
                     snd_file = SoundFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
                     ffprobe_json = snd_file.extract_ffprobe_json()
                     app.log.debug(ffprobe_json['streams'][0])
@@ -2992,6 +3047,7 @@ def action_optimize(inputdir, in_tags):
                 if stream_file_ext in ok_exts:
                     if stream_file_name == orig_stream_file_name:
                         app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
+                        break
                 else:
                     new_stream_file_ext = '.opus.ogg'
                     new_stream_file_name = stream_file_base + new_stream_file_ext
