@@ -1969,7 +1969,7 @@ def action_mux(inputfile, in_tags,
                                 app.log.warning('Fixing first chapter start time %s to 0', v)
                                 if False:
                                     # mkvpropedit doesn't like unknown elements
-                                    e.tag = 'orig_ChapterTimeStart'
+                                    e.tag = 'original_ChapterTimeStart'
                                     e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
                                 e.text = str(ffmpeg.Timestamp(0))
                                 chapters_xml_io = io.StringIO()
