@@ -2265,13 +2265,17 @@ class TrackTags(MediaTagDict):
     def short_str(self):
         l = []
         for tag_enum in (
+                MediaTagEnum.tvshow,
+                MediaTagEnum.season,
+                MediaTagEnum.episode,
                 MediaTagEnum.artist,
                 MediaTagEnum.title,
+                MediaTagEnum.date,
+                MediaTagEnum.contenttype,
                 ):
-            try:
+            v = getattr(self, tag_enum.value)
+            if v is not None:
                 l.append('{}: {}'.format(tag_enum.value, getattr(self, tag_enum.value)))
-            except KeyError:
-                pass
         return ', '.join(l)
 
 class AlbumTags(MediaTagDict):
@@ -2338,6 +2342,8 @@ class AlbumTags(MediaTagDict):
     def short_str(self):
         l = []
         for tag_enum in (
+                MediaTagEnum.tvshow,
+                MediaTagEnum.season,
                 MediaTagEnum.artist,
                 MediaTagEnum.title,
                 MediaTagEnum.country,
