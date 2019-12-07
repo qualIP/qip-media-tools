@@ -51,12 +51,10 @@ import types
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
 
-HAVE_PROGRESS_BAR = False
 try:
-    import progress.bar
-    HAVE_PROGRESS_BAR = True
+    from qip.utils import ProgressBar
 except ImportError:
-    pass
+    ProgressBar = None
 
 from qip import json
 from qip.app import app
@@ -205,8 +203,9 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                 if False and mediainfo_duration >= 1.0:
                     video_analyze_duration = min(mediainfo_duration, video_analyze_duration)
             with perfcontext('frames iteration'):
-                if HAVE_PROGRESS_BAR:
-                    bar = progress.bar.Bar('iterate frames',
+                progress_bar = None
+                if ProgressBar is not None:
+                    progress_bar = ProgressBar('iterate frames',
                                            max=float(video_analyze_duration),
                                            suffix='%(index)d/%(max)d (%(eta_td)s remaining)')
                 try:
@@ -230,17 +229,17 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             frame.pkt_dts = frame.pkt_pts
 
                         video_frames.append(frame)
-                        if HAVE_PROGRESS_BAR:
-                            if int(bar.index) != int(float(frame.pkt_dts_time)):
-                                bar.goto(float(frame.pkt_dts_time))
+                        if progress_bar is not None:
+                            if int(progress_bar.index) != int(float(frame.pkt_dts_time)):
+                                progress_bar.goto(float(frame.pkt_dts_time))
                         if float(frame.pkt_dts_time) >= video_analyze_duration:
                             break
                         prev_frame = frame
                     #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
                     #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
                 finally:
-                    if HAVE_PROGRESS_BAR:
-                        bar.finish()
+                    if progress_bar is not None:
+                        progress_bar.finish()
 
             app.log.debug('Analyzing %d video frames...', len(video_frames))
 
