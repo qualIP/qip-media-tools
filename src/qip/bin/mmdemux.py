@@ -1582,6 +1582,8 @@ def action_mux(inputfile, in_tags,
         else:
             os.mkdir(outputdir)
 
+    num_extract_errors = 0
+
     if inputfile_ext in (
             '.mkv',
             '.webm',
@@ -1898,13 +1900,19 @@ def action_mux(inputfile, in_tags,
                         has_forced_subtitle = True
                     # TODO Detect closed_caption
                     if stream_file_ext in ('.sub', '.sup'):
-                        d = ffprobe(i=os.path.join(outputdir, stream_file_name), show_frames=True)
-                        out = d.out
-                        subtitle_count = out.count(
-                            b'[SUBTITLE]' if type(out) is bytes else '[SUBTITLE]')
-                        if stream_file_ext in ('.sup',):
-                            # TODO count only those frames with num_rect != 0
-                            subtitle_count = subtitle_count // 2
+                        try:
+                            d = ffprobe(i=os.path.join(outputdir, stream_file_name), show_frames=True)
+                        except subprocess.CalledProcessError as e:
+                            app.log.error(e)
+                            num_extract_errors += 1
+                            subtitle_count = 0
+                        else:
+                            out = d.out
+                            subtitle_count = out.count(
+                                b'[SUBTITLE]' if type(out) is bytes else '[SUBTITLE]')
+                            if stream_file_ext in ('.sup',):
+                                # TODO count only those frames with num_rect != 0
+                                subtitle_count = subtitle_count // 2
                     elif stream_file_ext in ('.idx',):
                         out = open(os.path.join(outputdir, stream_file_name), 'rb').read()
                         subtitle_count = out.count(b'timestamp:')
@@ -1913,14 +1921,15 @@ def action_mux(inputfile, in_tags,
                         subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
                     else:
                         raise NotImplementedError(stream_file_ext)
-                    stream_dict['subtitle_count'] = subtitle_count
                     if not subtitle_count:
                         app.log.warning('Detected empty subtitle stream #%d (%s); Skipping.',
                                         stream_index,
                                         stream_dict.get('language', 'und'))
                         stream_dict['skip'] = True
-                    subtitle_counts.append(
-                        (stream_dict, subtitle_count))
+                    else:
+                        stream_dict['subtitle_count'] = subtitle_count
+                        subtitle_counts.append(
+                            (stream_dict, subtitle_count))
 
         if mux_subtitles and not has_forced_subtitle and subtitle_counts:
             max_subtitle_size = max(subtitle_count
@@ -1988,6 +1997,8 @@ def action_mux(inputfile, in_tags,
                 '%s/mux%s.json' % (outputdir, '.remux'),
             ])
 
+    if num_extract_errors:
+        raise Exception(f'EXTRACT ERRORS: {num_extract_errors} extract errors.')
 
     return True
 
