@@ -3008,10 +3008,12 @@ def action_optimize(inputdir, in_tags):
                         if stream_start_time:
                             ffmpeg_args += [
                                 '-af', 'adelay=delays=%s' % (
-                                    '|'.join(['%fs' % (stream_start_time.seconds,)] * channels),
+                                    # Looks like "s" suffix doesn't work: '|'.join(['%fs' % (stream_start_time.seconds,)] * channels),
+                                    '|'.join(['%f' % (stream_start_time.seconds * 1000.0,)] * channels),
                                 )
                             ]
                             stream_start_time = ffmpeg.Timestamp(0)
+                            stream_dict.setdefault('original_start_time', stream_dict['start_time'])
                             stream_dict['start_time'] = str(stream_start_time)
                         if False:
                             # opusenc doesn't like RF64 headers!
