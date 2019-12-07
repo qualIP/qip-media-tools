@@ -1097,6 +1097,7 @@ def do_edit_tags(tags):
     # for tag in set(MediaTagEnum) - set(MediaTagEnum.iTunesInternalTags):
     for tag in (
             MediaTagEnum.grouping,
+            MediaTagEnum.language,
             MediaTagEnum.artist,
             MediaTagEnum.contenttype,
             MediaTagEnum.comment,
@@ -1503,12 +1504,23 @@ def action_mux(inputfile, in_tags,
                 initial_text = mux_dict['tags'].title or os.path.basename(os.path.dirname(inputfile.file_name))
                 initial_text = re.sub(r'(?=[A-Z][a-z])', r' ', initial_text)       # ABCDef -> ABC Def
                 initial_text = re.sub(r'[A-Za-z](?=\d)', r'\g<0> ', initial_text)  # ABC123 -> ABC 123
-                initial_text = re.sub(r'[^A-Za-z0-9]+', r' ', initial_text)        # AB$_12 -> AB 12
+                initial_text = re.sub(r'[^A-Za-z0-9\']+', r' ', initial_text)      # AB$_12 -> AB 12
                 initial_text = initial_text.strip()                                #  ABC   -> ABC
+                if in_tags.language:
+                    initial_text += f' [{in_tags.language}]'
                 search_query = app.input_dialog(
                     title=str(inputfile),
                     text='Please input search query:',
                     initial_text=initial_text)
+                language = in_tags.language
+                m = re.match(r'^(?P<search_query>.+) \[(?P<language>\w+)\]', search_query)
+                if m:
+                    try:
+                        language = isolang(m.group('language'))
+                    except ValueError:
+                        pass
+                    else:
+                        search_query = m.group('search_query').strip()
                 if search_query:
                     global tmdb
                     import qip.tmdb
@@ -1517,8 +1529,8 @@ def action_mux(inputfile, in_tags,
                             apikey='3f8dc1c8cf6cb292c267b3c10179ae84',  # mmdemux
                             interactive=app.args.interactive,
                             debug=app.log.isEnabledFor(logging.DEBUG),
-                            language=in_tags.language and in_tags.language.iso639_1,
                         )
+                    tmdb.language = language
                     movie_api = qip.tmdb.Movie()
                     l_movies = movie_api.search(search_query)
                     i = 0
@@ -4118,7 +4130,16 @@ def action_tag_episodes_files(episode_file_names, in_tags):
                 initial_text = m.group(1)
         tags.tvshow = app.input_dialog(title='Please provide tvshow',
                                        initial_text=initial_text)
-    if tags.tvshow is None:
+    language = in_tags.language
+    m = re.match(r'^(?P<tvshow>.+) \[(?P<language>\w+)\]', tvshow)
+    if m:
+        try:
+            language = isolang(m.group('language'))
+        except ValueError:
+            pass
+        else:
+            tags.tvshow = m.group('tvshow').strip()
+    if not tags.tvshow:
         raise ValueError('Missing tvshow')
 
     tags.type = tags.deduce_type()
@@ -4131,8 +4152,8 @@ def action_tag_episodes_files(episode_file_names, in_tags):
             apikey='d38d1a8df34d030f1be077798db952bc',  # mmdemux
             interactive=app.args.interactive,
             debug=app.log.isEnabledFor(logging.DEBUG),
-            language=tags.language and tags.language.iso639_1,
         )
+    tvdb.language = tags.language
 
     l_series = tvdb.search(tags.tvshow)
     app.log.debug('l_series=%r', l_series)

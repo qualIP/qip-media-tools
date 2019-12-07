@@ -12,6 +12,8 @@ import os
 import tmdbv3api
 from tmdbv3api import *
 
+from .isolang import isolang
+
 class TMDb(tmdbv3api.TMDb):
 
     @staticmethod
@@ -65,5 +67,16 @@ class TMDb(tmdbv3api.TMDb):
             self.language = language
         if debug is not None:
             self.debug = debug or ''  # TMDb returns bool(env_str)
+
+    @property
+    def language(self):
+        return os.environ.get(self.TMDB_LANGUAGE)
+
+    @language.setter
+    def language(self, language):
+        if language is None:
+            os.environ.pop(self.TMDB_LANGUAGE, None)
+        else:
+            os.environ[self.TMDB_LANGUAGE] = isolang(language).iso639_1
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

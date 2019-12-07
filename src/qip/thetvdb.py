@@ -13,6 +13,8 @@ import io
 import os
 import tvdb_api
 
+from .isolang import isolang
+
 class Tvdb(tvdb_api.Tvdb):
 
     @staticmethod
@@ -35,6 +37,7 @@ class Tvdb(tvdb_api.Tvdb):
                  username=None,
                  userkey=None,
                  config_file=None,
+                 language=None,
                  **kwargs):
 
         config_file = config_file or self.default_config_file()
@@ -64,11 +67,21 @@ class Tvdb(tvdb_api.Tvdb):
             except KeyError:
                 pass
 
+        language = 'en' if language is None else isolang(language).iso639_1
+
         super().__init__(**kwargs)
 
         # tvdb_api.Tvdb requires all 3 variables to be set so fill them manually instead
         self.config['auth_payload']['apikey'] = apikey
         self.config['auth_payload']['username'] = username
         self.config['auth_payload']['userkey'] = userkey
+
+    @property
+    def language(self):
+        return self.config['language']
+
+    @language.setter
+    def language(self, value):
+        self.config['language'] = 'en' if language is None else isolang(language).iso639_1
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
