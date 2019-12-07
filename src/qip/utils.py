@@ -125,18 +125,32 @@ def progress_copyfileobj(fsrc, fdst, length=IO_BUFSIZE):
             if not buf:
                 break
             fdst.write(buf)
+            if flush:
+                fdst.flush()
 
 if HAVE_PROGRESS_BAR:
 
     __all__ += (
+        'ProgressBar',
         'BytesBar',
     )
 
-    class BytesBar(progress.bar.Bar):
-        # 86.4% (16.3 GiB / 18.9 GiB) 26.2 MiB/s remaining 0:01:40
-        suffix_start = '%(percent)d%% (%(humanindex)s / %(humanmax)s) %(humanrate)s/s remaining %(eta_td)s / %(end_td)s'
-        suffix_finish = '%(percent)d%% (%(humanmax)s) %(humanrate)s/s %(elapsed_td)s'
-        suffix = suffix_start
+    from collections import deque
+    try:
+        from time import monotonic
+    except ImportError:
+        from time import time as monotonic
+
+
+    class ProgressBar(progress.bar.Bar):
+
+        def reset_xput(self):
+            # As in Infinite.__init__
+            self.start_ts = monotonic()
+            self.avg = 0
+            self._avg_update_ts = self.start_ts
+            self._ts = self.start_ts
+            self._xput = deque(maxlen=self.sma_window)
 
         @property
         def end(self):
@@ -145,6 +159,13 @@ if HAVE_PROGRESS_BAR:
         @property
         def end_td(self):
             return datetime.timedelta(seconds=self.end)
+
+
+    class BytesBar(ProgressBar):
+        # 86.4% (16.3 GiB / 18.9 GiB) 26.2 MiB/s remaining 0:01:40
+        suffix_start = '%(percent)d%% (%(humanindex)s / %(humanmax)s) %(humanrate)s/s remaining %(eta_td)s / %(end_td)s'
+        suffix_finish = '%(percent)d%% (%(humanmax)s) %(humanrate)s/s %(elapsed_td)s'
+        suffix = suffix_start
 
         @property
         def rate(self):
