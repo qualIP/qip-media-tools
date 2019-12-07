@@ -98,6 +98,7 @@ class MakemkvconSpawn(_exec_spawn):
     num_tiltes_failed = None
     num_errors = 0
     progress_bar = None
+    on_progress_bar_line = False
     makemkv_operation = None
     makemkv_action = None
     operations_performed = None
@@ -119,16 +120,19 @@ class MakemkvconSpawn(_exec_spawn):
     def set_current_progress(self, current_percent, total_percent):
         #print('') ; app.log.debug(byte_decode(str))
         if self.progress_bar is not None:
-            old_makemkv_action_percent = self.progress_bar.current_percent
-            old_makemkv_operation_percent = self.progress_bar.total_percent
+            current_percent = int(current_percent)
+            total_percent = int(total_percent)
+            old_makemkv_current_percent = self.progress_bar.current_percent
+            old_makemkv_total_percent = self.progress_bar.total_percent
             self.progress_bar.current_percent = current_percent
             self.progress_bar.total_percent = total_percent
-            if current_percent == old_makemkv_action_percent and total_percent < old_makemkv_operation_percent:
+            if current_percent == old_makemkv_current_percent and total_percent < old_makemkv_total_percent:
                 pass
-            elif current_percent < old_makemkv_action_percent and total_percent == old_makemkv_operation_percent:
+            elif current_percent < old_makemkv_current_percent and total_percent == old_makemkv_total_percent:
                 pass
             else:
                 self.progress_bar.goto(self.progress_bar.current_percent)
+                self.on_progress_bar_line = True
         return True
 
     def current_task(self, str):
@@ -149,17 +153,19 @@ class MakemkvconSpawn(_exec_spawn):
                 need_update = True
             if need_update:
                 self.progress_bar.goto(self.progress_bar.current_percent)
+                self.on_progress_bar_line = True
                 need_update = False
             if self.makemkv_operation is not None:
                 print('')
             self.makemkv_operation = task
             self.makemkv_action = None
-        else:
+        else:  # task_type == 'action'
             if 0 < self.progress_bar.current_percent < 100:
                 self.progress_bar.current_percent = 100
                 need_update = True
             if need_update:
                 self.progress_bar.goto(self.progress_bar.current_percent)
+                self.on_progress_bar_line = True
                 need_update = False
             if self.makemkv_action is not None:
                 print('')
@@ -174,20 +180,24 @@ class MakemkvconSpawn(_exec_spawn):
                 self.progress_bar.current_percent = 0
             if task_type == 'action':
                 self.progress_bar.current_percent = 0
+                self.progress_bar.reset_xput()
             self.progress_bar.goto(self.progress_bar.current_percent)
+            self.on_progress_bar_line = True
         return True
 
     def saving_titles_count(self, str):
-        if self.progress_bar is not None:
+        if self.on_progress_bar_line:
             print('')
+            self.on_progress_bar_line = False
         str = byte_decode(str).rstrip('\r\n')
         log.info(str)
         return True
 
     def generic_error(self, str):
         str = byte_decode(str).rstrip('\r\n')
-        if self.progress_bar is not None:
+        if self.on_progress_bar_line:
             print('')
+            self.on_progress_bar_line = False
         log.error(str)
         self.num_errors += 1
         self.errors_seen.add(str)
@@ -195,31 +205,35 @@ class MakemkvconSpawn(_exec_spawn):
 
     def generic_info(self, str):
         str = byte_decode(str).rstrip('\r\n')
-        if self.progress_bar is not None:
+        if self.on_progress_bar_line:
             print('')
+            self.on_progress_bar_line = False
         log.info(str)
         return True
 
     def generic_warning(self, str):
         str = byte_decode(str).rstrip('\r\n')
-        if self.progress_bar is not None:
+        if self.on_progress_bar_line:
             print('')
+            self.on_progress_bar_line = False
         log.warning(str)
         return True
 
     def failed_to_open_disc_error(self, str):
         str = byte_decode(str).rstrip('\r\n')
         if not self.ignore_failed_to_open_disc:
-            if self.progress_bar is not None:
+            if self.on_progress_bar_line:
                 print('')
+                self.on_progress_bar_line = False
             log.error(str)
         self.num_errors += 1
         self.errors_seen.add(str)
         return True
 
     def parse_titles_saved(self, str):
-        if self.progress_bar is not None:
+        if self.on_progress_bar_line:
             print('')
+            self.on_progress_bar_line = False
         app.log.info(byte_decode(str))
         v = int(self.match.group('num_tiltes_saved'))
         assert self.num_tiltes_saved in (v, None)
@@ -246,20 +260,19 @@ class MakemkvconSpawn(_exec_spawn):
 
     def communicate(self, *args, **kwargs):
         if self.progress_bar is None:
-            HAVE_PROGRESS_BAR = False
             try:
-                import progress.bar
-                HAVE_PROGRESS_BAR = True
+                from qip.utils import ProgressBar
             except ImportError:
                 pass
-            if HAVE_PROGRESS_BAR:
-                self.progress_bar = progress.bar.Bar('makemkvcon', max=100)
+            else:
+                self.progress_bar = ProgressBar('makemkvcon', max=100)
                 self.progress_bar.makemkv_operation = None
                 self.progress_bar.makemkv_action = None
                 self.progress_bar.total_percent = 0
                 self.progress_bar.current_percent = 0
-                self.progress_bar.suffix = '%(current_percent)d%% of %(makemkv_action)s, %(total_percent)d%% of %(makemkv_operation)s'
+                self.progress_bar.suffix = '%(current_percent)d%% of %(makemkv_action)s [remaining %(eta_td)s / %(end_td)s], %(total_percent)d%% of %(makemkv_operation)s'
                 self.progress_bar.goto(self.progress_bar.current_percent)
+                self.on_progress_bar_line = True
         if self.is_robot_mode():
             pattern_dict = self.get_robot_pattern_dict()
             self._messages_pattern_dict_cache = self.get_messages_pattern_dict()
@@ -377,6 +390,7 @@ class MakemkvconSpawn(_exec_spawn):
         if self.progress_bar is not None:
             self.progress_bar.finish()
             self.progress_bar = None
+            self.on_progress_bar_line = False
         return super().close(*args, **kwargs)
 
     def robot_progress_values(self, str):
@@ -388,7 +402,7 @@ class MakemkvconSpawn(_exec_spawn):
         cur_pos = int(self.match.group('current'))
         tot_pos = int(self.match.group('total'))
         max = int(self.match.group('max'))
-        self.set_current_progress(cur_pos / max, tot_pos / max)
+        self.set_current_progress(cur_pos / max * 100, tot_pos / max * 100)
         return True
 
     def robot_progress_current_title(self, str):
