@@ -108,6 +108,20 @@ def describe_stream_dict(stream_dict):
     )
     return desc
 
+def stream_dict_key(stream_dict):
+    return (
+        ('video', 'audio', 'subtitle', 'image').index(stream_dict['codec_type']),
+        not bool(stream_dict.get('disposition', {}).get('default', False)),  # default then non-default
+        stream_dict['index'],
+        bool(stream_dict.get('disposition', {}).get('forced', False)),       # non-forced, then forced
+        bool(stream_dict.get('disposition', {}).get('comment', False)),      # non-comment, then comment
+    )
+
+def sorted_stream_dicts(stream_dicts):
+    return sorted(
+        stream_dicts,
+        key=stream_dict_key)
+
 class FieldOrderUnknownError(NotImplementedError):
 
     def __init__(self, mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order):
@@ -1312,7 +1326,7 @@ def action_hb(inputfile, in_tags):
             ):
         ffprobe_dict = inputfile.extract_ffprobe_json()
 
-        for stream_dict in ffprobe_dict['streams']:
+        for stream_dict in sorted_stream_dicts(ffprobe_dict['streams']):
             if stream_dict.get('skip', False):
                 continue
             stream_codec_type = stream_dict['codec_type']
@@ -1556,7 +1570,7 @@ def action_mux(inputfile, in_tags,
         iter_mediainfo_track_dicts = iter(mediainfo_track_dict
                                           for mediainfo_track_dict in mediainfo_dict['media']['track']
                                           if 'ID' in mediainfo_track_dict)
-        for stream_dict in ffprobe_dict['streams']:
+        for stream_dict in sorted_stream_dicts(ffprobe_dict['streams']):
             stream_out_dict = {}
             stream_index = stream_out_dict['index'] = int(stream_dict['index'])
             stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
@@ -1814,7 +1828,7 @@ def action_mux(inputfile, in_tags,
             iter_mediainfo_track_dicts = iter(mediainfo_track_dict
                                               for mediainfo_track_dict in mediainfo_dict['media']['track']
                                               if 'ID' in mediainfo_track_dict)
-            for stream_dict in mux_dict['streams']:
+            for stream_dict in sorted_stream_dicts(mux_dict['streams']):
                 stream_index = stream_dict['index']
                 stream_codec_type = stream_dict['codec_type']
 
@@ -1978,7 +1992,7 @@ def action_verify(inputfile, in_tags):
 
     stream_file_durations = []
 
-    for stream_dict in mux_dict['streams']:
+    for stream_dict in sorted_stream_dicts(mux_dict['streams']):
         if stream_dict.get('skip', False):
             continue
         stream_index = stream_dict['index']
@@ -2077,7 +2091,7 @@ def action_chop(inputdir, in_tags):
     for chap in Chapters.from_mkv_xml(os.path.join(inputdir, mux_dict['chapters']['file_name']), add_pre_gap=True):
         app.log.verbose('Chapter %s', chap)
 
-        for stream_dict in mux_dict['streams']:
+        for stream_dict in sorted_stream_dicts(mux_dict['streams']):
             if stream_dict.get('skip', False):
                 continue
             stream_index = stream_dict['index']
@@ -3302,7 +3316,7 @@ def action_optimize(inputdir, in_tags):
         else:
             raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
-    for stream_dict in mux_dict['streams']:
+    for stream_dict in sorted_stream_dicts(mux_dict['streams']):
         stream_index = stream_dict['index']
         optimize_stream(stream_dict, stream_index)
 
@@ -3341,7 +3355,7 @@ def action_extract_music(inputdir, in_tags):
         src_picture = None
         picture = None
 
-        for stream_dict in mux_dict['streams']:
+        for stream_dict in sorted_stream_dicts(mux_dict['streams']):
             if stream_dict.get('skip', False):
                 continue
             stream_index = stream_dict['index']
@@ -3617,8 +3631,7 @@ def action_demux(inputdir, in_tags):
             ]
         # --title handled with write_tags
         new_stream_index = -1
-        streams_todo = sorted(mux_dict['streams'],
-                              key=lambda stream_dict: stream_dict['index'])
+        streams_todo = sorted_stream_dicts(mux_dict['streams'])
         while streams_todo:
             stream_dict = streams_todo.pop(0)
             if stream_dict.get('skip', False):
@@ -3795,8 +3808,7 @@ def action_demux(inputdir, in_tags):
         has_opus_streams = any(
                 my_splitext(stream_dict['file_name'])[1] in ('.opus', '.opus.ogg')
                 for stream_dict in mux_dict['streams'])
-        streams_todo = sorted(mux_dict['streams'],
-                              key=lambda stream_dict: stream_dict['index'])
+        streams_todo = sorted_stream_dicts(mux_dict['streams'])
         while streams_todo:
             stream_dict = streams_todo.pop(0)
             if stream_dict.get('skip', False):
