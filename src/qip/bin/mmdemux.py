@@ -30,7 +30,6 @@
 
 from decimal import Decimal
 from fractions import Fraction
-import argparse
 import glob
 import collections
 import copy
@@ -57,6 +56,7 @@ try:
 except ImportError:
     ProgressBar = None
 
+from qip import argparse
 from qip import json
 from qip.app import app
 from qip.exec import *
