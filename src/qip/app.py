@@ -73,7 +73,8 @@ class App(object):
     config_parser = None
     parser = None
     args = None
-    config_parser = None
+
+    config_file_parser = None
 
     cache_dir = None
     _user_agent = None
@@ -252,7 +253,7 @@ class App(object):
             if namespace.config_file:
                 self.read_config_file(namespace.config_file)
                 try:
-                    options_config = self.config_parser["options"]
+                    options_config = self.config_file_parser["options"]
                 except KeyError:
                     pass
                 else:
@@ -309,11 +310,11 @@ class App(object):
         return self.args
 
     def read_config_file(self, config_file):
-        self.config_parser = configparser.ConfigParser(allow_no_value=True)
+        self.config_file_parser = configparser.ConfigParser(allow_no_value=True)
         if isinstance(config_file, io.IOBase):
-            self.config_parser.read_file(config_file)
+            self.config_file_parser.read_file(config_file)
         elif isinstance(config_file, str):
-            self.config_parser.read([str(config_file)])
+            self.config_file_parser.read([str(config_file)])
         else:
             raise TypeError(config_file)
 
