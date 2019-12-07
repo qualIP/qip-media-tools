@@ -111,6 +111,7 @@ class App(object):
                 level=logging_level,
                 )
         self.init_terminal_size()
+        self.init_prompt_toolkit()
 
     def init_encoding(self):
         if False:
@@ -377,9 +378,12 @@ class App(object):
 
     def exit(self, ret):
         if getattr(self.args, 'beep', False):
-            from qip.utils import beep
-            beep()
+            import qip.utils
+            qip.utils.beep()
         exit(ret)
+
+    def init_prompt_toolkit(self):
+        pass
 
     def get_prompt_message(self):
         return [
@@ -393,7 +397,9 @@ class App(object):
             self.prompt_message = self.get_prompt_message
 
             from prompt_toolkit import PromptSession
-            self.prompt_session = PromptSession()
+            self.prompt_session = PromptSession(
+                enable_suspend=True,
+            )
 
             from prompt_toolkit.styles import Style
             self.prompt_style = Style.from_dict({
@@ -404,7 +410,12 @@ class App(object):
                 'error': '#ff0000 underline',
             })
 
-    def prompt(self, message=None, *, style=None, completer=None):
+    def prompt(self, message=None, *, style=None, completer=None, beep=DEFAULT):
+        if beep is DEFAULT:
+            beep = getattr(app.args, 'beep', False) and getattr(app.args, 'interactive', False)
+        if beep:
+            import qip.utils
+            qip.utils.beep()
         self.init_prompt_session()
         c = self.prompt_session.prompt(
             message=None if message is False else (message or self.prompt_message),
@@ -412,6 +423,60 @@ class App(object):
             completer=None if completer is False else (completer or self.prompt_completer),
         )
         return c
+
+    def input_dialog(self, title='', text='', initial_text='', ok_text='OK', cancel_text='Cancel',
+                     completer=None, password=False, style=None, async_=False):
+        """
+        Display a text input box.
+        Return the given text, or None when cancelled.
+
+        Custom init_dialog:
+          - Support initial_text
+        """
+
+        from prompt_toolkit.application.current import get_app
+        from prompt_toolkit.layout.containers import HSplit
+        from prompt_toolkit.layout.dimension import Dimension as D
+        from prompt_toolkit.widgets import (
+            Button,
+            TextArea,
+            Dialog,
+            Label,
+        )
+        from prompt_toolkit.shortcuts.dialogs import (
+            _run_dialog,
+            _return_none,
+        )
+
+        def accept(buf):
+            get_app().layout.focus(ok_button)
+            return True  # Keep text.
+
+        def ok_handler():
+            get_app().exit(result=textfield.text)
+
+        ok_button = Button(text=ok_text, handler=ok_handler)
+        cancel_button = Button(text=cancel_text, handler=_return_none)
+
+        textfield = TextArea(
+            text=initial_text,
+            multiline=False,
+            password=password,
+            completer=completer,
+            accept_handler=accept)
+
+        dialog = Dialog(
+            title=title,
+            body=HSplit([
+                Label(text=text, dont_extend_height=True),
+                textfield,
+            ], padding=D(preferred=1, max=1)),
+            buttons=[ok_button, cancel_button],
+            with_background=True)
+
+        return _run_dialog(dialog,
+                           style=None if style is False else (style or self.prompt_style),
+                           async_=async_)
 
     def print(self, *args, style=DEFAULT, **kwargs):
         self.init_prompt_session()
