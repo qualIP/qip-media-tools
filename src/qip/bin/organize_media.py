@@ -468,24 +468,26 @@ def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
             #qip.mm.ContentType.cartoon: '-TODO',
             qip.mm.ContentType.concert: '-concert',
             qip.mm.ContentType.deleted: '-deleted',
-            qip.mm.ContentType.documentary:
+            qip.mm.ContentType.documentary: (
                 # https://github.com/contrary-cat/LocalTVExtras.bundle
                 '-extra' if dbtype in ('tvshow',)
-                else '-other',  # TODO documentary support in Local TV Extras
+                else '-other'),  # TODO documentary support in Local TV Extras
             #qip.mm.ContentType.feature_film: '-TODO',
             qip.mm.ContentType.featurette: '-featurette',
             qip.mm.ContentType.interview: '-interview',
             qip.mm.ContentType.live: '-live',
-            qip.mm.ContentType.lyrics: '-lyrics',
+            qip.mm.ContentType.lyrics: (
+                '-lyrics' if dbtype in ('musicvideo',)
+                else '-other'),
             #qip.mm.ContentType.music: '-TODO',
             qip.mm.ContentType.other: '-other',
             qip.mm.ContentType.scene: '-scene',
             qip.mm.ContentType.short: '-short',
             #qip.mm.ContentType.sound_fx: '-TODO',
             qip.mm.ContentType.trailer: '-trailer',
-            qip.mm.ContentType.video:
+            qip.mm.ContentType.video: (
                 '-video' if dbtype in ('musicvideo',)
-                else '-other',
+                else '-other'),
         }[contenttype]
     except KeyError:
         raise ValueError(f'contenttype = {contenttype}')
