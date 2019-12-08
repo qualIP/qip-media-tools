@@ -547,6 +547,9 @@ def organize_movie(inputfile, *, suggest_tags):
     # plex: TITLE [SUBTITLE] (YEAR)/
     # emby: TITLE (YEAR)/
 
+    if inputfile.tags.type == 'musicvideo':
+        dst += '%s: ' % (str(inputfile.tags.contenttype or qip.mm.ContentType.video).title(),)
+
     # TITLE
     dst_dir += '%s' % (clean_file_name(inputfile.tags.title, keep_ext=False),)
 
