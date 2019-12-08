@@ -866,7 +866,7 @@ def organize(inputfile):
                 os.rmdir(inputdir)
         break
     else:
-        app.log.error('  Ran out of options!')
+        raise ValueError('Ran out of options / Too many collisions!')
 
     return True
 
