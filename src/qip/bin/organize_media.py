@@ -515,7 +515,7 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
 
     return dst_dir, dst_file_base
 
-def organize_movie(inputfile, *, suggest_tags):
+def organize_movie(inputfile, *, suggest_tags, orig_type):
 
     # ALBUMTITLE
     if not inputfile.tags.albumtitle and inputfile.tags.title:
@@ -546,9 +546,6 @@ def organize_movie(inputfile, *, suggest_tags):
     # https://support.plex.tv/articles/200381023-naming-movie-files/
     # plex: TITLE [SUBTITLE] (YEAR)/
     # emby: TITLE (YEAR)/
-
-    if inputfile.tags.type == 'musicvideo':
-        dst += '%s: ' % (str(inputfile.tags.contenttype or qip.mm.ContentType.video).title(),)
 
     # TITLE
     dst_dir += '%s' % (clean_file_name(inputfile.tags.title, keep_ext=False),)
@@ -764,10 +761,11 @@ def organize(inputfile):
 
     if app.args.contenttype:
         inputfile.tags.contenttype = app.args.contenttype
+    orig_type = inputfile.tags.type = inputfile.deduce_type()
     if getattr(app.args, 'library_mode', None):
         inputfile.tags.type = app.args.library_mode
     inputfile.tags.type = inputfile.deduce_type()
-    app.log.debug('type = %r', inputfile.tags.type)
+    app.log.debug('type = %r -> %r', orig_type, inputfile.tags.type)
 
     # PEOPLE
     for tag in (
@@ -804,7 +802,7 @@ def organize(inputfile):
             app.log.debug('plex: musicvideo -> inline musicvideo')
             ores = organize_inline_musicvideo(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'movie':
-        ores = organize_movie(inputfile, suggest_tags=suggest_tags)
+        ores = organize_movie(inputfile, suggest_tags=suggest_tags, orig_type=orig_type)
     elif inputfile.tags.type == 'tvshow':
         ores = organize_tvshow(inputfile, suggest_tags=suggest_tags)
     else:
