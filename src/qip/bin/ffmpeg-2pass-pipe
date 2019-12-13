@@ -9,6 +9,10 @@ prog=$(basename "$0")
 prog_tmp_dir="${TMPDIR:-/tmp}/$prog.$$.tmp"
 tmp_running_file="$prog_tmp_dir/running"
 
+log() {
+    echo "[ffmpeg-2pass-pipe]" "$@" >&2
+}
+
 cleanup() {
     set +u
     lockfile-remove "$tmp_running_file" || true
@@ -27,6 +31,7 @@ lockfile-create --verbose --use-pid "$tmp_running_file" < /dev/null
 lockfile-touch "$tmp_running_file" &
 BADGER_PID="$!"
 
+log "PASS 1"
 tee "$tmp_input_file" | \
 ffmpeg -i pipe:0 \
     -pass 1 -passlogfile "$passlogfile_file" \
@@ -34,6 +39,8 @@ ffmpeg -i pipe:0 \
     "$@" \
     -- pipe: > /dev/null
     #-- "$tmp_pass1output_file" > /dev/null
+
+log "PASS 2"
 ffmpeg -i "$tmp_input_file" \
     -pass 2 -passlogfile "$passlogfile_file" \
     "$@" \
