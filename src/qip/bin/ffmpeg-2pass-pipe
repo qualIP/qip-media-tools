@@ -6,6 +6,14 @@ set -x
 
 prog=$(basename "$0")
 
+init_args=""
+while [ $# -gt 1 ] ; do
+    case "$1" in
+        -hwaccel) init_args="${init_args:+$init_args }$1 $2"; shift 2 ;;
+        *) break ;;
+    esac
+done
+
 prog_tmp_dir="${TMPDIR:-/tmp}/$prog.$$.tmp"
 tmp_running_file="$prog_tmp_dir/running"
 
@@ -33,7 +41,7 @@ BADGER_PID="$!"
 
 log "PASS 1"
 tee "$tmp_input_file" | \
-ffmpeg -i pipe:0 \
+ffmpeg $init_args -i pipe:0 \
     -pass 1 -passlogfile "$passlogfile_file" \
     -speed 4 \
     "$@" \
@@ -41,7 +49,7 @@ ffmpeg -i pipe:0 \
     #-- "$tmp_pass1output_file" > /dev/null
 
 log "PASS 2"
-ffmpeg -i "$tmp_input_file" \
+ffmpeg $init_args -i "$tmp_input_file" \
     -pass 2 -passlogfile "$passlogfile_file" \
     "$@" \
     -- pipe: < /dev/null
