@@ -20,7 +20,7 @@ from .exec import spawn as _exec_spawn
 from qip.utils import byte_decode, compile_pattern_list
 from qip.collections import OrderedSet
 
-def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False, logfile=None, ignore_failed_to_open_disc=False):
+def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, logfile=None, ignore_failed_to_open_disc=False):
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
     if logfile is True:
@@ -180,7 +180,7 @@ class MakemkvconSpawn(_exec_spawn):
                 self.progress_bar.current_percent = 0
             if task_type == 'action':
                 self.progress_bar.current_percent = 0
-                self.progress_bar.reset_xput()
+                self.progress_bar.reset()
             self.progress_bar.goto(self.progress_bar.current_percent)
             self.on_progress_bar_line = True
         return True
@@ -218,6 +218,9 @@ class MakemkvconSpawn(_exec_spawn):
             self.on_progress_bar_line = False
         log.warning(str)
         return True
+
+    def new_version_warning(self, str):
+        return self.generic_warning(str)
 
     def failed_to_open_disc_error(self, str):
         str = byte_decode(str).rstrip('\r\n')
@@ -354,6 +357,7 @@ class MakemkvconSpawn(_exec_spawn):
             (fr'^BD\+ code processed, got (?P<num_futs>\d+) FUT\(s\) for (?P<num_clips>\d+) clip\(s\){re_eol}', self.generic_warning),
             (fr'^Program reads data faster than it can write to disk, consider upgrading your hard drive if you see many of these messages\.{re_eol}', self.generic_warning),
             (fr'^(?P<exec>{re_dot}+): (?P<lib>{re_dot}+): no version information available \(required by (?P<req_by>{re_dot}+)\){re_eol}', self.generic_warning),
+            (fr'^The new version (?P<version>\S+) is available for download at (?P<url>\S+){re_eol}', self.new_version_warning),
             (fr'[^\n]*?{re_eol}', self.unknown_line),
         ])
         # TODO
