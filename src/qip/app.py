@@ -61,6 +61,21 @@ addLoggingLevelName((logging.INFO + logging.DEBUG) // 2, "VERBOSE")
 
 DEFAULT = object()
 
+def _run_dialog(dialog, style, async_=False):
+    " Turn the `Dialog` into an `Application` and run it. "
+    from prompt_toolkit.application.current import get_app
+    application = get_app(return_none=True)
+    if application:
+        print(dir(dialog))
+        return dialog.run()
+    else:
+        from prompt_toolkit.shortcuts.dialogs import _create_app
+        application = _create_app(dialog, style)
+        if async_:
+            return application.run_async()
+        else:
+            return application.run()
+
 class App(object):
 
     prog = None
@@ -424,6 +439,31 @@ class App(object):
         )
         return c
 
+    def message_dialog(self, title='', text='', ok_text='Ok', style=None, async_=False):
+        """
+        Display a simple message box and wait until the user presses enter.
+        """
+        from prompt_toolkit.widgets import (
+            Button,
+            Dialog,
+            Label,
+        )
+        from prompt_toolkit.shortcuts.dialogs import (
+            _return_none,
+        )
+
+        dialog = Dialog(
+            title=title,
+            body=Label(text=text, dont_extend_height=True),
+            buttons=[
+                Button(text=ok_text, handler=_return_none),
+            ],
+            with_background=True)
+
+        return _run_dialog(dialog,
+                           style=None if style is False else (style or self.prompt_style),
+                           async_=async_)
+
     def input_dialog(self, title='', text='', initial_text='', ok_text='OK', cancel_text='Cancel',
                      completer=None, password=False, style=None, async_=False):
         """
@@ -444,7 +484,6 @@ class App(object):
             Label,
         )
         from prompt_toolkit.shortcuts.dialogs import (
-            _run_dialog,
             _return_none,
         )
 
@@ -472,6 +511,56 @@ class App(object):
                 textfield,
             ], padding=D(preferred=1, max=1)),
             buttons=[ok_button, cancel_button],
+            with_background=True)
+
+        return _run_dialog(dialog,
+                           style=None if style is False else (style or self.prompt_style),
+                           async_=async_)
+
+    def radiolist_dialog(self, title='', text='', ok_text='Ok', cancel_text='Cancel',
+                         values=None, style=None, async_=False,
+                         help_handler=None):
+        """
+        Display a simple list of element the user can choose amongst.
+
+        Only one element can be selected at a time using Arrow keys and Enter.
+        The focus can be moved between the list and the Ok/Cancel button with tab.
+
+        Custom radiolist_dialog:
+          - Support help_handler
+        """
+        from prompt_toolkit.application.current import get_app
+        from prompt_toolkit.layout.containers import HSplit
+        from prompt_toolkit.widgets import (
+            RadioList,
+            Dialog,
+            Label,
+            Button,
+        )
+        from prompt_toolkit.shortcuts.dialogs import (
+            _return_none,
+        )
+        from functools import partial
+
+        def ok_handler():
+            get_app().exit(result=radio_list.current_value)
+
+        radio_list = RadioList(values)
+
+        if help_handler:
+            print(dir(radio_list.control))
+            radio_list.control.key_bindings.add('?')(partial(help_handler, radio_list))
+
+        dialog = Dialog(
+            title=title,
+            body=HSplit([
+                Label(text=text, dont_extend_height=True),
+                radio_list,
+            ], padding=1),
+            buttons=[
+                Button(text=ok_text, handler=ok_handler),
+                Button(text=cancel_text, handler=_return_none),
+            ],
             with_background=True)
 
         return _run_dialog(dialog,
