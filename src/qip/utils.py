@@ -43,6 +43,7 @@ IO_BUFSIZE = 128 * 1024
 HAVE_PROGRESS_BAR = False
 try:
     import progress.bar
+    import progress.spinner
     HAVE_PROGRESS_BAR = True
 except ImportError:
     pass
@@ -132,6 +133,7 @@ if HAVE_PROGRESS_BAR:
 
     __all__ += (
         'ProgressBar',
+        'ProgressSpinner',
         'BytesBar',
     )
 
@@ -142,9 +144,15 @@ if HAVE_PROGRESS_BAR:
         from time import time as monotonic
 
 
+    class ProgressSpinner(progress.spinner.Spinner):
+
+        def reset(self):
+            self.index = 0
+            self.update()
+
     class ProgressBar(progress.bar.Bar):
 
-        def reset_xput(self):
+        def reset(self):
             # As in Infinite.__init__
             self.start_ts = monotonic()
             self.avg = 0
