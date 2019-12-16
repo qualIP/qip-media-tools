@@ -549,6 +549,7 @@ def main():
     pgroup.add_bool_argument('--batch', '-B', help='batch mode')
     pgroup.add_bool_argument('--step', help='step mode')
     pgroup.add_bool_argument('--cuda', help='enable CUDA')
+    pgroup.add_bool_argument('--alpha', help='enable alpha features')
     pgroup.add_bool_argument('--slurm', default=False, help='enable slurm')
 
     pgroup = app.parser.add_argument_group('Tools Control')
