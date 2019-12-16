@@ -112,11 +112,11 @@ def progress_copyfileobj(fsrc, fdst, length=IO_BUFSIZE):
         try:
             while 1:
                 buf = fsrc.read(length)
-                if not buf or int(time.monotonic()) != int(bar._ts):
-                    bar.goto(fsrc.tell())
                 if not buf:
                     break
                 fdst.write(buf)
+                #if int(time.monotonic()) != int(bar._ts):
+                bar.goto(fsrc.tell())
         finally:
             bar.finish()
     else:
