@@ -2472,6 +2472,13 @@ def action_optimize(inputdir, in_tags):
                         framerate = getattr(app.args, 'force_output_framerate', framerate)
                         app.log.verbose('pullup with final framerate %s (%.3f)', framerate, framerate)
 
+                        use_yuvcorrect = False
+                        yuvcorrect_cmd = [
+                            'yuvcorrect',
+                            '-T', 'LINE_SWITCH',
+                            '-T', 'INTERLACED_TOP_FIRST',
+                        ]
+
                         yuvkineco_cmd = [
                             'yuvkineco',
                         ]
@@ -2494,7 +2501,7 @@ def action_optimize(inputdir, in_tags):
                             os.path.join(inputdir, new_stream_file_name),
                         ]
 
-                        with perfcontext('Pullup w/ -> .y4m -> yuvkineco -> .ffv1'):
+                        with perfcontext('Pullup w/ -> .y4m' + (' -> yuvcorrect' if use_yuvcorrect else '') + ' -> yuvkineco -> .ffv1'):
                             if ffmpeg_dec_args:
                                 p1 = ffmpeg.popen(*ffmpeg_dec_args,
                                                   stdout=subprocess.PIPE,
@@ -2505,17 +2512,26 @@ def action_optimize(inputdir, in_tags):
                             else:
                                 p1_out = None
                             try:
-                                p2 = do_popen_cmd(yuvkineco_cmd,
+                                p2 = do_popen_cmd(yuvcorrect_cmd,
                                                   stdin=p1_out,
-                                                  stdout=subprocess.PIPE)
+                                                  stdout=subprocess.PIPE) \
+                                    if use_yuvcorrect else p1
                                 try:
-                                    p3 = ffmpeg.popen(*ffmpeg_enc_args,
+                                    p3 = do_popen_cmd(yuvkineco_cmd,
                                                       stdin=p2.stdout,
-                                                      dry_run=app.args.dry_run,
-                                                      y=app.args.yes)
+                                                      stdout=subprocess.PIPE)
+                                    try:
+                                        p4 = ffmpeg.popen(*ffmpeg_enc_args,
+                                                          stdin=p3.stdout,
+                                                          dry_run=app.args.dry_run,
+                                                          y=app.args.yes)
+                                    finally:
+                                        if not app.args.dry_run:
+                                            p3.stdout.close()
                                 finally:
-                                    if not app.args.dry_run:
-                                        p2.stdout.close()
+                                    if use_yuvcorrect:
+                                        if not app.args.dry_run:
+                                            p2.stdout.close()
                             finally:
                                 if not app.args.dry_run:
                                     if ffmpeg_dec_args:
@@ -2523,8 +2539,8 @@ def action_optimize(inputdir, in_tags):
                                     else:
                                         stream_file.close()
                             if not app.args.dry_run:
-                                p3.communicate()
-                                assert p3.returncode == 0
+                                p4.communicate()
+                                assert p4.returncode == 0
 
                         expected_framerate = framerate
 
