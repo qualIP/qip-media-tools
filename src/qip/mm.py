@@ -1114,6 +1114,7 @@ class MediaTagDate(object):
         elif type(value) is int:
             self.year = value
         elif type(value) is str:
+            value = value.strip()
             try:
                 # 2013-11-20T08:00:00Z
                 # 2013-11-20 08:00:00
@@ -1130,7 +1131,13 @@ class MediaTagDate(object):
                         try:
                             d = datetime.datetime.strptime(value, '%Y').date()
                         except ValueError:
-                            raise ValueError('Not a compatible date string')
+                            # September 18, 1978
+                            try:
+                                d = datetime.datetime.strptime(value, '%B %d, %Y').date()
+                            except ValueError:
+                                raise ValueError('Not a compatible date string')
+                            else:
+                                self.year, self.month, self.day = d.year, d.month, d.day
                         else:
                             self.year = d.year
                     else:
@@ -1500,6 +1507,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 ContentType.video,
                 ContentType.concert,
                 ContentType.live,
+                ContentType.lyrics,
         ):
             return 'musicvideo'
         if self.contenttype in (
