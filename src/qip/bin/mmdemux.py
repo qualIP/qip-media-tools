@@ -1059,7 +1059,19 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
     # FILE NAME ALL CAPS -> File Name All Caps
     if re.match(r'^[A-Z0-9]+( [A-Z0-9]+)*$', name_scan_str):
         name_scan_str = name_scan_str.title()
-    m = (
+    done = False
+    m = not done and (
+        # music video: ARTIST -- TITLE
+        re.match(r'^music video: (?P<artist>.+?) -- (?P<title>.+)$', name_scan_str)
+    )
+    if m:
+        d = m.groupdict()
+        d = {k: v and v.strip() for k, v in d.items()}
+        inputfile.tags.type = 'music video'
+        inputfile.tags.update(d)
+        name_scan_str = inputfile.tags.title
+        # done = False
+    m = not done and (
         # TVSHOW S01E02 TITLE
         # TVSHOW S01E02-03 TITLE
         # TVSHOW S01E02
@@ -1119,6 +1131,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
             if m:
                 d.update(m.groupdict())
         inputfile.tags.update(d)
+        done = True
 
     if inputfile.exists():
         inputfile.tags.update(inputfile.load_tags())
