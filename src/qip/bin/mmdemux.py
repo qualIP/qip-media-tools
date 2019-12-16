@@ -549,6 +549,7 @@ def main():
     pgroup.add_bool_argument('--batch', '-B', help='batch mode')
     pgroup.add_bool_argument('--step', help='step mode')
     pgroup.add_bool_argument('--cuda', help='enable CUDA')
+    pgroup.add_bool_argument('--slurm', default=False, help='enable slurm')
 
     pgroup = app.parser.add_argument_group('Tools Control')
     pgroup.add_argument('--track-extract-tool', default=Auto, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
@@ -2563,7 +2564,7 @@ def action_optimize(inputdir, in_tags):
 
                         with perfcontext('Pullup w/ -> ffmpeg -> .ffv1'):
                             ffmpeg(*ffmpeg_args,
-                                   slurm=True,
+                                   slurm=app.args.slurm,
                                    #slurm_cpus_per_task=2, # ~230-240%
                                    dry_run=app.args.dry_run,
                                    y=app.args.yes)
@@ -2601,7 +2602,7 @@ def action_optimize(inputdir, in_tags):
                         expected_framerate = framerate
                         with perfcontext('Pullup w/ mencoder'):
                             mencoder(*mencoder_args,
-                                     #slurm=True,
+                                     #slurm=app.args.slurm,
                                      dry_run=app.args.dry_run)
 
                         done_optimize_iter()
@@ -2864,7 +2865,7 @@ def action_optimize(inputdir, in_tags):
                                         target=ffmpeg.run2pass,
                                         args=ffmpeg_args,
                                         kwargs={
-                                            'slurm': True,
+                                            'slurm': app.args.slurm,
                                             'dry_run': app.args.dry_run,
                                             'y': app.args.yes,
                                             })
@@ -2991,12 +2992,12 @@ def action_optimize(inputdir, in_tags):
                                 # '.ffv1.mkv',  # no need for better compression
                         ):
                             ffmpeg.run2pass(*ffmpeg_args,
-                                            slurm=True,
+                                            slurm=app.args.slurm,
                                             dry_run=app.args.dry_run,
                                             y=app.args.yes)
                         else:
                             ffmpeg(*ffmpeg_args,
-                                   slurm=True,
+                                   slurm=app.args.slurm,
                                    dry_run=app.args.dry_run,
                                    y=app.args.yes)
                         test_out_file(os.path.join(inputdir, new_stream_file_name))
@@ -3076,7 +3077,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', 'wav', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
-                               slurm=True,
+                               slurm=app.args.slurm,
                                slurm_cpus_per_task=2, # ~230-240%
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
@@ -3102,7 +3103,7 @@ def action_optimize(inputdir, in_tags):
                             os.path.join(inputdir, new_stream_file_name),
                             ]
                         opusenc(*opusenc_args,
-                                slurm=True,
+                                slurm=app.args.slurm,
                                 dry_run=app.args.dry_run)
 
                     done_optimize_iter()
@@ -3137,7 +3138,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
-                               slurm=True,
+                               slurm=app.args.slurm,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
 
@@ -3161,7 +3162,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
-                               slurm=True,
+                               slurm=app.args.slurm,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
                 else:
@@ -3383,7 +3384,7 @@ def action_optimize(inputdir, in_tags):
                         '-f', 'webvtt', os.path.join(inputdir, new_stream_file_name),
                         ]
                     ffmpeg(*ffmpeg_args,
-                           #slurm=True,
+                           #slurm=app.args.slurm,
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
@@ -3430,7 +3431,7 @@ def action_optimize(inputdir, in_tags):
                         '-f', 'png', os.path.join(inputdir, new_stream_file_name),
                         ]
                     ffmpeg(*ffmpeg_args,
-                           #slurm=True,
+                           #slurm=app.args.slurm,
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
