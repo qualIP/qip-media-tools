@@ -2397,7 +2397,7 @@ def action_optimize(inputdir, in_tags):
                 stream_codec_name = ffprobe_stream_json['codec_name']
 
                 if stream_codec_name in target_codec_names:
-                    app.log.verbose('Stream #%s %s OK', stream_index, stream_codec_name)
+                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
                     break
 
                 if 'concat_streams' in stream_dict:
@@ -2804,19 +2804,9 @@ def action_optimize(inputdir, in_tags):
                 if is_sub_stream:
                     new_stream_file_ext = '.ffv1.mkv'
                     if field_order == 'progressive':
-                        app.log.verbose('Stream #%s %s OK', stream_index, stream_codec_name)
+                        app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
                         break
                     new_stream_file_name = stream_file_base + '.progressive' + new_stream_file_ext
-                elif False and (parallel_chapters
-                      and stream_file_ext not in (
-                          '.mpeg2', '.mpeg2.mp2v',  # Chopping using segment muxer is reliable (tested with mpeg2)
-                          '.ffv1.mkv',
-                      )):
-                    new_stream_file_ext = '.ffv1.mkv'
-                    if field_order == 'progressive':
-                        new_stream_file_name = stream_file_base + new_stream_file_ext
-                    else:
-                        new_stream_file_name = stream_file_base + '.progressive' + new_stream_file_ext
                 else:
                     new_stream_file_ext = '.vp9.ivf'
                     new_stream_file_name = stream_file_base + new_stream_file_ext
@@ -3360,14 +3350,14 @@ def action_optimize(inputdir, in_tags):
                                     ]
                                 do_spawn_cmd(cmd)
                             else:
-                                if False:
-                                    app.log.warning('Run OCR and save as SubRip (.srt) format: %s' % (
-                                        byte_decode(dbg_exec_cmd(['winepath', '-w', os.path.join(inputdir, new_stream_file_name)])).strip(),
-                                        ))
                                 cmd = [
                                     'SubtitleEdit',
                                     os.path.join(inputdir, stream_file_name),
                                     ]
+                                if True:
+                                    app.log.warning('Invoking %s: Please run OCR and save as SubRip (.srt) format: %s',
+                                                    cmd[0],
+                                                    os.path.join(inputdir, new_stream_file_name))
                                 do_spawn_cmd(cmd)
                         if not os.path.isfile(os.path.join(inputdir, new_stream_file_name)):
                             try:
