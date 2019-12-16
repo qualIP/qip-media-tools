@@ -84,6 +84,8 @@ tvdb = None
 default_minlength_tvshow = qip.utils.Timestamp('15m')
 default_minlength_movie = qip.utils.Timestamp('60m')
 
+default_ffmpeg_args = []
+
 #map_RatioConverter = {
 #    Ratio("186:157"):
 #    Ratio("279:157"):
@@ -246,7 +248,10 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                                            max=float(video_analyze_duration),
                                            suffix='%(index)d/%(max)d (%(eta_td)s remaining)')
                 try:
-                    for frame in ffprobe.iter_frames(stream_file_name):
+                    for frame in ffprobe.iter_frames(stream_file_name,
+                                                     # [error] Failed to set value 'nvdec' for option 'hwaccel': Option not found
+                                                     # TODO default_ffmpeg_args=default_ffmpeg_args,
+                                                     ):
                         if frame.media_type != 'video':
                             continue
                         assert frame.stream_index == 0
@@ -511,6 +516,7 @@ num_batch_skips = 0
 @app.main_wrapper
 def main():
     global num_batch_skips
+    global default_ffmpeg_args
 
     app.init(
             version='1.0',
@@ -542,6 +548,7 @@ def main():
     pgroup.add_bool_argument('--continue', dest='_continue', help='continue mode')
     pgroup.add_bool_argument('--batch', '-B', help='batch mode')
     pgroup.add_bool_argument('--step', help='step mode')
+    pgroup.add_bool_argument('--cuda', help='enable CUDA')
 
     pgroup = app.parser.add_argument_group('Tools Control')
     pgroup.add_argument('--track-extract-tool', default=Auto, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
@@ -660,6 +667,11 @@ def main():
     app.set_logging_level(app.args.logging_level)
     if app.args.logging_level <= logging.DEBUG:
         reprlib.aRepr.maxdict = 100
+
+    if app.args.cuda:
+        default_ffmpeg_args += [
+            '-hwaccel', 'nvdec',
+        ]
 
     did_something = False
     for rip_dir in  app.args.rip_dir:
@@ -819,7 +831,7 @@ def ext_to_container(ext):
         raise ValueError('Unsupported extension %r' % (ext,)) from err
     return ext_container
 
-def ext_to_codec(ext):
+def ext_to_codec(ext, lossless=False):
     ext = my_splitext('x' + ext, strip_container=True)[1]
     try:
         ext_container = {
@@ -827,19 +839,31 @@ def ext_to_codec(ext):
             '.vp9': 'libvpx-vp9',
             '.ffv1': 'ffv1',
             '.y4m': 'yuv4',
+            '.h264': ('h264_nvenc' if app.args.cuda and lossless
+                      else 'libx264'),  # better quality
         }[ext]
     except KeyError as err:
         raise ValueError('Unsupported extension %r' % (ext,)) from err
     return ext_container
 
-def ext_to_codec_args(ext):
-    codec = ext_to_codec(ext)
+def ext_to_codec_args(ext, lossless=False):
+    codec = ext_to_codec(ext, lossless=lossless)
     codec_args = []
     if codec == 'ffv1':
         codec_args += [
             '-slices', 24,
             '-threads', 8,
         ]
+    if codec in ('h264_nvenc',):
+        if lossless:
+            codec_args += [
+                '-surfaces', 8,  # https://github.com/keylase/nvidia-patch -- Avoid CreateBitstreamBuffer failed: out of memory (10)
+            ]
+    if codec in ('h264_nvenc', 'libx264'):
+        if lossless:
+            codec_args += [
+                '-preset', 'lossless',
+            ]
     return codec_args
 
 def ext_to_mencoder_libavcodec_format(ext):
@@ -1770,7 +1794,7 @@ def action_mux(inputfile, in_tags,
                                 force_format = ext_to_container(stream_file_ext)
                             except ValueError:
                                 pass
-                            ffmpeg_args = [
+                            ffmpeg_args = default_ffmpeg_args + [
                                 '-i', inputfile.file_name,
                                 '-map_metadata', '-1',
                                 '-map_chapters', '-1',
@@ -2172,7 +2196,7 @@ def action_chop(inputdir, in_tags):
                     stream_file_ext)
 
                 with perfcontext('Chop w/ ffmpeg'):
-                    ffmpeg_args = [
+                    ffmpeg_args = default_ffmpeg_args + [
                         '-start_at_zero', '-copyts',
                         '-i', os.path.join(inputdir, stream_file_name),
                         '-codec', 'copy',
@@ -2341,7 +2365,7 @@ def action_optimize(inputdir, in_tags):
                                         sub_stream_dict['file_name'].replace('\\', '\\\\').replace('\'', '\'\\\'\''),
                                         ), file=fp)
 
-                        ffmpeg_args = [
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-f', 'concat', '-safe', 0,
                             '-i', stream_file_concat_file_name,
                             '-codec', 'copy',
@@ -2385,6 +2409,8 @@ def action_optimize(inputdir, in_tags):
                     assert framerate == expected_framerate, (framerate, expected_framerate)
                 display_aspect_ratio = Ratio(stream_dict['display_aspect_ratio'])
 
+                lossless = False
+
                 if field_order == '23pulldown':
 
                     pullup_tool = app.args.pullup_tool
@@ -2398,6 +2424,7 @@ def action_optimize(inputdir, in_tags):
                         fieldmatch_using_ffmpeg = False
 
                         new_stream_file_ext = '.ffv1.mkv'
+                        lossless = True
                         new_stream_file_name_base = '.'.join(e for e in stream_file_base.split('.')
                                                         if e not in ('23pulldown',)) \
                             + '.yuvkineco-pullup'
@@ -2460,8 +2487,8 @@ def action_optimize(inputdir, in_tags):
 
                         ffmpeg_enc_args = [
                             '-i', 'pipe:0',
-                            '-codec:v', ext_to_codec(new_stream_file_ext),
-                        ] + ext_to_codec_args(new_stream_file_ext) + [
+                            '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
+                        ] + ext_to_codec_args(new_stream_file_ext, lossless=lossless) + [
                             '-f', ext_to_container(new_stream_file_ext),
                             os.path.join(inputdir, new_stream_file_name),
                         ]
@@ -2507,6 +2534,7 @@ def action_optimize(inputdir, in_tags):
                         # -> ffmpeg -> .ffv1
 
                         new_stream_file_ext = '.ffv1.mkv'
+                        lossless = True
                         new_stream_file_name = '.'.join(e for e in stream_file_base.split('.')
                                                         if e not in ('23pulldown',)) \
                             + '.ffmpeg-pullup' + new_stream_file_ext
@@ -2520,12 +2548,12 @@ def action_optimize(inputdir, in_tags):
 
                         orig_framerate = framerate * 30 / 24
 
-                        ffmpeg_args = [
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-vf', f'pullup,fps={framerate}',
                             '-r', framerate,
-                            '-codec:v', ext_to_codec(new_stream_file_ext),
-                            ] + ext_to_codec_args(new_stream_file_ext)
+                            '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
+                            ] + ext_to_codec_args(new_stream_file_ext, lossless=lossless)
                         if limit_duration:
                             ffmpeg_args += ['-t', ffmpeg.Timestamp(limit_duration)]
                         ffmpeg_args += [
@@ -2638,6 +2666,7 @@ def action_optimize(inputdir, in_tags):
                                 pass  # Not supported
                             else:
                                 stream_crop_whlt = ffmpeg.cropdetect(
+                                    default_ffmpeg_args=default_ffmpeg_args,
                                     input_file=os.path.join(inputdir, stream_file_name),
                                     skip_frame_nokey=app.args.cropdetect_skip_frame_nokey,
                                     # Seek 5 minutes in
@@ -2691,6 +2720,8 @@ def action_optimize(inputdir, in_tags):
                 if video_filter_specs:
                     extra_args += ['-filter:v', ','.join(video_filter_specs)]
 
+                lossless = False
+
                 if is_sub_stream:
                     new_stream_file_ext = '.ffv1.mkv'
                     if field_order == 'progressive':
@@ -2727,7 +2758,7 @@ def action_optimize(inputdir, in_tags):
 
                 ffmpeg_conv_args = []
                 ffmpeg_conv_args += [
-                    '-codec:v', ext_to_codec(new_stream_file_ext),
+                    '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
                 ]
 
                 if new_stream_file_ext == '.vp9.ivf':
@@ -2791,7 +2822,7 @@ def action_optimize(inputdir, in_tags):
                         '-g', int(app.args.keyint * framerate),
                         ]
                 else:
-                    ffmpeg_conv_args += ext_to_codec_args(new_stream_file_ext)
+                    ffmpeg_conv_args += ext_to_codec_args(new_stream_file_ext, lossless=lossless)
 
                 ffmpeg_conv_args += extra_args
 
@@ -2799,13 +2830,14 @@ def action_optimize(inputdir, in_tags):
                         and stream_file_ext in (
                             '.mpeg2', '.mpeg2.mp2v',  # Chopping using segment muxer is reliable (tested with mpeg2)
                             '.ffv1.mkv',
-                        )):
+                        ) + (('.h264',) if app.args.cuda else tuple())):
                     concat_list_file = ffmpeg.ConcatScriptFile(os.path.join(inputdir, f'{new_stream_file_name}.concat.txt'))
                     ffmpeg_concat_args = []
                     with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
                         chapter_stream_file_ext = {
                                 '.mpeg2': '.mpegts',
                                 '.mpeg2.mp2v': '.mpegts',
+                                '.h264': '.h264',
                                 '.ffv1.mkv': '.ffv1.mkv',
                             }.get(stream_file_ext, stream_file_ext)
                         stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, chapter_stream_file_ext)
@@ -2823,7 +2855,7 @@ def action_optimize(inputdir, in_tags):
                             if app.args._continue and os.path.exists(new_stream_chapter_file_name):
                                 app.log.warning('%s exists: continue...')
                             else:
-                                ffmpeg_args = [
+                                ffmpeg_args = default_ffmpeg_args + [
                                     '-i', os.path.join(inputdir, stream_chapter_file_name),
                                     ] + ffmpeg_conv_args + [
                                     '-f', ext_to_container(new_stream_file_ext), os.path.join(inputdir, new_stream_chapter_file_name),
@@ -2844,11 +2876,13 @@ def action_optimize(inputdir, in_tags):
                                     thread.start()
                                     threads.append(thread)
 
+                        chapter_lossless = True
+
                         # Chop
-                        if stream_file_ext in ('.h264',):
+                        if False and stream_file_ext in ('.h264',):
                             # "ffmpeg cannot always read correct timestamps from H264 streams"
                             # So split manually instead of using the segment muxer
-                            assert NotImplementedError  # This is not an accurate split!!
+                            raise NotImplementedError  # This is not an accurate split!!
                             ffmpeg_concat_args += [
                                 '-vsync', 'drop',
                                 ]
@@ -2859,11 +2893,14 @@ def action_optimize(inputdir, in_tags):
                                     app.log.warning('%s exists: continue...')
                                 else:
                                     with perfcontext('Chop w/ ffmpeg'):
-                                        ffmpeg_args = [
+                                        ffmpeg_args = default_ffmpeg_args + [
                                             '-fflags', '+genpts',
                                             '-start_at_zero', '-copyts',
                                             '-i', os.path.join(inputdir, stream_file_name),
-                                            '-codec', 'copy',
+                                            '-codec', (
+                                                'copy' if (ext_to_codec(chapter_stream_file_ext) == ext_to_codec(stream_file_ext)
+                                                           and not (chapter_lossless and stream_file_ext in ('.h264',)))  # h264 copy just spits out a single empty chapter
+                                                else ext_to_codec(chapter_stream_file_ext, lossless=chapter_lossless)),
                                             '-ss', chap.start,
                                             '-to', chap.end,
                                             ]
@@ -2888,17 +2925,19 @@ def action_optimize(inputdir, in_tags):
                             app.log.verbose('All chapters...')
                             with perfcontext('Chop w/ ffmpeg segment muxer'):
                                 chaps[-1].end = ffmpeg.Timestamp.MAX  # Make sure whole movie is captured
-                                ffmpeg_args = [
+                                ffmpeg_args = default_ffmpeg_args + [
                                     '-fflags', '+genpts',
                                     '-i', os.path.join(inputdir, stream_file_name),
                                     '-segment_times', ','.join(str(chap.end) for chap in chaps),
                                     '-segment_start_number', chaps[0].no,
-                                    '-codec', 'copy',
                                     '-map', '0',
-                                    ]
-                                ffmpeg_args += [
-                                    '-f', 'segment',
+                                    '-codec', (
+                                        'copy' if (ext_to_codec(chapter_stream_file_ext) == ext_to_codec(stream_file_ext)
+                                                   and not (chapter_lossless and stream_file_ext in ('.h264',)))  # h264 copy just spits out a single empty chapter
+                                        else ext_to_codec(chapter_stream_file_ext, lossless=chapter_lossless)),
+                                    '-f', 'ssegment',
                                     '-segment_format', ext_to_container(chapter_stream_file_ext),
+                                ] + ext_to_codec_args(chapter_stream_file_ext, lossless=chapter_lossless) + [
                                     os.path.join(inputdir, stream_chapter_file_name_pat),
                                     ]
                                 ffmpeg(*ffmpeg_args,
@@ -2925,7 +2964,7 @@ def action_optimize(inputdir, in_tags):
 
                     # Concat
                     with perfcontext('Concat %s w/ ffmpeg' % (new_stream_file_name,)):
-                        ffmpeg_args = [
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-f', 'concat', '-safe', '0', '-i', concat_list_file,
                             '-codec', 'copy',
                             ] + ffmpeg_concat_args + [
@@ -2940,7 +2979,7 @@ def action_optimize(inputdir, in_tags):
                             temp_files.append(os.path.join(inputdir, new_stream_chapter_file_name))
                 else:
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                        ffmpeg_args = [
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-i', os.path.join(inputdir, stream_file_name),
                             ] + ffmpeg_conv_args + [
                             '-f', ext_to_container(new_stream_file_name), os.path.join(inputdir, new_stream_file_name),
@@ -3009,7 +3048,7 @@ def action_optimize(inputdir, in_tags):
                     app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                        ffmpeg_args = [
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-i', os.path.join(inputdir, stream_file_name),
                             # '-channel_layout', channel_layout,
                             ]
@@ -3085,7 +3124,7 @@ def action_optimize(inputdir, in_tags):
                         raise NotImplementedError('Conversion not supported as ffmpeg does not respect the number of channels and channel mapping')
 
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                        ffmpeg_args = [
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-c:a', 'opus',
                             '-strict', 'experimental',  # for libopus
@@ -3113,7 +3152,7 @@ def action_optimize(inputdir, in_tags):
 
                 if False:
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                        ffmpeg_args = [
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-scodec', 'dvdsub',
                             '-map', '0',
@@ -3339,7 +3378,7 @@ def action_optimize(inputdir, in_tags):
                 app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                    ffmpeg_args = [
+                    ffmpeg_args = default_ffmpeg_args + [
                         '-i', os.path.join(inputdir, stream_file_name),
                         '-f', 'webvtt', os.path.join(inputdir, new_stream_file_name),
                         ]
@@ -3384,7 +3423,7 @@ def action_optimize(inputdir, in_tags):
                 app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
                 with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                    ffmpeg_args = [
+                    ffmpeg_args = default_ffmpeg_args + [
                         '-i', os.path.join(inputdir, stream_file_name),
                         ]
                     ffmpeg_args += [
@@ -3483,7 +3522,7 @@ def action_extract_music(inputdir, in_tags):
                                 stream_file_ext)))
 
                     with perfcontext('Chop w/ ffmpeg'):
-                        ffmpeg_args = [
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-start_at_zero', '-copyts',
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-codec', 'copy',
@@ -3830,7 +3869,7 @@ def action_demux(inputdir, in_tags):
             if not app.args.dry_run:
                 shutil.move(output_file.file_name, noss_file_name)
             num_inputs += 1
-            ffmpeg_args = [
+            ffmpeg_args = default_ffmpeg_args + [
                 '-i', noss_file_name,
                 ]
             option_args = [
@@ -4038,12 +4077,13 @@ def action_demux(inputdir, in_tags):
                 if stream_file_ext in ('.vp9', '.vp9.ivf',):
                     # ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
                     tmp_stream_file_name = stream_file_name + '.mkv'
-                    ffmpeg(
-                        *[
+                    ffmpeg_args = default_ffmpeg_args + [
                             '-i', os.path.join(inputdir, stream_file_name),
                             '-codec', 'copy',
                             os.path.join(inputdir, tmp_stream_file_name),
-                        ],
+                        ]
+                    ffmpeg(
+                        *ffmpeg_args,
                         dry_run=app.args.dry_run,
                         y=True,  # TODO temp file
                     )
@@ -4067,7 +4107,7 @@ def action_demux(inputdir, in_tags):
             '-f', ext_to_container(output_file.file_name),
             output_file.file_name,
             ]
-        ffmpeg_args = ffmpeg_input_args + ffmpeg_output_args
+        ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args + ffmpeg_output_args
         with perfcontext('merge w/ ffmpeg'):
             ffmpeg(*ffmpeg_args,
                    dry_run=app.args.dry_run,
