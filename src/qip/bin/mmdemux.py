@@ -1014,6 +1014,35 @@ def get_vp9_tile_columns_and_threads(width, height):
             return 4, 24
     raise NotImplementedError
 
+def estimate_stream_duration(ffprobe_json):
+    try:
+        ffprobe_format_json = ffprobe_json['format']
+    except KeyError:
+        pass
+    else:
+        try:
+            return ffmpeg.Timestamp(ffprobe_format_json['duration'])
+        except KeyError:
+            pass
+    try:
+        ffprobe_stream_json, = ffprobe_json['streams']
+    except ValueError:
+        pass
+    else:
+        try:
+            return ffmpeg.Timestamp(ffprobe_stream_json['duration'])
+        except KeyError:
+            pass
+        try:
+            return int(ffprobe_stream_json['tags']['NUMBER_OF_FRAMES'])
+        except KeyError:
+            pass
+        try:
+            return int(ffprobe_stream_json['tags']['NUMBER_OF_FRAMES-eng'])
+        except KeyError:
+            pass
+    return None
+
 def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=None):
 
     inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
@@ -1820,6 +1849,7 @@ def action_mux(inputfile, in_tags,
                                 os.path.join(outputdir, output_track_file_name),
                                 ]
                             ffmpeg(*ffmpeg_args,
+                                   progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_dict),
                                    dry_run=app.args.dry_run,
                                    y=app.args.yes)
                     elif app.args.track_extract_tool in ('mkvextract', Auto):
@@ -2212,6 +2242,7 @@ def action_chop(inputdir, in_tags):
                         os.path.join(inputdir, stream_chapter_file_name),
                         ]
                     ffmpeg(*ffmpeg_args,
+                           progress_bar_max=chap.end - chap.start,
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
 
@@ -2375,6 +2406,7 @@ def action_optimize(inputdir, in_tags):
 
                         with perfcontext('Concat w/ ffmpeg'):
                             ffmpeg(*ffmpeg_args,
+                                   progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                    dry_run=app.args.dry_run,
                                    y=app.args.yes)
 
@@ -2523,6 +2555,7 @@ def action_optimize(inputdir, in_tags):
                                     try:
                                         p4 = ffmpeg.popen(*ffmpeg_enc_args,
                                                           stdin=p3.stdout,
+                                                          # TODO progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                                           dry_run=app.args.dry_run,
                                                           y=app.args.yes)
                                     finally:
@@ -2582,6 +2615,7 @@ def action_optimize(inputdir, in_tags):
                             ffmpeg(*ffmpeg_args,
                                    slurm=app.args.slurm,
                                    #slurm_cpus_per_task=2, # ~230-240%
+                                   progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                    dry_run=app.args.dry_run,
                                    y=app.args.yes)
 
@@ -2882,6 +2916,7 @@ def action_optimize(inputdir, in_tags):
                                         args=ffmpeg_args,
                                         kwargs={
                                             'slurm': app.args.slurm,
+                                            'progress_bar_max': chap.end - chap.start,
                                             'dry_run': app.args.dry_run,
                                             'y': app.args.yes,
                                             })
@@ -2934,6 +2969,7 @@ def action_optimize(inputdir, in_tags):
                                             os.path.join(inputdir, stream_chapter_file_name),
                                             ]
                                         ffmpeg(*ffmpeg_args,
+                                               progress_bar_max=chap.end - chap.start,
                                                dry_run=app.args.dry_run,
                                                y=app.args.yes)
                                 encode_chap()
@@ -2989,6 +3025,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', ext_to_container(new_stream_file_name), os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
+                               progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
                         for chap in chaps:
@@ -3009,10 +3046,12 @@ def action_optimize(inputdir, in_tags):
                         ):
                             ffmpeg.run2pass(*ffmpeg_args,
                                             slurm=app.args.slurm,
+                                            progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                             dry_run=app.args.dry_run,
                                             y=app.args.yes)
                         else:
                             ffmpeg(*ffmpeg_args,
+                                   progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                    slurm=app.args.slurm,
                                    dry_run=app.args.dry_run,
                                    y=app.args.yes)
@@ -3093,6 +3132,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', 'wav', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
+                               progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                slurm=app.args.slurm,
                                slurm_cpus_per_task=2, # ~230-240%
                                dry_run=app.args.dry_run,
@@ -3154,6 +3194,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', 'ogg', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
+                               progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                slurm=app.args.slurm,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
@@ -3178,6 +3219,7 @@ def action_optimize(inputdir, in_tags):
                             '-f', 'mpeg', os.path.join(inputdir, new_stream_file_name),
                             ]
                         ffmpeg(*ffmpeg_args,
+                               # TODO progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                slurm=app.args.slurm,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
@@ -3400,6 +3442,7 @@ def action_optimize(inputdir, in_tags):
                         '-f', 'webvtt', os.path.join(inputdir, new_stream_file_name),
                         ]
                     ffmpeg(*ffmpeg_args,
+                           # TODO progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                            #slurm=app.args.slurm,
                            dry_run=app.args.dry_run,
                            y=app.args.yes)
@@ -3554,6 +3597,7 @@ def action_extract_music(inputdir, in_tags):
                             stream_chapter_tmp_file.file_name,
                             ]
                         ffmpeg(*ffmpeg_args,
+                               progress_bar_max=chap.end - chap.start,
                                dry_run=app.args.dry_run,
                                y=app.args.yes)
                 else:
@@ -3938,6 +3982,7 @@ def action_demux(inputdir, in_tags):
                 ]
             with perfcontext('merge subtitles w/ ffmpeg'):
                 ffmpeg(*ffmpeg_args,
+                       # TODO progress_bar_max=None,
                        dry_run=app.args.dry_run,
                        y=app.args.yes)
             raise NotImplementedError('BUG: unable to synchronize timestamps before and after adding subtitles, ffmpeg shifts video by 7ms (due to pre-skip of opus streams) and of vtts')
@@ -4101,6 +4146,7 @@ def action_demux(inputdir, in_tags):
                         ]
                     ffmpeg(
                         *ffmpeg_args,
+                        # TODO progress_bar_max=None,
                         dry_run=app.args.dry_run,
                         y=True,  # TODO temp file
                     )
@@ -4127,6 +4173,7 @@ def action_demux(inputdir, in_tags):
         ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args + ffmpeg_output_args
         with perfcontext('merge w/ ffmpeg'):
             ffmpeg(*ffmpeg_args,
+                   # TODO progress_bar_max=None,
                    dry_run=app.args.dry_run,
                    y=app.args.yes)
         if mux_dict.get('chapters', None):
