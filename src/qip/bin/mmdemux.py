@@ -1570,8 +1570,11 @@ def action_mux(inputfile, in_tags,
                 mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
             elif c in ('search',):
                 initial_text = mux_dict['tags'].title or os.path.basename(os.path.dirname(inputfile.file_name))
-                initial_text = re.sub(r'(?=[A-Z][a-z])', r' ', initial_text)       # ABCDef -> ABC Def
+                initial_text = initial_text.strip()                                #  ABC   -> ABC
+                initial_text = re.sub(r'(?=[A-Z][a-z])', r' ', initial_text)       # AbCDef ->  AbC Def
+                initial_text = re.sub(r'[a-z](?=[A-Z])', r'\g<0> ', initial_text)  # AbC Def -> Ab C Def
                 initial_text = re.sub(r'[A-Za-z](?=\d)', r'\g<0> ', initial_text)  # ABC123 -> ABC 123
+                initial_text = re.sub(r'(.+),\s*(The|A|An|Le|La|Les)$', r'\2 \1', initial_text, flags=re.IGNORECASE)  # ABC, The -> The ABC
                 initial_text = re.sub(r'[^A-Za-z0-9\']+', r' ', initial_text)      # AB$_12 -> AB 12
                 initial_text = initial_text.strip()                                #  ABC   -> ABC
                 if in_tags.language:
@@ -1580,6 +1583,9 @@ def action_mux(inputfile, in_tags,
                     title=str(inputfile),
                     text='Please input search query:',
                     initial_text=initial_text)
+                if search_query is None:
+                    print('Cancelled by user!')
+                    continue
                 language = in_tags.language
                 m = re.match(r'^(?P<search_query>.+) \[(?P<language>\w+)\]', search_query)
                 if m:
@@ -1603,13 +1609,21 @@ def action_mux(inputfile, in_tags,
                     l_movies = movie_api.search(search_query)
                     i = 0
                     app.log.debug('l_movies=(%r)%r', type(l_movies), l_movies)
+                    if not l_movies:
+                        app.log.error('No movies found matching %r!', search_query)
+                        continue
+                    for o_movie in l_movies:
+                        o_movie.__dict__.setdefault('release_date', None)
                     if (True or len(l_movies) > 1) and app.args.interactive:
-                        from prompt_toolkit.shortcuts.dialogs import radiolist_dialog
-                        i = radiolist_dialog(
+                        def help_handler(radio_list):
+                            i = radio_list._selected_index
+                            app.message_dialog(title='Details',
+                                               text=f'i={i}')
+                        i = app.radiolist_dialog(
                             title='Please select a movie',
                             values=[(i, '{title}, {release_date} (#{id}) -- {overview}'.format_map(vars(o_movie)))
                                     for i, o_movie in enumerate(l_movies)],
-                            style=app.prompt_style)
+                            help_handler=help_handler)
                         if i is None:
                             print('Cancelled by user!')
                             continue
@@ -3381,12 +3395,7 @@ def action_optimize(inputdir, in_tags):
                                         ('class:error', str(e)),
                                     ]))
                                 while True:
-                                    print('{codec_type} stream #{index}: title={title!r}, disposition=({disposition})'.format(
-                                        codec_type=stream_codec_type,
-                                        index=stream_dict['index'],
-                                        title=stream_dict.get('title', None),
-                                        disposition=', '.join(k for k, v in stream_dict['disposition'].items() if v),
-                                    ))
+                                    print(describe_stream_dict(stream_dict))
                                     c = app.prompt(completer=completer)
                                     if c in ('help', 'h', '?'):
                                         print('')
@@ -3743,6 +3752,7 @@ def action_demux(inputdir, in_tags):
             'hearing_impaired',
             'comment',
             'karaoke',
+            'lyrics',
             'original',
             'title',
         ])
@@ -3765,7 +3775,10 @@ def action_demux(inputdir, in_tags):
                     print('hearing_impaired -- Toggle hearing_impaired disposition (%r)' % (True if stream_dict['disposition'].get('hearing_impaired', None) else False,))
                 if stream_codec_type in ('audio', 'subtitle'):
                     print('comment -- Toggle comment disposition (%r)' % (True if stream_dict['disposition'].get('comment', None) else False,))
+                if stream_codec_type in ('audio',):
                     print('karaoke -- Toggle karaoke disposition (%r)' % (True if stream_dict['disposition'].get('karaoke', None) else False,))
+                if stream_codec_type in ('subtitle',):
+                    print('lyrics -- Toggle lyrics disposition (%r)' % (True if stream_dict['disposition'].get('lyrics', None) else False,))
                 if stream_codec_type in ('audio',):
                     print('original -- Toggle original disposition (%r)' % (True if stream_dict['disposition'].get('original', None) else False,))
                 if stream_codec_type in ('audio',):
@@ -3781,7 +3794,14 @@ def action_demux(inputdir, in_tags):
                 break
             elif c in ('open',):
                 try:
-                    xdg_open(os.path.join(inputdir, stream_dict['file_name']))
+                    if stream_codec_type in ('subtitle',):
+                        cmd = [
+                            'SubtitleEdit',
+                            os.path.join(inputdir, stream_file_name),
+                            ]
+                        do_spawn_cmd(cmd)
+                    else:
+                        xdg_open(os.path.join(inputdir, stream_dict['file_name']))
                 except Exception as e:
                     app.log.error(e)
             elif c in ('continue', 'c', 'retry'):
@@ -3800,6 +3820,9 @@ def action_demux(inputdir, in_tags):
                 update_mux_conf = True
             elif c == 'karaoke':
                 stream_dict['disposition']['karaoke'] = not stream_dict['disposition'].get('karaoke', None)
+                update_mux_conf = True
+            elif c == 'lyrics':
+                stream_dict['disposition']['lyrics'] = not stream_dict['disposition'].get('lyrics', None)
                 update_mux_conf = True
             elif c == 'original':
                 stream_dict['disposition']['original'] = not stream_dict['disposition'].get('original', None)
@@ -4248,8 +4271,8 @@ def action_tag_episodes_files(episode_file_names, in_tags):
                 initial_text = m.group(1)
         tags.tvshow = app.input_dialog(title='Please provide tvshow',
                                        initial_text=initial_text)
-    language = in_tags.language
-    m = re.match(r'^(?P<tvshow>.+) \[(?P<language>\w+)\]', tvshow)
+    language = tags.language
+    m = re.match(r'^(?P<tvshow>.+) \[(?P<language>\w+)\]', tags.tvshow or '')
     if m:
         try:
             language = isolang(m.group('language'))
