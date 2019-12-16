@@ -4,22 +4,27 @@ __all__ = [
         'ffprobe',
         ]
 
-import functools
 from decimal import Decimal
 from fractions import Fraction
-import types
-import re
-import os
-import subprocess
+import collections
+import copy
+import functools
 import logging
+import os
+import pexpect
+import re
+import subprocess
+import types
 log = logging.getLogger(__name__)
 
 from .perf import perfcontext
 from .exec import *
+from .exec import spawn as _exec_spawn
 from .parser import lines_parser
 from .utils import byte_decode
 from .utils import Timestamp as _BaseTimestamp, Ratio
 from qip.file import *
+from qip.collections import OrderedSet
 
 class Timestamp(_BaseTimestamp):
     '''hh:mm:ss.sssssssss format'''
@@ -98,12 +103,202 @@ class ConcatScriptFile(TextFile):
             if file_entry.duration is not None:
                 print(f'duration {file_entry.duration}', file=file)
 
+class FfmpegSpawn(_exec_spawn):
+
+    show_progress_bar = None
+    progress_bar = None
+    progress_bar_max = None
+    on_progress_bar_line = False
+    num_errors = 0
+    errors_seen = None
+
+    def __init__(self, cmd, show_progress_bar=None, progress_bar_max=None, env=None, **kwargs):
+        if show_progress_bar is None:
+            show_progress_bar = progress_bar_max is not None
+        self.show_progress_bar = show_progress_bar
+        self.progress_bar_max = progress_bar_max
+        self.errors_seen = OrderedSet()
+        env = copy.copy(env or os.environ)
+        env['AV_LOG_FORCE_NOCOLOR'] = '1'
+        env['TERM'] = 'dumb'
+        env.pop('TERMCAP', None)
+        super().__init__(cmd, env=env, **kwargs)
+
+    def progress_line(self, str):
+        if self.progress_bar is not None:
+            if self.progress_bar_max:
+                if isinstance(self.progress_bar_max, Timestamp):
+                    self.progress_bar.goto(Timestamp(byte_decode(self.match.group('time'))).seconds)
+                else:
+                    self.progress_bar.goto(int(self.match.group('frame')))
+                self.progress_bar.fps = Decimal(byte_decode(self.match.group('fps')))
+            else:
+                self.progress_bar.next()
+            self.on_progress_bar_line = True
+        else:
+            str = byte_decode(str).rstrip('\r\n')
+            if self.on_progress_bar_line:
+                print('')
+                self.on_progress_bar_line = False
+            print(str)
+        return True
+
+    def parsed_cropdetect_line(self, str):
+        if self.progress_bar is not None:
+            if self.progress_bar_max:
+                if self.progress_bar.index == 0:
+                    #self.progress_bar.message = f'{self.command} cropdetect'
+                    self.progress_bar.message = 'cropdetect'
+                    self.progress_bar.suffix += ' crop=%(crop)s'
+                self.progress_bar.crop = byte_decode(self.match.group('crop'))
+                if isinstance(self.progress_bar_max, Timestamp):
+                    self.progress_bar.goto(Timestamp(byte_decode(self.match.group('time'))).seconds)
+                else:
+                    # self.progress_bar.goto(int(self.match.group('frame')))
+                    self.progress_bar.next()
+                # self.progress_bar.fps = Decimal(byte_decode(self.match.group('fps')))
+            else:
+                self.progress_bar.next()
+            self.on_progress_bar_line = True
+        else:
+            str = byte_decode(str).rstrip('\r\n')
+            if self.on_progress_bar_line:
+                print('')
+                self.on_progress_bar_line = False
+            print(str)
+        return True
+
+    def progress_pass(self, str):
+        str = byte_decode(str).rstrip('\r\n')
+        if self.progress_bar is not None:
+            self.progress_bar.message = f'{self.command} -- {str}'
+            self.progress_bar.reset()
+            #self.progress_bar.update()
+            self.on_progress_bar_line = True
+        else:
+            if self.on_progress_bar_line:
+                print('')
+                self.on_progress_bar_line = False
+            print(str)
+        return True
+
+    def unknown_info_line(self, str):
+        if not log.isEnabledFor(logging.DEBUG):
+            return True
+        return self.unknown_line(str)
+
+    def unknown_verbose_line(self, str):
+        if not log.isEnabledFor(logging.DEBUG):
+            return True
+        return self.unknown_line(str)
+
+    def unknown_error_line(self, str):
+        return self.generic_error(str)
+
+    def unknown_line(self, str):
+        str = byte_decode(str).rstrip('\r\n')
+        if str:
+            if self.on_progress_bar_line:
+                print('')
+                self.on_progress_bar_line = False
+            print(f'UNKNOWN: {str!r}')
+        return True
+
+    def generic_error(self, str):
+        str = byte_decode(str).rstrip('\r\n')
+        if self.on_progress_bar_line:
+            print('')
+            self.on_progress_bar_line = False
+        log.error(str)
+        self.num_errors += 1
+        self.errors_seen.add(str)
+        return True
+
+    def terminal_escape_sequence(self, str):
+        return True
+
+    def eof(self, _dummy):
+        str = byte_decode(self.before).rstrip('\r\n')
+        if str:
+            if self.on_progress_bar_line:
+                print('')
+                self.on_progress_bar_line = False
+            print(f'EOF: {str!r}')
+        return True
+
+    def get_pattern_dict(self):
+        re_eol = r'(?:\r?\n|\r)'
+        pattern_dict = collections.OrderedDict([
+            # frame=   39 fps=0.0 q=-0.0 Lsize=    4266kB time=00:00:01.60 bitrate=21801.0kbits/s speed=6.98x
+            # [info] frame=  776 fps=119 q=-0.0 size=  129161kB time=00:00:25.86 bitrate=40915.9kbits/s speed=3.95x
+            # size=       0kB time=01:03:00.94 bitrate=   0.0kbits/s speed=2.17e+07x
+            # frame= 2235 fps=221 q=-0.0 size= 1131482kB time=00:01:14.60 bitrate=124237.6kbits/s dup=447 drop=0 speed=7.37x
+            (fr'^(?:\[info\] )?(?:frame= *(?P<frame>\d+) +fps= *(?P<fps>\S+) +q= *(?P<q>\S+) )?L?size= *(?P<size>\S+) +time= *(?P<time>\S+) +bitrate= *(?P<bitrate>\S+)(?: +dup= *(?P<dup>\S+))?(?: +drop= *(?P<drop>\S+))? +speed= *(?P<speed>\S+) *{re_eol}', self.progress_line),
+            # [Parsed_cropdetect_1 @ 0x56473433ba40] x1:0 x2:717 y1:0 y2:477 w:718 h:478 x:0 y:0 pts:504504000 t:210.210000 crop=718:478:0:0
+            (fr'^\[Parsed_cropdetect\S* @ \S+\] (?:\[info\] )?x1:(?P<x1>\S+) x2:(?P<x2>\S+) y1:(?P<y1>\S+) y2:(?P<y2>\S+) w:(?P<w>\S+) h:(?P<h>\S+) x:(?P<x>\S+) y:(?P<y>\S+) pts:(?P<pts>\S+) t:(?P<time>\S+) crop=(?P<crop>\S+) *{re_eol}', self.parsed_cropdetect_line),
+            # \x1b[48;5;0m
+            # \x1b[38;5;226m
+            (fr'^\x1b\[[0-9;]+m', self.terminal_escape_sequence),  # Should not happen with AV_LOG_FORCE_NOCOLOR
+            (fr'^\[ffmpeg-2pass-pipe\] (?P<pass>PASS [12]){re_eol}', self.progress_pass),
+            (fr'^\[info\] [^\r\n]*?{re_eol}', self.unknown_info_line),
+            (fr'^\[verbose\] [^\r\n]*?{re_eol}', self.unknown_verbose_line),
+            (fr'^\[error\] [^\r\n]*?{re_eol}', self.unknown_error_line),
+            (fr'[^\n]*?{re_eol}', self.unknown_line),
+            (pexpect.EOF, self.eof),
+        ])
+        return pattern_dict
+
+    def __enter__(self):
+        ret = super().__enter__()
+        if self.show_progress_bar:
+            if self.progress_bar_max:
+                try:
+                    from qip.utils import ProgressBar
+                except ImportError:
+                    pass
+                else:
+                    if isinstance(self.progress_bar_max, Timestamp):
+                        self.progress_bar = ProgressBar(self.command,
+                                                        max=self.progress_bar_max.seconds)
+                        self.progress_bar.suffix = '%(percent).1f%% time=%(index).1f/%(max).1f fps=%(fps).2f remaining=%(eta)ds'
+                    else:
+                        self.progress_bar = ProgressBar(self.command,
+                                                        max=self.progress_bar_max)
+                        self.progress_bar.suffix = '%(percent).1f%% frame=%(index)s/%(max)s fps=%(fps).2f remaining=%(eta)ds'
+                    self.progress_bar.fps = 0
+                    self.progress_bar.crop = None
+                    self.on_progress_bar_line = True
+            else:
+                try:
+                    from qip.utils import ProgressSpinner
+                except ImportError:
+                    pass
+                else:
+                    self.progress_bar = ProgressSpinner(self.command)
+                    self.on_progress_bar_line = True
+        return ret
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        if self.progress_bar is not None:
+            progress_bar = self.progress_bar
+            self.progress_bar = None
+            progress_bar.finish()
+            self.on_progress_bar_line = False
+        return super().__exit__(exc_type, exc_value, exc_traceback)
+
 class _Ffmpeg(Executable):
 
-    run_func = staticmethod(do_spawn_cmd)
+    run_func = Executable._spawn_run_func
+    #run_func = staticmethod(do_spawn_cmd)
 
     Timestamp = Timestamp
     ConcatScriptFile = ConcatScriptFile
+
+    spawn = FfmpegSpawn
+    run_func_options = Executable.run_func_options + (
+        'show_progress_bar',
+        'progress_bar_max',
+    )
 
     @classmethod
     def kwargs_to_cmdargs(cls, **kwargs):
@@ -152,9 +347,14 @@ class Ffmpeg(_Ffmpeg):
 
     name = 'ffmpeg'
 
+    environ = {
+        'TERM': 'dummy',
+    }
+
     def _run(self, *args, run_func=None, dry_run=False,
-            slurm=False, slurm_cpus_per_task=None,
-            **kwargs):
+             slurm=False, slurm_cpus_per_task=None,
+             progress_bar_max=None,
+             **kwargs):
         args = list(args)
 
         if run_func or dry_run:
@@ -221,15 +421,16 @@ class Ffmpeg(_Ffmpeg):
             #if not dry_run:
             #    run_kwargs['stdin'] = open(str(in_file), "rb")
             #    run_kwargs['stdout'] = open(str(out_file), "w")
+            run_kwargs['progress_bar_max'] = progress_bar_max
 
         if run_kwargs:
             run_func = functools.partial(run_func, **run_kwargs)
 
         return super()._run(
-                *args,
-                dry_run=dry_run,
-                run_func=run_func,
-                **kwargs)
+            *args,
+            dry_run=dry_run,
+            run_func=run_func,
+            **kwargs)
 
     def run2pass(self, *args, **kwargs):
         args = list(args)
@@ -287,12 +488,14 @@ class Ffmpeg(_Ffmpeg):
             pass
 
     def cropdetect(self, input_file,
-            skip_frame_nokey=True, cropdetect_seek=None, cropdetect_duration=300,
-            video_filter_specs=None,
-            dry_run=False):
+                   skip_frame_nokey=True, cropdetect_seek=None, cropdetect_duration=300,
+                   video_filter_specs=None,
+                   show_progress_bar=True,
+                   default_ffmpeg_args=[],
+                   dry_run=False):
         stream_crop = None
         with perfcontext('Cropdetect w/ ffmpeg'):
-            ffmpeg_args = []
+            ffmpeg_args = list(default_ffmpeg_args)
             if cropdetect_seek is not None:
                 ffmpeg_args += [
                     '-ss', Timestamp(cropdetect_seek),
@@ -308,21 +511,25 @@ class Ffmpeg(_Ffmpeg):
                 '-i', input_file,
                 '-t', Timestamp(cropdetect_duration),
                 '-filter:v', ','.join(video_filter_specs),
-                ]
+            ]
             ffmpeg_args += [
                 '-f', 'null', '-',
-                ]
+            ]
 
             if log.isEnabledFor(logging.DEBUG):
                 loglevel = 'level+verbose'
             elif log.isEnabledFor(logging.VERBOSE):
                 loglevel = 'info'
+                loglevel = 'level+' + loglevel
                 # kwargs.setdefault('stats', True)  # included in info
             else:
                 loglevel = 'info'  # 'warning'
+                loglevel = 'level+' + loglevel
                 # kwargs.setdefault('stats', True)  # included in info
 
             out = self(*ffmpeg_args,
+                       show_progress_bar=show_progress_bar,
+                       progress_bar_max=Timestamp(cropdetect_duration),
                        dry_run=dry_run,
                        loglevel=loglevel)
         if not dry_run:
@@ -344,6 +551,7 @@ class Ffmpeg(_Ffmpeg):
                                        skip_frame_nokey=False,
                                        cropdetect_seek=cropdetect_seek,
                                        cropdetect_duration=cropdetect_duration,
+                                       default_ffmpeg_args=default_ffmpeg_args,
                                        dry_run=dry_run)
             m = last_cropdetect_match
             w, h, l, t = stream_crop = (
@@ -369,7 +577,7 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
         assert cmd.pop(-1) == '-'
         return cmd
 
-    def _run(self, *args, stdin_file, stdout_file, run_func=None, dry_run=False, slurm=False, **kwargs):
+    def _run(self, *args, stdin_file, stdout_file, run_func=None, dry_run=False, slurm=False, progress_bar_max=None, **kwargs):
         args = list(args)
 
         if run_func or dry_run:
@@ -410,6 +618,7 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
             if not dry_run:
                 run_kwargs['stdin'] = open(str(stdin_file), "rb")
                 run_kwargs['stdout'] = open(str(stdout_file), "w")
+            run_kwargs['progress_bar_max'] = progress_bar_max
         if run_kwargs:
             run_func = functools.partial(run_func, **run_kwargs)
 
@@ -568,9 +777,9 @@ class Ffprobe(_Ffmpeg):
             # 'flags': TODO,  # K_
             }
 
-    def iter_frames(self, file, *, dry_run=False):
+    def iter_frames(self, file, *, default_ffmpeg_args=[], dry_run=False):
         from qip.parser import lines_parser
-        ffprobe_args = [
+        ffprobe_args = list(default_ffmpeg_args) + [
             '-loglevel', 'level+error', '-hide_banner',
             '-i', str(file),
             '-show_frames',
@@ -667,7 +876,7 @@ class Ffprobe(_Ffmpeg):
                         raise ValueError('Unclosed SUBTITLE near line %d' % (parser.line_no,))
                     yield subtitle
                     continue
-                m = re_error_line(line)
+                m = re_error_line.match(line)
                 if m:
                     error_lines.append(line)
                     continue

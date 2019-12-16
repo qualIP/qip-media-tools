@@ -71,6 +71,23 @@ class spawn(pexpect.spawn):
             k, v = pattern_kv_list[idx]
             yield v
 
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        if exc_type and not getattr(self, 'closed', True):
+            self.close(force=True)
+        try:
+            if not self.terminated:
+                try:
+                    self.wait()
+                except pexpect.ExceptionPexpect as err:
+                    if err.value != 'Cannot wait for dead child process.':
+                        raise
+        finally:
+            if not getattr(self, 'closed', True):
+                self.close()
+
 def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_CompletedProcess=False, **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
@@ -261,11 +278,51 @@ class IoniceClass(enum.IntEnum):
 class Executable(metaclass=abc.ABCMeta):
 
     run_func = None
+    run_func_options = tuple()
 
     nice_adjustment = None
     ionice_class = None
     ionice_level = None
     ionice_ignore = True
+
+    def _spawn_run_func(self, cmd, hidden_args=[], dry_run=None, no_status=False, logfile=None, **kwargs):
+        if dry_run is None:
+             dry_run = getattr(app.args, 'dry_run', False)
+        if dry_run:
+            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
+            return ''
+        if app.log.isEnabledFor(logging.DEBUG):
+            app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
+        if logfile is True:
+            logfile = sys.stdout.buffer
+        elif logfile is False:
+            logfile = None
+        p = self.spawn(cmd[0], args=cmd[1:] + hidden_args, logfile=logfile, **kwargs)
+        with p:
+            pattern_dict = p.get_pattern_dict()
+            out = ''
+            for v in p.communicate(pattern_dict=pattern_dict):
+                out += byte_decode(p.before)
+                if p.match and p.match is not pexpect.EOF:
+                    out += byte_decode(p.match.group(0))
+                if callable(v):
+                    if p.match is pexpect.EOF:
+                        b = v(None)
+                    else:
+                        b = v(p.match.group(0))
+                    if not b:
+                        break
+                if p.after is pexpect.EOF:
+                    break
+        if p.signalstatus is not None:
+            raise Exception('Command exited due to signal %r' % (p.signalstatus,))
+        if not no_status and p.exitstatus:
+            raise SpawnedProcessError(
+                returncode=p.exitstatus,
+                cmd=subprocess.list2cmdline(cmd),
+                output=out,
+                spawn=p)
+        return out
 
     @property
     @abc.abstractmethod
@@ -340,10 +397,16 @@ class Executable(metaclass=abc.ABCMeta):
 
     def _run(self, *args, run_func=None, dry_run=False, **kwargs):
         d = types.SimpleNamespace()
+        run_func_kwargs = {}
+        for k in self.run_func_options:
+            try:
+                run_func_kwargs[k] = kwargs.pop(k)
+            except KeyError:
+                pass
         cmd = self.build_cmd(*args, **kwargs)
         run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
         t0 = time.time()
-        d.out = run_func(cmd, dry_run=dry_run)
+        d.out = run_func(cmd, dry_run=dry_run, **run_func_kwargs)
         t1 = time.time()
         d.elapsed_time = t1 - t0
         return d
