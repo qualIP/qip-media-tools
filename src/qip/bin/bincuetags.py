@@ -605,29 +605,43 @@ def bincuetags(cue_file):
 
     if album_tags_list:
         album_tags_sel = 0
+        from prompt_toolkit.formatted_text import FormattedText
+        from prompt_toolkit.completion import WordCompleter
+        completer = WordCompleter([
+            'help',
+            'diff',
+            'continue',
+            'quit',
+        ])
+        print('')
         while True:
-            print('')
             for i, album_tags in enumerate(album_tags_list, start=1):
                 print('{}{} - {}'.format(
                     '*' if album_tags_sel == i - 1 else ' ',
                     i, album_tags.short_str()))
                 for track_no, track_tags in album_tags.tracks_tags.items():
                     print('  Track {:2d}: {}'.format(track_no, track_tags.short_str()))
-            print(' q - quit')
-            print(' d - diff')
-            print(' y - yes, do it!')
-            c = input('Choice: ')
+            c = app.prompt(completer=completer)
             try:
                 c = int(c)
             except ValueError:
                 pass
-            if isinstance(c, int):
+            if c in ('help', 'h', '?'):
+                print('')
+                print('List of commands:')
+                print('')
+                print('help -- Print this help')
+                print('diff -- Bring up a side-by-side diff of the tags')
+                print('yes, continue -- Yes, continue processing')
+                print('<n> -- Select the n\'th entry')
+                print('quit -- Quit')
+            elif isinstance(c, int):
                 assert 1 <= c <= len(album_tags_list)
                 album_tags_sel = c - 1
                 break
-            elif c == 'q':
+            elif c in ('quit', 'q'):
                 return False
-            elif c == 'd':
+            elif c in ('diff', 'd'):
                 edcmd = ['vim', '-d']
                 for i, album_tags in enumerate(album_tags_list, start=1):
                     if i == 1:
@@ -647,7 +661,7 @@ def bincuetags(cue_file):
                     tags_filei = json.JsonFile('{}.{}'.format(tags_file.file_name, i))
                     tags_filei.unlink(force=True)
                 album_tags_sel = 0
-            elif c == 'y':
+            elif c in ('continue', 'c', 'yes', 'y'):
                 break
             else:
                 app.log.error('Invalid input')
