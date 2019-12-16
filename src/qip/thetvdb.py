@@ -82,6 +82,6 @@ class Tvdb(tvdb_api.Tvdb):
 
     @language.setter
     def language(self, value):
-        self.config['language'] = 'en' if language is None else isolang(language).iso639_1
+        self.config['language'] = 'en' if value is None else isolang(value).iso639_1
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
