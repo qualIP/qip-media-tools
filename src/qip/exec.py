@@ -35,11 +35,15 @@ import functools
 import logging
 import os
 import pexpect
+import pexpect.popen_spawn
+import pexpect.spawnbase
+import pexpect.utils
 import re
 import shutil
+import signal
 import subprocess
-import threading
 import sys
+import threading
 import time
 import types
 import xml.etree.ElementTree as ET
@@ -48,6 +52,11 @@ log = logging.getLogger(__name__)
 from qip.app import app  # Also setup log.verbose
 from qip.utils import byte_decode
 
+try:
+    from queue import Queue, Empty  # Python 3
+except ImportError:
+    from Queue import Queue, Empty  # Python 2
+
 class SpawnedProcessError(subprocess.CalledProcessError):
 
     def __init__(self, returncode, cmd, output=None, stderr=None, spawn=None):
@@ -55,10 +64,7 @@ class SpawnedProcessError(subprocess.CalledProcessError):
         super().__init__(returncode=returncode, cmd=cmd, output=output, stderr=stderr)
 
 
-class spawn(pexpect.spawn):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class _SpawnMixin(pexpect.spawnbase.SpawnBase):
 
     def communicate(self, pattern_dict, **kwargs):
         pattern_kv_list = list(pattern_dict.items())
@@ -87,6 +93,65 @@ class spawn(pexpect.spawn):
         finally:
             if not getattr(self, 'closed', True):
                 self.close()
+
+class spawn(_SpawnMixin, pexpect.spawn):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
+    # See pexpect/popen_spawn.py
+
+    def __init__(self, cmd, *, timeout=30, maxread=2000, searchwindowsize=None,
+                 logfile=None, env=None, encoding=None,
+                 codec_errors='strict', preexec_fn=None,
+                 bufsize=0,
+                 **kwargs):
+        pexpect.spawnbase.SpawnBase.__init__(  # Skip pexpect.popen_spawn.PopenSpawn!
+                self, timeout=timeout, maxread=maxread,
+                searchwindowsize=searchwindowsize, logfile=logfile,
+                encoding=encoding, codec_errors=codec_errors)
+
+        # Note that `SpawnBase` initializes `self.crlf` to `\r\n`
+        # because the default behaviour for a PTY is to convert
+        # incoming LF to `\r\n` (see the `onlcr` flag and
+        # https://stackoverflow.com/a/35887657/5397009). Here we set
+        # it to `os.linesep` because that is what the spawned
+        # application outputs by default and `popen` doesn't translate
+        # anything.
+        if encoding is None:
+            self.crlf = os.linesep.encode ("ascii")
+        else:
+            self.crlf = self.string_type (os.linesep)
+
+        if sys.platform == 'win32':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            kwargs['startupinfo'] = startupinfo
+            kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+        if isinstance(cmd, pexpect.utils.string_types) and sys.platform != 'win32':
+            cmd = shlex.split(cmd, posix=os.name == 'posix')
+
+        self.proc = subprocess.Popen(cmd,
+                                     bufsize=bufsize,
+                                     **kwargs)
+        self.pid = self.proc.pid
+        self.closed = False
+        self._buf = self.string_type()
+
+        self._read_queue = Queue()
+        self._read_thread = threading.Thread(target=self._read_incoming)
+        self._read_thread.setDaemon(True)
+        self._read_thread.start()
+
+    def close(self, force=True):
+        # Missing from pexpect.popen_spawn.PopenSpawn!
+        if not force and self.proc.stdin:
+            self.flush()
+            self.sendeof()
+        self.kill(signal.SIGKILL if force else signal.SIGTERM)
+        self.closed = True
 
 def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_CompletedProcess=False, **kwargs):
     if log.isEnabledFor(logging.DEBUG):
@@ -139,6 +204,13 @@ def do_system_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
     else:
         return dbg_system_cmd(cmd, log_append=log_append, **kwargs)
 
+def dbg_popen_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
+    if log.isEnabledFor(logging.DEBUG):
+        log.verbose('CMD: %s%s',
+                    subprocess.list2cmdline(cmd),
+                    log_append)
+    return subprocess.Popen(cmd + hidden_args, **kwargs)
+
 def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
     if dry_run is None:
          dry_run = getattr(app.args, 'dry_run', False)
@@ -155,12 +227,28 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
     else:
         return dbg_popen_cmd(cmd, log_append=log_append, **kwargs)
 
-def dbg_popen_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
+def dbg_popen_spawn_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
                     subprocess.list2cmdline(cmd),
                     log_append)
-    return subprocess.Popen(cmd + hidden_args, **kwargs)
+    return popen_spawn(cmd + hidden_args, **kwargs)
+
+def do_popen_spawn_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
+    if dry_run is None:
+         dry_run = getattr(app.args, 'dry_run', False)
+    if dry_run:
+        log.verbose('CMD (dry-run): %s%s',
+                    subprocess.list2cmdline(cmd),
+                    log_append)
+        import contextlib
+        p = types.SimpleNamespace()
+        pcm = contextlib.nullcontext(p)
+        scm = contextlib.nullcontext(None)
+        pcm.stdout = p.stdout = scm
+        return pcm
+    else:
+        return dbg_popen_spawn_cmd(cmd, log_append=log_append, **kwargs)
 
 def dbg_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False, logfile=True):
     if app.log.isEnabledFor(logging.DEBUG):
@@ -170,7 +258,7 @@ def dbg_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False,
         logfile = sys.stdout.buffer
     elif logfile is False:
         logfile = None
-    p = pexpect.spawn(cmd[0], args=cmd[1:] + hidden_args, timeout=None,
+    p = spawn(cmd[0], args=cmd[1:] + hidden_args, timeout=None,
             logfile=logfile)
     while True:
         index = p.expect([
@@ -254,8 +342,6 @@ def do_spawn_cmd(cmd, dry_run=None, **kwargs):
     else:
         return dbg_spawn_cmd(cmd, **kwargs)
 
-# clean_cmd_output {{{
-
 def clean_cmd_output(out):
     if isinstance(out, bytes):
         out = byte_decode(out)
@@ -265,8 +351,6 @@ def clean_cmd_output(out):
     out = re.sub(r'\t', ' ', out)
     out = re.sub(r' +$', '', out, flags=re.MULTILINE)
     return out
-
-# }}}
 
 class IoniceClass(enum.IntEnum):
     # None = 0
@@ -279,6 +363,7 @@ class Executable(metaclass=abc.ABCMeta):
 
     run_func = None
     run_func_options = tuple()
+    popen_func = None
 
     nice_adjustment = None
     ionice_class = None
@@ -298,6 +383,45 @@ class Executable(metaclass=abc.ABCMeta):
         elif logfile is False:
             logfile = None
         p = self.spawn(cmd[0], args=cmd[1:] + hidden_args, logfile=logfile, **kwargs)
+        with p:
+            pattern_dict = p.get_pattern_dict()
+            out = ''
+            for v in p.communicate(pattern_dict=pattern_dict):
+                out += byte_decode(p.before)
+                if p.match and p.match is not pexpect.EOF:
+                    out += byte_decode(p.match.group(0))
+                if callable(v):
+                    if p.match is pexpect.EOF:
+                        b = v(None)
+                    else:
+                        b = v(p.match.group(0))
+                    if not b:
+                        break
+                if p.after is pexpect.EOF:
+                    break
+        if p.signalstatus is not None:
+            raise Exception('Command exited due to signal %r' % (p.signalstatus,))
+        if not no_status and p.exitstatus:
+            raise SpawnedProcessError(
+                returncode=p.exitstatus,
+                cmd=subprocess.list2cmdline(cmd),
+                output=out,
+                spawn=p)
+        return out
+
+    def _spawn_popen_func(self, cmd, hidden_args=[], dry_run=None, no_status=False, logfile=None, **kwargs):
+        if dry_run is None:
+             dry_run = getattr(app.args, 'dry_run', False)
+        if dry_run:
+            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
+            return ''
+        if app.log.isEnabledFor(logging.DEBUG):
+            app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
+        if logfile is True:
+            logfile = sys.stdout.buffer
+        elif logfile is False:
+            logfile = None
+        p = self.popen_spawn(cmd + hidden_args, logfile=logfile, **kwargs)
         with p:
             pattern_dict = p.get_pattern_dict()
             out = ''
@@ -411,7 +535,7 @@ class Executable(metaclass=abc.ABCMeta):
         d.elapsed_time = t1 - t0
         return d
 
-    def _popen(self, *args, dry_run=False,
+    def _popen(self, *args, popen_func=None, dry_run=False,
                stdin=None, stdout=None, stderr=None,
                text=None, encoding=None, bufsize=-1,
                **kwargs):
@@ -419,7 +543,8 @@ class Executable(metaclass=abc.ABCMeta):
            p2 = myexe2.popen([...], stdin=p1.stdout, stdout=myfile.fp)
         """
         cmd = self.build_cmd(*args, **kwargs)
-        return do_popen_cmd(
+        popen_func = popen_func or self.popen_func or do_popen_cmd
+        return popen_func(
             cmd,
             dry_run=dry_run,
             stdin=stdin, stdout=stdout, stderr=stderr,
@@ -752,16 +877,11 @@ class Difftool(Executable):
 
 DIFFTOOL = Difftool()
 
-# edfile {{{
-
 def edfile(file):
     file = str(file)
     startMtime = os.path.getmtime(file)
     EDITOR(file)
     return os.path.getmtime(file) != startMtime
-
-# }}}
-# edvar {{{
 
 def edvar(value, *, json=None, suffix=None, encoding='utf-8',
           preserve_whitespace_tags=None):
@@ -810,15 +930,10 @@ def edvar(value, *, json=None, suffix=None, encoding='utf-8',
     #    raise ValueError(new_value)
     return (True, new_value)
 
-# }}}
-# eddiff {{{
-
 def eddiff(files):
     files = [str(e) for e in files]
     #startMtime = os.path.getmtime(file)
     DIFFTOOL(*files)
     #return os.path.getmtime(file) != startMtime
 
-# }}}
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
+# vim: ft=python ts=8 sw=4 sts=4 ai et

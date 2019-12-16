@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 from .perf import perfcontext
 from .exec import *
-from .exec import spawn as _exec_spawn
+from .exec import _SpawnMixin, spawn as _exec_spawn, popen_spawn as _exec_popen_spawn
 from .parser import lines_parser
 from .utils import byte_decode
 from .utils import Timestamp as _BaseTimestamp, Ratio
@@ -103,7 +103,7 @@ class ConcatScriptFile(TextFile):
             if file_entry.duration is not None:
                 print(f'duration {file_entry.duration}', file=file)
 
-class FfmpegSpawn(_exec_spawn):
+class _FfmpegSpawnMixin(_SpawnMixin):
 
     show_progress_bar = None
     progress_bar = None
@@ -286,19 +286,26 @@ class FfmpegSpawn(_exec_spawn):
             self.on_progress_bar_line = False
         return super().__exit__(exc_type, exc_value, exc_traceback)
 
-class _Ffmpeg(Executable):
+class FfmpegSpawn(_FfmpegSpawnMixin, _exec_spawn):
+    pass
 
-    run_func = Executable._spawn_run_func
-    #run_func = staticmethod(do_spawn_cmd)
+class FfmpegPopenSpawn(_FfmpegSpawnMixin, _exec_popen_spawn):
+    pass
+
+class _Ffmpeg(Executable):
 
     Timestamp = Timestamp
     ConcatScriptFile = ConcatScriptFile
 
-    spawn = FfmpegSpawn
+    run_func = Executable._spawn_run_func
+    #popen_func = Executable._spawn_popen_func
     run_func_options = Executable.run_func_options + (
         'show_progress_bar',
         'progress_bar_max',
     )
+
+    spawn = FfmpegSpawn
+    popen_spawn = FfmpegPopenSpawn
 
     @classmethod
     def kwargs_to_cmdargs(cls, **kwargs):
@@ -926,4 +933,4 @@ class Ffprobe(_Ffmpeg):
 
 ffprobe = Ffprobe()
 
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
+# vim: ft=python ts=8 sw=4 sts=4 ai et
