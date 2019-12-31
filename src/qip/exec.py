@@ -30,6 +30,7 @@ __all__ = [
 
 from pathlib import Path
 import abc
+import collections
 import enum
 import errno
 import functools
@@ -111,6 +112,8 @@ class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
                  logfile=None, env=None, encoding=None,
                  codec_errors='strict', preexec_fn=None,
                  bufsize=0,
+                 stdin=None, stdout=None, stderr=None,
+                 read_from='auto',
                  **kwargs):
         pexpect.spawnbase.SpawnBase.__init__(  # Skip pexpect.popen_spawn.PopenSpawn!
                 self, timeout=timeout, maxread=maxread,
@@ -138,17 +141,49 @@ class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
         if isinstance(cmd, pexpect.utils.string_types) and sys.platform != 'win32':
             cmd = shlex.split(cmd, posix=os.name == 'posix')
 
+        if read_from == 'auto':
+            if stdout == subprocess.PIPE:
+                read_from = 'stdout'
+            elif stderr == subprocess.PIPE:
+                read_from = 'stderr'
+            else:
+                # raise ValueError('read_from not set and neither stdout nor stderr are pipes')
+                read_from = None
+
         self.proc = subprocess.Popen(cmd,
                                      bufsize=bufsize,
+                                     stdin=stdin, stdout=stdout, stderr=stderr,
                                      **kwargs)
         self.pid = self.proc.pid
         self.closed = False
         self._buf = self.string_type()
 
-        self._read_queue = Queue()
-        self._read_thread = threading.Thread(target=self._read_incoming)
-        self._read_thread.setDaemon(True)
-        self._read_thread.start()
+
+        self._read_from = read_from
+        if self._read_from:
+            self._read_queue = Queue()
+            self._read_thread = threading.Thread(target=self._read_incoming)
+            self._read_thread.setDaemon(True)
+            self._read_thread.start()
+        else:
+            self._read_reached_eof = True
+
+    def _read_incoming(self):
+        """Run in a thread to move output from a pipe to a queue."""
+        fileno = getattr(self.proc, self._read_from).fileno()
+        while 1:
+            buf = b''
+            try:
+                buf = os.read(fileno, 1024)
+            except OSError as e:
+                self._log(e, 'read')
+
+            if not buf:
+                # This indicates we have reached EOF
+                self._read_queue.put(None)
+                return
+
+            self._read_queue.put(buf)
 
     def close(self, force=True):
         # Missing from pexpect.popen_spawn.PopenSpawn!
@@ -158,7 +193,9 @@ class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
         self.kill(signal.SIGKILL if force else signal.SIGTERM)
         self.closed = True
 
-def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_CompletedProcess=False, **kwargs):
+def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_CompletedProcess=False,
+                 stdout=None,
+                 **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
                     subprocess.list2cmdline([str(e) for e in cmd]),
@@ -168,7 +205,11 @@ def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_Com
         # Explicitly passing input=None was previously equivalent to passing an
         # empty string. That is maintained here for backwards compatibility.
         kwargs['input'] = '' if kwargs.get('universal_newlines', False) else b''
-    run_out = subprocess.run(cmd + hidden_args, stdout=subprocess.PIPE, check=True, **kwargs)
+    if stdout is None:
+        stdout = subprocess.PIPE
+    run_out = subprocess.run(cmd + hidden_args,
+                             stdout=stdout,
+                             check=True, **kwargs)
     if return_CompletedProcess:
         return run_out
     else:
@@ -379,7 +420,19 @@ class Executable(metaclass=abc.ABCMeta):
     ionice_level = None
     ionice_ignore = True
 
-    def _spawn_run_func(self, cmd, hidden_args=[], dry_run=None, no_status=False, logfile=None, **kwargs):
+    def _spawn_run_func(self, cmd, hidden_args=[], dry_run=None, no_status=False, logfile=None,
+                        stdin=None, stdout=None, stderr=None,
+                        **kwargs):
+        if stdin or stdout or stderr:
+            stdin = stdin or subprocess.PIPE
+            stdout = stdout or subprocess.PIPE
+            stderr = stderr or subprocess.STDOUT  # Default from Executable._run
+            assert self.popen_func and self.popen_spawn, f'self={self!r}: popen_func={self.popen_func!r} and popen_spawn={self.popen_spawn!r}'
+            assert logfile is None
+            assert no_status == False
+            return self.popen(cmd, hidden_args=hidden_args, dry_run=dry_run,
+                              stdin=stdin, stdout=stdout, stderr=stderr,
+                              **kwargs)
         if dry_run is None:
              dry_run = getattr(app.args, 'dry_run', False)
         if dry_run:
@@ -543,7 +596,12 @@ class Executable(metaclass=abc.ABCMeta):
         cmd = self.build_cmd(*args, **kwargs)
         run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
         t0 = time.time()
-        d.out = run_func(cmd, dry_run=dry_run, **run_func_kwargs)
+        out = run_func(cmd, dry_run=dry_run, **run_func_kwargs)
+        if isinstance(out, collections.Mapping):
+            for k, v in out.items():
+                setattr(d, k, v)
+        else:
+            d.out = out
         t1 = time.time()
         d.elapsed_time = t1 - t0
         return d
@@ -716,10 +774,13 @@ def do_srun_cmd(cmd,
 
     gres_args = []
     if stdin_file is not None:
+        assert stdin is None
         slurm_args += ['--input', stdin_file]
     if stdout_file is not None:
+        assert stdout is None
         slurm_args += ['--output', stdout_file]
     if stderr_file is not None:
+        assert stderr is None
         slurm_args += ['--error', stderr_file]
     if slurm_priority is not None:
         slurm_args += ['--priority', slurm_priority]
@@ -742,13 +803,15 @@ def do_srun_cmd(cmd,
     slurm_args.extend(cmd)
     slurm_args = [str(e) for e in slurm_args]
     thread = PipeRecordThread(text=True)
+    assert stderr is None
     def stderr_copier(out):
         print(out, end='', file=sys.stderr, flush=True)
     thread.target = stderr_copier
     thread.start()
     try:
         run_out = do_exec_cmd(slurm_args, dry_run=dry_run,
-                              return_CompletedProcess=True, stderr=thread.file_w)
+                              stdin=stdin, stdout=stdout, stderr=thread.file_w,
+                              return_CompletedProcess=True)
     finally:
         thread.file_w.close()
         thread.join()
@@ -779,10 +842,13 @@ def do_sbatch_cmd(cmd,
 
     gres_args = []
     if stdin_file is not None:
+        assert stdin is None
         slurm_args += ['--input', stdin_file]
     if stdout_file is not None:
+        assert stdout is None
         slurm_args += ['--output', stdout_file]
     if stderr_file is not None:
+        assert stderr is None
         slurm_args += ['--error', stderr_file]
     if slurm_priority is not None:
         slurm_args += ['--priority', slurm_priority]
@@ -807,7 +873,8 @@ def do_sbatch_cmd(cmd,
 
     slurm_args.extend(cmd)
     slurm_args = [str(e) for e in slurm_args]
-    return do_exec_cmd(slurm_args)
+    return do_exec_cmd(slurm_args,
+                       stdin=stdin, stdout=stdout, stderr=stderr)
 
 class Editor(Executable):
 
