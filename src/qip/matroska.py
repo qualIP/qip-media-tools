@@ -92,6 +92,7 @@ class TagInfo(collections.namedtuple(
                 **kwargs)
 
 default_tag_map = (
+    TagInfo(None, None, 'LANGUAGE', 'language'),  # SPECIAL
     TagInfo(70, 'COLLECTION', 'TITLE', 'grouping'),
     # XXXJST CONFLICT TagInfo(70, 'COLLECTION', 'TITLE', 'tvshow'),
     # XXXJST CONFLICT TagInfo(60, 'SEASON', 'PART_NUMBER', 'season'),
@@ -126,7 +127,6 @@ default_tag_map = (
     TagInfo(None, None, 'ORIGINAL_MEDIA_TYPE', 'mediatype'),
     TagInfo(None, None, 'CONTENT_TYPE', 'contenttype'),
     #TagInfo(None, None, 'TODO', 'category'),
-    #TagInfo(None, None, 'TODO', 'language'),
     TagInfo(None, None, 'COPYRIGHT', 'copyright'),
     TagInfo(None, None, 'ENCODED_BY', 'encodedby'),
     TagInfo(None, None, 'ENCODER', 'tool'),
@@ -496,6 +496,17 @@ class MatroskaFile(MediaFile):
                     self.file_name,
                 ]
                 do_exec_cmd(cmd)
+            elif tag == 'language':
+                # https://www.matroska.org/technical/specs/index.html#languages
+                from qip.isolang import isolang
+                cmd = [
+                    'mkvpropedit',
+                    '--edit', 'track:@1',  # TODO
+                    '--set', 'language=%s' % (isolang(value).iso639_2,),
+                    self.file_name,
+                ]
+                do_exec_cmd(cmd)
+                continue
             if tags_list is None:
                 tags_xml = self.get_tags_xml()
                 tags_list = self.iter_matroska_tags(tags_xml)
