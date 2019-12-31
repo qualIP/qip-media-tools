@@ -5,6 +5,7 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
+from gettext import gettext as _
 from pathlib import Path
 import argparse
 import functools
@@ -14,7 +15,6 @@ import os
 import re
 import urllib.parse
 import xml.etree.ElementTree as ET
-from gettext import gettext as _
 
 from qip.app import app
 from qip.file import *

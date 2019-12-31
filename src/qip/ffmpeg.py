@@ -295,7 +295,7 @@ class _Ffmpeg(Executable):
     ConcatScriptFile = ConcatScriptFile
 
     run_func = Executable._spawn_run_func
-    #popen_func = Executable._spawn_popen_func
+    # TODO popen_func = Executable._spawn_popen_func
     run_func_options = Executable.run_func_options + (
         'show_progress_bar',
         'progress_bar_max',
@@ -326,7 +326,7 @@ class _Ffmpeg(Executable):
     def build_cmd(self, *args, **kwargs):
         args = list(args)
 
-        # stdout_file is always last
+        # out_file is always last
         out_file_args = [args.pop(-1)]
         if args and args[-1] == '--':
             out_file_args = [args.pop(-1)] + out_file_args
@@ -546,8 +546,8 @@ class Ffmpeg(_Ffmpeg):
                     frames_count += 1
                     last_cropdetect_match = m
             if not last_cropdetect_match:
-		# Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)
-		# -> skip_frame_nokey=False
+                # Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)
+                # -> skip_frame_nokey=False
                 raise ValueError('Crop detection failed')
             if skip_frame_nokey and frames_count < 2:
                 return self.cropdetect(input_file,

@@ -12,6 +12,7 @@ __all__ = [
         'safe_read_file',
         ]
 
+from gettext import gettext as _, ngettext
 from pathlib import Path
 import contextlib
 import hashlib

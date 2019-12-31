@@ -5,8 +5,8 @@ __all__ = [
 
 from pathlib import Path
 import functools
-import os
 import logging
+import os
 import re
 log = logging.getLogger(__name__)
 

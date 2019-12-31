@@ -764,7 +764,6 @@ def organize(inputfile):
     if getattr(app.args, 'library_mode', None):
         inputfile.tags.type = app.args.library_mode
     inputfile.tags.type = inputfile.deduce_type()
-    app.log.debug('type = %r -> %r', orig_type, inputfile.tags.type)
 
     # PEOPLE
     for tag in (

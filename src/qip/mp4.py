@@ -10,12 +10,12 @@ __all__ = (
 )
 
 from pathlib import Path
+import logging
 import os
 import re
 import shutil
 import struct
 import tempfile
-import logging
 log = logging.getLogger(__name__)
 
 from .mm import MediaFile

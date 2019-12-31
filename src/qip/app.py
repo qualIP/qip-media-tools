@@ -107,7 +107,6 @@ def _run_dialog(dialog, style, async_=False):
     from prompt_toolkit.application.current import get_app
     application = get_app(return_none=True)
     if application:
-        print(dir(dialog))
         return dialog.run()
     else:
         from prompt_toolkit.shortcuts.dialogs import _create_app
@@ -591,7 +590,6 @@ class App(object):
         radio_list = RadioList(values)
 
         if help_handler:
-            print(dir(radio_list.control))
             radio_list.control.key_bindings.add('?')(partial(help_handler, radio_list))
 
         dialog = Dialog(
