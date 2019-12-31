@@ -114,11 +114,17 @@ def main():
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='outputdir', default=argparse.SUPPRESS, type=Path, help='specify the output directory')
+    pgroup.add_bool_argument('--use-default-output', default=True, help='use default output directory from config file')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--ascii-compat', dest='ascii_compat', default=True, action='store_true', help='Enable ASCII compatibility')
     xgroup.add_argument('--no-ascii-compat', dest='ascii_compat', default=argparse.SUPPRESS, action='store_false', help='Disable ASCII compatibility')
+
+    pgroup = app.parser.add_argument_group('Actions')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--organize', dest='action', default=None, action='store_const', const='organize', help='organize media files')
+    xgroup.add_argument('--set-default', dest='action', default=argparse.SUPPRESS, action='store_const', const='set-default', help='set default (with a Library Mode argument and --output)')
 
     app.parser.add_argument('inputfiles', nargs='*', default=(), type=Path, help='input sound files')
 
@@ -158,10 +164,24 @@ def main():
             for inputfile in app.args.inputfiles:
                 if inputfile.is_dir():
                     raise Exception('Output directory mandatory when input directory provided')
-            app.args.outputdir = ''
+            if not app.args.use_default_output:
+                raise ValueError('No output directory specified and use of default output directories disabled')
         for inputfile in app.args.inputfiles:
             organize(inputfile)
 
+        # }}}
+    elif app.args.action == 'set-default':
+        # {{{
+        if app.args.inputfiles:
+            raise Exception('Cannot provide input files with --set-default')
+        if not getattr(app.args, 'library_mode', None):
+            raise Exception('No Library Mode provided')
+        if not getattr(app.args, 'outputdir', None):
+            raise Exception('No output directory provided')
+        if not app.config_file_parser.has_section('default-output'):
+            app.config_file_parser.add_section('default-output')
+        app.config_file_parser.set('default-output', app.args.library_mode, os.fspath(app.args.outputdir.resolve()))
+        app.config_file_parser.write()
         # }}}
     else:
         raise ValueError('Invalid action \'%s\'' % (app.args.action,))
@@ -806,6 +826,13 @@ def organize(inputfile):
     else:
         raise ValueError('type = %r' % (inputfile.tags.type,))
     dst_dir, dst_file_base = ores
+    outputdir = getattr(app.args, 'outputdir', None)
+    if not outputdir and app.args.use_default_output:
+        try:
+            outputdir = Path(app.config_file_parser['default-output'][inputfile.tags.type]).resolve()
+        except (TypeError, KeyError):
+            # TypeError: 'NoneType' object is not subscriptable
+            raise ValueError(f'No output directory specified and no default set for type {inputfile.tags.type!r}')
     dst_dir = os.fspath(outputdir / dst_dir)
 
     src_stat = os.lstat(inputfile.file_name)
