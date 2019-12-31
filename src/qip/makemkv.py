@@ -6,6 +6,7 @@ __all__ = [
 from pathlib import Path
 import collections
 import contextlib
+import functools
 import logging
 import pexpect
 import progress
@@ -57,13 +58,26 @@ def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False,
             output=out,
             spawn=p)
 
-    assert p.num_errors == 0, 'makemkvcon errors found'
-    assert p.num_tiltes_saved not in (0, None), 'No tiles saved!'
-    assert p.num_tiltes_failed in (0, None), 'Some tiles failed!'
+    if ignore_failed_to_open_disc \
+            and p.num_errors == 1 \
+            and list(p.errors_seen) == ['Failed to open disc'] \
+            and 'Reading Disc information' not in p.operations_performed:
+        pass  # Ok
+    else:
+        assert p.num_errors == 0, 'makemkvcon errors found'
+    if 'info' in cmd:
+        pass  # Ok
+    else:
+        print(f'cmd[1]={cmd[1]}')
+        assert p.num_tiltes_saved not in (0, None), 'No tiles saved!'
+        assert p.num_tiltes_failed in (0, None), 'Some tiles failed!'
 
-    app.log.info('No errors. %d titles saved', p.num_tiltes_saved)
+        app.log.info('No errors. %d titles saved', p.num_tiltes_saved)
 
-    return out
+    return {
+        'spawn': p,
+        'out': out,
+    }
 
 def do_makemkvcon_spawn_cmd(cmd, dry_run=None, **kwargs):
     if dry_run is None:
@@ -374,8 +388,8 @@ class MakemkvconSpawn(_exec_spawn):
                 (fr'^PRGT:(?P<code>\d+),(?P<id>\d+),"(?P<name>{re_dot}*)"{re_eol}', self.robot_progress_total_title),
                 (fr'^MSG:(?P<code>\d+),(?P<flags>\d+),(?P<count>\d+),"(?P<message>{re_dot}*?)","(?P<format>{re_dot}*?)"(?P<params>,"{re_dot}*")*{re_eol}', self.robot_message),
                 # DRV:1,2,999,12,"BD-ROM ASUS SBC-06D2X-U D201","MOCKINJAY_PT1","/dev/sr2"
-                (fr'^DRV:(?P<index>\d+),(?P<flag1>\d+),(?P<flag2>\d+),(?P<flag3>\d+),(?P<drive_name>{re_dot}*),(?P<disc_name>{re_dot}*),(?P<device_name>{re_dot}*){re_eol}', self.robot_drive_scan),
-                (fr'^TCOUT:(?P<count>\d+){re_eol}', self.robot_titles_count),
+                (fr'^DRV:(?P<index>\d+),(?P<flag1>\d+),(?P<flag2>\d+),(?P<flag3>\d+),"(?P<drive_name>{re_dot}*)","(?P<disc_name>{re_dot}*)","(?P<device_name>{re_dot}*)"{re_eol}', self.robot_drive_scan),
+                (fr'^TCOUNT:(?P<count>\d+){re_eol}', self.robot_titles_count),
                 (fr'^CINFO:(?P<id>\d+),(?P<code>\d+),"(?P<value>{re_dot}*)"{re_eol}', self.robot_disc_info),
                 (fr'^TINFO:(?P<id>\d+),(?P<code>\d+),"(?P<value>{re_dot}*)"{re_eol}', self.robot_title_info),
                 (fr'^SINFO:(?P<id>\d+),(?P<code>\d+),"(?P<value>{re_dot}*)"{re_eol}', self.robot_stream_info),
@@ -555,6 +569,9 @@ class Makemkvcon(Executable):
 
     def mkv(self, *, source, dest_dir, title_id='all', **kwargs):
         return self('mkv', source, title_id, dest_dir, **kwargs)
+
+    def backup(self, *, source, dest_dir, **kwargs):
+        return self('backup', source, dest_dir, **kwargs)
 
     def info(self, *, source, ignore_failed_to_open_disc=False, run_func=None, **kwargs):
         if ignore_failed_to_open_disc:
