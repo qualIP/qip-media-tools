@@ -553,6 +553,22 @@ class Executable(metaclass=abc.ABCMeta):
                 cmdargs.append(str(v))
         return cmdargs
 
+    @classmethod
+    def kwargs_to_cmdargs_win_slash(cls, **kwargs):
+        cmdargs = []
+        for k, v in kwargs.items():
+            if v in (None, False):
+                # Dropped for ease of passing unused arguments
+                continue
+            k = {
+                '_class': 'class',
+                '_continue': 'continue',
+            }.get(k, k)
+            cmdargs.append('/' + k)
+            if v is not True:
+                cmdargs.append(str(v))
+        return cmdargs
+
     def build_cmd(self, *args, **kwargs):
         nice_adjustment = kwargs.pop('nice_adjustment', self.nice_adjustment)
         ionice_class = kwargs.pop('ionice_class', self.ionice_class)
