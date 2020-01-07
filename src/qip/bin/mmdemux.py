@@ -129,6 +129,32 @@ def sorted_stream_dicts(stream_dicts):
         stream_dicts,
         key=stream_dict_key)
 
+def print_streams_summary(mux_dict, current_stream_index=None):
+    print(' index |   type   |       extension       | language | disposition + title')
+    print('-------+----------+-----------------------+----------+---------------------')
+    for stream_dict in sorted_stream_dicts(mux_dict['streams']):
+        print('{skip_marker:<1s}{current_marker:<1s}{stream_index:>4d} | {codec_type:<8s} | {extension:<21s} | {language:^8s} | {disposition_title}'.format(
+            skip_marker='S' if stream_dict.get('skip', False) else '',
+            current_marker='*' if stream_dict['index'] == current_stream_index else '',
+            stream_index=stream_dict['index'],
+            codec_type=stream_dict['codec_type'],
+            extension=
+            '->'.join([e for e in [
+                my_splitext(stream_dict.get('original_file_name', ''))[1],
+                my_splitext(stream_dict['file_name'])[1],]
+                       if e]),
+            language=isolang(stream_dict.get('language', 'und')).code3,
+            disposition_title=', '.join([k for k, v in stream_dict['disposition'].items() if v]
+                                        + ([repr(stream_dict['title'])]
+                                           if stream_dict.get('title', None)
+                                           else [])
+                                        + ([f'''*{stream_dict['subtitle_count']}''']
+                                           if stream_dict.get('subtitle_count', None)
+                                           else [])
+                                        ),
+        ))
+    print('-------+----------+-----------------------+----------+---------------------')
+
 class FieldOrderUnknownError(NotImplementedError):
 
     def __init__(self, mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order):
@@ -3797,6 +3823,7 @@ def action_demux(inputdir, in_tags):
                 print('')
                 print('help -- Print this help')
                 print('skip -- Skip this stream -- done')
+                print('print -- Print streams summary')
                 if stream_codec_type in ('subtitle',):
                     print('forced -- Toggle forced disposition (%r)' % (True if stream_dict['disposition'].get('forced', None) else False,))
                     print('hearing_impaired -- Toggle hearing_impaired disposition (%r)' % (True if stream_dict['disposition'].get('hearing_impaired', None) else False,))
@@ -3841,6 +3868,8 @@ def action_demux(inputdir, in_tags):
                 break
             elif c in ('quit', 'q'):
                 raise
+            elif c in ('print', 'p'):
+                print_streams_summary(mux_dict=mux_dict, current_stream_index=stream_dict['index'])
             elif c == 'forced':
                 stream_dict['disposition']['forced'] = not stream_dict['disposition'].get('forced', None)
                 update_mux_conf = True
