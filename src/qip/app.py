@@ -38,7 +38,7 @@ DEFAULT_APP_LOG_FORMAT = '%(asctime)s %(levelname)s %(message)s'
 if HAVE_COLOREDLOGS:
     DEFAULT_LEVEL_STYLES = coloredlogs.DEFAULT_LEVEL_STYLES
     DEFAULT_LEVEL_STYLES.update(
-            debug=dict(color='black', bold=coloredlogs.CAN_USE_BOLD_FONT),
+            debug=dict(color='magenta', bold=coloredlogs.CAN_USE_BOLD_FONT),
             )
 
 def addLoggingLevelName(level, levelName):
@@ -464,7 +464,16 @@ class App(object):
                 'app': '#884444',
                 'cue': '#00aa00',
                 'field': '#884444',
-                'error': '#ff0000 underline',
+                # Simiar to coloredlogs.DEFAULT_LEVEL_STYLES:
+                #'spam': 'green',  # faint
+                'debug': 'ansidarkgray', # ansibrightblack
+                'verbose': 'ansiblue',
+                'info': '',
+                'notice': 'magenta',
+                'warning': 'yellow',
+                'success': 'green bold',
+                'error': 'red underline',
+                'critical': 'red',
             })
 
     def prompt(self, message=None, *, style=None, completer=None, beep=DEFAULT):
