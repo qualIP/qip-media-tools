@@ -207,10 +207,15 @@ def unmangle_search_string(initial_text):
     initial_text = re.sub(r'(?=[A-Z][a-z])', r' ', initial_text)       # AbCDef ->  AbC Def
     initial_text = re.sub(r'[a-z](?=[A-Z])', r'\g<0> ', initial_text)  # AbC Def -> Ab C Def
     initial_text = re.sub(r'[A-Za-z](?=\d)', r'\g<0> ', initial_text)  # ABC123 -> ABC 123
-    initial_text = re.sub(r'(.+),\s*(The|A|An|Le|La|Les)$', r'\2 \1', initial_text, flags=re.IGNORECASE)  # ABC, The -> The ABC
-    initial_text = re.sub(r'[^A-Za-z0-9\']+', r' ', initial_text)      # AB$_12 -> AB 12
-    initial_text = re.sub(r' dis[ck] [0-9]+$', r'', initial_text, flags=re.IGNORECASE)  # ABC disc 1 -> ABC
-    initial_text = initial_text.strip()                                #  ABC   -> ABC
+    p = None
+    while initial_text != p:
+        p = initial_text
+        initial_text = re.sub(r'(.+),\s*(The|A|An|Le|La|Les)$', r'\2 \1', initial_text, flags=re.IGNORECASE)  # ABC, The -> The ABC
+        initial_text = re.sub(r'[^A-Za-z0-9\']+', r' ', initial_text)      # AB$_12 -> AB 12
+        initial_text = initial_text.strip()                                #  ABC   -> ABC
+        initial_text = re.sub(r'(?:DVD\|Blu[- ]?ray)$', r'', initial_text, flags=re.IGNORECASE)  # ABC Blu Ray -> ABC
+        initial_text = re.sub(r'(?: the)? \w+(?:\'s)? (?:edition|cut)$', r'', initial_text, flags=re.IGNORECASE)  # ABC special edition -> ABC
+        initial_text = re.sub(r' dis[ck] [0-9]+$', r'', initial_text, flags=re.IGNORECASE)  # ABC disc 1 -> ABC
     return initial_text
 
 def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
