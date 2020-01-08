@@ -1084,7 +1084,9 @@ def estimate_stream_duration(ffprobe_json):
         pass
     else:
         try:
-            return ffmpeg.Timestamp(ffprobe_format_json['duration'])
+            estimated_duration = ffmpeg.Timestamp(ffprobe_format_json['duration'])
+            if estimated_duration >= 0.0:
+                return estimated_duration
         except KeyError:
             pass
     try:
@@ -1093,15 +1095,21 @@ def estimate_stream_duration(ffprobe_json):
         pass
     else:
         try:
-            return ffmpeg.Timestamp(ffprobe_stream_json['duration'])
+            estimated_duration = ffmpeg.Timestamp(ffprobe_stream_json['duration'])
+            if estimated_duration >= 0.0:
+                return estimated_duration
         except KeyError:
             pass
         try:
-            return int(ffprobe_stream_json['tags']['NUMBER_OF_FRAMES'])
+            estimated_duration = int(ffprobe_stream_json['tags']['NUMBER_OF_FRAMES'])
+            if estimated_duration > 0:
+                return estimated_duration
         except KeyError:
             pass
         try:
-            return int(ffprobe_stream_json['tags']['NUMBER_OF_FRAMES-eng'])
+            estimated_duration = int(ffprobe_stream_json['tags']['NUMBER_OF_FRAMES-eng'])
+            if estimated_duration > 0:
+                return estimated_duration
         except KeyError:
             pass
     return None
