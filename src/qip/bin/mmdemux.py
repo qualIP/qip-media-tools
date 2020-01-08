@@ -477,7 +477,11 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                                     field_order = 'bb'
                                     app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
                             else:
-                                raise NotImplementedError('Mix of top field first and bottom field first Interlaced frames detected')
+                                if False:
+                                    raise NotImplementedError('Mix of top field first and bottom field first interlaced frames detected')
+                                field_order = 'auto-interlaced'
+                                app.log.warning('Detected field order is mix of top and bottom field first (%s) at %s (%.3f) fps',
+                                                field_order, framerate, framerate)
                         else:
                             field_order = 'progressive'
                             app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
