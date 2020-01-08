@@ -1117,6 +1117,7 @@ def estimate_stream_duration(ffprobe_json):
 def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=None):
 
     inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    inputfile.tags.pop('type', None)
 
     name_scan_str = Path(inputfile_base).name
     name_scan_str = name_scan_str.strip()
@@ -1226,7 +1227,6 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
             else:
                 raise NotImplementedError(mediainfo_mediatype)
 
-    inputfile.tags.pop('type', None)
     inputfile.tags.update(in_tags)
     inputfile.tags.type = inputfile.deduce_type()
 
