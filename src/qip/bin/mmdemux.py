@@ -1033,7 +1033,8 @@ def get_vp9_target_quality(width, height, frame_rate, mq=True):  # CQ
             return 36
         elif height <= 480:
             # 480               34 (LQ) or 33 (MQ)
-            return 33 if mq else 34
+            #return 33 if mq else 34
+            return 32 if mq else 33
         elif height <= 720:
             # 720               32
             return 32
@@ -3028,7 +3029,7 @@ def action_optimize(inputdir, in_tags):
                     elif app.args.video_rate_control_mode == 'CQ':
                         ffmpeg_conv_args += [
                             '-b:v', '%dk' % (video_target_bit_rate,),
-                            '-minrate', '%dk' % (video_target_bit_rate * 0.50,),
+                            '-minrate', '%dk' % (video_target_bit_rate * (1.00 if ffprobe_stream_json['height'] <= 480 else 0.50),),
                             '-maxrate', '%dk' % (video_target_bit_rate * 1.45,),
                             '-crf', str(video_target_quality),
                             '-quality', 'good',
