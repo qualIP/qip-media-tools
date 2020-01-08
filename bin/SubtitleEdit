@@ -31,7 +31,7 @@ SUBTITLEEDIT_PID=$!
 while true ; do
     psout=`ps --no-headers --pid $SUBTITLEEDIT_PID || true`
     if echo "$psout" | grep -q '<defunct>' ; then
-        kill -9 $SUBTITLEEDIT_PID
+        kill -9 $SUBTITLEEDIT_PID || true
         break
     elif [ -z "$psout" ] ; then
         break
