@@ -706,7 +706,7 @@ def main():
     pgroup.add_argument('--mux', dest='mux_files', nargs='+', default=(), type=Path, help='files to mux')
     pgroup.add_argument('--verify', dest='verify_files', nargs='+', default=(), type=Path, help='files to verify')
     pgroup.add_argument('--update', dest='update_dirs', nargs='+', default=(), type=Path, help='directories to update mux parameters for')
-    pgroup.add_argument('--chop', dest='chop_dirs', nargs='+', default=(), type=Path, help='directories to chop into chapters')
+    pgroup.add_argument('--chop', dest='chop_dirs', nargs='+', default=(), type=Path, help='files/directories to chop into chapters')
     pgroup.add_argument('--extract-music', dest='extract_music_dirs', nargs='+', default=(), type=Path, help='directories to extract music from')
     pgroup.add_argument('--optimize', dest='optimize_dirs', nargs='+', default=(), type=Path, help='directories to optimize')
     pgroup.add_argument('--demux', dest='demux_dirs', nargs='+', default=(), type=Path, help='directories to demux')
@@ -1476,6 +1476,118 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
                 raise ValueError('Inconsistent %s framerate: %s vs mediainfo=%s' % (field_order, framerate, mediainfo_framerate))
     return framerate
 
+def fix_chapters_out(chapters_out):
+    chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
+    chapters_root = chapters_xml.getroot()
+    for eEditionEntry in chapters_root.findall('EditionEntry'):
+        for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
+            e = eChapterAtom.find('ChapterTimeStart')
+            v = ffmpeg.Timestamp(e.text)
+            if v != 0.0:
+                # In case initial frame is a I frame to be displayed after
+                # subqequent P or B frames, the start time will be
+                # incorrect.
+                app.log.warning('Fixing first chapter start time %s to 0', v)
+                if False:
+                    # mkvpropedit doesn't like unknown elements
+                    e.tag = 'original_ChapterTimeStart'
+                    e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
+                e.text = str(ffmpeg.Timestamp(0))
+                chapters_xml_io = io.StringIO()
+                chapters_xml.write(chapters_xml_io,
+                                   xml_declaration=True,
+                                   encoding='unicode',  # Force string
+                                   )
+                chapters_out = chapters_xml_io.getvalue()
+            break
+    return chapters_out
+
+def chop_chaps(chaps,
+               inputfile,
+               chapter_file_ext=None,
+               chapter_lossless=True,
+               reset_timestamps=True):
+    if not isinstance(inputfile, MediaFile):
+        inputfile = MediaFile.new_by_file_name(inputfile)
+    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    if chapter_file_ext is None:
+        chapter_file_ext = inputfile_ext
+
+    chapter_file_name_pat = '%s-chap%%02d%s' % (inputfile_base, chapter_file_ext)
+    chaps[-1].end = ffmpeg.Timestamp.MAX  # Make sure whole movie is captured
+
+    if (
+            (chapter_file_ext == inputfile_ext
+             or ext_to_codec(chapter_file_ext) == ext_to_codec(inputfile_ext))
+            and not (chapter_lossless and inputfile_ext in ('.h264',))):  # h264 copy just spits out a single empty chapter
+        codec_args = [
+            '-codec', 'copy',
+        ]
+    else:
+        codec_args = [
+            '-codec', ext_to_codec(chapter_file_ext, lossless=chapter_lossless),
+        ] + ext_to_codec_args(chapter_file_ext, lossless=chapter_lossless)
+    ffmpeg_args = default_ffmpeg_args + [
+        '-fflags', '+genpts',
+        '-i', inputfile,
+        '-segment_times', ','.join(str(chap.end) for chap in chaps),
+        '-segment_start_number', chaps[0].no,
+        '-map', '0',
+        '-map_chapters', '-1',
+    ] + codec_args + [
+        '-f', 'ssegment',
+        '-segment_format', ext_to_container(chapter_file_ext),
+    ]
+    if reset_timestamps:
+        ffmpeg_args += [
+            '-reset_timestamps', 1,
+        ]
+    ffmpeg_args += [
+        chapter_file_name_pat,
+    ]
+    with perfcontext('Chop w/ ffmpeg segment muxer'):
+        ffmpeg(*ffmpeg_args,
+               dry_run=app.args.dry_run,
+               y=app.args.yes)
+
+    return chapter_file_name_pat
+
+    if False:
+        for chap in chaps:
+            app.log.verbose('Chapter %s', chap)
+
+            force_format = None
+            try:
+                force_format = ext_to_container(stream_file_ext)
+            except ValueError:
+                pass
+
+            stream_chapter_file_name = '%s-%02d%s' % (
+                stream_file_base,
+                chap.no,
+                stream_file_ext)
+
+            with perfcontext('Chop w/ ffmpeg'):
+                ffmpeg_args = default_ffmpeg_args + [
+                    '-start_at_zero', '-copyts',
+                    '-i', inputdir / stream_file_name,
+                    '-codec', 'copy',
+                    '-ss', chap.start,
+                    '-to', chap.end,
+                    ]
+                if force_format:
+                    ffmpeg_args += [
+                        '-f', force_format,
+                        ]
+                ffmpeg_args += [
+                    inputdir / stream_chapter_file_name,
+                    ]
+                ffmpeg(*ffmpeg_args,
+                       progress_bar_max=chap.end - chap.start,
+                       progress_bar_title=f'Chop chapter {chap} w/ ffmpeg',
+                       dry_run=app.args.dry_run,
+                       y=app.args.yes)
+
 def action_hb(inputfile, in_tags):
     app.log.info('HandBrake %s...', inputfile)
     inputfile = MediaFile.new_by_file_name(inputfile)
@@ -2117,29 +2229,7 @@ def action_mux(inputfile, in_tags,
                                       #stderr=subprocess.STDOUT,
                                      )
                 if not app.args.dry_run:
-                    chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
-                    chapters_root = chapters_xml.getroot()
-                    for eEditionEntry in chapters_root.findall('EditionEntry'):
-                        for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
-                            e = eChapterAtom.find('ChapterTimeStart')
-                            v = ffmpeg.Timestamp(e.text)
-                            if v != 0.0:
-                                # In case initial frame is a I frame to be displayed after
-                                # subqequent P or B frames, the start time will be
-                                # incorrect.
-                                app.log.warning('Fixing first chapter start time %s to 0', v)
-                                if False:
-                                    # mkvpropedit doesn't like unknown elements
-                                    e.tag = 'original_ChapterTimeStart'
-                                    e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
-                                e.text = str(ffmpeg.Timestamp(0))
-                                chapters_xml_io = io.StringIO()
-                                chapters_xml.write(chapters_xml_io,
-                                                   xml_declaration=True,
-                                                   encoding='unicode',  # Force string
-                                                   )
-                                chapters_out = chapters_xml_io.getvalue()
-                            break
+                    chapters_out = fix_chapters_out(chapters_out)
                     safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
             mux_dict['chapters']['file_name'] = os.fspath(output_chapters_file_name.relative_to(outputdir))
 
@@ -2282,71 +2372,67 @@ def action_update(inputdir, in_tags):
         with open(output_mux_file_name, 'w') as fp:
             json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
 
-def action_chop(inputdir, in_tags):
-    app.log.info('Chopping %s...', inputdir)
-    outputdir = inputdir
-    if app.args.chain:
-        app.args.optimize_dirs += (outputdir,)
+def action_chop(inputfile, *, in_tags=None, chaps=None):
 
-    input_mux_file_name = inputdir / 'mux.json'
-    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+    if isinstance(inputfile, str):
+        inputfile = Path(inputfile)
+    if isinstance(inputfile, os.PathLike):
+        if inputfile.is_dir():
+            inputdir = inputfile
 
-    for chap in Chapters.from_mkv_xml(inputdir / mux_dict['chapters']['file_name'], add_pre_gap=True):
-        app.log.verbose('Chapter %s', chap)
+            input_mux_file_name = inputdir / 'mux.json'
+            mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+            chaps = Chapters.from_mkv_xml(inputdir / mux_dict['chapters']['file_name'], add_pre_gap=True)
 
-        for stream_dict in sorted_stream_dicts(mux_dict['streams']):
-            if stream_dict.get('skip', False):
-                continue
-            stream_index = stream_dict['index']
-            stream_codec_type = stream_dict['codec_type']
-            orig_stream_file_name = stream_file_name = stream_dict['file_name']
-            stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-            stream_language = isolang(stream_dict.get('language', 'und'))
+            for stream_dict in sorted_stream_dicts(mux_dict['streams']):
+                if stream_dict.get('skip', False):
+                    continue
+                stream_index = stream_dict['index']
+                stream_codec_type = stream_dict['codec_type']
+                stream_file_name = stream_dict['file_name']
+                inputfile = inputdir / stream_file_name
 
-            snd_file = SoundFile.new_by_file_name(inputdir / stream_file_name)
-            ffprobe_json = snd_file.extract_ffprobe_json()
+                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
 
-            if (stream_codec_type == 'video'
-                or stream_codec_type == 'audio'):
+                if (stream_codec_type == 'video'
+                    or stream_codec_type == 'audio'):
 
-                force_format = None
-                try:
-                    force_format = ext_to_container(stream_file_ext)
-                except ValueError:
+                    action_chop(inputfile=inputfile,
+                                in_tags=in_tags,
+                                chaps=chaps)
+
+                elif stream_codec_type == 'subtitle':
                     pass
+                elif stream_codec_type == 'image':
+                    pass
+                else:
+                    raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
-                stream_chapter_file_name = '%s-%02d%s' % (
-                    stream_file_base,
-                    chap.no,
-                    stream_file_ext)
+            return True
 
-                with perfcontext('Chop w/ ffmpeg'):
-                    ffmpeg_args = default_ffmpeg_args + [
-                        '-start_at_zero', '-copyts',
-                        '-i', inputdir / stream_file_name,
-                        '-codec', 'copy',
-                        '-ss', chap.start,
-                        '-to', chap.end,
-                        ]
-                    if force_format:
-                        ffmpeg_args += [
-                            '-f', force_format,
-                            ]
-                    ffmpeg_args += [
-                        inputdir / stream_chapter_file_name,
-                        ]
-                    ffmpeg(*ffmpeg_args,
-                           progress_bar_max=chap.end - chap.start,
-                           progress_bar_title=f'Chop chapter {chap} w/ ffmpeg',
-                           dry_run=app.args.dry_run,
-                           y=app.args.yes)
+    app.log.info('Splitting %s...', inputfile)
+    if not isinstance(inputfile, MediaFile):
+        inputfile = MediaFile.new_by_file_name(inputfile)
+    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    outputdir = Path(inputfile.file_name.parent if app.args.project is Auto
+                     else app.args.project)
 
-            elif stream_codec_type == 'subtitle':
-                pass
-            elif stream_codec_type == 'image':
-                pass
-            else:
-                raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+    with perfcontext('mkvextract chapters'):
+        chapters_out = mkvextract('chapters', inputfile.file_name).out
+    chapters_out = fix_chapters_out(chapters_out)
+    chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
+
+    if chaps is None:
+        chaps = list(Chapters.from_mkv_xml(chapters_xml, add_pre_gap=True))
+    assert len(chaps) > 1
+    assert chaps[0].start == 0
+
+    chapter_stream_file_ext = inputfile_ext
+
+    chapter_file_name_pat = chop_chaps(chaps=chaps,
+                                       inputfile=inputfile)
+
+    return True
 
 def my_splitext(file_name, strip_container=False):
     file_name = Path(file_name)
@@ -3091,26 +3177,12 @@ def action_optimize(inputdir, in_tags):
                                 temp_files.append(inputdir / stream_chapter_file_name)
                         else:
                             app.log.verbose('All chapters...')
-                            with perfcontext('Chop w/ ffmpeg segment muxer'):
-                                chaps[-1].end = ffmpeg.Timestamp.MAX  # Make sure whole movie is captured
-                                ffmpeg_args = default_ffmpeg_args + [
-                                    '-fflags', '+genpts',
-                                    '-i', inputdir / stream_file_name,
-                                    '-segment_times', ','.join(str(chap.end) for chap in chaps),
-                                    '-segment_start_number', chaps[0].no,
-                                    '-map', '0',
-                                    '-codec', (
-                                        'copy' if (ext_to_codec(chapter_stream_file_ext) == ext_to_codec(stream_file_ext)
-                                                   and not (chapter_lossless and stream_file_ext in ('.h264',)))  # h264 copy just spits out a single empty chapter
-                                        else ext_to_codec(chapter_stream_file_ext, lossless=chapter_lossless)),
-                                    '-f', 'ssegment',
-                                    '-segment_format', ext_to_container(chapter_stream_file_ext),
-                                ] + ext_to_codec_args(chapter_stream_file_ext, lossless=chapter_lossless) + [
-                                    inputdir / stream_chapter_file_name_pat,
-                                    ]
-                                ffmpeg(*ffmpeg_args,
-                                       dry_run=app.args.dry_run,
-                                       y=app.args.yes)
+                            stream_chapter_file_name_pat = \
+                                chop_chaps(chaps=chaps,
+                                           inputfile=inputdir / stream_file_name,
+                                           chapter_file_ext=chapter_stream_file_ext,
+                                           chapter_lossless=chapter_lossless)
+                            stream_chapter_file_name_pat = os.fspath(Path(stream_chapter_file_name_pat).relative_to(inputdir))
 
                             # Encode
                             for chap in chaps:
