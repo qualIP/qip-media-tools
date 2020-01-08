@@ -1197,6 +1197,11 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
                     if not d['title']:
                         del d['title']
         if 'title' in d:
+            # TITLE - part 1
+            m = re.match('^(?P<title>.+) *- *part *(?P<part>\d+)$', d['title'])
+            if m:
+                d.update(m.groupdict())
+        if 'title' in d:
             # TITLE (1987)
             m = re.match('^(?P<title>.+) \((?P<date>\d{4})\)$', d['title'])
             if m:
