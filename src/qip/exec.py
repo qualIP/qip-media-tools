@@ -26,6 +26,7 @@ __all__ = [
         'nice',
         'renice',
         'ionice',
+        'stdout_wrapper',
         ]
 
 from pathlib import Path
@@ -794,7 +795,10 @@ def do_srun_cmd(cmd,
         slurm_args += ['--input', stdin_file]
     if stdout_file is not None:
         assert stdout is None
-        slurm_args += ['--output', stdout_file]
+        if False:
+            slurm_args += ['--output', stdout_file]
+        else:
+            slurm_args = stdout_wrapper.build_cmd(stdout_file) + slurm_args
     if stderr_file is not None:
         assert stderr is None
         slurm_args += ['--error', stderr_file]
@@ -862,7 +866,10 @@ def do_sbatch_cmd(cmd,
         slurm_args += ['--input', stdin_file]
     if stdout_file is not None:
         assert stdout is None
-        slurm_args += ['--output', stdout_file]
+        if False:
+            slurm_args += ['--output', stdout_file]
+        else:
+            slurm_args = stdout_wrapper.build_cmd(stdout_file) + slurm_args
     if stderr_file is not None:
         assert stderr is None
         slurm_args += ['--error', stderr_file]
@@ -1041,5 +1048,11 @@ def eddiff(files):
         # File removed?
         modified = True
     return modified
+
+class Stdout_wrapper(Executable):
+
+    name = Path(__file__).parent / 'bin' / 'stdout-wrapper'
+
+stdout_wrapper = Stdout_wrapper()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et
