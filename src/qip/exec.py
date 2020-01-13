@@ -779,6 +779,7 @@ def do_srun_cmd(cmd,
         slurm_mem=None,
         slurm_tmp=None,
         slurm_job_name=None,
+        slurm_kill_on_bad_exit=True,
         chdir=None,
         uid=None,
         dry_run=None,
@@ -813,6 +814,8 @@ def do_srun_cmd(cmd,
         gres_args.append('tmp:%d' % (slurm_tmp,))
     if slurm_job_name is not None:
         slurm_args += ['--job-name', slurm_job_name]
+    if slurm_kill_on_bad_exit is not None:
+        slurm_args += ['--kill-on-bad-exit=%d' % (1 if slurm_kill_on_bad_exit else 0,)]
     if chdir is not None:
         slurm_args += ['--chdir', chdir]
     if uid is not None:
