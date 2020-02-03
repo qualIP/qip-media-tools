@@ -2,17 +2,34 @@
 
 set -e
 
-echo -n "Version: "
-read version
+release_url="https://www.makemkv.com/forum/viewtopic.php?f=3&t=224"
+
+if (( $# )) ; then
+    version=$1 ; shift
+else
+    version=
+fi
 
 if [[ -z "$version" ]] ; then
-    version=1.14.6
+    echo -n "Version [latest]: "
+    read version
+fi
+
+if [[ -z "$version" ]] ; then
+    echo "Looking for latest version..."
+    version=$( (wget -O - "$release_url" 2> /dev/null) | sed -n -e 's/.*MakeMKV \([0-9.]\+\) for Linux is available.*/\1/p ; T ; q')
+    if [[ -z "$version" ]] ; then
+        echo "Latest version not found in $release_url" >&2
+        exit 1
+    fi
     echo "Using version $version"
 fi
 
 set -x
 
 sudo true
+
+sudo apt-get install qtbase5-dev
 
 wget -c http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
 tar xzf makemkv-oss-${version}.tar.gz
@@ -25,8 +42,10 @@ cd ..
 wget -c http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
 tar xzf makemkv-bin-${version}.tar.gz
 cd makemkv-bin-${version}
+touch tmp/eula_accepted
 make
 sudo make install
 cd ..
 
 rm -Rf makemkv-oss-${version} makemkv-bin-${version}
+rm -Rf makemkv-oss-${version}.tar.gz makemkv-bin-${version}.tar.gz
