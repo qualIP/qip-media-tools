@@ -5,6 +5,7 @@ __all__ = [
 from pathlib import Path
 import codecs
 import configparser
+import contextlib
 import functools
 import io
 import logging
@@ -476,18 +477,14 @@ class App(object):
                 'critical': 'red',
             })
 
-    def prompt(self, message=None, *, style=None, completer=None, beep=DEFAULT):
-        if beep is DEFAULT:
-            beep = getattr(app.args, 'beep', False) and getattr(app.args, 'interactive', False)
-        if beep:
-            import qip.utils
-            qip.utils.beep()
-        self.init_prompt_session()
-        c = self.prompt_session.prompt(
-            message=None if message is False else (message or self.prompt_message),
-            style=None if style is False else (style or self.prompt_style),
-            completer=None if completer is False else (completer or self.prompt_completer),
-        )
+    def prompt(self, message=None, *, style=None, completer=None):
+        with self.need_user_attention():
+            self.init_prompt_session()
+            c = self.prompt_session.prompt(
+                message=None if message is False else (message or self.prompt_message),
+                style=None if style is False else (style or self.prompt_style),
+                completer=None if completer is False else (completer or self.prompt_completer),
+            )
         return c
 
     def message_dialog(self, title='', text='', ok_text='Ok', style=None, async_=False):
@@ -624,6 +621,24 @@ class App(object):
             *args, **kwargs,
             style=self.prompt_style if style is DEFAULT else style,
         )
+
+    have_user_attention = False
+
+    @contextlib.contextmanager
+    def need_user_attention(self):
+        if self.have_user_attention:
+            yield
+        else:
+            beep = getattr(app.args, 'beep', False) and getattr(app.args, 'interactive', False)
+            if beep:
+                import qip.utils
+                qip.utils.beep()
+            self.have_user_attention = True
+            try:
+                yield
+            finally:
+                self.have_user_attention = False
+
 
 app = App()
 
