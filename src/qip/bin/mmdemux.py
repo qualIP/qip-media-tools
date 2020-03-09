@@ -31,6 +31,26 @@
 # [h264 @ 0x5589459c73c0] error while decoding MB 42 65, bytestream -11
 # /tmp/ffmpeg-2pass-pipe.27225.tmp/input: corrupt decoded frame in stream 0
 
+# Changing Default Track Selection
+##################################
+# https://makemkv.com/forum/viewtopic.php?f=10&t=4386
+# Default:
+#   -sel:all,+sel:(favlang|nolang),-sel:(havemulti|havecore),=100:all,-10:favlang
+# Old:
+#   -sel:all,+sel:(nolang|eng|fra|fre),-sel:(havemulti|havecore),-sel:mvcvideo,=100:all,-10:favlang
+# Get the HD sound tracks instead of core and get all versions to make sure to get all comments
+#   -sel:all,+sel:(nolang|eng|fra|fre),-sel:mvcvideo,=100:all,-10:favlang
+# Force selecting attachments:
+#   +sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,-sel:mvcvideo,=100:all,-10:favlang
+
+# Conversion Profiles
+#####################
+# https://www.makemkv.com/forum/viewtopic.php?f=10&t=4385
+
+# General Info
+##############
+# https://en.wikipedia.org/wiki/Glossary_of_digital_audio
+
 from pathlib import Path
 from decimal import Decimal
 from fractions import Fraction
