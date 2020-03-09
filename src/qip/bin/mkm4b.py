@@ -27,7 +27,7 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
-from qip.mp4 import M4bFile
+from qip.mp4 import M4bFile, mp4chaps
 from qip.parser import *
 from qip.mm import *
 from qip.utils import byte_decode
@@ -68,10 +68,10 @@ def get_audio_file_chapters(snd_file, chapter_naming_format):
         if hasattr(snd_file, 'OverDrive_MediaMarkers'):
             chaps = parse_OverDrive_MediaMarkers(snd_file.OverDrive_MediaMarkers)
     if not chaps and snd_file.file_name.suffix in qip.mm.get_mp4v2_app_support().extensions_can_read:
-        if shutil.which('mp4chaps'):
+        if mp4chaps.which(assert_found=False):
             # {{{
             try:
-                out = dbg_exec_cmd(['mp4chaps', '-l', snd_file.file_name])
+                out = mp4chaps('-l', snd_file).out
             except subprocess.CalledProcessError:
                 pass
             else:
@@ -86,9 +86,10 @@ def get_audio_file_chapters(snd_file, chapter_naming_format):
                         pass
                     elif parser.re_search(r'^ +Chapter #0*(\d+) - (\d+:\d+:\d+\.\d+) - "(.*)"$'):
                         #     Chapter #001 - 00:00:00.000 - "Bad Monkey"
-                        chaps.append(SoundFile.Chapter(
-                            time = qip.mm.parse_time_duration(parser.match.group(2)),
-                            name = parser.match.group(3)))
+                        chaps.append(qip.mm.Chapter(
+                            start=parser.match.group(2), end=None,
+                            title=parser.match.group(3),
+                        ))
                     elif parser.re_search(r'^File ".*" does not contain chapters'):
                         # File "Mario Jean_ Gare au gros nounours!.m4a" does not contain chapters of type QuickTime and Nero
                         pass
@@ -98,9 +99,10 @@ def get_audio_file_chapters(snd_file, chapter_naming_format):
                         # TODO
             # }}}
     if not chaps:
-        chaps.append(SoundFile.Chapter(
-                time=0,
-                name=get_audio_file_default_chapter(snd_file, chapter_naming_format=chapter_naming_format)))
+        chaps.append(qip.mm.Chapter(
+            start=0, end=None,
+            title=get_audio_file_default_chapter(snd_file, chapter_naming_format=chapter_naming_format),
+        ))
     return chaps
 
 # }}}
@@ -181,10 +183,10 @@ def parse_OverDrive_MediaMarkers(xml):
             markers.append(marker)
     chaps = []
     for marker in markers:
-        chap = SoundFile.Chapter(
-                time=qip.mm.parse_time_duration(marker['Time']),
-                name=marker['Name'],
-                )
+        chap = qip.mm.Chapter(
+            start=marker['Time'], end=None,
+            title=marker['Name'],
+        )
         # chap.OverDrive_MediaMarker = marker
         chaps.append(chap)
     return chaps
@@ -502,12 +504,12 @@ def mkm4b(inputfiles, default_tags):
         app.log.info('Writing %s...', chapters_file)
         def body(fp):
             nonlocal expected_duration
-            offset = 0  # XXXJST TODO decimal.Decimal(0) ?
+            offset = qip.utils.Timestamp(0)
             for inputfile in inputfiles:
                 for chap_info in get_audio_file_chapters(inputfile, chapter_naming_format=app.args.chapter_naming_format):
                     print('%s %s' % (
-                        qip.mm.mp4chaps_format_time_offset(offset + chap_info.time),
-                        replace_html_entities(chap_info.name),
+                        mp4chaps.Timestamp(offset + chap_info.start),
+                        replace_html_entities(chap_info.title),
                         ), file=fp)
                 if len(inputfiles) == 1 and not hasattr(inputfile, 'duration'):
                     pass  # Ok... never mind
@@ -518,7 +520,8 @@ def mkm4b(inputfiles, default_tags):
     print('Chapters:')
     print(re.sub(r'^', '    ', safe_read_file(chapters_file), flags=re.MULTILINE))
     if expected_duration is not None:
-        app.log.info('Expected final duration: %s (%.3f seconds)', qip.mm.mp4chaps_format_time_offset(expected_duration), expected_duration)
+        expected_duration = mp4chaps.Timestamp(expected_duration)
+        app.log.info('Expected final duration: %s (%.3f seconds)', expected_duration, expected_duration)
 
     src_picture = m4b.tags.picture
     if isinstance(src_picture, qip.mm.PictureTagInfo):
