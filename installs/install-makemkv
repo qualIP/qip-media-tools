@@ -32,6 +32,9 @@ sudo true
 sudo apt-get install qtbase5-dev
 
 wget -c http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
+wget -c http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
+#exit 1
+
 tar xzf makemkv-oss-${version}.tar.gz
 cd makemkv-oss-${version}
 ./configure
@@ -39,9 +42,9 @@ make -j
 sudo make install
 cd ..
 
-wget -c http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
 tar xzf makemkv-bin-${version}.tar.gz
 cd makemkv-bin-${version}
+mkdir -p tmp
 touch tmp/eula_accepted
 make
 sudo make install
