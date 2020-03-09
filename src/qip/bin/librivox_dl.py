@@ -25,6 +25,15 @@ from qip.librivox import *
 from qip import json
 from qip.mp4 import M4bFile
 
+def _json_value(v):
+    if isinstance(v, Path):
+        return os.fspath(v)
+    if isinstance(v, dict):
+        return {k: _json_value(v2) for k, v2 in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_json_value(v2) for v2 in v]
+    return v
+
 @app.main_wrapper
 def main():
 
@@ -67,7 +76,7 @@ def main():
 
     if app.args._continue:
         if app.args.dir is None:
-            app.args.dir = '.'
+            app.args.dir = Path('.')
     else:
         if app.args.url is None:
             app.parser.error(_('the following arguments is required: %s') % ('--url',))
@@ -79,14 +88,14 @@ def main():
                 # <a href="http://archive.org/details/lesmiserables_t4_1208_librivox">Internet Archive Page</a>
                 m = re.search(r'^/(?P<book_id>[\w-]+)/?$', p.path)
                 if m:
-                    app.args.dir = m.group('book_id')
+                    app.args.dir = Path(m.group('book_id'))
             elif p.hostname in ('archive.org', 'www.archive.org'):
                 # https://archive.org/details/les_miserables_tome_1_di_0910_librivox
                 # https://archive.org/download/les_miserables_tome_1_di_0910_librivox
                 # https://archive.org/download/les_miserables_tome_1_di_0910_librivox/les_miserables_tome_1_di_0910_librivox_files.xml
                 m = re.search(r'^/(?:details|download)/(?P<book_id>[\w-]+)/?$', p.path)
                 if m:
-                    app.args.dir = m.group('book_id')
+                    app.args.dir = Path(m.group('book_id'))
         if app.args.dir is None:
             app.parser.error(_('the following arguments is required: %s') % ('--dir',))
 
@@ -102,7 +111,7 @@ def main():
         os.makedirs(app.args.dir, exist_ok=True)
     with args_file.open(mode='w', encoding='utf-8') as fp:
         json.dump(
-                {k: v for k, v in vars(app.args).items() if k not in ('logging_level',)},
+                {k: _json_value(v) for k, v in vars(app.args).items() if k not in ('logging_level',)},
                 fp, indent=2, sort_keys=True)
         print('', file=fp)
 
@@ -154,7 +163,7 @@ def main():
         url_file = urllib.parse.urljoin(book_info.url_download_base, snd_file_info.name)
         snd_file = SoundFile.new_by_file_name(
             app.args.dir / snd_file_info.format / Path(urllib.parse.urlparse(url_file).path).name)
-        snd_file.parent.mkdir(parents=True, exist_ok=True)
+        snd_file.file_name.parent.mkdir(parents=True, exist_ok=True)
         if snd_file.download(url=url_file, md5=snd_file_info.md5) and first_file:
             if not snd_file.test_integrity():
                 app.log.info('Other formats:\n    ' + '\n    '.join(
@@ -166,7 +175,7 @@ def main():
                         if t not in (snd_file_info.format, 'Spectrogram', 'PNG')]
                     ))
                 exit(1)
-        book_info.snd_files.append(snd_file.relative_to(app.args.dir))
+        book_info.snd_files.append(snd_file.file_name.relative_to(app.args.dir))
         first_file = False
 
     cover_file_info = next(file_index_xml.original_image_files)
@@ -178,7 +187,7 @@ def main():
 
     book_info_file = json.JsonFile(file_name=app.args.dir / 'librivox-dl.book_info.json')
     with book_info_file.open(mode='w', encoding='utf-8') as fp:
-        json.dump(vars(book_info), fp, indent=2, sort_keys=True)
+        json.dump(_json_value(vars(book_info)), fp, indent=2, sort_keys=True)
         print('', file=fp)
 
     if app.args.m4b:
