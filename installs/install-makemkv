@@ -29,7 +29,7 @@ set -x
 
 sudo true
 
-sudo apt-get install qtbase5-dev
+sudo apt-get install qtbase5-dev libssl-dev zlib1g-dev libexpat1-dev libavcodec-dev libavutil-dev
 
 wget -c http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
 wget -c http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
