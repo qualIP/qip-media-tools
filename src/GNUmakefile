@@ -17,3 +17,12 @@ develop:
 install-recommends:
 	pip3 install --user -r recommends.txt
 
+.PHONY: build-qip-tools-depends
+build-qip-tools-depends: qip-tools-depends_1.0_all.deb
+qip-tools-depends_1.0_all.deb: qip-tools-depends.ctl
+	which equivs-build || sudo apt-get install equivs
+	equivs-build $<
+
+.PHONY: install-qip-tools-depends
+install-qip-tools-depends: qip-tools-depends_1.0_all.deb
+	sudo dpkg -i qip-tools-depends_1.0_all.deb || sudo apt-get --fix-broken install
