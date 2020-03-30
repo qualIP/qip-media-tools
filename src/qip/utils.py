@@ -15,8 +15,12 @@ __all__ = (
     'round_half_down',
     'round_half_away_from_zero',
     'compile_pattern_list',
+    'indexable',
+    'advenumerate',
+    'adviter',
 )
 
+from _collections_abc import _check_methods
 from decimal import Decimal
 from fractions import Fraction
 import abc
@@ -682,5 +686,64 @@ def compile_pattern_list(pattern_list, *, compile_flags=re.DOTALL, ignorecase=Fa
         else:
             raise TypeError(p)
     return compiled_pattern_list
+
+class Indexable(collections.abc.Iterable):
+
+    def __init__(self, iterable):
+        self.iterable = iterable
+        self.seen = []
+        super().__init__()
+
+    def __getitem__(self, index):
+        seen = self.seen
+        iterable = self.iterable
+        #for i in range(len(seen) - index + 1):
+        try:
+            while index >= len(seen):
+                seen.append(next(iterable))
+        except StopIteration:
+            raise IndexError(index)
+        return seen[index]
+
+    def __iter__(self):
+        for i in itertools.count():
+            try:
+                v = self[i]
+            except IndexError:
+                raise StopIteration
+            yield v
+
+    @classmethod
+    def __subclasshook__(cls, C):
+        if cls is Indexable:
+            return _check_methods(C, "__getitem__")
+        return NotImplemented
+
+def indexable(iterable):
+    if isinstance(iterable, collections.abc.Collection):
+        # Direct indexing supported
+        return iterable
+    return Indexable(iterable)
+
+def advenumerate(iterable, start=0):
+    iterable = indexable(iterable)
+    i = start
+    while True:
+        try:
+            v = iterable[i]
+        except IndexError:
+            break
+        r = yield (i, v)
+        i += 1
+        while r is not None:
+            i = r
+            r = yield  # dummy so it.send(r) returns nothing and iterator is ready for next(it)
+
+def adviter(iterable, start=0):
+    iterable = advenumerate(iterable, start=start)
+    for i, v in iterable:
+        k = yield v
+        while k is not None:
+            k = yield iterable.send(k)
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
