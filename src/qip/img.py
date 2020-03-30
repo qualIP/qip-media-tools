@@ -752,7 +752,7 @@ class ImageFile(MediaFile):
         ):
         cmd = [
             'ffprobe',
-            '-i', self.file_name,
+            '-i', self,
             '-threads', '0',
             '-v', 'info',
             '-print_format', 'json',
