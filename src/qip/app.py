@@ -39,7 +39,7 @@ DEFAULT_APP_LOG_FORMAT = '%(asctime)s %(levelname)s %(message)s'
 if HAVE_COLOREDLOGS:
     DEFAULT_LEVEL_STYLES = coloredlogs.DEFAULT_LEVEL_STYLES
     DEFAULT_LEVEL_STYLES.update(
-            debug=dict(color='magenta', bold=coloredlogs.CAN_USE_BOLD_FONT),
+            debug=dict(color='magenta', bold=getattr(coloredlogs, 'CAN_USE_BOLD_FONT', True)),
             )
 
 def addLoggingLevelName(level, levelName):
