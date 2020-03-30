@@ -82,21 +82,27 @@ class ConcatScriptFile(TextFile):
             self.name = toPath(name)
             self.duration = None if duration is None else Timestamp(duration)
 
+        def __fspath__(self):
+            return os.fspath(self.name)
+
     def __init__(self, file_name):
         self.files = []
         super().__init__(file_name)
 
-    def create(self, file=None):
+    def create(self, file=None, absolute=False):
         if file is None:
             with self.open('w', encoding='utf-8') as file:
-                return self.create(file=file)
+                return self.create(file=file, absolute=absolute)
         if self.ffconcat_version is not None:
             print(f'ffconcat version {self.ffconcat_version}', file=file)
         for file_entry in self.files:
-            esc_file = os.fspath(file_entry.name).replace(r"'", r"'\''")
+            esc_file = file_entry
+            if absolute:
+                esc_file = Path(esc_file).resolve()
+            esc_file = os.fspath(esc_file).replace(r'\\', '\\\\').replace("'", r"'\''")
             print(f'file \'{esc_file}\'', file=file)
             if file_entry.duration is not None:
-                print(f'duration {file_entry.duration}', file=file)
+                print(f'duration {Timestamp(file_entry.duration)}', file=file)
 
 class _FfmpegSpawnMixin(_SpawnMixin):
 
