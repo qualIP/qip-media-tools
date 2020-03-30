@@ -472,13 +472,15 @@ class TypedValueDict(abc.ABC):
         return NotImplemented
 
 
-def byte_decode(b, encodings=('utf-8', 'iso-8859-1', 'us-ascii')):
+def byte_decode(b, encodings=('utf-8', 'iso-8859-1', 'us-ascii'), errors='strict'):
     if isinstance(b, str):
         return b
+    if isinstance(encodings, str):
+        encodings = [encodings]
     last_e = None
     for encoding in encodings:
         try:
-            return b.decode(encoding, 'strict')
+            return b.decode(encoding, errors)
         except UnicodeDecodeError as e:
             #log.debug('%s output: %s', cmd[0], e)
             last_e = e
