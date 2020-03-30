@@ -5,7 +5,6 @@ __all__ = [
         ]
 
 from decimal import Decimal
-from fractions import Fraction
 from pathlib import Path
 import collections
 import contextlib
@@ -32,9 +31,7 @@ class Timestamp(_BaseTimestamp):
     '''hh:mm:ss.sssssssss format'''
 
     def __init__(self, value):
-        if isinstance(value, float):
-            seconds = value
-        elif isinstance(value, (int, Fraction)):
+        if isinstance(value, Timestamp._SECONDS_COMPATIBLE_TYPES):
             seconds = float(value)
         elif isinstance(value, _BaseTimestamp):
             seconds = value.seconds
@@ -56,7 +53,7 @@ class Timestamp(_BaseTimestamp):
             else:
                 raise ValueError('Invalid hh:mm:ss.ss format: %r' % (value,))
         else:
-            raise ValueError(value)
+            raise ValueError(repr(value))
         super().__init__(seconds)
 
     def canonical_str(self):

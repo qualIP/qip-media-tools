@@ -251,10 +251,10 @@ class KwVarsObject(object):
 class Timestamp(object):
     '''xxhxxmxx.xxxxxxxxxs format'''
 
+    _SECONDS_COMPATIBLE_TYPES = (float, int, Fraction, Decimal)
+
     def __init__(self, value):
-        if isinstance(value, float):
-            seconds = value
-        elif isinstance(value, (int, Fraction)):
+        if isinstance(value, Timestamp._SECONDS_COMPATIBLE_TYPES):
             seconds = float(value)
         elif isinstance(value, Timestamp):
             seconds = value.seconds
@@ -363,28 +363,28 @@ class Timestamp(object):
     def __add__(self, other):
         if isinstance(other, Timestamp):
             return self.__class__(self.seconds + other.seconds)
-        if isinstance(other, (int, float, Fraction)):
+        if isinstance(other, Timestamp._SECONDS_COMPATIBLE_TYPES):
             return self.__class__(self.seconds + other)
         return NotImplemented
 
     def __sub__(self, other):
         if isinstance(other, Timestamp):
             return self.__class__(self.seconds - other.seconds)
-        if isinstance(other, (int, float, Fraction)):
+        if isinstance(other, Timestamp._SECONDS_COMPATIBLE_TYPES):
             return self.__class__(self.seconds - other)
         return NotImplemented
 
     def __mul__(self, other):
         if isinstance(other, Timestamp):
             return self.__class__(self.seconds * other.seconds)
-        if isinstance(other, (int, float, Fraction)):
+        if isinstance(other, Timestamp._SECONDS_COMPATIBLE_TYPES):
             return self.__class__(self.seconds * other)
         return NotImplemented
 
     def __truediv__(self, other):
         if isinstance(other, Timestamp):
             return self.__class__(self.seconds / other.seconds)
-        if isinstance(other, (int, float, Fraction)):
+        if isinstance(other, Timestamp._SECONDS_COMPATIBLE_TYPES):
             return self.__class__(self.seconds / other)
         return NotImplemented
 
@@ -397,14 +397,14 @@ class Timestamp(object):
     def __eq__(self, other):
         if isinstance(other, Timestamp):
             return self.seconds == other.seconds
-        if isinstance(other, (int, float, Fraction)):
+        if isinstance(other, Timestamp._SECONDS_COMPATIBLE_TYPES):
             return self.seconds == other
         return NotImplemented
 
     def __lt__(self, other):
         if isinstance(other, Timestamp):
             return self.seconds < other.seconds
-        if isinstance(other, (int, float, Fraction)):
+        if isinstance(other, Timestamp._SECONDS_COMPATIBLE_TYPES):
             return self.seconds < other
         return NotImplemented
 
