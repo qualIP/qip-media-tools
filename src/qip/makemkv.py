@@ -5,33 +5,48 @@ __all__ = [
 
 from pathlib import Path
 import collections
+import configobj
 import contextlib
+import enum
 import functools
 import logging
+import os
 import pexpect
 import progress
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
 from qip.app import app  # Also setup log.verbose
 from .perf import perfcontext
 from .exec import *
-from .exec import spawn as _exec_spawn
-from qip.utils import byte_decode, compile_pattern_list
+from .exec import _SpawnMixin, spawn as _exec_spawn, fdspawn as _exec_fdspawn
+from qip.utils import byte_decode, compile_pattern_list, KwVarsObject
 from qip.collections import OrderedSet
+from qip.isolang import isolang
+from qip.ffmpeg import ffmpeg
 
-def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, logfile=None, ignore_failed_to_open_disc=False):
+def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[],
+                             fd=None,
+                             dry_run=None, no_status=False, logfile=None,
+                             cwd=None,
+                             encoding=None, errors=None,
+                             ignore_failed_to_open_disc=False,
+                             ):
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
     if logfile is True:
         logfile = sys.stdout.buffer
     elif logfile is False:
         logfile = None
-    p = makemkvcon.spawn(cmd[0], args=cmd[1:] + hidden_args, logfile=logfile,
-                         ignore_failed_to_open_disc=ignore_failed_to_open_disc)
-    try:
+    spawn_func = functools.partial(makemkvcon.fdspawn, fd=fd) if fd is not None else makemkvcon.spawn
+    p = spawn_func(command=cmd[0], args=cmd[1:] + hidden_args, logfile=logfile,
+                   cwd=cwd,
+                   encoding=encoding, errors=errors,
+                   ignore_failed_to_open_disc=ignore_failed_to_open_disc)
+    with p:
         out = ''
         for v in p.communicate():
             out += byte_decode(p.before)
@@ -42,13 +57,6 @@ def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False,
                     break
             if p.after is pexpect.exceptions.EOF:
                 break
-        try:
-            p.wait()
-        except pexpect.ExceptionPexpect as err:
-            if err.value != 'Cannot wait for dead child process.':
-                raise
-    finally:
-        p.close()
     if p.signalstatus is not None:
         raise Exception('Command exited due to signal %r' % (p.signalstatus,))
     if not no_status and p.exitstatus:
@@ -68,11 +76,15 @@ def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False,
     if 'info' in cmd:
         pass  # Ok
     else:
-        print(f'cmd[1]={cmd[1]}')
-        assert p.num_tiltes_saved not in (0, None), 'No tiles saved!'
+        assert p.backup_done or p.num_tiltes_saved not in (0, None), 'No tiles saved!'
         assert p.num_tiltes_failed in (0, None), 'Some tiles failed!'
 
-        app.log.info('No errors. %d titles saved', p.num_tiltes_saved)
+        s = 'No errors.'
+        if p.backup_done:
+            s += ' Backup done.'
+        if p.num_tiltes_saved is not None:
+            s += f' {p.num_tiltes_saved} titles saved'
+        app.log.info(s)
 
     return {
         'spawn': p,
@@ -107,7 +119,88 @@ class DriveInfo(collections.namedtuple(
 )):
     __slots__ = ()
 
-class MakemkvconSpawn(_exec_spawn):
+class TitleInfo(KwVarsObject):
+
+    class AttributeCode(enum.IntEnum):
+        title = 2
+        attribute8 = 8
+        duration = 9
+        size = 10
+        attribute11 = 11
+        in_file_name = 16
+        attribute25 = 25
+        stream_nos = 26
+        out_file_name = 27
+        language = 28
+        language_desc = 29
+        info_str = 30
+        dummy_title_header_str = 31
+        attribute33 = 33
+
+    class Attribute(KwVarsObject):
+
+        def __init__(self, code, flag, value):
+            code = TitleInfo.AttributeCode(code)
+            flag = int(flag)
+            if code is TitleInfo.AttributeCode.duration:
+                value = ffmpeg.Timestamp(value)
+            elif code is TitleInfo.AttributeCode.stream_nos:
+                value = tuple(int(e)
+                              for e in value.split(','))
+            elif code is TitleInfo.AttributeCode.language:
+                value = isolang(value)
+            self.code = code
+            self.flag = flag
+            self.value = value
+
+    def __init__(self, id):
+        self.id = id
+        self.attributes = dict()
+
+    @property
+    def title(self):
+        return self.attributes[TitleInfo.AttributeCode.title].value
+
+    @property
+    def duration(self):
+        return self.attributes[TitleInfo.AttributeCode.duration].value
+
+    @property
+    def size(self):
+        return self.attributes[TitleInfo.AttributeCode.size].value
+
+    @property
+    def stream_nos(self):
+        return self.attributes[TitleInfo.AttributeCode.stream_nos].value
+
+    @property
+    def stream_nos_str(self):
+        return ','.join(str(e) for e in self.stream_nos)
+
+    @property
+    def language(self):
+        return self.attributes[TitleInfo.AttributeCode.language].value
+
+    @property
+    def info_str(self):
+        return self.attributes[TitleInfo.AttributeCode.info_str].value
+
+    def __str__(self):
+        return self.info_str
+
+class StreamInfo(collections.namedtuple(
+        'StreamInfo',
+        (
+            'id',
+            'flag1',
+            'flag2',
+            'flag3',
+            'value',
+        ),
+)):
+    __slots__ = ()
+
+class MakemkvconSpawnBase(_SpawnMixin):
 
     num_tiltes_saved = None
     num_tiltes_failed = None
@@ -119,12 +212,18 @@ class MakemkvconSpawn(_exec_spawn):
     operations_performed = None
     errors_seen = None
     drives = None
+    titles = None
+    angles = None
+    backup_done = None
 
     def __init__(self, *args, timeout=60 * 60, ignore_failed_to_open_disc=False, **kwargs):
         self.operations_performed = OrderedSet()
         self.errors_seen = OrderedSet()
         self.ignore_failed_to_open_disc = ignore_failed_to_open_disc
-        self.drives = []
+        self.drives = collections.OrderedDict()
+        self.titles = collections.OrderedDict()
+        self.angles = []
+        self.streams = collections.OrderedDict()
         super().__init__(*args, timeout=timeout, **kwargs)
 
     def current_progress(self, str):
@@ -237,6 +336,10 @@ class MakemkvconSpawn(_exec_spawn):
     def new_version_warning(self, str):
         return self.generic_warning(str)
 
+    def backup_done_line(self, str):
+        self.backup_done = True
+        return self.generic_info(str)
+
     def failed_to_open_disc_error(self, str):
         str = byte_decode(str).rstrip('\r\n')
         if not self.ignore_failed_to_open_disc:
@@ -267,14 +370,20 @@ class MakemkvconSpawn(_exec_spawn):
                 return self.generic_error(str)
         return True
 
+    def parse_angle_added(self, str):
+        title_no = int(self.match.group('title_no'))
+        angle_no = int(self.match.group('angle_no'))
+        self.angles.append((title_no, angle_no))
+        return self.generic_info(str)
+
     def unknown_line(self, str):
-        str = byte_decode(str).rstrip('\r\n')
+        #str = byte_decode(str).rstrip('\r\n')
         if str:
             self.generic_error('UNKNOWN: ' + repr(str))
         return True
 
     def is_robot_mode(self):
-        return '--robot' in self.args or '-r' in self.args
+        return '--robot' in (self.args or ()) or '-r' in (self.args or ())
 
     def communicate(self, *args, **kwargs):
         if self.progress_bar is None:
@@ -310,7 +419,7 @@ class MakemkvconSpawn(_exec_spawn):
 
     def get_messages_pattern_dict(self):
         pattern_dict = collections.OrderedDict([
-            (fr'^MakeMKV v[^\n]+ started{re_eol}', True),
+            (fr'^MakeMKV v[^\r\n]+ started{re_eol}', True),
             (fr'^Operation successfully completed{re_eol}', True),
             (fr'^Saving (?P<title_count>\d+) titles into directory (?P<dest_dir>[^\r\n]+){re_eol}', self.saving_titles_count),
             (fr'^Title #(?P<title_no>{re_title_no}) has length of (?P<length>\d+) seconds which is less than minimum title length of (?P<min_length>\d+) seconds and was therefore skipped{re_eol}', True),
@@ -318,29 +427,34 @@ class MakemkvconSpawn(_exec_spawn):
             (fr'^(?P<stream_type>Audio|Subtitle) stream #(?P<stream_no>{re_stream_no}) is identical to stream #(?P<stream_no2>{re_stream_no}) and was skipped{re_eol}', True),
             (fr'^(?P<stream_type>Audio|Subtitle) stream #(?P<stream_no>{re_stream_no}) looks empty and was skipped{re_eol}', True),
             (fr'^Using direct disc access mode{re_eol}', True),
-            (fr'^Downloading latest SDF to (?P<dest_dir>[^\n]+) \.\.\.{re_eol}', True),
+            (fr'^Downloading latest SDF to (?P<dest_dir>[^\r\n]+) \.\.\.{re_eol}', True),
             (fr'^Using LibreDrive mode \(v(?P<version>\d+) id=(?P<id>[0-9a-fA-F]+)\){re_eol}', True),
             (fr'^Loaded content hash table, will verify integrity of M2TS files\.{re_eol}', True),
             (fr'^Loop detected\. Possibly due to unknown structure protection\.{re_eol}', self.generic_warning),
+            (fr'^Title #(?P<title_no>{re_title_no}) in broken titleset was skipped{re_eol}', True),
             (fr'^Cells (?P<cell_no1>\d+)-(?P<cell_no2>\d+|end) were skipped due to cell commands \(structure protection\?\){re_eol}', True),
             (fr'^Cells (?P<cell_no1>\d+)-(?P<cell_no2>\d+|end) were removed from (?P<from>title start|title end){re_eol}', True),
+            (fr'^Title #(?P<title_no>{re_title_no}) \((?P<time>[0-9:]+)\) was skipped due to navigation error{re_eol}', True),
             (fr'^Jumped to cell (?P<cell_no1>\d+) from cell (?P<cell_no2>\d+) due to cell commands \(structure protection\?\){re_eol}', True),
             (fr'^CellWalk algorithm failed \(structure protection is too tough\?\), trying CellTrim algorithm{re_eol}', self.generic_warning),
-            (fr'^Complex multiplex encountered - (?P<num_cells>\d+) cells and (?P<num_vobus>\d+) VOBUs have to be scanned\. This may take some time, please be patient - it can\'t be avoided\.{re_eol}', True),
-            (fr'^Region setting of drive (?P<drive_label>[^\n]+) does not match the region of currently inserted disc, trying to work around\.\.\.{re_eol}', True),
+            (fr'^CellTrim algorithm failed since title has only (?P<num_chapters>\d+) chapters{re_eol}', self.generic_warning),
+            (fr'^Complex multiplex encountered - (?P<num_cells>\d+) cells and (?P<num_vobus>\d+) VOBUs have to be scanned\. This may take some time, please be patient - it can\'t be avoided\.{re_eol}', self.generic_warning),
+            # IFO file for VTS #20 is corrupt, VOB file must be scanned. This may take very long time, please be patient.
+            (fr'^Region setting of drive (?P<drive_label>[^\r\n]+) does not match the region of currently inserted disc, trying to work around\.\.\.{re_eol}', True),
             (fr'^Title #(?P<title_no>{re_title_no}) was added \((?P<num_cells>\d+) cell\(s\), (?P<time>[0-9:]+)\){re_eol}', True),
             (fr'^File (?P<file_name>\S+) was added as title #(?P<title_no>\d+){re_eol}', True),
             (fr'^Unable to open file \'(?P<file_in>[^\']+)\' in OS mode due to a bug in OS Kernel\. This can be worked around, but read speed may be very slow\.{re_eol}', True),
             (fr'^Encountered (?P<num_errors>\d+) errors of type \'Read Error\' - see http://www\.makemkv\.com/errors/dvdread/{re_eol}', self.generic_error),
-            (fr'^Error \'Posix error - Input/output error\' occurred while reading \'(?P<device_path>[^\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', self.generic_error),
-            (fr'^Error \'Scsi error - MEDIUM ERROR:L-EC UNCORRECTABLE ERROR\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', self.generic_error),
-            (fr'^Error \'Scsi error - MEDIUM ERROR:NO SEEK COMPLETE\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', self.generic_error),
-            (fr'^Error \'Scsi error - ILLEGAL REQUEST:READ OF SCRAMBLED SECTOR WITHOUT AUTHENTICATION\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', True),
-            (fr'^Error \'Scsi error - ILLEGAL REQUEST:MEDIA REGION CODE IS MISMATCHED TO LOGICAL UNIT REGION\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', self.generic_error),
-            (fr'^Error \'Scsi error - ILLEGAL REQUEST:ILLEGAL MODE FOR THIS TRACK\' occurred while reading \'(?P<input_name>[^\n]+?)\' at offset \'(?P<offset>\d+)\'', True),
-            (fr'^LIBMKV_TRACE: Exception: (?P<exception>[^\n]+){re_eol}', self.generic_error),
-            (fr'^Device \'(?P<device_path>[^\n]+?)\' is partially inaccessible due to a bug in Linux kernel \(it reports invalid block device size\)\. This can be worked around, but read speed may be very slow\.{re_eol}', True),
-            (fr'^Failed to save title (?P<title_no>{re_title_no}) to file (?P<file_out>[^\n]+){re_eol}', self.generic_error),
+            (fr'^Error \'Posix error - Input/output error\' occurred while reading \'(?P<device_path>[^\r\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', self.generic_error),
+            (fr'^Error \'Scsi error - MEDIUM ERROR:L-EC UNCORRECTABLE ERROR\' occurred while reading \'(?P<input_name>[^\r\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', self.generic_error),
+            (fr'^Error \'Scsi error - MEDIUM ERROR:NO SEEK COMPLETE\' occurred while reading \'(?P<input_name>[^\r\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', self.generic_error),
+            (fr'^Error \'Scsi error - ILLEGAL REQUEST:MEDIA REGION CODE IS MISMATCHED TO LOGICAL UNIT REGION\' occurred while reading \'(?P<input_name>[^\r\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', self.generic_error),
+            (fr'^Error \'Scsi error - ILLEGAL REQUEST:INVALID COMMAND OPERATION CODE\' occurred while issuing SCSI command 46020\.\.00140 to device \'(?P<device_path>[^\r\n]+?)\'{re_eol}', self.generic_warning),
+            (fr'^Error \'Scsi error - ILLEGAL REQUEST:READ OF SCRAMBLED SECTOR WITHOUT AUTHENTICATION\' occurred while reading \'(?P<input_name>[^\r\n]+?)\' at offset \'(?P<offset>\d+)\'{re_eol}', True),
+            (fr'^Error \'Scsi error - ILLEGAL REQUEST:ILLEGAL MODE FOR THIS TRACK\' occurred while reading \'(?P<input_name>[^\r\n]+?)\' at offset \'(?P<offset>\d+)\'', True),
+            (fr'^LIBMKV_TRACE: Exception: (?P<exception>[^\r\n]+){re_eol}', self.generic_error),
+            (fr'^Device \'(?P<device_path>[^\r\n]+?)\' is partially inaccessible due to a bug in Linux kernel \(it reports invalid block device size\)\. This can be worked around, but read speed may be very slow\.{re_eol}', True),
+            (fr'^Failed to save title (?P<title_no>{re_title_no}) to file (?P<file_out>[^\r\n]+){re_eol}', self.generic_error),
             (fr'^Failed to open disc{re_eol}', self.failed_to_open_disc_error),
             (fr'^(?P<num_tiltes_saved>\d+) titles saved{re_eol}', self.parse_titles_saved),
             (fr'^(?P<num_tiltes_saved>\d+) titles saved, (?P<num_tiltes_failed>\d+) failed{re_eol}', self.parse_titles_saved),
@@ -351,7 +465,7 @@ class MakemkvconSpawn(_exec_spawn):
             (fr'^Title #(?P<title_no>\d+) declared length is (?P<declared_length>\S+) while its real length is (?P<real_length>\S+) - assuming fake title{re_eol}', self.generic_warning),
             (fr'^Fake cells occupy (?P<percent>\d+)% of the title - assuming fake title{re_eol}', self.generic_warning),
             (fr'^Can\'t locate a cell for VTS (?P<vts>\d+) TTN (?P<ttn>\d+) PGCN (?P<pgcn>\d+) PGN (?P<pgn>\d+){re_eol}', self.generic_warning),
-            (fr'^AV synchronization issues were found in file \'(?P<file_name>[^\n]+)\' \(title #(?P<title_no>{re_title_no})\){re_eol}', self.generic_warning),
+            (fr'^AV synchronization issues were found in file \'(?P<file_name>[^\r\n]+)\' \(title #(?P<title_no>{re_title_no})\){re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: audio gap - (?P<missing_frames>\S+) missing frame\(s\){re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: (?P<action>encountered overlapping frame|short audio gap was removed), audio skew is (?P<audio_skew>\S+){re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) with duration of (?P<duration>\S+) *: (?P<dropped_frames>\d+) frame\(s\) dropped to reduce audio skew to (?P<audio_skew>\S+){re_eol}', self.generic_warning),
@@ -359,8 +473,8 @@ class MakemkvconSpawn(_exec_spawn):
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: (?P<num_frames>\d+) frame\(?s?\)? dropped to reduce audio skew to (?P<audio_skew>\S+){re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: video stream has (?P<num_frames>\d+) frame\(?s?\)? with invalid timecodes{re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: video frame timecode differs by (?P<video_timecode_skew>\S+){re_eol}', self.generic_warning),
-            (fr'^Too many AV synchronization issues in file \'(?P<file_out>[^\n]+)\' \(title #(?P<title_no>{re_title_no})\) ?, future messages will be printed only to log file{re_eol}', self.generic_warning),
-            (fr'^Angle #(?P<angle_no>\d+) was added for title #(?P<title_no>{re_title_no}){re_eol}', self.generic_info),
+            (fr'^Too many AV synchronization issues in file \'(?P<file_out>[^\r\n]+)\' \(title #(?P<title_no>{re_title_no})\) ?, future messages will be printed only to log file{re_eol}', self.generic_warning),
+            (fr'^Angle #(?P<angle_no>\d+) was added for title #(?P<title_no>{re_title_no}){re_eol}', self.parse_angle_added),
             (fr'^Calculated BUP offset for VTS #(?P<vts_no>\d+) does not match one in IFO header\.{re_eol}', self.generic_warning),
             (fr'^LibreDrive firmware support is not yet available for this drive \(id=(?P<drive_id>[A-Fa-f0-9]+)\){re_eol}', self.generic_warning),
             (fr'^Using Java runtime from (?P<path>{re_dot}+){re_eol}', self.generic_warning),
@@ -372,8 +486,13 @@ class MakemkvconSpawn(_exec_spawn):
             (fr'^BD\+ code processed, got (?P<num_futs>\d+) FUT\(s\) for (?P<num_clips>\d+) clip\(s\){re_eol}', self.generic_warning),
             (fr'^Program reads data faster than it can write to disk, consider upgrading your hard drive if you see many of these messages\.{re_eol}', self.generic_warning),
             (fr'^(?P<exec>{re_dot}+): (?P<lib>{re_dot}+): no version information available \(required by (?P<req_by>{re_dot}+)\){re_eol}', self.generic_warning),
+            (fr'^It appears that you are opening the disc processed by DvdFab/MacTheRipper which is known to produce damaged VOB files\. Errors may follow - please use original disc instead\.{re_eol}', self.generic_warning),
             (fr'^The new version (?P<version>\S+) is available for download at (?P<url>\S+){re_eol}', self.new_version_warning),
-            (fr'[^\n]*?{re_eol}', self.unknown_line),
+            (fr'^Opening files on harddrive at (?P<dir_in>[^\r\n]+){re_eol}', True),
+            (fr'^Backing up disc into folder \\"(?P<file_out>[^\r\n]+)\\"{re_eol}', True),
+            (fr'^Backup done\.?{re_eol}', self.backup_done_line),
+            (fr'^Backup failed\.?{re_eol}', self.generic_error),
+            (fr'[^\r\n]*?{re_eol}', self.unknown_line),
         ])
         # TODO
         # 2019-05-29 02:12:36 ERROR UNKNOWN: 'Saved SD dump file as /home/qip/.MakeMKV/dump_SD_55BD8BB1EB43C4A0F126.tgz'
@@ -391,8 +510,8 @@ class MakemkvconSpawn(_exec_spawn):
                 (fr'^DRV:(?P<index>\d+),(?P<flag1>\d+),(?P<flag2>\d+),(?P<flag3>\d+),"(?P<drive_name>{re_dot}*)","(?P<disc_name>{re_dot}*)","(?P<device_name>{re_dot}*)"{re_eol}', self.robot_drive_scan),
                 (fr'^TCOUNT:(?P<count>\d+){re_eol}', self.robot_titles_count),
                 (fr'^CINFO:(?P<id>\d+),(?P<code>\d+),"(?P<value>{re_dot}*)"{re_eol}', self.robot_disc_info),
-                (fr'^TINFO:(?P<id>\d+),(?P<code>\d+),"(?P<value>{re_dot}*)"{re_eol}', self.robot_title_info),
-                (fr'^SINFO:(?P<id>\d+),(?P<code>\d+),"(?P<value>{re_dot}*)"{re_eol}', self.robot_stream_info),
+                (fr'^TINFO:(?P<id>\d+),(?P<code>\d+),(?P<flag>\d+),"(?P<value>{re_dot}*)"{re_eol}', self.robot_title_info),
+                (fr'^SINFO:(?P<id>\d+),(?P<flag1>\d+),(?P<flag2>\d+),(?P<flag3>\d+),"(?P<value>{re_dot}*)"{re_eol}', self.robot_stream_info),
                 (fr'[^\n]*?{re_eol}', self.unknown_line),
                 (pexpect.EOF, False),
         ])
@@ -486,11 +605,11 @@ class MakemkvconSpawn(_exec_spawn):
         #   flags - media flags, see AP_DskFsFlagXXX in apdefs.h
         #   drive name - drive name string
         #   disc name - disc name string
-        #print(f'\nrobot_drive_scan: {str!r}')
+
         #   DRV:index,flag1,flag2,flag3,drive_name,disc_name,device_name
         device_name = self.match.group('device_name')
         if device_name:
-            self.drives.append(DriveInfo(
+            drive = DriveInfo(
                 index=int(byte_decode(self.match.group('index'))),
                 flag1=int(byte_decode(self.match.group('flag1'))),
                 flag2=int(byte_decode(self.match.group('flag2'))),
@@ -498,7 +617,8 @@ class MakemkvconSpawn(_exec_spawn):
                 drive_name=byte_decode(self.match.group('drive_name')),
                 disc_name=byte_decode(self.match.group('disc_name')),
                 device_name=Path(byte_decode(device_name)),
-            ))
+            )
+            self.drives[drive.index] = drive
         return True
 
     def robot_titles_count(self, str):
@@ -516,7 +636,15 @@ class MakemkvconSpawn(_exec_spawn):
         # id - attribute id, see AP_ItemAttributeId in apdefs.h
         # code - message code if attribute value is a constant string
         # value - attribute value
-        print(f'\nrobot_disc_info: {str!r}')
+        # TODO
+        # print(f'\nrobot_disc_info: {str!r}')
+        # robot_disc_info: b'CINFO:1,6209,"Blu-ray disc"\r\n'
+        # robot_disc_info: b'CINFO:2,0,"The Expendables"\r\n'
+        # robot_disc_info: b'CINFO:28,0,"eng"\r\n'
+        # robot_disc_info: b'CINFO:29,0,"English"\r\n'
+        # robot_disc_info: b'CINFO:30,0,"The Expendables"\r\n'
+        # robot_disc_info: b'CINFO:31,6119,"<b>Source information</b><br>"\r\n'
+        # robot_disc_info: b'CINFO:33,0,"0"\r\n'
         return True
 
     def robot_title_info(self, str):
@@ -527,7 +655,17 @@ class MakemkvconSpawn(_exec_spawn):
         # id - attribute id, see AP_ItemAttributeId in apdefs.h
         # code - message code if attribute value is a constant string
         # value - attribute value
-        print(f'\nrobot_title_info: {str!r}')
+        id = int(byte_decode(self.match.group('id')))
+        try:
+            title = self.titles[id]
+        except KeyError:
+            title = self.titles[id] = TitleInfo(id=id)
+        code=int(byte_decode(self.match.group('code')))
+        code = TitleInfo.AttributeCode(code)
+        title.attributes[code] = TitleInfo.Attribute(
+            code=code,
+            flag=int(byte_decode(self.match.group('flag'))),
+            value=byte_decode(self.match.group('value')))
         return True
 
     def robot_stream_info(self, str):
@@ -538,8 +676,27 @@ class MakemkvconSpawn(_exec_spawn):
         # id - attribute id, see AP_ItemAttributeId in apdefs.h
         # code - message code if attribute value is a constant string
         # value - attribute value
-        print(f'\nrobot_stream_info: {str!r}')
+        if False:
+            # TODO
+            stream = StreamInfo(
+                id=int(byte_decode(self.match.group('id'))),
+                flag1=int(byte_decode(self.match.group('flag1'))),
+                flag2=int(byte_decode(self.match.group('flag2'))),
+                flag3=int(byte_decode(self.match.group('flag3'))),
+                value=byte_decode(self.match.group('value')),
+            )
+            self.streams[stream.id] = stream
         return True
+
+class MakemkvconSpawn(MakemkvconSpawnBase, _exec_spawn):
+
+    pass
+
+class MakemkvconFdspawn(MakemkvconSpawnBase, _exec_fdspawn):
+
+    def __init__(self, fd, *_args, **kwargs):
+        print(f'MakemkvconFdspawn.__init__(fd={fd!r}, _args={_args!r}, kwargs={kwargs!r}')
+        super().__init__(fd=fd, *_args, **kwargs)
 
 class Makemkvcon(Executable):
     # http://www.makemkv.com/developers/usage.txt
@@ -553,9 +710,44 @@ class Makemkvcon(Executable):
 
     spawn = MakemkvconSpawn
 
+    fdspawn = MakemkvconFdspawn
+
     kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
 
     DriveInfo = DriveInfo
+
+    TitleInfo = TitleInfo
+
+    StreamInfo = StreamInfo
+
+    @property
+    def config_dir(self):
+        config_home = Path.home()
+        return config_home / '.MakeMKV'
+
+    @property
+    def share_dir(self):
+        return Path('/usr/share/MakeMKV')
+
+    @property
+    def settings_file_name(self):
+        return self.config_dir / 'settings.conf'
+
+    @property
+    def appdata_tar_file_name(self):
+        return self.share_dir / 'appdata.tar'
+
+    def read_settings_conf(self):
+        settings_file_name = self.settings_file_name
+        settings = configobj.ConfigObj(os.fspath(settings_file_name))
+        return settings
+
+    def write_settings_conf(self, settings):
+        if settings.filename is None:
+            settings.filename = os.fspath(self.settings_file_name)
+        from qip.file import write_to_temp_context
+        with write_to_temp_context(settings.filename, text=False) as tmp_file:
+            return settings.write(tmp_file.fp)
 
     def build_cmd(self, *args, **kwargs):
         args = list(args)
@@ -595,6 +787,14 @@ class Makemkvcon(Executable):
                 raise
             break
 
-makemkvcon = Makemkvcon()
+    def get_profile_xml(self, profile_file_name='default.mmcp.xml'):
+        cmd = [
+            'tar', '-x', '-O',
+            '-f', self.appdata_tar_file_name,
+            profile_file_name,
+        ]
+        profile_xml = dbg_exec_cmd(cmd, encoding='utf-8')
+        profile_xml = ET.ElementTree(ET.fromstring(profile_xml))
+        return profile_xml
 
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
+makemkvcon = Makemkvcon()
