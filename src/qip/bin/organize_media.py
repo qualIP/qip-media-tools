@@ -76,7 +76,7 @@ def main():
     pgroup.add_argument('--apply-suggestions', dest='apply_suggestions', default=False, action='store_true', help='apply suggestions')
 
     pgroup.add_argument('--contenttype', help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
-    pgroup.add_argument('--app', default='plex', choices=['emby', 'plex'], help='App compatibility mode')
+    pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex'], help='App compatibility mode')
     pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files')
     pgroup.add_argument('--no-aux', dest='aux', default=argparse.SUPPRESS, action='store_false', help='Do not handle auxiliary files')
 
@@ -297,7 +297,7 @@ def format_part_suffix(inputfile, which=all_part_names):
         part = None
     app.log.debug('disk=%r, track=%r, part=%r', disk, track, part)
 
-    if app.args.app == 'plex':
+    if app.args.media_library_app == 'plex':
         # - [DISK]
         # - [PART]
         # - [TRACK]
@@ -312,7 +312,7 @@ def format_part_suffix(inputfile, which=all_part_names):
             # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
             dst_file_base += ' - part{track}'.format(
                 track=track)
-    elif app.args.app == 'emby':
+    elif app.args.media_library_app == 'emby':
         # -[DISK]
         # -[PART]
         # -[TRACK]
@@ -371,16 +371,16 @@ def organize_music(inputfile, *, suggest_tags, dbtype='music'):
         if tag and not getattr(inputfile.tags, tag):
             raise MissingMediaTagError(tag, file=inputfile)
 
-    dst_dir = ''
+    dst_dir = Path()
 
     # https://github.com/MediaBrowser/Wiki/wiki/Music%20naming
     # Compilations/ALBUMTITLE/
     # ALBUMARTIST/ALBUMTITLE/
     if inputfile.tags.compilation:
-        dst_dir += 'Compilations/'
+        dst_dir /= 'Compilations'
     else:
-        dst_dir += '%s/' % (clean_file_name(re.sub(r';', ',', inputfile.tags.albumartist), keep_ext=False),)
-    dst_dir += clean_file_name(inputfile.tags.albumtitle, keep_ext=False) + '/'
+        dst_dir /= clean_file_name(re.sub(r';', ',', inputfile.tags.albumartist), keep_ext=False)
+    dst_dir /= clean_file_name(inputfile.tags.albumtitle, keep_ext=False)
 
     dst_file_base = ''
 
@@ -409,9 +409,10 @@ def organize_music(inputfile, *, suggest_tags, dbtype='music'):
 
     dst_file_base += format_part_suffix(inputfile, which=all_part_names - {'disk', 'track'})
 
+    dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
     dst_file_base += inputfile.file_name.suffix
 
-    return dst_dir, dst_file_base
+    return dst_dir / dst_file_base
 
 def organize_audiobook(inputfile, *, suggest_tags):
 
@@ -442,12 +443,12 @@ def organize_audiobook(inputfile, *, suggest_tags):
         if tag and not getattr(inputfile.tags, tag):
             raise MissingMediaTagError(tag, file=inputfile)
 
-    dst_dir = ''
+    dst_dir = Path()
 
     # https://github.com/MediaBrowser/Wiki/wiki/Music%20naming
     # ALBUMARTIST/ALBUMTITLE/
-    dst_dir += '%s/' % (clean_file_name(re.sub(r';', ',', inputfile.tags.albumartist), keep_ext=False),)
-    dst_dir += clean_file_name(inputfile.tags.albumtitle, keep_ext=False) + '/'
+    dst_dir /= clean_file_name(re.sub(r';', ',', inputfile.tags.albumartist), keep_ext=False)
+    dst_dir /= clean_file_name(inputfile.tags.albumtitle, keep_ext=False)
 
     dst_file_base = ''
 
@@ -474,9 +475,10 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
+    dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
     dst_file_base += inputfile.file_name.suffix
 
-    return dst_dir, dst_file_base
+    return dst_dir / dst_file_base
 
 def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
     contenttype = inputfile.tags.contenttype or default
@@ -512,8 +514,9 @@ def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
 
 def organize_inline_musicvideo(inputfile, *, suggest_tags):
 
-    dst_dir, dst_file_base = organize_music(inputfile, suggest_tags=suggest_tags,
+    opath = organize_music(inputfile, suggest_tags=suggest_tags,
                                             dbtype='musicvideo')
+    dst_dir, dst_file_base = opath.parent, opath.name
     dst_file_base, dst_file_base_ext = os.path.splitext(os.fspath(dst_file_base))
 
     # COMMENT
@@ -529,9 +532,10 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
 
     dst_file_base += format_part_suffix(inputfile, which=all_part_names - {'disk', 'track'})
 
+    dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
     dst_file_base += dst_file_base_ext
 
-    return dst_dir, dst_file_base
+    return dst_dir / dst_file_base
 
 def organize_movie(inputfile, *, suggest_tags, orig_type):
 
@@ -558,29 +562,25 @@ def organize_movie(inputfile, *, suggest_tags, orig_type):
         if tag and not getattr(inputfile.tags, tag):
             raise MissingMediaTagError(tag, file=inputfile)
 
-    dst_dir = ''
+    dst_dir = Path()
 
     # https://github.com/MediaBrowser/Wiki/wiki/Movie-naming
-    # https://support.plex.tv/articles/200381023-naming-movie-files/
+    # https://support.plex.tv/articles/naming-and-organizing-your-movie-media-files/
     # plex: TITLE [SUBTITLE] (YEAR)/
     # emby: TITLE (YEAR)/
 
     # TITLE
-    dst_dir += '%s' % (clean_file_name(inputfile.tags.title, keep_ext=False),)
+    dst_dir /= clean_file_name(inputfile.tags.title, keep_ext=False)
 
-    if app.args.app == 'plex':
+    if app.args.media_library_app == 'plex':
         # https://support.plex.tv/articles/200381043-multi-version-movies/
         if inputfile.tags.subtitle:
             # [SUBTITLE]
-            dst_dir += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+            dst_dir = dst_dir.with_name(dst_dir.name + ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),))
 
     if inputfile.tags.year:
         # (YEAR)
-        dst_dir += ' (%d)' % (inputfile.tags.year,)
-
-    dst_dir += '/'
-
-    dst_file_base = ''
+        dst_dir = dst_dir.with_name(dst_dir.name + ' (%d)' % (inputfile.tags.year,))
 
     if inputfile.tags.contenttype in (None,
                                       qip.mm.ContentType.feature_film,
@@ -589,24 +589,24 @@ def organize_movie(inputfile, *, suggest_tags, orig_type):
         # emby: TITLE (YEAR) - [SUBTITLE]
 
         # TITLE
-        dst_file_base += inputfile.tags.title
+        dst_file_base = inputfile.tags.title
 
-        if app.args.app == 'plex':
+        if app.args.media_library_app == 'plex':
             # https://support.plex.tv/articles/200381043-multi-version-movies/
             if inputfile.tags.subtitle:
                 # [SUBTITLE]
-                dst_file_base += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+                dst_file_base += f' [{inputfile.tags.subtitle}]'
 
         if inputfile.tags.year:
             # (YEAR)
-            dst_file_base += ' (%d)' % (inputfile.tags.year,)
+            dst_file_base += f' ({inputfile.tags.year})'
 
         # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
-        if app.args.app == 'emby':
+        if app.args.media_library_app == 'emby':
             # - [SUBTITLE]
             if inputfile.tags.subtitle:
-                dst_dir += ' - %s' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+                dst_file_base += f' - {inputfile.tags.subtitle}'
 
     else:
         # plex: behindthescenes, deleted, featurette, interview, scene, short, trailer, other
@@ -615,7 +615,7 @@ def organize_movie(inputfile, *, suggest_tags, orig_type):
         # COMMENT
         if inputfile.tags.comment:
             # COMMENT
-            dst_file_base = '%s' % (inputfile.tags.comment[0],)
+            dst_file_base = inputfile.tags.comment[0]
         else:
             # ContentType
             dst_file_base = str(inputfile.tags.contenttype)
@@ -625,9 +625,10 @@ def organize_movie(inputfile, *, suggest_tags, orig_type):
 
     dst_file_base += format_part_suffix(inputfile)
 
+    dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
     dst_file_base += inputfile.file_name.suffix
 
-    return dst_dir, dst_file_base
+    return dst_dir / dst_file_base
 
 def organize_tvshow(inputfile, *, suggest_tags):
 
@@ -660,12 +661,12 @@ def organize_tvshow(inputfile, *, suggest_tags):
         if tag and not getattr(inputfile.tags, tag):
             raise MissingMediaTagError(tag, file=inputfile)
 
-    dst_dir = ''
+    dst_dir = Path()
 
     # https://support.plex.tv/articles/naming-and-organizing-your-tv-show-files/
     # https://github.com/MediaBrowser/Wiki/wiki/TV-naming
     # TVSHOW/
-    dst_dir += '%s/' % (clean_file_name(inputfile.tags.tvshow, keep_ext=False),)
+    dst_dir /= clean_file_name(inputfile.tags.tvshow, keep_ext=False)
 
     if inputfile.tags.season is None:
         assert inputfile.tags.episode is None
@@ -679,10 +680,9 @@ def organize_tvshow(inputfile, *, suggest_tags):
         # .../Season 1/
         # .../Specials/
         if inputfile.tags.season == 0:
-            dst_dir += 'Specials/'
+            dst_dir /= 'Specials/'
         else:
-            dst_dir += 'Season %d/' % (inputfile.tags.season,)
-
+            dst_dir /= f'Season {inputfile.tags.season}'
 
         dst_file_base = ''
 
@@ -746,9 +746,10 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
         dst_file_base += format_part_suffix(inputfile)
 
+    dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
     dst_file_base += inputfile.file_name.suffix
 
-    return dst_dir, dst_file_base
+    return dst_dir / dst_file_base
 
 def organize(inputfile):
 
@@ -808,24 +809,24 @@ def organize(inputfile):
             suggest_tags[tag] = new_value
 
     if inputfile.tags.type == 'normal':
-        ores = organize_music(inputfile, suggest_tags=suggest_tags)
+        opath = organize_music(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'audiobook':
-        ores = organize_audiobook(inputfile, suggest_tags=suggest_tags)
+        opath = organize_audiobook(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'musicvideo':
-        if app.args.app == 'emby':
+        if app.args.media_library_app == 'emby':
             app.log.debug('emby: musicvideo -> music')
-            ores = organize_music(inputfile, suggest_tags=suggest_tags,
+            opath = organize_music(inputfile, suggest_tags=suggest_tags,
                                   dbtype='musicvideo')
         else:
             app.log.debug('plex: musicvideo -> inline musicvideo')
-            ores = organize_inline_musicvideo(inputfile, suggest_tags=suggest_tags)
+            opath = organize_inline_musicvideo(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'movie':
-        ores = organize_movie(inputfile, suggest_tags=suggest_tags, orig_type=orig_type)
+        opath = organize_movie(inputfile, suggest_tags=suggest_tags, orig_type=orig_type)
     elif inputfile.tags.type == 'tvshow':
-        ores = organize_tvshow(inputfile, suggest_tags=suggest_tags)
+        opath = organize_tvshow(inputfile, suggest_tags=suggest_tags)
     else:
         raise ValueError('type = %r' % (inputfile.tags.type,))
-    dst_dir, dst_file_base = ores
+    dst_dir, dst_file_base = opath.parent, opath.name
     outputdir = getattr(app.args, 'outputdir', None)
     if not outputdir and app.args.use_default_output:
         try:
@@ -833,14 +834,14 @@ def organize(inputfile):
         except (TypeError, KeyError):
             # TypeError: 'NoneType' object is not subscriptable
             raise ValueError(f'No output directory specified and no default set for type {inputfile.tags.type!r}')
-    dst_dir = os.fspath(outputdir / dst_dir)
+    dst_dir = outputdir / dst_dir
 
     src_stat = os.lstat(inputfile.file_name)
     skip = False
     for n in range(1,10):
         dst_file_tail = clean_file_name(dst_file_base,
                                         extra='-%d' % (n,) if n > 1 else '')
-        dst_file_name = os.path.join(dst_dir, dst_file_tail)
+        dst_file_name = os.fspath(dst_dir / dst_file_tail)
         if os.path.exists(dst_file_name):
             dst_stat = os.lstat(dst_file_name)
             if dst_stat.st_ino == src_stat.st_ino:
@@ -850,12 +851,12 @@ def organize(inputfile):
             else:
                 app.log.debug('  Collision with %s.', dst_file_name)
                 continue
-        if not os.path.exists(dst_dir):
+        if not dst_dir.exists():
             if app.args.dry_run:
                 app.log.info('  Create %s. (dry-run)', dst_dir)
             else:
                 app.log.info('  Create %s.', dst_dir)
-                os.makedirs(dst_dir)
+                dst_dir.mkdir(parents=True)
         aux_moves = []
         if app.args.aux:
             dst_file_base, dst_file_ext = os.path.splitext(dst_file_tail)
@@ -870,7 +871,7 @@ def organize(inputfile):
                 assert aux_file_tail.startswith(inputfile_base), (aux_file_tail, inputfile_base)
                 aux_file_suffix = aux_file_tail[len(inputfile_base):]
                 dst_aux_file_tail = dst_file_base + aux_file_suffix
-                dst_aux_file_name = os.path.join(dst_dir, dst_aux_file_tail)
+                dst_aux_file_name = os.fspath(dst_dir / dst_aux_file_tail)
                 if os.path.exists(dst_aux_file_name):
                     raise OSError(errno.EEXIST, dst_aux_file_name)
                 aux_moves.append((aux_file_name, dst_aux_file_name))
