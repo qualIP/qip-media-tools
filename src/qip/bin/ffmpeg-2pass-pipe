@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 
@@ -6,20 +6,28 @@ set -x
 
 prog=$(basename "$0")
 
+log() {
+    echo "[ffmpeg-2pass-pipe]" "$@" >&2
+}
+
+input_file="pipe:0"
+output_file="pipe:"
+
 init_args=""
 while [ $# -gt 1 ] ; do
     case "$1" in
         -hwaccel) init_args="${init_args:+$init_args }$1 $2"; shift 2 ;;
+        -i) input_file="$2" ; shift 2 ;;
+        -o) output_file="$2" ; shift 2 ;;
+        --) shift 1 ; break ;;
         *) break ;;
     esac
 done
 
+extra_args=("$@")
+
 prog_tmp_dir="${TMPDIR:-/tmp}/$prog.$$.tmp"
 tmp_running_file="$prog_tmp_dir/running"
-
-log() {
-    echo "[ffmpeg-2pass-pipe]" "$@" >&2
-}
 
 cleanup() {
     set +u
@@ -33,6 +41,7 @@ trap "cleanup ; exit 255" 1 2 9 15
 mkdir "$prog_tmp_dir"
 tmp_input_file="$prog_tmp_dir/input"
 tmp_pass1output_file="$prog_tmp_dir/pass1output"
+tmp_pass1output_file="pipe:"
 passlogfile_file="$prog_tmp_dir/passlogfile"
 
 lockfile-create --verbose --use-pid "$tmp_running_file" < /dev/null
@@ -40,18 +49,22 @@ lockfile-touch "$tmp_running_file" &
 BADGER_PID="$!"
 
 log "PASS 1"
-tee "$tmp_input_file" | \
-ffmpeg $init_args -i pipe:0 \
+set -- ffmpeg $init_args -i "$input_file" \
     -pass 1 -passlogfile "$passlogfile_file" \
     -speed 4 \
-    "$@" \
-    -- pipe: > /dev/null
-    #-- "$tmp_pass1output_file" > /dev/null
+    "${extra_args[@]}" \
+    -- "$tmp_pass1output_file"
+if [ "$input_file" = "pipe:0" ] ; then
+    tee "$tmp_input_file" | "$@" > /dev/null
+    input_file="$tmp_input_file"
+else
+    "$@" > /dev/null
+fi
 
 log "PASS 2"
-ffmpeg $init_args -i "$tmp_input_file" \
+ffmpeg $init_args -i "$input_file" \
     -pass 2 -passlogfile "$passlogfile_file" \
-    "$@" \
-    -- pipe: < /dev/null
+    "${extra_args[@]}" \
+    -- "$output_file" < /dev/null
 
 kill $BADGER_PID
