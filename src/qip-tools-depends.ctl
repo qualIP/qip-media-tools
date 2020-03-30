@@ -22,7 +22,6 @@ Depends:
     graphicsmagick,
     cdparanoia,
     ffmpeg,
-    mp4v2-utils,
     libid3-tools,
     id3v2,
     cuetools,
@@ -42,6 +41,8 @@ Recommends:
     safecopy,
     icoutils,
     fuseiso,
+    mp4v2-utils,
+# NOTE: mp4v2-utils: https://www.deb-multimedia.org
 # Suggests: <comma-separated list of packages>
 # Provides: <comma-separated list of packages>
 # Replaces: <comma-separated list of packages>
