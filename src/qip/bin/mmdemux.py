@@ -51,10 +51,12 @@
 ##############
 # https://en.wikipedia.org/wiki/Glossary_of_digital_audio
 
-from pathlib import Path
 from decimal import Decimal
 from fractions import Fraction
+from pathlib import Path
 import collections
+import concurrent.futures
+import contextlib
 import copy
 import decimal
 import errno
@@ -62,6 +64,7 @@ import functools
 import glob
 import html
 import io
+import itertools
 import logging
 import operator
 import os
@@ -90,7 +93,8 @@ from qip.mencoder import mencoder
 from qip.file import *
 from qip.handbrake import *
 from qip.isolang import isolang
-from qip.mp4 import M4aFile
+from qip.mp2 import *
+from qip.mp4 import *
 from qip.mediainfo import *
 from qip.matroska import *
 from qip.mm import MediaFile, MovieFile, Chapter, Chapters, FrameRate
@@ -105,6 +109,9 @@ Auto = qip.utils.Constants.Auto
 
 tmdb = None
 tvdb = None
+
+thread_executor = None
+slurm_executor = None
 
 default_minlength_tvshow = qip.utils.Timestamp('15m')
 default_minlength_movie = qip.utils.Timestamp('60m')
@@ -168,11 +175,21 @@ def print_streams_summary(mux_dict, current_stream_index=None):
                                         + ([repr(stream_dict['title'])]
                                            if stream_dict.get('title', None)
                                            else [])
+                                        + (['suffix=' + repr(stream_dict['external_stream_file_name_suffix'])]
+                                           if stream_dict.get('external_stream_file_name_suffix', None)
+                                           else [])
                                         + ([f'''*{stream_dict['subtitle_count']}''']
                                            if stream_dict.get('subtitle_count', None)
                                            else [])
                                         ),
         ))
+        try:
+            original_source_description = stream_dict['original_source_description']
+        except KeyError:
+            pass
+        else:
+            print(f'       |          | source: {original_source_description}')
+
     print('-------+----------+-----------------------+----------+---------------------')
 
 class FieldOrderUnknownError(NotImplementedError):
@@ -196,6 +213,12 @@ class StreamExternalSubtitleAlreadyCreated(ValueError):
         self.stream_index = stream_index
         self.external_stream_file_name = external_stream_file_name
         super().__init__(f'Stream {stream_index} External subtitle file already created: {external_stream_file_name}')
+
+class LargeDiscrepancyInStreamDurationsError(ValueError):
+
+    def __init__(self, *, inputdir):
+        self.inputdir = inputdir
+        super().__init__(f'{inputdir}: Large discrepancy in stream durations!')
 
 common_aspect_ratios = {
     # Ratio(4, 3),
@@ -445,42 +468,46 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
 
             if field_order is None:
                 frame0 = video_frames[0]
-                constant_framerate = all(
-                        frame.pkt_duration == frame0.pkt_duration
-                        for frame in video_frames)
+                if framerate is not None:
+                    constant_framerate = True
+                else:
+                    constant_framerate = all(
+                            frame.pkt_duration == frame0.pkt_duration
+                            for frame in video_frames)
                 if constant_framerate:
-                    if False:
-                        if frame0.pkt_duration_time in (
-                                    Decimal('0.033367'),
-                                    Decimal('0.033000'),
-                                ):
-                            framerate = FrameRate(30000, 1001)
-                        elif frame0.pkt_duration_time in (
-                                    Decimal('0.041000'),
-                                ):
-                            framerate = FrameRate(24000, 1001)
+                    if framerate is None:
+                        if False:
+                            if frame0.pkt_duration_time in (
+                                        Decimal('0.033367'),
+                                        Decimal('0.033000'),
+                                    ):
+                                framerate = FrameRate(30000, 1001)
+                            elif frame0.pkt_duration_time in (
+                                        Decimal('0.041000'),
+                                    ):
+                                framerate = FrameRate(24000, 1001)
+                            else:
+                                raise NotImplementedError(frame0.pkt_duration_time)
+                        elif False:
+                            pts_sum = sum(
+                                frameB.pkt_pts - frameA.pkt_pts
+                                for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
+                            framerate = FrameRate(1 / (time_base * pts_sum / (len(video_frames) - 2)), 1)
+                            app.log.debug('framerate = 1 / (%r * %r / (%r - 2)) = %r = %r', time_base, pts_sum, len(video_frames), framerate, float(framerate))
+                            # framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
+                            framerate = framerate.round_common()
+                            app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
                         else:
-                            raise NotImplementedError(frame0.pkt_duration_time)
-                    elif False:
-                        pts_sum = sum(
-                            frameB.pkt_pts - frameA.pkt_pts
-                            for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
-                        framerate = FrameRate(1 / (time_base * pts_sum / (len(video_frames) - 2)), 1)
-                        app.log.debug('framerate = 1 / (%r * %r / (%r - 2)) = %r = %r', time_base, pts_sum, len(video_frames), framerate, float(framerate))
-                        # framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
-                        framerate = framerate.round_common()
-                        app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
-                    else:
-                        assert len(video_frames) > 5, f'Not enough precision, only {len(video_frames)} frames analyzed.'
-                        pts_diff = (
-                            video_frames[-2].pkt_pts  # Last frame may not have either dts and pts
-                            - video_frames[0].pkt_pts)
-                        framerate = FrameRate(1 / (time_base * pts_diff / (len(video_frames) - 2)), 1)
-                        app.log.debug('framerate = 1 / (%r * %r) / (%r - 2) = %r = %r', time_base, pts_diff, len(video_frames), framerate, float(framerate))
-                        framerate = framerate.round_common()
-                        app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
+                            assert len(video_frames) > 5, f'Not enough precision, only {len(video_frames)} frames analyzed.'
+                            pts_diff = (
+                                video_frames[-2].pkt_pts  # Last frame may not have either dts and pts
+                                - video_frames[0].pkt_pts)
+                            framerate = FrameRate(1 / (time_base * pts_diff / (len(video_frames) - 2)), 1)
+                            app.log.debug('framerate = 1 / (%r * %r) / (%r - 2) = %r = %r', time_base, pts_diff, len(video_frames), framerate, float(framerate))
+                            framerate = framerate.round_common()
+                            app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
+                        app.log.debug('Constant %s (%.3f) fps found...', framerate, framerate)
 
-                    app.log.debug('Constant %s (%.3f) fps found...', framerate, framerate)
                     all_same_interlaced_frame = all(
                             frame.interlaced_frame == frame0.interlaced_frame
                             for frame in video_frames)
@@ -506,8 +533,13 @@ def analyze_field_order_and_framerate(stream_file_name, ffprobe_json, ffprobe_st
                             field_order = 'progressive'
                             app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
                     else:
-                        field_order_diags.append('Mix of interlaced and non-interlaced frames found.')
-                        app.log.debug(field_order_diags[-1])
+                        if False:
+                            field_order_diags.append('Mix of interlaced and non-interlaced frames found.')
+                            app.log.debug(field_order_diags[-1])
+                        else:
+                            field_order = 'auto-interlaced'
+                            app.log.warning('Detected field order is mix of top and bottom field first (%s) at %s (%.3f) fps',
+                                            field_order, framerate, framerate)
                     # v_pick_framerate = pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
                     # assert framerate == v_pick_framerate, f'constant framerate ({framerate}) does not match picked framerate ({v_pick_framerate})'
                 else:
@@ -623,12 +655,13 @@ def main():
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
     pgroup.add_bool_argument('--continue', dest='_continue', help='continue mode')
+    pgroup.add_bool_argument('--force', '-f', help='force mode (bypass some checks)')
     pgroup.add_bool_argument('--batch', '-B', help='batch mode')
     pgroup.add_bool_argument('--step', help='step mode')
     pgroup.add_bool_argument('--cuda', help='enable CUDA')
     pgroup.add_bool_argument('--alpha', help='enable alpha features')
     pgroup.add_bool_argument('--slurm', default=False, help='enable slurm')
-    pgroup.add_bool_argument('--jobs', '-j', default=None, help='Specifies the number of jobs (threads) to run simultaneously')
+    pgroup.add_argument('--jobs', '-j', type=int, nargs='?', default=1, const=Auto, help='Specifies the number of jobs (threads) to run simultaneously')
 
     pgroup = app.parser.add_argument_group('Tools Control')
     pgroup.add_argument('--track-extract-tool', default=Auto, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
@@ -639,6 +672,8 @@ def main():
     pgroup = app.parser.add_argument_group('Ripping Control')
     pgroup.add_argument('--device', default=Path(os.environ.get('CDROM', '/dev/cdrom')), type=_resolved_Path, help='specify alternate cdrom device')
     pgroup.add_argument('--minlength', default=Auto, type=qip.utils.Timestamp, help='minimum title length for ripping (default: ' + default_minlength_movie.friendly_str() + ' (movie), ' + default_minlength_tvshow.friendly_str() + ' (tvshow))')
+    pgroup.add_argument('--sp-remove-method', default='auto', choices=('auto', 'CellWalk', 'CellTrim'), help='DVD structure protection removal method')
+    pgroup.add_bool_argument('--check-start-time', default=Auto, help='check start time of tracks')
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -651,11 +686,13 @@ def main():
     pgroup.add_argument('--video-language', '--vlang', type=isolang_or_None, default=isolang('und'), help='Override video language (mux)')
     pgroup.add_argument('--video-rate-control-mode', default='CQ', choices=('Q', 'CQ', 'CBR', 'VBR', 'lossless'), help='Rate control mode: Constant Quality (Q), Constrained Quality (CQ), Constant Bit Rate (CBR), Variable Bit Rate (VBR), lossless')
     pgroup.add_argument('--force-framerate', default=argparse.SUPPRESS, type=FrameRate, help='Ignore heuristics and force framerate')
+    pgroup.add_argument('--force-input-framerate', default=argparse.SUPPRESS, type=FrameRate, help='Force input framerate')
     pgroup.add_argument('--force-output-framerate', default=argparse.SUPPRESS, type=FrameRate, help='Force output framerate')
     pgroup.add_argument('--force-field-order', default=argparse.SUPPRESS, choices=('progressive', 'tt', 'tb', 'bb', 'bt', '23pulldown', 'auto-interlaced'), help='Ignore heuristics and force input field order')
     pgroup.add_argument('--video-analyze-duration', type=qip.utils.Timestamp, default=qip.utils.Timestamp(60), help='video analysis duration (seconds)')
     pgroup.add_argument('--video-analyze-skip-frames', type=int, default=10, help='number of frames to skip from video analysis')
     pgroup.add_argument('--limit-duration', type=qip.utils.Timestamp, default=argparse.SUPPRESS, help='limit conversion duration (for testing purposes)')
+    pgroup.add_bool_argument('--force-still-video', default=False, help='Force still image video (single frame)')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', default=Auto, type=_resolved_Path, help='SubRip OCR matrix file')
@@ -667,10 +704,13 @@ def main():
     pgroup.add_bool_argument('--auto-verify', help='Auto-verify created files')
 
     pgroup = app.parser.add_argument_group('Compatibility')
-    pgroup.add_bool_argument('--webm', default=True, help='webm output format')
+    pgroup.add_bool_argument('--webm', default=Auto, help='webm output format')
+    pgroup.add_bool_argument('--ffv1', default=False, help='lossless ffv1 video codec')
+    pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex'], help='App compatibility mode')
 
     pgroup = app.parser.add_argument_group('Encoding')
     pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
+    pgroup.add_bool_argument('--audio-track-titles', default=False, help='Include titles for all audio tracks')
 
     pgroup = app.parser.add_argument_group('Tags')
     pgroup.add_argument('--grouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
@@ -712,6 +752,8 @@ def main():
     pgroup.add_argument('--project', default=Auto, help='project name')
     pgroup.add_bool_argument('--chain', help='chaining actions toward demux')
     pgroup.add_bool_argument('--cleanup', help='cleaning up when done')
+    pgroup.add_bool_argument('--rename', default=True, help='rename files (such as when tagging episode files)')
+    pgroup.add_argument('--chop-chapters', dest='chop_chaps', nargs='+', default=argparse.SUPPRESS, type=int, help='List of chapters to chop at')
 
     pgroup = app.parser.add_argument_group('Music extraction')
     pgroup.add_argument('--skip-chapters', dest='num_skip_chapters', type=int, default=0, help='number of chapters to skip')
@@ -730,7 +772,10 @@ def main():
     pgroup.add_argument('--extract-music', dest='extract_music_dirs', nargs='+', default=(), type=Path, help='directories to extract music from')
     pgroup.add_argument('--optimize', dest='optimize_dirs', nargs='+', default=(), type=Path, help='directories to optimize')
     pgroup.add_argument('--demux', dest='demux_dirs', nargs='+', default=(), type=Path, help='directories to demux')
+    pgroup.add_argument('--merge', dest='merge_files', nargs='+', default=(), type=Path, help='files to merge')
     pgroup.add_argument('--tag-episodes', dest='tag_episodes_files', nargs='+', default=(), type=Path, help='files to tag based on tvshow episodes')
+    pgroup.add_argument('--pick-title-streams', dest='pick_title_streams_dirs', nargs='+', default=(), type=Path, help='directories to pick title streams from')
+    pgroup.add_argument('--status', '--print', dest='status_dirs', nargs='+', default=(), type=Path, help='directories to print the status of')
 
     app.parse_args()
 
@@ -740,6 +785,12 @@ def main():
         except qip.mm.MissingMediaTagError:
             pass
 
+    if app.args.webm is Auto:
+        if app.args.ffv1:
+            app.args.webm = False
+        else:
+            app.args.webm = True
+
     # if getattr(app.args, 'action', None) is None:
     #     app.args.action = TODO
     if not hasattr(app.args, 'logging_level'):
@@ -748,49 +799,70 @@ def main():
     if app.args.logging_level <= logging.DEBUG:
         reprlib.aRepr.maxdict = 100
 
-    if app.args.cuda:
+    if False and app.args.cuda:
         default_ffmpeg_args += [
             '-hwaccel', 'nvdec',
         ]
 
-    did_something = False
-    for rip_dir in  app.args.rip_dir:
-        action_rip(rip_dir, app.args.device, in_tags=in_tags)
-        did_something = True
-    for backup_dir in  app.args.backup_dir:
-        action_backup(backup_dir, app.args.device, in_tags=in_tags)
-        did_something = True
-    for inputfile in getattr(app.args, 'hb_files', ()):
-        action_hb(inputfile, in_tags=in_tags)
-        did_something = True
-    for inputfile in getattr(app.args, 'mux_files', ()):
-        action_mux(inputfile, in_tags=in_tags)
-        did_something = True
-    for inputfile in getattr(app.args, 'verify_files', ()):
-        action_verify(inputfile, in_tags=in_tags)
-        did_something = True
-    for inputdir in getattr(app.args, 'update_dirs', ()):
-        action_update(inputdir, in_tags=in_tags)
-        did_something = True
-    for inputdir in getattr(app.args, 'chop_dirs', ()):
-        action_chop(inputdir, in_tags=in_tags)
-        did_something = True
-    for inputdir in getattr(app.args, 'extract_music_dirs', ()):
-        action_extract_music(inputdir, in_tags=in_tags)
-        did_something = True
-    for inputdir in getattr(app.args, 'optimize_dirs', ()):
-        action_optimize(inputdir, in_tags=in_tags)
-        did_something = True
-    for inputdir in getattr(app.args, 'demux_dirs', ()):
-        action_demux(inputdir, in_tags=in_tags)
-        did_something = True
-    if getattr(app.args, 'tag_episodes_files', ()):
-        action_tag_episodes_files(app.args.tag_episodes_files, in_tags=in_tags)
-        did_something = True
-    if not did_something:
-        raise ValueError('Nothing to do!')
-    if num_batch_skips:
-        raise Exception(f'BATCH MODE SKIP: {num_batch_skips} actions skipped.')
+    global thread_executor
+    global slurm_executor
+    with contextlib.ExitStack() as exit_stack:
+        thread_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=None if app.args.jobs is Auto else app.args.jobs)
+        exit_stack.enter_context(thread_executor)
+        if app.args.slurm and app.args.jobs == 1:
+            slurm_executor = concurrent.futures.ThreadPoolExecutor(max_workers=float("inf"))
+            exit_stack.enter_context(slurm_executor)
+        else:
+            slurm_executor = thread_executor
+
+        did_something = False
+        for backup_dir in  app.args.backup_dir:
+            action_backup(backup_dir, app.args.device, in_tags=in_tags)
+            did_something = True
+        for rip_dir in  app.args.rip_dir:
+            action_rip(rip_dir, app.args.device, in_tags=in_tags)
+            did_something = True
+        for backup_dir in  app.args.pick_title_streams_dirs:
+            action_pick_title_streams(backup_dir, in_tags=in_tags)
+            did_something = True
+        for inputfile in getattr(app.args, 'hb_files', ()):
+            action_hb(inputfile, in_tags=in_tags)
+            did_something = True
+        for inputfile in getattr(app.args, 'mux_files', ()):
+            action_mux(inputfile, in_tags=in_tags)
+            did_something = True
+        for inputfile in getattr(app.args, 'verify_files', ()):
+            action_verify(inputfile, in_tags=in_tags)
+            did_something = True
+        for inputdir in getattr(app.args, 'update_dirs', ()):
+            action_update(inputdir, in_tags=in_tags)
+            did_something = True
+        for inputdir in getattr(app.args, 'chop_dirs', ()):
+            action_chop(inputdir, in_tags=in_tags, chop_chaps=getattr(app.args, 'chop_chaps', None))
+            did_something = True
+        for inputdir in getattr(app.args, 'extract_music_dirs', ()):
+            action_extract_music(inputdir, in_tags=in_tags)
+            did_something = True
+        for inputdir in getattr(app.args, 'optimize_dirs', ()):
+            action_optimize(inputdir, in_tags=in_tags)
+            did_something = True
+        for inputdir in getattr(app.args, 'demux_dirs', ()):
+            action_demux(inputdir, in_tags=in_tags)
+            did_something = True
+        if getattr(app.args, 'merge_files', ()):
+            action_merge(app.args.merge_files, in_tags=in_tags)
+            did_something = True
+        if getattr(app.args, 'tag_episodes_files', ()):
+            action_tag_episodes(app.args.tag_episodes_files, in_tags=in_tags)
+            did_something = True
+        for inputdir in getattr(app.args, 'status_dirs', ()):
+            action_status(inputdir)
+            did_something = True
+        if not did_something:
+            raise ValueError('Nothing to do!')
+        if num_batch_skips:
+            raise Exception(f'BATCH MODE SKIP: {num_batch_skips} actions skipped.')
 
 def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_stream_dict=None):
     if mediainfo_track_dict:
@@ -847,6 +919,7 @@ def codec_name_to_ext(codec_name):
             'rawvideo': '.y4m',
             'mpeg2video': '.mpeg2.mp2v',
             'mp2': '.mpeg2.mp2v',
+            'ffv1': '.ffv1.mkv',
             #'mjpeg': '.mjpeg',
             'msmpeg4v3': '.msmpeg4v3.avi',
             'mpeg4': '.mp4',
@@ -877,7 +950,7 @@ def codec_name_to_ext(codec_name):
     return codec_ext
 
 def ext_to_container(ext):
-    ext = (Path('x' + ext) if isinstance(ext, str) else (ext if isinstance(ext, Path) else Path(ext))).suffix
+    ext = (Path('x' + ext) if isinstance(ext, str) else toPath(ext)).suffix
     try:
         ext_container = {
             '.mkv': 'matroska',
@@ -949,8 +1022,16 @@ def ext_to_codec_args(ext, lossless=False):
             ]
     return codec_args
 
+def codec_to_input_args(codec):
+    codec_args = []
+    if codec in ('h264_nvenc',):
+        codec_args += [
+            '-hwaccel', 'nvdec',
+        ]
+    return codec_args
+
 def ext_to_mencoder_libavcodec_format(ext):
-    ext = (Path('x' + ext) if isinstance(ext, str) else (ext if isinstance(ext, Path) else Path(ext))).suffix
+    ext = (Path('x' + ext) if isinstance(ext, str) else toPath(ext)).suffix
     try:
         libavcodec_format = {
             # video
@@ -1097,6 +1178,16 @@ def get_vp9_tile_columns_and_threads(width, height):
             return 4, 24
     raise NotImplementedError
 
+def adjust_start_time(start_time, *, codec_encoding_delay, stream_time_base):
+    start_time = ffmpeg.Timestamp(start_time)
+    if start_time < 0 and start_time == (
+            stream_time_base * round_half_away_from_zero(-codec_encoding_delay / stream_time_base)
+    ):
+        start_time = ffmpeg.Timestamp(0)
+    else:
+        start_time += codec_encoding_delay
+    return start_time
+
 def estimate_stream_duration(ffprobe_json):
     try:
         ffprobe_format_json = ffprobe_json['format']
@@ -1136,7 +1227,7 @@ def estimate_stream_duration(ffprobe_json):
 
 def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=None):
 
-    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    inputfile_base, inputfile_ext = my_splitext(inputfile)
     inputfile.tags.pop('type', None)
 
     name_scan_str = Path(inputfile_base).name
@@ -1240,6 +1331,9 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
             mediainfo_video_track_dicts = [mediainfo_track_dict
                     for mediainfo_track_dict in mediainfo_dict['media']['track']
                     if mediainfo_track_dict['@type'] == 'Video']
+            if len(mediainfo_video_track_dicts) > 1:
+                # TODO support angles!
+                mediainfo_video_track_dicts = mediainfo_video_track_dicts[:1]
             assert len(mediainfo_video_track_dicts) == 1, "%d video tracks found" % (len(mediainfo_video_track_dicts),)
             mediainfo_track_dict, = mediainfo_video_track_dicts
             mediainfo_mediatype = mediainfo_track_dict.get('OriginalSourceMedium', None)
@@ -1288,7 +1382,7 @@ def action_rip(rip_dir, device, in_tags):
     app.log.info('Ripping %s from %s...', rip_dir, device)
 
     if app.args.dry_run:
-        app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', rip_dir]))
+        app.log.verbose('CMD (dry-run): %s', list2cmdline(['mkdir', rip_dir]))
     else:
         os.mkdir(rip_dir)
 
@@ -1300,26 +1394,72 @@ def action_rip(rip_dir, device, in_tags):
             minlength = default_minlength_movie
 
     from qip.makemkv import makemkvcon
-    try:
-        makemkvcon.mkv(
-            source='dev:%s' % (device.resolve(),),  # makemkv is picky
-            dest_dir=rip_dir,
-            minlength=int(minlength),
-            retry_no_cd=True,
-            noscan=True,
-            robot=True,
-        )
-    except:
-        if app.args.dry_run:
-            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['rmdir', rip_dir]))
+
+    # See ~/.MakeMKV/settings.conf
+    profile_xml = makemkvcon.get_profile_xml()
+    eMkvSettings = profile_xml.find('mkvSettings')
+    eMkvSettings.set('ignoreForcedSubtitlesFlag', 'false')
+    eProfileSettings = profile_xml.find('profileSettings')
+    eProfileSettings.set('app_DefaultSelectionString', '+sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,-sel:mvcvideo,=100:all,-10:favlang')
+
+    settings_changed = False
+    makemkvcon_settings = makemkvcon.read_settings_conf()
+    orig_makemkvcon_settings = makemkvcon.read_settings_conf()
+
+    dvd_SPRemoveMethod = {
+        'auto': (None, '0'),
+        'CellWalk': ('1',),
+        'CellTrim': ('2',),
+    }[app.args.sp_remove_method]
+    if makemkvcon_settings.get('dvd_SPRemoveMethod', None) not in dvd_SPRemoveMethod:
+        if dvd_SPRemoveMethod[0] is None:
+            del makemkvcon_settings['dvd_SPRemoveMethod']
         else:
+            makemkvcon_settings['dvd_SPRemoveMethod'] = dvd_SPRemoveMethod[0]
+        settings_changed = True
+
+    if not app.args.dry_run and settings_changed:
+        app.log.warning('Changing makemkv settings!')
+        makemkvcon.write_settings_conf(makemkvcon_settings)
+    try:
+
+        with TempFile.mkstemp(text=True, suffix='.profile.xml') as tmp_profile_xml_file:
+            profile_xml.write(tmp_profile_xml_file.file_name,
+                #encoding='unicode',
+                xml_declaration=True,
+                )
+
             try:
-                os.rmdir(rip_dir)
-            except OSError:
-                pass
-            else:
-                app.log.info('Ripping failed; Removed %s.', rip_dir)
-        raise
+                rip_info = makemkvcon.mkv(
+                    source='dev:%s' % (device.resolve(),),  # makemkv is picky
+                    dest_dir=rip_dir,
+                    minlength=int(minlength),
+                    profile=tmp_profile_xml_file,
+                    retry_no_cd=True,
+                    noscan=True,
+                    robot=True,
+                )
+            except:
+                if app.args.dry_run:
+                    app.log.verbose('CMD (dry-run): %s', list2cmdline(['rmdir', rip_dir]))
+                else:
+                    try:
+                        os.rmdir(rip_dir)
+                    except OSError:
+                        pass
+                    else:
+                        app.log.info('Ripping failed; Removed %s.', rip_dir)
+                raise
+
+    finally:
+        if not app.args.dry_run and settings_changed:
+            app.log.warning('Restoring makemkv settings!')
+            makemkvcon.write_settings_conf(orig_makemkvcon_settings)
+
+    if not app.args.dry_run:
+        for title_no, angle_no in rip_info.spawn.angles:
+            pass
+        app.log.debug('rip_info.spawn.angles=%r', rip_info.spawn.angles)
 
     if app.args.eject:
         app.log.info('Ejecting...')
@@ -1336,6 +1476,102 @@ def action_rip(rip_dir, device, in_tags):
                 assert entry_path.suffix in ('.mkv', '.webm')
                 assert entry.is_file()
                 app.args.mux_files += (entry_path,)
+
+def action_pick_title_streams(backup_dir, in_tags):
+
+    makemkvcon_info_file = TextFile(backup_dir / 'makemkvcon.info.txt')
+    makemkvcon_orders_file = TextFile(backup_dir / 'makemkvcon.orders.txt')
+
+    from qip.makemkv import makemkvcon
+    makemkvcon_info_func = functools.partial(
+        makemkvcon.info,
+        source='file:' + os.fspath(backup_dir),
+        noscan=True,
+        robot=True,
+    )
+    if not makemkvcon_info_file.exists():
+        disc_info = makemkvcon_info_func()
+        with makemkvcon_info_file.open('w') as fp:
+            fp.write(disc_info.out)
+    else:
+        disc_info = makemkvcon_info_func(
+            fd=makemkvcon_info_file.open('rt'))
+
+    time_offset = qip.utils.Timestamp(0)
+    titles = sorted(disc_info.spawn.titles.values(),
+                    key=operator.attrgetter('stream_nos', 'id'))
+    assert len(titles) > 0
+    stream_nos = ()
+
+    def pick_a_title(titles):
+        i = app.radiolist_dialog(
+            title='Pick a title',
+            values=[(i, f'{title.title}: {title.stream_nos_str} ({title.duration}, {title.info_str})')
+                    for i, title in enumerate(titles)],
+        )
+        if i is None:
+            raise ValueError('Cancelled by user!')
+        return titles[i]
+
+    def is_the_right_stream(stream_file, time_offset):
+        from prompt_toolkit.completion import WordCompleter
+        completer = WordCompleter([
+            'help',
+            'yes',
+            'no',
+            'open',
+        ])
+        print('')
+        for i in itertools.count():
+            app.print(f'Is {stream_file} the right stream at offset {time_offset}?')
+            if i == 0:
+                try:
+                    xdg_open(stream_file)
+                except Exception as e:
+                    app.log.error(e)
+            c = app.prompt(completer=completer)
+            if c in ('help', 'h', '?'):
+                print('')
+                print('List of commands:')
+                print('')
+                print('help -- Print this help')
+                print('yes -- Yes, this is the right stream')
+                print('no -- No, this is not the right stream')
+                print('open -- Open this stream -- done')
+                print('quit -- quit')
+                print('')
+            elif c in ('yes', 'y'):
+                return True
+            elif c in ('no', 'n'):
+                return False
+            elif c in ('open',):
+                try:
+                    xdg_open(stream_file)
+                except Exception as e:
+                    app.log.error(e)
+            elif c in ('quit', 'q'):
+                raise ValueError('Quit by user')
+            else:
+                app.log.error('Invalid input')
+
+    with app.need_user_attention():
+        while True:
+            picked_title = pick_a_title(titles)
+            if picked_title.stream_nos == stream_nos:
+                break
+            next_stream_no = picked_title.stream_nos[len(stream_nos)]
+            stream_file = MediaFile.new_by_file_name(backup_dir / 'BDMV' / 'STREAM' / '{:05d}.m2ts'.format(next_stream_no))
+            if is_the_right_stream(stream_file, time_offset):
+                ffprobe_dict = stream_file.extract_ffprobe_json()
+                time_offset += ffmpeg.Timestamp(ffprobe_dict['format']['duration'])
+                stream_nos += (next_stream_no,)
+                titles = [title
+                          for title in titles
+                          if title.stream_nos[:len(stream_nos)] == stream_nos]
+
+    app.log.info('Picked title: %s', picked_title)
+    app.log.info('Picked title attributes: %r', picked_title.attributes)
+    return True
 
 def action_backup(backup_dir, device, in_tags):
     app.log.info('Backing up %s from %s...', backup_dir, device)
@@ -1355,7 +1591,7 @@ def action_backup(backup_dir, device, in_tags):
         )
     except:
         if app.args.dry_run:
-            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['rmdir', backup_dir]))
+            app.log.verbose('CMD (dry-run): %s', list2cmdline(['rmdir', backup_dir]))
         else:
             try:
                 os.rmdir(backup_dir)
@@ -1365,8 +1601,7 @@ def action_backup(backup_dir, device, in_tags):
                 app.log.info('Ripping failed; Removed %s.', backup_dir)
         raise
 
-    drive_infos = disc_info.spawn.drives
-    for drive_info in drive_infos:
+    for drive_info in disc_info.spawn.drives.values():
         if drive_info.device_name.samefile(device):
             break
     else:
@@ -1383,7 +1618,7 @@ def action_backup(backup_dir, device, in_tags):
         )
     except:
         if app.args.dry_run:
-            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['rmdir', backup_dir]))
+            app.log.verbose('CMD (dry-run): %s', list2cmdline(['rmdir', backup_dir]))
         else:
             try:
                 os.rmdir(backup_dir)
@@ -1449,7 +1684,6 @@ def pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediai
     else:
         raise FieldOrderUnknownError(mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
 
-
 def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, *, field_order=None):
     if getattr(app.args, 'force_framerate', None) is not None:
         return app.args.force_framerate
@@ -1510,62 +1744,61 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
                 raise ValueError('Inconsistent %s framerate: %s vs mediainfo=%s' % (field_order, framerate, mediainfo_framerate))
     return framerate
 
-def fix_chapters_out(chapters_out):
-    chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
-    chapters_root = chapters_xml.getroot()
-    for eEditionEntry in chapters_root.findall('EditionEntry'):
-        for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
-            e = eChapterAtom.find('ChapterTimeStart')
-            v = ffmpeg.Timestamp(e.text)
-            if v != 0.0:
-                # In case initial frame is a I frame to be displayed after
-                # subqequent P or B frames, the start time will be
-                # incorrect.
-                app.log.warning('Fixing first chapter start time %s to 0', v)
-                if False:
-                    # mkvpropedit doesn't like unknown elements
-                    e.tag = 'original_ChapterTimeStart'
-                    e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
-                e.text = str(ffmpeg.Timestamp(0))
-                chapters_xml_io = io.StringIO()
-                chapters_xml.write(chapters_xml_io,
-                                   xml_declaration=True,
-                                   encoding='unicode',  # Force string
-                                   )
-                chapters_out = chapters_xml_io.getvalue()
-            break
-    return chapters_out
-
-def chop_chaps(chaps,
-               inputfile,
-               chapter_file_ext=None,
-               chapter_lossless=True,
-               reset_timestamps=True):
+def chop_chapters(chaps,
+                  inputfile,
+                  chapter_file_ext=None,
+                  chapter_lossless=True,
+                  reset_timestamps=True,
+                  chop_chaps=None):
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
-    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    inputfile_base, inputfile_ext = my_splitext(inputfile)
     if chapter_file_ext is None:
         chapter_file_ext = inputfile_ext
 
     chapter_file_name_pat = '%s-chap%%02d%s' % (inputfile_base, chapter_file_ext)
-    chaps[-1].end = ffmpeg.Timestamp.MAX  # Make sure whole movie is captured
+
+    if chop_chaps is not None:
+        chaps_list = []
+        todo_chaps = list(chaps)
+        for chop_chap_no in sorted(chop_chaps):
+            sub_chaps = []
+            while todo_chaps and todo_chaps[0].no < chop_chap_no:
+                # < chap_no
+                sub_chaps.append(todo_chaps.pop(0))
+            if sub_chaps:
+                chaps_list.append(Chapters(chapters=sub_chaps))
+        if todo_chaps:
+            # >= chap_no
+            chaps_list.append(Chapters(chapters=todo_chaps))
+    else:
+        chaps_list = [Chapters(chapters=[chap]) for chap in chaps]
+
+    ffmpeg_input_args = []
+    codec_args = []
 
     if (
             (chapter_file_ext == inputfile_ext
              or ext_to_codec(chapter_file_ext) == ext_to_codec(inputfile_ext))
             and not (chapter_lossless and inputfile_ext in ('.h264',))):  # h264 copy just spits out a single empty chapter
-        codec_args = [
-            '-codec', 'copy',
-        ]
+        codec = 'copy'
     else:
-        codec_args = [
-            '-codec', ext_to_codec(chapter_file_ext, lossless=chapter_lossless),
-        ] + ext_to_codec_args(chapter_file_ext, lossless=chapter_lossless)
-    ffmpeg_args = default_ffmpeg_args + [
+        codec = ext_to_codec(chapter_file_ext, lossless=chapter_lossless)
+    ffmpeg_input_args += codec_to_input_args(codec)
+    codec_args += [
+        '-codec', codec,
+    ]
+    if codec != 'copy':
+        codec_args += ext_to_codec_args(chapter_file_ext, lossless=chapter_lossless)
+
+    chaps_list_copy = copy.deepcopy(chaps_list)
+    chaps_list_copy[-1].chapters[-1].end = ffmpeg.Timestamp.MAX  # Make sure whole movie is captured
+    ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args + [
         '-fflags', '+genpts',
         '-i', inputfile,
-        '-segment_times', ','.join(str(chap.end) for chap in chaps),
-        '-segment_start_number', chaps[0].no,
+        '-segment_times', ','.join(str(ffmpeg.Timestamp(sub_chaps.chapters[-1].end))
+                                   for sub_chaps in chaps_list_copy),
+        '-segment_start_number', chaps_list_copy[0].chapters[0].no,
         '-map', '0',
         '-map_chapters', '-1',
     ] + codec_args + [
@@ -1583,6 +1816,34 @@ def chop_chaps(chaps,
         ffmpeg(*ffmpeg_args,
                dry_run=app.args.dry_run,
                y=app.args.yes)
+
+    for segment_number_offset, sub_chaps in reversed(list(enumerate(chaps_list))):
+        segment_number = chaps_list[0].chapters[0].no + segment_number_offset
+        chopped_file = MediaFile.new_by_file_name(chapter_file_name_pat % (segment_number,))
+        if segment_number != sub_chaps.chapters[0].no:
+            chopped_file.move(chapter_file_name_pat % (sub_chaps.chapters[0].no,))
+        if len(sub_chaps.chapters) > 1:
+            sub_chaps -= Chapter(
+                start=sub_chaps.chapters[0].start, end=None,
+                no=sub_chaps.chapters[0].no - 1)
+            chapters_xml = sub_chaps.to_mkv_xml()
+            if False and app.args.interactive:
+                chapters_xml = edvar(chapters_xml,
+                                     preserve_whitespace_tags=Chapters.MKV_XML_VALUE_TAGS)[1]
+            chapters_xml_file = TempFile.mkstemp(suffix='.chapters.xml', open=True, text=True)
+            chapters_xml.write(chapters_xml_file.fp,
+                               xml_declaration=True,
+                               encoding='unicode',  # Force string
+                               )
+            chapters_xml_file.close()
+
+            cmd = [
+                'mkvpropedit',
+                chopped_file,
+                '--chapters', chapters_xml_file,
+            ]
+            with perfcontext('add chapters w/ mkvpropedit'):
+                do_spawn_cmd(cmd)
 
     return chapter_file_name_pat
 
@@ -1606,8 +1867,8 @@ def chop_chaps(chaps,
                     '-start_at_zero', '-copyts',
                     '-i', inputdir / stream_file_name,
                     '-codec', 'copy',
-                    '-ss', chap.start,
-                    '-to', chap.end,
+                    '-ss', ffmpeg.Timestamp(chap.start),
+                    '-to', ffmpeg.Timestamp(chap.end),
                     ]
                 if force_format:
                     ffmpeg_args += [
@@ -1625,7 +1886,7 @@ def chop_chaps(chaps,
 def action_hb(inputfile, in_tags):
     app.log.info('HandBrake %s...', inputfile)
     inputfile = MediaFile.new_by_file_name(inputfile)
-    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    inputfile_base, inputfile_ext = my_splitext(inputfile)
     outputfile_name = Path(inputfile_base + ".hb.mkv")
     if app.args.chain:
         app.args.mux_files += (outputfile_name,)
@@ -1652,9 +1913,9 @@ def action_hb(inputfile, in_tags):
         mediainfo_track_dict = mediainfo_dict['media']['track'][1]
         assert mediainfo_track_dict['@type'] == 'Video'
 
-        #framerate = pick_framerate(inputfile.file_name, ffprobe_dict, stream_dict, mediainfo_track_dict)
+        #framerate = pick_framerate(inputfile, ffprobe_dict, stream_dict, mediainfo_track_dict)
         field_order, input_framerate, framerate = analyze_field_order_and_framerate(
-            inputfile.file_name,
+            inputfile,
             ffprobe_dict, stream_dict, mediainfo_track_dict)
 
         video_target_bit_rate = get_vp9_target_bitrate(
@@ -1692,7 +1953,7 @@ def action_hb(inputfile, in_tags):
                    all_subtitles=True,
                    subtitle_default='none',
                    # Files
-                   input=inputfile.file_name,
+                   input=inputfile,
                    output=outputfile_name,
                    scan=True if app.args.dry_run else False,
                    json=True if app.args.dry_run else False,
@@ -1705,11 +1966,10 @@ def action_hb(inputfile, in_tags):
 def action_mux(inputfile, in_tags,
                mux_attached_pic=True,
                mux_subtitles=True):
-    global qip
     app.log.info('Muxing %s...', inputfile)
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
-    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    inputfile_base, inputfile_ext = my_splitext(inputfile)
     outputdir = Path(inputfile_base if app.args.project is Auto
                      else app.args.project)
     if app.args.chain:
@@ -1740,6 +2000,7 @@ def action_mux(inputfile, in_tags,
     mediainfo_dict = None
     if inputfile_ext in (
             '.mkv',
+            '.ffv1.mkv',
             '.webm',
             ):
         ffprobe_dict = inputfile.extract_ffprobe_json()
@@ -1752,133 +2013,135 @@ def action_mux(inputfile, in_tags,
     mux_dict['tags'] = inputfile.tags
 
     if app.args.interactive and not remux and not (app.args.rip_dir and outputdir in app.args.rip_dir):
-        from prompt_toolkit.formatted_text import FormattedText
-        from prompt_toolkit.completion import WordCompleter
-        completer = WordCompleter([
-            'help',
-            'edit',
-            'search',
-            'continue',
-            'quit',
-        ])
-        print('')
-        while True:
-            print('Initial tags setup')
-            c = app.prompt(completer=completer)
-            if c in ('help', 'h', '?'):
-                print('')
-                print('List of commands:')
-                print('')
-                print('help -- Print this help')
-                print('edit -- Edit tags')
-                print('search -- Search The Movie DB')
-                print('continue -- Continue processing')
-                print('quit -- Quit')
-            elif c in ('continue', 'c'):
-                break
-            elif c in ('quit', 'q'):
-                exit(1)
-            elif c in ('edit',):
-                mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
-            elif c in ('search',):
-                initial_text = mux_dict['tags'].title or inputfile.file_name.parent.name
-                initial_text = unmangle_search_string(initial_text)
-                if in_tags.language:
-                    initial_text += f' [{in_tags.language}]'
-                search_query = app.input_dialog(
-                    title=str(inputfile),
-                    text='Please input search query:',
-                    initial_text=initial_text)
-                if search_query is None:
-                    print('Cancelled by user!')
-                    continue
-                language = in_tags.language
-                m = re.match(r'^(?P<search_query>.+) \[(?P<language>\w+)\]', search_query)
-                if m:
-                    try:
-                        language = isolang(m.group('language'))
-                    except ValueError:
-                        pass
-                    else:
-                        search_query = m.group('search_query').strip()
-                if search_query:
-                    global tmdb
-                    import qip.tmdb
-                    if tmdb is None:
-                        tmdb = qip.tmdb.TMDb(
-                            apikey='3f8dc1c8cf6cb292c267b3c10179ae84',  # mmdemux
-                            interactive=app.args.interactive,
-                            debug=app.log.isEnabledFor(logging.DEBUG),
-                        )
-                    tmdb.language = language
-                    movie_api = qip.tmdb.Movie()
-                    l_movies = movie_api.search(search_query)
-                    i = 0
-                    app.log.debug('l_movies=(%r)%r', type(l_movies), l_movies)
-                    if not l_movies:
-                        app.log.error('No movies found matching %r!', search_query)
+        with app.need_user_attention():
+            from prompt_toolkit.formatted_text import FormattedText
+            from prompt_toolkit.completion import WordCompleter
+            completer = WordCompleter([
+                'help',
+                'edit',
+                'search',
+                'continue',
+                'quit',
+            ])
+            print('')
+            while True:
+                print('Initial tags setup')
+                c = app.prompt(completer=completer)
+                if c in ('help', 'h', '?'):
+                    print('')
+                    print('List of commands:')
+                    print('')
+                    print('help -- Print this help')
+                    print('edit -- Edit tags')
+                    print('search -- Search The Movie DB')
+                    print('continue -- Continue processing')
+                    print('quit -- Quit')
+                elif c in ('continue', 'c'):
+                    break
+                elif c in ('quit', 'q'):
+                    exit(1)
+                elif c in ('edit',):
+                    mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
+                elif c in ('search',):
+                    initial_text = mux_dict['tags'].title or inputfile.file_name.parent.name
+                    initial_text = unmangle_search_string(initial_text)
+                    if in_tags.language:
+                        initial_text += f' [{in_tags.language}]'
+                    search_query = app.input_dialog(
+                        title=str(inputfile),
+                        text='Please input search query:',
+                        initial_text=initial_text)
+                    if search_query is None:
+                        print('Cancelled by user!')
                         continue
-                    for o_movie in l_movies:
-                        o_movie.__dict__.setdefault('release_date', None)
-                    if (True or len(l_movies) > 1) and app.args.interactive:
-                        def help_handler(radio_list):
-                            i = radio_list._selected_index
-                            app.message_dialog(title='Details',
-                                               text=f'i={i}')
-                        i = app.radiolist_dialog(
-                            title='Please select a movie',
-                            values=[(i, '{title}, {release_date} (#{id}) -- {overview}'.format_map(vars(o_movie)))
-                                    for i, o_movie in enumerate(l_movies)],
-                            help_handler=help_handler)
-                        if i is None:
-                            print('Cancelled by user!')
+                    language = in_tags.language
+                    m = re.match(r'^(?P<search_query>.+) \[(?P<language>\w+)\]', search_query)
+                    if m:
+                        try:
+                            language = isolang(m.group('language'))
+                        except ValueError:
+                            pass
+                        else:
+                            search_query = m.group('search_query').strip()
+                    if search_query:
+                        global tmdb
+                        global qip
+                        import qip.tmdb
+                        if tmdb is None:
+                            tmdb = qip.tmdb.TMDb(
+                                apikey='3f8dc1c8cf6cb292c267b3c10179ae84',  # mmdemux
+                                interactive=app.args.interactive,
+                                debug=app.log.isEnabledFor(logging.DEBUG),
+                            )
+                        tmdb.language = language
+                        movie_api = qip.tmdb.Movie()
+                        l_movies = movie_api.search(search_query)
+                        i = 0
+                        app.log.debug('l_movies=(%r)%r', type(l_movies), l_movies)
+                        if not l_movies:
+                            app.log.error('No movies found matching %r!', search_query)
                             continue
-                    o_movie = l_movies[i]
+                        for o_movie in l_movies:
+                            o_movie.__dict__.setdefault('release_date', None)
+                        if (True or len(l_movies) > 1) and app.args.interactive:
+                            def help_handler(radio_list):
+                                i = radio_list._selected_index
+                                app.message_dialog(title='Details',
+                                                   text=f'i={i}')
+                            i = app.radiolist_dialog(
+                                title='Please select a movie',
+                                values=[(i, '{title}, {release_date} (#{id}) -- {overview}'.format_map(vars(o_movie)))
+                                        for i, o_movie in enumerate(l_movies)],
+                                help_handler=help_handler)
+                            if i is None:
+                                print('Cancelled by user!')
+                                continue
+                        o_movie = l_movies[i]
 
-                    #app.log.debug('o_movie=%r:\n%s', o_movie, pprint.pformat(vars(o_movie)))
-                    #{'adult': False,
-                    # 'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
-                    # 'entries': {'adult': False,
-                    #             'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
-                    #             'genre_ids': [12, 18, 53],
-                    #             'id': 44115,
-                    #             'original_language': 'en',
-                    #             'original_title': '127 Hours',
-                    #             'overview': "The true story of mountain climber Aron Ralston's "
-                    #                         'remarkable adventure to save himself after a fallen '
-                    #                         'boulder crashes on his arm and traps him in an '
-                    #                         'isolated canyon in Utah.',
-                    #             'popularity': 11.822,
-                    #             'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
-                    #             'release_date': '2010-11-05',
-                    #             'title': '127 Hours',
-                    #             'video': False,
-                    #             'vote_average': 7,
-                    #             'vote_count': 4828},
-                    # 'genre_ids': [12, 18, 53],
-                    # 'id': 44115,
-                    # 'original_language': 'en',
-                    # 'original_title': '127 Hours',
-                    # 'overview': "The true story of mountain climber Aron Ralston's remarkable "
-                    #             'adventure to save himself after a fallen boulder crashes on his '
-                    #             'arm and traps him in an isolated canyon in Utah.',
-                    # 'popularity': 11.822,
-                    # 'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
-                    # 'release_date': '2010-11-05',
-                    # 'title': '127 Hours',
-                    # 'video': False,
-                    # 'vote_average': 7,
-                    # 'vote_count': 4828}
-                    mux_dict['tags'].title = o_movie.title
-                    mux_dict['tags'].date = o_movie.release_date
-                    app.log.info('%s: %s', inputfile, mux_dict['tags'].short_str())
+                        #app.log.debug('o_movie=%r:\n%s', o_movie, pprint.pformat(vars(o_movie)))
+                        #{'adult': False,
+                        # 'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
+                        # 'entries': {'adult': False,
+                        #             'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
+                        #             'genre_ids': [12, 18, 53],
+                        #             'id': 44115,
+                        #             'original_language': 'en',
+                        #             'original_title': '127 Hours',
+                        #             'overview': "The true story of mountain climber Aron Ralston's "
+                        #                         'remarkable adventure to save himself after a fallen '
+                        #                         'boulder crashes on his arm and traps him in an '
+                        #                         'isolated canyon in Utah.',
+                        #             'popularity': 11.822,
+                        #             'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
+                        #             'release_date': '2010-11-05',
+                        #             'title': '127 Hours',
+                        #             'video': False,
+                        #             'vote_average': 7,
+                        #             'vote_count': 4828},
+                        # 'genre_ids': [12, 18, 53],
+                        # 'id': 44115,
+                        # 'original_language': 'en',
+                        # 'original_title': '127 Hours',
+                        # 'overview': "The true story of mountain climber Aron Ralston's remarkable "
+                        #             'adventure to save himself after a fallen boulder crashes on his '
+                        #             'arm and traps him in an isolated canyon in Utah.',
+                        # 'popularity': 11.822,
+                        # 'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
+                        # 'release_date': '2010-11-05',
+                        # 'title': '127 Hours',
+                        # 'video': False,
+                        # 'vote_average': 7,
+                        # 'vote_count': 4828}
+                        mux_dict['tags'].title = o_movie.title
+                        mux_dict['tags'].date = o_movie.release_date
+                        app.log.info('%s: %s', inputfile, mux_dict['tags'].short_str())
 
-            else:
-                app.log.error('Invalid input')
+                else:
+                    app.log.error('Invalid input')
 
     if not remux:
         if app.args.dry_run:
-            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(['mkdir', outputdir]))
+            app.log.verbose('CMD (dry-run): %s', list2cmdline(['mkdir', outputdir]))
         else:
             os.mkdir(outputdir)
 
@@ -1886,13 +2149,13 @@ def action_mux(inputfile, in_tags,
 
     if inputfile_ext in (
             '.mkv',
+            '.ffv1.mkv',
             '.webm',
             ):
 
         has_forced_subtitle = False
         subtitle_counts = []
 
-        iter_frames = None
         first_pts_time_per_stream = {}
 
         mkvextract_tracks_args = []
@@ -1903,226 +2166,348 @@ def action_mux(inputfile, in_tags,
         iter_mediainfo_track_dicts = iter(mediainfo_track_dict
                                           for mediainfo_track_dict in mediainfo_dict['media']['track']
                                           if 'ID' in mediainfo_track_dict)
-        for stream_dict in sorted_stream_dicts(ffprobe_dict['streams']):
-            stream_out_dict = {}
-            stream_index = stream_out_dict['index'] = int(stream_dict['index'])
-            stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
 
-            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-            if stream_codec_type == 'video':
-                assert mediainfo_track_dict['@type'] == 'Video'
-            elif stream_codec_type == 'audio':
-                assert mediainfo_track_dict['@type'] == 'Audio'
-            elif stream_codec_type == 'subtitle':
-                assert mediainfo_track_dict['@type'] == 'Text'
-            else:
-                raise NotImplementedError(stream_codec_type)
+        with contextlib.ExitStack() as stream_dict_loop_exit_stack:
+            iter_frames = None
 
-            if stream_codec_type in ('video', 'audio', 'subtitle'):
-                stream_codec_name = stream_dict['codec_name']
-                EstimatedFrameCount = None
-                if stream_codec_type == 'video':
-                    # Test using mediainfo's Duration as ffmpeg's can be the whole length of the movie
-                    if 'Duration' in mediainfo_track_dict:
-                        try:
-                            EstimatedFrameCount = int(round_half_away_from_zero(
-                                qip.utils.Timestamp(mediainfo_track_dict['Duration'])
-                                * Fraction(mediainfo_track_dict['FrameRate'])))
-                        except KeyError:
-                            EstimatedFrameCount = int(round_half_away_from_zero(
-                                qip.utils.Timestamp(mediainfo_track_dict['Duration'])
-                                * Fraction(mediainfo_track_dict['OriginalFrameRate'])))
-                    elif stream_codec_name in still_image_exts:
-                        EstimatedFrameCount = 1
-                app.log.debug('EstimatedFrameCount=%r', EstimatedFrameCount)
+            for stream_dict in sorted_stream_dicts(ffprobe_dict['streams']):
+                stream_out_dict = {}
+                stream_index = stream_out_dict['index'] = int(stream_dict['index'])
+                stream_codec_type = stream_out_dict['codec_type'] = stream_dict['codec_type']
+
                 if (
                         stream_codec_type == 'video'
-                        and stream_codec_name == 'mjpeg'
+                        and stream_dict['codec_name'] == 'mjpeg'
                         and stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
                     stream_codec_type = stream_out_dict['codec_type'] = 'image'
                     stream_file_ext = '.jpg'
                     stream_out_dict['attachment_type'] = my_splitext(stream_dict['tags']['filename'])[0]
-                elif (
-                    stream_codec_type == 'video'
-                    and EstimatedFrameCount == 1):
-                    stream_file_ext = '.png'
-                    app.log.warning('Detected %s stream #%d is still image', stream_codec_type, stream_index)
-                else:
-                    stream_file_ext = codec_name_to_ext(stream_codec_name)
+                    #app.log.debug('stream #%d: video -> %s %s [%s]', stream_index, stream_codec_type, stream_file_ext, stream_out_dict['attachment_type'])
 
                 if stream_codec_type == 'video':
-                    if app.args.video_language:
-                        stream_dict.setdefault('tags', {})
-                        stream_dict['tags']['language'] = app.args.video_language.code3
-                    # stream_out_dict['pixel_aspect_ratio'] = stream_dict['pixel_aspect_ratio']
-                    # stream_out_dict['display_aspect_ratio'] = stream_dict['display_aspect_ratio']
-
-                stream_time_base = Fraction(stream_dict['time_base'])
-
-                stream_start_time = ffmpeg.Timestamp(stream_dict['start_time'])
-                codec_encoding_delay = get_codec_encoding_delay(inputfile, ffprobe_stream_dict=stream_dict)
-                if stream_start_time < 0 \
-                        and stream_start_time == (stream_time_base * round_half_away_from_zero(-codec_encoding_delay / stream_time_base)):
-                    stream_start_time = ffmpeg.Timestamp(0)
+                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                    assert mediainfo_track_dict['@type'] == 'Video', f'mediainfo_track_dict={mediainfo_track_dict!r}'
+                elif stream_codec_type == 'audio':
+                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                    assert mediainfo_track_dict['@type'] == 'Audio', f'mediainfo_track_dict={mediainfo_track_dict!r}'
+                elif stream_codec_type == 'subtitle':
+                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                    assert mediainfo_track_dict['@type'] == 'Text', f'mediainfo_track_dict={mediainfo_track_dict!r}'
+                elif stream_codec_type == 'image':
+                    mediainfo_track_dict = None  # Not its own track
+                    # General
+                    # ...
+                    # Cover                                    : Yes                                                                                                                                                                                                
+                    # Attachments                              : cover.jpg                                                                                                                                                                                          
                 else:
-                    stream_start_time += codec_encoding_delay
-                if stream_start_time and stream_codec_type == 'video':
-                    if stream_index not in first_pts_time_per_stream:
-                        if iter_frames is None:
-                            iter_frames = ffprobe.iter_frames(inputfile)
-                        for frame in iter_frames:
-                            if frame.stream_index in first_pts_time_per_stream:
-                                continue
-                            if frame.pkt_pts_time is None:
-                                continue
-                            first_pts_time_per_stream[frame.stream_index] = frame.pkt_pts_time
-                            if frame.stream_index == stream_index:
-                                break
-                    if first_pts_time_per_stream[stream_index] == 0.0:
-                        app.log.warning('Correcting %s stream #%d start time %s to 0 based on first frame PTS', stream_codec_type, stream_index, stream_start_time)
-                        stream_start_time = ffmpeg.Timestamp(0)
-                if stream_start_time and stream_codec_type == 'subtitle':
-                    # ffmpeg estimates the start_time if it is low enough but the actual time indices will be correct
-                    app.log.warning('Correcting %s stream #%d start time %s to 0 based on experience', stream_codec_type, stream_index, stream_start_time)
-                    stream_start_time = ffmpeg.Timestamp(0)
-                if stream_start_time:
-                    app.log.warning('%s stream #%d start time is %s', stream_codec_type.title(), stream_index, stream_start_time)
-                stream_out_dict['start_time'] = str(stream_start_time)
+                    raise NotImplementedError(stream_codec_type)
 
-                stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
-
-                try:
-                    stream_title = stream_out_dict['title'] = stream_dict['tags']['title']
-                except KeyError:
-                    pass
-                else:
-                    if stream_codec_type == 'audio' \
-                            and re.match(r'^(Stereo|Mono|Surround [0-9.]+)$', stream_title):
-                        del stream_out_dict['title']
-
-                try:
-                    stream_language = stream_dict['tags']['language']
-                except KeyError:
-                    stream_language = None
-                else:
-                    stream_language = isolang(stream_language)
-                    if stream_language is isolang('und'):
-                        stream_language = None
-                if stream_language:
-                    stream_out_dict['language'] = str(stream_language)
-
-                stream_file_name_language_suffix = '.%s' % (stream_language,) if stream_language is not None else ''
-                if stream_disposition_dict['attached_pic']:
-                    attachment_index += 1
-                    output_track_file_name = 'attachment-%02d-%s%s%s' % (
-                            attachment_index,
-                            stream_codec_type,
-                            stream_file_name_language_suffix,
-                            stream_file_ext,
-                            )
-                else:
-                    output_track_file_name = 'track-%02d-%s%s%s' % (
-                            stream_index,
-                            stream_codec_type,
-                            stream_file_name_language_suffix,
-                            stream_file_ext,
-                            )
-                stream_out_dict['file_name'] = output_track_file_name
-
-                if (
-                        (not mux_attached_pic and stream_disposition_dict['attached_pic']) or
-                        (not mux_subtitles and stream_codec_type == 'subtitle')):
-                    app.log.warning('Not muxing %s stream #%d...', stream_codec_type, stream_index)
-                else:
-
-                    if stream_disposition_dict['attached_pic']:
-                        app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
-                        mkvextract_attachments_args += [
-                            '%d:%s' % (
-                                attachment_index,
-                                outputdir / output_track_file_name,
-                            )]
-                    elif (
-                            app.args.track_extract_tool == 'ffmpeg'
-                            # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
-                            # (mkvextract expects S_TEXT/WEBVTT)
-                            or stream_file_ext == '.vtt'
-                            # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
-                            # https://www.makemkv.com/forum/viewtopic.php?t=2530
-                            or stream_codec_name in ('pcm_s16le', 'pcm_s24le')
-                            # Avoid mkvextract error: Track 0 with the CodecID 'V_MS/VFW/FOURCC' is missing the "default duration" element and cannot be extracted.
-                            or stream_file_ext in still_image_exts
-                            or (app.args.track_extract_tool is Auto
-                                # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
-                                and stream_codec_name in (
-                                    'vp8',
-                                    'vp9',
-                                    ))):
-                        app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
-                        with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
-                            force_format = None
+                if stream_codec_type in ('video', 'audio', 'subtitle', 'image'):
+                    stream_codec_name = stream_dict['codec_name']
+                    EstimatedFrameCount = None
+                    if stream_codec_type == 'video':
+                        if app.args.force_still_video:
+                            EstimatedFrameCount = 1
+                        elif 'Duration' in mediainfo_track_dict:
+                            # Test using mediainfo's Duration as ffmpeg's can be the whole length of the movie
                             try:
-                                force_format = ext_to_container(stream_file_ext)
-                            except ValueError:
-                                pass
-                            ffmpeg_args = default_ffmpeg_args + [
-                                '-i', inputfile.file_name,
-                                '-map_metadata', '-1',
-                                '-map_chapters', '-1',
-                                '-map', '0:%d' % (stream_index,),
-                                ]
-                            if stream_file_ext in still_image_exts:
-                                ffmpeg_args += [
-                                    '-frames:v', 1,
-                                    ]
-                            else:
-                                ffmpeg_args += [
-                                    '-codec', 'copy',
-                                    ]
-                            ffmpeg_args += [
-                                '-start_at_zero',
-                                ]
-                            if force_format:
-                                ffmpeg_args += [
-                                    '-f', force_format,
-                                    ]
-                            ffmpeg_args += [
-                                outputdir / output_track_file_name,
-                                ]
-                            ffmpeg(*ffmpeg_args,
-                                   progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_dict),
-                                   progress_bar_title=f'Extract {stream_codec_type} track {stream_index} w/ ffmpeg',
-                                   dry_run=app.args.dry_run,
-                                   y=app.args.yes)
-                    elif app.args.track_extract_tool in ('mkvextract', Auto):
-                        app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
-                        mkvextract_tracks_args += [
-                            '%d:%s' % (
-                                stream_index,
-                                outputdir / output_track_file_name,
-                            )]
-                        # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
+                                EstimatedFrameCount = int(round_half_away_from_zero(
+                                    qip.utils.Timestamp(mediainfo_track_dict['Duration'])
+                                    * Fraction(mediainfo_track_dict['FrameRate'])))
+                            except KeyError:
+                                EstimatedFrameCount = int(round_half_away_from_zero(
+                                    qip.utils.Timestamp(mediainfo_track_dict['Duration'])
+                                    * Fraction(mediainfo_track_dict['OriginalFrameRate'])))
+                        elif stream_codec_name in still_image_exts:
+                            EstimatedFrameCount = 1
+                    app.log.debug('EstimatedFrameCount=%r', EstimatedFrameCount)
+                    if (
+                            stream_codec_type in ('video', 'image')
+                            and stream_codec_name == 'mjpeg'
+                            and stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
+                        stream_codec_type = stream_out_dict['codec_type'] = 'image'
+                        stream_file_ext = '.jpg'
+                        stream_out_dict['attachment_type'] = my_splitext(stream_dict['tags']['filename'])[0]
+                    elif (
+                        stream_codec_type == 'video'
+                        and EstimatedFrameCount == 1):
+                        stream_file_ext = '.png'
+                        app.log.warning('Detected %s stream #%d is still image', stream_codec_type, stream_index)
                     else:
-                        raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
+                        stream_file_ext = codec_name_to_ext(stream_codec_name)
 
-                stream_dict_cache .append({
+                    if stream_codec_type == 'video':
+                        if app.args.video_language:
+                            stream_dict.setdefault('tags', {})
+                            stream_dict['tags']['language'] = app.args.video_language.code3
+                        # stream_out_dict['pixel_aspect_ratio'] = stream_dict['pixel_aspect_ratio']
+                        # stream_out_dict['display_aspect_ratio'] = stream_dict['display_aspect_ratio']
+
+                    if stream_codec_type == 'audio':
+                        try:
+                            stream_out_dict['original_bit_rate'] = stream_dict['bit_rate']
+                        except KeyError:
+                            pass
+                        # TODO
+                        # opusinfo TheTruthAboutCatsAndDogs/title_t00/track-02-audio.fra.opus.ogg 
+                        # Processing file "TheTruthAboutCatsAndDogs/title_t00/track-02-audio.fra.opus.ogg"...
+                        # 
+                        # New logical stream (#1, serial: 00385013): type opus
+                        # Encoded with libopus 1.3
+                        # User comments section follows...
+                        #         ENCODER=opusenc from opus-tools 0.1.10
+                        #         ENCODER_OPTIONS=--vbr --bitrate 192
+                        # Opus stream 1:
+                        #         Pre-skip: 312
+                        #         Playback gain: 0 dB
+                        #         Channels: 2
+                        #         Original sample rate: 48000Hz
+                        #         Packet duration:   20.0ms (max),   20.0ms (avg),   20.0ms (min)
+                        #         Page duration:   1000.0ms (max),  999.9ms (avg),  160.0ms (min)
+                        #         Total data length: 132228830 bytes (overhead: 0.595%)
+                        #         Playback length: 97m:00.139s
+                        #         Average bitrate: 181.8 kb/s, w/o overhead: 180.7 kb/s
+                        # Logical stream 1 ended
+
+                    stream_time_base = Fraction(stream_dict['time_base'])
+
+                    codec_encoding_delay = get_codec_encoding_delay(inputfile, ffprobe_stream_dict=stream_dict)
+                    stream_start_time = adjust_start_time(
+                        ffmpeg.Timestamp(stream_dict['start_time']),
+                        codec_encoding_delay=codec_encoding_delay,
+                        stream_time_base=stream_time_base)
+
+                    check_start_time = app.args.check_start_time
+                    if stream_codec_type == 'subtitle':
+                        check_start_time = False
+                    if check_start_time is Auto and stream_start_time == 0.0:
+                        # Sometimes ffprobe reports start_time=0 but mediainfo reports Delay (with low accuracy)
+                        Delay = (mediainfo_track_dict or {}).get('Delay', None)
+                        Delay = qip.utils.Timestamp(Delay) if Delay is not None else None
+                        if Delay:
+                            check_start_time = True
+                    if check_start_time is Auto and stream_start_time and stream_codec_type == 'video':
+                        check_start_time = True
+                    if check_start_time is Auto:
+                        check_start_time = False
+                    if check_start_time:
+                        if stream_index not in first_pts_time_per_stream:
+                            if iter_frames is None:
+                                iter_frames = ffprobe.iter_frames(inputfile)
+                                stream_dict_loop_exit_stack.push(contextlib.closing(iter_frames))
+                            for frame in iter_frames:
+                                if frame.stream_index in first_pts_time_per_stream:
+                                    continue
+                                if frame.pkt_pts_time is None:
+                                    continue
+                                first_pts_time_per_stream[frame.stream_index] = frame.pkt_pts_time
+                                if frame.stream_index == stream_index:
+                                    break
+                        stream_start_time_pts = adjust_start_time(
+                            first_pts_time_per_stream[stream_index],
+                            codec_encoding_delay=codec_encoding_delay,
+                            stream_time_base=stream_time_base)
+                        if stream_start_time != stream_start_time_pts:
+                            app.log.warning('Correcting %s stream #%d start time %s to %s based on first frame PTS', stream_codec_type, stream_index, stream_start_time, stream_start_time_pts)
+                            stream_start_time = stream_start_time_pts
+
+                    if stream_start_time and stream_codec_type == 'subtitle':
+                        # ffmpeg estimates the start_time if it is low enough but the actual time indices will be correct
+                        app.log.warning('Correcting %s stream #%d start time %s to 0 based on experience', stream_codec_type, stream_index, stream_start_time)
+                        stream_start_time = ffmpeg.Timestamp(0)
+                    if stream_start_time:
+                        app.log.warning('%s stream #%d start time is %s', stream_codec_type.title(), stream_index, stream_start_time)
+                    stream_out_dict['start_time'] = str(stream_start_time)
+
+                    stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
+
+                    try:
+                        stream_title = stream_out_dict['title'] = stream_dict['tags']['title']
+                    except KeyError:
+                        pass
+                    else:
+                        if stream_codec_type == 'audio' \
+                                and re.match(r'^(Stereo|Mono|Surround [0-9.]+)$', stream_title):
+                            del stream_out_dict['title']
+
+                    try:
+                        stream_language = stream_dict['tags']['language']
+                    except KeyError:
+                        stream_language = None
+                    else:
+                        stream_language = isolang(stream_language)
+                        if stream_language is isolang('und'):
+                            stream_language = None
+                    if stream_language:
+                        stream_out_dict['language'] = str(stream_language)
+
+                    stream_file_name_language_suffix = '.%s' % (stream_language,) if stream_language is not None else ''
+                    if stream_disposition_dict['attached_pic']:
+                        attachment_index += 1
+                        output_track_file_name = 'attachment-%02d-%s%s%s' % (
+                                attachment_index,
+                                stream_codec_type,
+                                stream_file_name_language_suffix,
+                                stream_file_ext,
+                                )
+                    else:
+                        output_track_file_name = 'track-%02d-%s%s%s' % (
+                                stream_index,
+                                stream_codec_type,
+                                stream_file_name_language_suffix,
+                                stream_file_ext,
+                                )
+                    stream_out_dict['file_name'] = output_track_file_name
+
+                    if (
+                            (not mux_attached_pic and stream_disposition_dict['attached_pic']) or
+                            (not mux_subtitles and stream_codec_type == 'subtitle')):
+                        app.log.warning('Not muxing %s stream #%d...', stream_codec_type, stream_index)
+                    else:
+
+                        if stream_disposition_dict['attached_pic']:
+                            app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
+                            mkvextract_attachments_args += [
+                                '%d:%s' % (
+                                    attachment_index,
+                                    outputdir / output_track_file_name,
+                                )]
+                        elif (
+                                app.args.track_extract_tool == 'ffmpeg'
+                                # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
+                                # (mkvextract expects S_TEXT/WEBVTT)
+                                or stream_file_ext == '.vtt'
+                                # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
+                                # https://www.makemkv.com/forum/viewtopic.php?t=2530
+                                or stream_codec_name in ('pcm_s16le', 'pcm_s24le')
+                                # Avoid mkvextract error: Track 0 with the CodecID 'V_MS/VFW/FOURCC' is missing the "default duration" element and cannot be extracted.
+                                or stream_file_ext in still_image_exts
+                                or (app.args.track_extract_tool is Auto
+                                    # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
+                                    and stream_codec_name in (
+                                        'vp8',
+                                        'vp9',
+                                        ))):
+                            app.log.info('Extract %s stream %d: %s', stream_codec_type, stream_index, output_track_file_name)
+                            with perfcontext('extract track %d w/ ffmpeg' % (stream_index,)):
+                                force_format = None
+                                try:
+                                    force_format = ext_to_container(stream_file_ext)
+                                except ValueError:
+                                    pass
+                                ffmpeg_args = default_ffmpeg_args + [
+                                    '-i', inputfile,
+                                    '-map_metadata', '-1',
+                                    '-map_chapters', '-1',
+                                    '-map', '0:%d' % (stream_index,),
+                                    ]
+                                if stream_file_ext in still_image_exts:
+                                    ffmpeg_args += [
+                                        '-frames:v', 1,
+                                        ]
+                                else:
+                                    ffmpeg_args += [
+                                        '-codec', 'copy',
+                                        ]
+                                ffmpeg_args += [
+                                    '-start_at_zero',
+                                    ]
+                                if force_format:
+                                    ffmpeg_args += [
+                                        '-f', force_format,
+                                        ]
+                                ffmpeg_args += [
+                                    outputdir / output_track_file_name,
+                                    ]
+                                ffmpeg(*ffmpeg_args,
+                                       progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_dict),
+                                       progress_bar_title=f'Extract {stream_codec_type} track {stream_index} w/ ffmpeg',
+                                       dry_run=app.args.dry_run,
+                                       y=app.args.yes)
+                        elif app.args.track_extract_tool in ('mkvextract', Auto):
+                            app.log.info('Will extract %s stream %d w/ mkvextract: %s', stream_codec_type, stream_index, output_track_file_name)
+                            mkvextract_tracks_args += [
+                                '%d:%s' % (
+                                    stream_index,
+                                    outputdir / output_track_file_name,
+                                )]
+                            # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
+                        else:
+                            raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
+
+                else:
+                    raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+
+                original_source_description = []
+                original_source_description.append(stream_dict['codec_name'])
+                if stream_codec_type == 'video':
+                    try:
+                        original_source_description.append(stream_dict['profile'])
+                    except KeyError:
+                        pass
+                    original_source_description.append('%sx%s' % (stream_dict['width'], stream_dict['height']))
+                    original_source_description.append(stream_dict['display_aspect_ratio'])
+                elif stream_codec_type == 'audio':
+                    try:
+                        original_source_description.append(stream_dict['profile'])
+                    except KeyError:
+                        pass
+                    try:
+                        original_source_description.append(stream_dict['channel_layout'])
+                    except KeyError:
+                        pass
+                    try:
+                        audio_bitrate = int(stream_dict['bit_rate'])
+                    except KeyError:
+                        pass
+                    else:
+                        original_source_description.append(f'{audio_bitrate // 1000}kbps')
+                    try:
+                        audio_samplerate = int(stream_dict['sample_rate'])
+                    except KeyError:
+                        pass
+                    else:
+                        original_source_description.append(f'{audio_samplerate // 1000}kHz')
+                    try:
+                        audio_samplefmt = stream_dict['sample_fmt']
+                    except KeyError:
+                        pass
+                    else:
+                        try:
+                            bits_per_raw_sample = int(stream_dict['bits_per_raw_sample'])
+                        except KeyError:
+                            original_source_description.append(f'{audio_samplefmt}')
+                        else:
+                            original_source_description.append(f'{audio_samplefmt}({bits_per_raw_sample}b)')
+                elif stream_codec_type == 'subtitle':
+                    pass
+                elif stream_codec_type == 'image':
+                    try:
+                        original_source_description.append(stream_out_dict['attachment_type'])
+                    except KeyError:
+                        pass
+                    original_source_description.append('%sx%s' % (stream_dict['width'], stream_dict['height']))
+                else:
+                    raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
+                if original_source_description:
+                    stream_out_dict['original_source_description'] = ', '.join(original_source_description)
+
+                stream_dict_cache.append({
                     'stream_dict': stream_out_dict,
                     'file': File.new_by_file_name(outputdir / output_track_file_name),
                 })
                 mux_dict['streams'].append(stream_out_dict)
-            else:
-                raise ValueError('Unsupported codec type %r' % (stream_codec_type,))
 
         if mkvextract_tracks_args:
             with perfcontext('extract tracks w/ mkvextract'):
                 cmd = [
-                    'mkvextract', 'tracks', inputfile.file_name,
+                    'mkvextract', 'tracks', inputfile,
                     ] + mkvextract_tracks_args
                 do_spawn_cmd(cmd)
         if mkvextract_attachments_args:
             with perfcontext('extract attachments w/ mkvextract'):
                 cmd = [
-                    'mkvextract', 'attachments', inputfile.file_name,
+                    'mkvextract', 'attachments', inputfile,
                     ] + mkvextract_attachments_args
                 do_spawn_cmd(cmd)
 
@@ -2174,13 +2559,17 @@ def action_mux(inputfile, in_tags,
                 stream_index = stream_dict['index']
                 stream_codec_type = stream_dict['codec_type']
 
-                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
                 if stream_codec_type == 'video':
+                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
                     assert mediainfo_track_dict['@type'] == 'Video'
                 elif stream_codec_type == 'audio':
+                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
                     assert mediainfo_track_dict['@type'] == 'Audio'
                 elif stream_codec_type == 'subtitle':
+                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
                     assert mediainfo_track_dict['@type'] == 'Text'
+                elif stream_codec_type == 'image':
+                    mediainfo_track_dict = None  # Not its own track
                 else:
                     raise NotImplementedError(stream_codec_type)
 
@@ -2208,9 +2597,10 @@ def action_mux(inputfile, in_tags,
                     if stream_forced:
                         has_forced_subtitle = True
                     # TODO Detect closed_caption
+					# TODO ffprobe -show_frames -i IceAgeContinentalDrift/Ice\ Age\:\ Continental\ Drift\ \(2012\)/track-05-subtitle.eng.sup | grep 'num_rects=[^0]' | wc -l
                     if stream_file_ext in ('.sub', '.sup'):
                         try:
-                            d = ffprobe(i=outputdir / stream_file_name, show_frames=True)
+                            d = ffprobe(i=outputdir / stream_file_name, show_packets=True)
                         except subprocess.CalledProcessError as e:
                             app.log.error(e)
                             num_extract_errors += 1
@@ -2218,7 +2608,7 @@ def action_mux(inputfile, in_tags,
                         else:
                             out = d.out
                             subtitle_count = out.count(
-                                b'[SUBTITLE]' if type(out) is bytes else '[SUBTITLE]')
+                                b'[PACKET]' if type(out) is bytes else '[PACKET]')
                             if stream_file_ext in ('.sup',):
                                 # TODO count only those frames with num_rect != 0
                                 subtitle_count = subtitle_count // 2
@@ -2230,7 +2620,13 @@ def action_mux(inputfile, in_tags,
                         subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
                     else:
                         raise NotImplementedError(stream_file_ext)
-                    if not subtitle_count:
+                    if subtitle_count == 1 \
+                            and File(outputdir / stream_file_name).getsize() == 2048:
+                        app.log.warning('Detected empty single-frame subtitle stream #%d (%s); Skipping.',
+                                        stream_index,
+                                        stream_dict.get('language', 'und'))
+                        stream_dict['skip'] = True
+                    elif not subtitle_count:
                         app.log.warning('Detected empty subtitle stream #%d (%s); Skipping.',
                                         stream_index,
                                         stream_dict.get('language', 'und'))
@@ -2254,16 +2650,8 @@ def action_mux(inputfile, in_tags,
         if ffprobe_dict['chapters']:
             output_chapters_file_name = outputdir / 'chapters.xml'
             if not remux:
-                with perfcontext('mkvextract chapters'):
-                    cmd = [
-                        'mkvextract', 'chapters', inputfile.file_name,
-                        ]
-                    chapters_out = do_exec_cmd(cmd,
-                                      log_append=' > %s' % (output_chapters_file_name,),
-                                      #stderr=subprocess.STDOUT,
-                                     )
+                chapters_out = inputfile.load_chapters(return_raw_xml=True)
                 if not app.args.dry_run:
-                    chapters_out = fix_chapters_out(chapters_out)
                     safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
             mux_dict['chapters']['file_name'] = os.fspath(output_chapters_file_name.relative_to(outputdir))
 
@@ -2273,14 +2661,15 @@ def action_mux(inputfile, in_tags,
     if not app.args.dry_run:
         output_mux_file_name = '%s/mux%s.json' % (outputdir,
                                                   '.remux' if remux else '')
-        with open(output_mux_file_name, 'w') as fp:
-            json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+        save_mux_dict(output_mux_file_name, mux_dict)
 
         if remux and app.args.interactive:
             eddiff([
                 '%s/mux%s.json' % (outputdir, ''),
                 '%s/mux%s.json' % (outputdir, '.remux'),
             ])
+
+    print_streams_summary(mux_dict=mux_dict)
 
     if num_extract_errors:
         raise Exception(f'EXTRACT ERRORS: {num_extract_errors} extract errors.')
@@ -2297,7 +2686,7 @@ def action_verify(inputfile, in_tags):
     else:
         if not isinstance(inputfile, MediaFile):
             inputfile = MediaFile.new_by_file_name(inputfile)
-        inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+        inputfile_base, inputfile_ext = my_splitext(inputfile)
         outputdir = Path("%s" % (inputfile_base,) \
                          if app.args.project is Auto else app.args.project)
 
@@ -2315,7 +2704,7 @@ def action_verify(inputfile, in_tags):
     inputdir = outputdir
 
     input_mux_file_name = inputdir / 'mux.json'
-    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags=in_tags)
 
     stream_file_durations = []
 
@@ -2365,15 +2754,21 @@ def action_verify(inputfile, in_tags):
                 app.log.debug('mediainfo_track_dict=%r', mediainfo_track_dict)
                 stream_duration = qip.utils.Timestamp(mediainfo_track_dict['Duration'])
 
-            app.log.info('%s: duration = %s', stream_file, stream_duration)
-            stream_file_durations.append((stream_file, stream_duration))
+            stream_start_time = ffmpeg.Timestamp(stream_dict['start_time'])
+            stream_total_time = stream_start_time + stream_duration
+            app.log.info('%s: start_time %s + duration %s = %s',
+                         stream_file,
+                         stream_start_time,
+                         stream_duration,
+                         stream_total_time)
+            stream_file_durations.append((stream_file, stream_total_time))
 
     min_stream_duration = min(stream_duration
                               for stream_file, stream_duration in stream_file_durations)
     max_stream_duration = max(stream_duration
                               for stream_file, stream_duration in stream_file_durations)
     if max_stream_duration - min_stream_duration > 5:
-        raise ValueError(f'{inputdir}: Large discrepancy in stream durations!')
+        raise LargeDiscrepancyInStreamDurationsError(inputdir=inputdir)
 
     if not dir_existed:
         app.log.info('Cleaning up %s', inputdir)
@@ -2381,32 +2776,57 @@ def action_verify(inputfile, in_tags):
 
     return True
 
-def load_mux_dict(input_mux_file_name, in_tags):
+def load_mux_dict(input_mux_file_name, *, in_tags=None):
     with open(input_mux_file_name, 'r') as fp:
         mux_dict = json.load(fp)
+
+    # Add _temp
+    for stream_dict in mux_dict['streams']:
+        stream_dict['_temp'] = {}
+
     try:
         mux_tags = mux_dict['tags']
     except KeyError:
-        mux_dict['tags'] = mux_tags = copy.copy(in_tags)
+        if in_tags is not None:
+            mux_dict['tags'] = mux_tags = copy.copy(in_tags)
     else:
         if not isinstance(mux_tags, AlbumTags):
             mux_dict['tags'] = mux_tags = AlbumTags(mux_tags)
-        mux_tags.update(in_tags)
+        if in_tags is not None:
+            mux_tags.update(in_tags)
     return mux_dict
+
+def save_mux_dict(output_mux_file_name, mux_dict):
+
+    # Remove _temp
+    mux_dict = copy.copy(mux_dict)
+    mux_dict['streams'] = [copy.copy(stream_dict) for stream_dict in mux_dict['streams']]
+    for stream_dict in mux_dict['streams']:
+        stream_dict.pop('_temp', None)
+
+    with open(output_mux_file_name, 'w') as fp:
+        json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+
+def action_status(inputdir):
+    app.log.info('Status of %s...', inputdir)
+
+    input_mux_file_name = inputdir / 'mux.json'
+    mux_dict = load_mux_dict(input_mux_file_name)
+
+    print_streams_summary(mux_dict=mux_dict)
 
 def action_update(inputdir, in_tags):
     app.log.info('Updating %s...', inputdir)
     outputdir = inputdir
 
     input_mux_file_name = inputdir / 'mux.json'
-    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags=in_tags)
 
     if not app.args.dry_run:
         output_mux_file_name = '%s/mux.json' % (outputdir,)
-        with open(output_mux_file_name, 'w') as fp:
-            json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+        save_mux_dict(output_mux_file_name, mux_dict)
 
-def action_chop(inputfile, *, in_tags=None, chaps=None):
+def action_chop(inputfile, *, in_tags=None, chaps=None, chop_chaps=None):
 
     if isinstance(inputfile, str):
         inputfile = Path(inputfile)
@@ -2415,7 +2835,7 @@ def action_chop(inputfile, *, in_tags=None, chaps=None):
             inputdir = inputfile
 
             input_mux_file_name = inputdir / 'mux.json'
-            mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+            mux_dict = load_mux_dict(input_mux_file_name, in_tags=in_tags)
             chaps = Chapters.from_mkv_xml(inputdir / mux_dict['chapters']['file_name'], add_pre_gap=True)
 
             for stream_dict in sorted_stream_dicts(mux_dict['streams']):
@@ -2433,7 +2853,7 @@ def action_chop(inputfile, *, in_tags=None, chaps=None):
 
                     action_chop(inputfile=inputfile,
                                 in_tags=in_tags,
-                                chaps=chaps)
+                                chaps=chaps, chop_chaps=chop_chaps)
 
                 elif stream_codec_type == 'subtitle':
                     pass
@@ -2447,29 +2867,26 @@ def action_chop(inputfile, *, in_tags=None, chaps=None):
     app.log.info('Splitting %s...', inputfile)
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
-    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
+    inputfile_base, inputfile_ext = my_splitext(inputfile)
     outputdir = Path(inputfile.file_name.parent if app.args.project is Auto
                      else app.args.project)
 
-    with perfcontext('mkvextract chapters'):
-        chapters_out = mkvextract('chapters', inputfile.file_name).out
-    chapters_out = fix_chapters_out(chapters_out)
-    chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
-
     if chaps is None:
-        chaps = list(Chapters.from_mkv_xml(chapters_xml, add_pre_gap=True))
+        chaps = inputfile.load_chapters()
+    chaps = list(chaps)
     assert len(chaps) > 1
     assert chaps[0].start == 0
 
     chapter_stream_file_ext = inputfile_ext
 
-    chapter_file_name_pat = chop_chaps(chaps=chaps,
-                                       inputfile=inputfile)
+    chapter_file_name_pat = chop_chapters(chaps=chaps,
+                                          inputfile=inputfile,
+                                          chop_chaps=chop_chaps)
 
     return True
 
 def my_splitext(file_name, strip_container=False):
-    file_name = Path(file_name)
+    file_name = toPath(file_name)
     base, ext = os.path.splitext(os.fspath(file_name))
     if ext in {
             '.avi',
@@ -2521,18 +2938,19 @@ def action_optimize(inputdir, in_tags):
         'opus',
         'webvtt',
     ))
-
-    temp_files = []
+    if app.args.ffv1:
+        target_codec_names.add('ffv1')
 
     input_mux_file_name = inputdir / 'mux.json'
-    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags=in_tags)
 
     def optimize_stream(stream_dict, stream_index, is_sub_stream=False):
         global num_batch_skips
         nonlocal this_num_batch_skips
-        nonlocal temp_files
         nonlocal inputdir
         nonlocal outputdir
+
+        temp_files = []
 
         def done_optimize_iter(do_skip=False):
             nonlocal temp_files
@@ -2559,8 +2977,7 @@ def action_optimize(inputdir, in_tags):
                 stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             if not app.args.dry_run:
                 output_mux_file_name = '%s/mux.json' % (outputdir,)
-                with open(output_mux_file_name, 'w') as fp:
-                    json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                save_mux_dict(output_mux_file_name, mux_dict)
                 if not app.args.save_temps:
                     for file_name in temp_files:
                         os.unlink(file_name)
@@ -2587,9 +3004,10 @@ def action_optimize(inputdir, in_tags):
                 ffprobe_json = stream_file.extract_ffprobe_json()
                 ffprobe_stream_json, = ffprobe_json['streams']
                 stream_codec_name = ffprobe_stream_json['codec_name']
+                app.log.debug('stream_codec_name=%r', stream_codec_name)
 
                 if stream_codec_name in target_codec_names:
-                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
+                    app.log.verbose('Stream #%s %s [%s] OK', stream_index, stream_file_ext, stream_language)
                     break
 
                 if 'concat_streams' in stream_dict:
@@ -2607,15 +3025,12 @@ def action_optimize(inputdir, in_tags):
                         app.log.verbose('Stream #%s concat -> %s', stream_index, new_stream_file_name)
 
                         stream_file_concat_file_name = f'{stream_file_base}.concat.lst'
-                        stream_file_concat_file = TextFile(stream_file_concat_file_name)
+                        stream_file_concat_file = ffmpeg.ConcatScriptFile(stream_file_concat_file_name)
+                        stream_file_concat_file.files += [
+                            stream_file_concat_file.File(sub_stream_dict['file_name'])  # relative
+                            for sub_stream_dict in stream_dict['concat_streams']]
                         if not app.args.dry_run:
-                            with stream_file_concat_file.open(mode='w') as fp:
-                                print('ffconcat version 1.0', file=fp)
-                                for sub_stream_dict in stream_dict['concat_streams']:
-                                    #assert sub_stream_dict['file_name'].endswith(new_stream_file_name)
-                                    print('file \'%s\'' % (
-                                        os.fspath(sub_stream_dict['file_name']).replace('\\', '\\\\').replace('\'', '\'\\\'\''),
-                                        ), file=fp)
+                            stream_file_concat_file.create()
 
                         ffmpeg_args = default_ffmpeg_args + [
                             '-f', 'concat', '-safe', 0,
@@ -2705,6 +3120,12 @@ def action_optimize(inputdir, in_tags):
                                     # Avoid [yuvkineco] unsupported input fps
                                     '-r', framerate,  # Because sometimes the mpeg2 header doesn't show the right framerate
                                     ]
+                            else:
+                                force_input_framerate = getattr(app.args, 'force_input_framerate', None)
+                                if force_input_framerate:
+                                    ffmpeg_dec_args += [
+                                        '-r', force_input_framerate,
+                                        ]
                             ffmpeg_dec_args += [
                                 '-i', inputdir / stream_file_name,
                                 ]
@@ -2831,7 +3252,13 @@ def action_optimize(inputdir, in_tags):
 
                         orig_framerate = framerate * 30 / 24
 
-                        ffmpeg_args = default_ffmpeg_args + [
+                        ffmpeg_args = [] + default_ffmpeg_args
+                        force_input_framerate = getattr(app.args, 'force_input_framerate', None)
+                        if force_input_framerate:
+                            ffmpeg_args += [
+                                '-r', force_input_framerate,
+                                ]
+                        ffmpeg_args += [
                             '-i', inputdir / stream_file_name,
                             '-vf', f'pullup,fps={framerate}',
                             '-r', framerate,
@@ -3010,11 +3437,11 @@ def action_optimize(inputdir, in_tags):
                 if is_sub_stream:
                     new_stream_file_ext = '.ffv1.mkv'
                     if field_order == 'progressive':
-                        app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
+                        app.log.verbose('Stream #%s %s [%s] OK', stream_index, stream_file_ext, stream_language)
                         break
                     new_stream_file_name = stream_file_base + '.progressive' + new_stream_file_ext
                 else:
-                    new_stream_file_ext = '.vp9.ivf'
+                    new_stream_file_ext = '.ffv1.mkv' if app.args.ffv1 else '.vp9.ivf'
                     new_stream_file_name = stream_file_base + new_stream_file_ext
                 app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
@@ -3130,9 +3557,9 @@ def action_optimize(inputdir, in_tags):
                             stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
                             new_stream_chapter_file_name = new_stream_chapter_file_name_pat % (chap.no,)
                             # https://ffmpeg.org/ffmpeg-all.html#concat-1
-                            concat_list_file.files.append(concat_list_file.File((inputdir / new_stream_chapter_file_name).resolve()))
+                            concat_list_file.files.append(concat_list_file.File(new_stream_chapter_file_name))  # relative
 
-                            if app.args._continue \
+                            if False and app.args._continue \
                                     and (inputdir / new_stream_chapter_file_name).exists() \
                                     and (inputdir / new_stream_chapter_file_name).stat().st_size:
                                 app.log.warning('%s exists: continue...', inputdir / new_stream_chapter_file_name)
@@ -3142,23 +3569,17 @@ def action_optimize(inputdir, in_tags):
                                     ] + ffmpeg_conv_args + [
                                     '-f', ext_to_container(new_stream_file_ext), inputdir / new_stream_chapter_file_name,
                                     ]
-                                thread = ExcThread(
-                                        target=ffmpeg.run2pass,
-                                        args=ffmpeg_args,
-                                        kwargs={
+                                future = slurm_executor.submit(
+                                        ffmpeg.run2pass,
+                                        *ffmpeg_args,
+                                        **{
                                             'slurm': app.args.slurm,
                                             'progress_bar_max': chap.end - chap.start,
                                             'progress_bar_title': f'Encode {stream_codec_type} stream {stream_index} chapter {chap} w/ ffmpeg',
                                             'dry_run': app.args.dry_run,
                                             'y': app.args.yes,
                                             })
-                                if shutil.which('srun') is None:
-                                    thread.start()
-                                    thread.join()
-                                else:
-                                    app.log.verbose('Start background processing of %s', stream_chapter_file_name)
-                                    thread.start()
-                                    threads.append(thread)
+                                threads.append(future)
 
                         chapter_lossless = True
 
@@ -3173,7 +3594,7 @@ def action_optimize(inputdir, in_tags):
                             for chap in chaps:
                                 app.log.verbose('Chapter %s', chap)
                                 stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
-                                if app.args._continue \
+                                if False and app.args._continue \
                                         and (inputdir / stream_chapter_file_name).exists() \
                                         and (inputdir / stream_chapter_file_name).stat().st_size:
                                     app.log.warning('%s exists: continue...')
@@ -3182,13 +3603,20 @@ def action_optimize(inputdir, in_tags):
                                         ffmpeg_args = default_ffmpeg_args + [
                                             '-fflags', '+genpts',
                                             '-start_at_zero', '-copyts',
+                                        ]
+                                        force_input_framerate = getattr(app.args, 'force_input_framerate', None)
+                                        if force_input_framerate:
+                                            ffmpeg_args += [
+                                                '-r', force_input_framerate,
+                                                ]
+                                        codec = ('copy' if (ext_to_codec(chapter_stream_file_ext) == ext_to_codec(stream_file_ext)
+                                                            and not (chapter_lossless and stream_file_ext in ('.h264',)))  # h264 copy just spits out a single empty chapter
+                                                 else ext_to_codec(chapter_stream_file_ext, lossless=chapter_lossless))
+                                        ffmpeg_args += codec_to_input_args(codec) + [
                                             '-i', inputdir / stream_file_name,
-                                            '-codec', (
-                                                'copy' if (ext_to_codec(chapter_stream_file_ext) == ext_to_codec(stream_file_ext)
-                                                           and not (chapter_lossless and stream_file_ext in ('.h264',)))  # h264 copy just spits out a single empty chapter
-                                                else ext_to_codec(chapter_stream_file_ext, lossless=chapter_lossless)),
-                                            '-ss', chap.start,
-                                            '-to', chap.end,
+                                            '-codec', codec,
+                                            '-ss', ffmpeg.Timestamp(chap.start),
+                                            '-to', ffmpeg.Timestamp(chap.end),
                                             ]
                                         force_format = None
                                         try:
@@ -3212,10 +3640,10 @@ def action_optimize(inputdir, in_tags):
                         else:
                             app.log.verbose('All chapters...')
                             stream_chapter_file_name_pat = \
-                                chop_chaps(chaps=chaps,
-                                           inputfile=inputdir / stream_file_name,
-                                           chapter_file_ext=chapter_stream_file_ext,
-                                           chapter_lossless=chapter_lossless)
+                                chop_chapters(chaps=chaps,
+                                              inputfile=inputdir / stream_file_name,
+                                              chapter_file_ext=chapter_stream_file_ext,
+                                              chapter_lossless=chapter_lossless)
                             stream_chapter_file_name_pat = os.fspath(Path(stream_chapter_file_name_pat).relative_to(inputdir))
 
                             # Encode
@@ -3227,10 +3655,9 @@ def action_optimize(inputdir, in_tags):
                         # Join
                         concat_list_file.create()
                         exc = None
-                        while threads:
-                            thread = threads.pop()
+                        for future in concurrent.futures.as_completed(threads):
                             try:
-                                thread.join()
+                                future.result()
                             except BaseException as e:
                                 exc = e
                         if exc:
@@ -3238,14 +3665,16 @@ def action_optimize(inputdir, in_tags):
 
                     # Concat
                     with perfcontext('Concat %s w/ ffmpeg' % (new_stream_file_name,)):
+                        cwd = concat_list_file.file_name.parent  # Certain characters (like '?') confuse the concat protocol
                         ffmpeg_args = default_ffmpeg_args + [
-                            '-f', 'concat', '-safe', '0', '-i', concat_list_file,
+                            '-f', 'concat', '-safe', '0', '-i', concat_list_file.file_name.relative_to(cwd),
                             '-codec', 'copy',
                             ] + ffmpeg_concat_args + [
                             '-start_at_zero',
-                            '-f', ext_to_container(new_stream_file_name), inputdir / new_stream_file_name,
+                            '-f', ext_to_container(new_stream_file_name), (inputdir / new_stream_file_name).relative_to(cwd),
                             ]
                         ffmpeg(*ffmpeg_args,
+                               cwd=cwd,
                                progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
                                progress_bar_title=f'Concat {stream_codec_type} stream {stream_index} w/ ffmpeg',
                                dry_run=app.args.dry_run,
@@ -3255,7 +3684,13 @@ def action_optimize(inputdir, in_tags):
                             temp_files.append(inputdir / new_stream_chapter_file_name)
                 else:
                     with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream_file_name)):
-                        ffmpeg_args = default_ffmpeg_args + [
+                        ffmpeg_args = [] + default_ffmpeg_args
+                        force_input_framerate = getattr(app.args, 'force_input_framerate', None)
+                        if force_input_framerate:
+                            ffmpeg_args += [
+                                '-r', force_input_framerate,
+                                ]
+                        ffmpeg_args += [
                             '-i', inputdir / stream_file_name,
                             ] + ffmpeg_conv_args + [
                             '-f', ext_to_container(new_stream_file_name), inputdir / new_stream_file_name,
@@ -3296,7 +3731,7 @@ def action_optimize(inputdir, in_tags):
 
                 if stream_file_ext in ok_exts \
                         and not stream_start_time:
-                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
+                    app.log.verbose('Stream #%s %s [%s] OK', stream_index, stream_file_ext, stream_language)
                     break
 
                 if True:
@@ -3325,6 +3760,40 @@ def action_optimize(inputdir, in_tags):
                             '-start_at_zero',
                             #'-codec', 'pcm_s16le',
                         ]
+                        # See ffmpeg -sample_fmts
+                        audio_samplefmt = ffprobe_json['streams'][0]['sample_fmt']
+                        if audio_samplefmt in ('s16', 's16p'):
+                            ffmpeg_args += [
+                                '-codec', 'pcm_s16le',
+                            ]
+                        elif audio_samplefmt in ('s32', 's32p'):
+                            bits_per_raw_sample = int(ffprobe_json['streams'][0]['bits_per_raw_sample'])
+                            if bits_per_raw_sample == 24:
+                                ffmpeg_args += [
+                                    '-codec', 'pcm_s24le',
+                                ]
+                            elif bits_per_raw_sample == 32:
+                                ffmpeg_args += [
+                                    '-codec', 'pcm_s32le',
+                                ]
+                            else:
+                                raise NotImplementedError('Unsupported sample format %r with %d bits per raw sample' % (audio_samplefmt, bits_per_raw_sample))
+                        elif audio_samplefmt in ('fltp',):
+                            try:
+                                bits_per_raw_sample = int(ffprobe_json['streams'][0]['bits_per_raw_sample'])
+                            except KeyError:
+                                bits_per_raw_sample = 0
+                            if bits_per_raw_sample == 0:
+                                # Compressed bits vs raw bits... AC-3 says 16 bits max... not sure this would be the correct way. Just assume 32.
+                                bits_per_raw_sample = 32
+                            if bits_per_raw_sample < 32:
+                                # ffmpeg does not support encoding pcm_f16le and pcm_f24le
+                                bits_per_raw_sample = 32
+                            ffmpeg_args += [
+                                '-codec', f'pcm_f{bits_per_raw_sample}le',
+                            ]
+                        else:
+                            raise NotImplementedError('Unsupported sample format %r' % (audio_samplefmt,))
                         if stream_start_time:
                             ffmpeg_args += [
                                 '-af', 'adelay=delays=%s' % (
@@ -3363,6 +3832,10 @@ def action_optimize(inputdir, in_tags):
 
                     audio_bitrate = 640000 if channels >= 4 else 384000
                     audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
+                    try:
+                        audio_bitrate = min(audio_bitrate, int(stream_dict['original_bit_rate']))
+                    except KeyError:
+                        pass
                     audio_bitrate = audio_bitrate // 1000
 
                     with perfcontext('Convert %s -> %s w/ opusenc' % (stream_file_ext, new_stream_file_name)):
@@ -3426,7 +3899,7 @@ def action_optimize(inputdir, in_tags):
             while True:
 
                 if stream_file_ext in ('.vtt',):
-                    app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
+                    app.log.verbose('Stream #%s %s (%s) [%s] OK', stream_index, stream_file_ext, stream_dict.get('subtitle_count', '?'), stream_language)
                     break
 
                 if False and stream_file_ext in ('.sup',):
@@ -3467,7 +3940,7 @@ def action_optimize(inputdir, in_tags):
 
                 if stream_file_ext in ('.sup', '.sub',):
                     if app.args.external_subtitles and not stream_dict['disposition'].get('forced', None):
-                        app.log.warning('Stream #%s %s -> [external]', stream_index, stream_file_ext)
+                        app.log.verbose('Stream #%s %s (%s) [%s] -> EXTERNAL', stream_index, stream_file_ext, stream_dict.get('subtitle_count', '?'), stream_language)
                         return
 
                     new_stream_file_ext = '.srt'
@@ -3572,41 +4045,42 @@ def action_optimize(inputdir, in_tags):
 
                                     do_retry = False
 
-                                    from prompt_toolkit.formatted_text import FormattedText
-                                    from prompt_toolkit.completion import WordCompleter
-                                    completer = WordCompleter([
-                                        'help',
-                                        'skip',
-                                        'continue',
-                                        'retry',
-                                        'quit',
-                                    ])
-                                    print('')
-                                    app.print(
-                                        FormattedText([
-                                            ('class:error', str(e)),
-                                        ]))
-                                    while True:
-                                        print(describe_stream_dict(stream_dict))
-                                        c = app.prompt(completer=completer)
-                                        if c in ('help', 'h', '?'):
-                                            print('')
-                                            print('List of commands:')
-                                            print('')
-                                            print('help -- Print this help')
-                                            print('skip -- Skip this stream -- done')
-                                            print('continue -- Continue/retry processing this stream -- done')
-                                            print('quit -- Quit')
-                                        elif c in ('skip', 's'):
-                                            do_skip = True
-                                            break
-                                        elif c in ('continue', 'c', 'retry'):
-                                            do_retry = True
-                                            break
-                                        elif c in ('quit', 'q'):
-                                            raise
-                                        else:
-                                            app.log.error('Invalid input')
+                                    with app.need_user_attention():
+                                        from prompt_toolkit.formatted_text import FormattedText
+                                        from prompt_toolkit.completion import WordCompleter
+                                        completer = WordCompleter([
+                                            'help',
+                                            'skip',
+                                            'continue',
+                                            'retry',
+                                            'quit',
+                                        ])
+                                        print('')
+                                        app.print(
+                                            FormattedText([
+                                                ('class:error', str(e)),
+                                            ]))
+                                        while True:
+                                            print(describe_stream_dict(stream_dict))
+                                            c = app.prompt(completer=completer)
+                                            if c in ('help', 'h', '?'):
+                                                print('')
+                                                print('List of commands:')
+                                                print('')
+                                                print('help -- Print this help')
+                                                print('skip -- Skip this stream -- done')
+                                                print('continue -- Continue/retry processing this stream -- done')
+                                                print('quit -- Quit')
+                                            elif c in ('skip', 's'):
+                                                do_skip = True
+                                                break
+                                            elif c in ('continue', 'c', 'retry'):
+                                                do_retry = True
+                                                break
+                                            elif c in ('quit', 'q'):
+                                                raise
+                                            else:
+                                                app.log.error('Invalid input')
 
                                     if do_retry:
                                         continue
@@ -3667,6 +4141,7 @@ def action_optimize(inputdir, in_tags):
 
                 if stream_file_ext in ok_exts:
                     app.log.verbose('Stream #%s %s OK', stream_index, stream_file_ext)
+                    app.log.verbose('Stream #%s %s [%s] OK', stream_index, stream_file_ext, stream_language)
                     break
 
                 if stream_file_ext not in ok_exts:
@@ -3706,7 +4181,7 @@ def action_extract_music(inputdir, in_tags):
     outputdir = inputdir
 
     input_mux_file_name = inputdir / 'mux.json'
-    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags=in_tags)
 
     num_skip_chapters = app.args.num_skip_chapters
 
@@ -3714,7 +4189,9 @@ def action_extract_music(inputdir, in_tags):
         chapters_file_name = mux_dict['chapters']['file_name']
     except KeyError:
         has_chapters = False
-        chap = Chapter(0, 0, title=mux_dict['tags'].title, no=1)
+        chap = Chapter(start=0, end=0,
+                       title=mux_dict['tags'].title,
+                       no=1)
         chaps = [chap]
     else:
         has_chapters = True
@@ -3760,25 +4237,25 @@ def action_extract_music(inputdir, in_tags):
 
                 if has_chapters:
                     stream_chapter_tmp_file = SoundFile.new_by_file_name(
-                            inputdir / '%s-%02d%s' % (
+                            inputdir / ('%s-%02d%s' % (
                                 stream_file_base,
                                 chap.no,
-                                stream_file_ext))
+                                stream_file_ext)))
 
                     with perfcontext('Chop w/ ffmpeg'):
                         ffmpeg_args = default_ffmpeg_args + [
                             '-start_at_zero', '-copyts',
                             '-i', inputdir / stream_file_name,
                             '-codec', 'copy',
-                            '-ss', chap.start,
-                            '-to', chap.end,
+                            '-ss', ffmpeg.Timestamp(chap.start),
+                            '-to', ffmpeg.Timestamp(chap.end),
                             ]
                         if force_format:
                             ffmpeg_args += [
                                 '-f', force_format,
                                 ]
                         ffmpeg_args += [
-                            stream_chapter_tmp_file.file_name,
+                            stream_chapter_tmp_file,
                             ]
                         ffmpeg(*ffmpeg_args,
                                progress_bar_max=chap.end - chap.start,
@@ -3788,7 +4265,7 @@ def action_extract_music(inputdir, in_tags):
                 else:
                     stream_chapter_tmp_file = snd_file
 
-                m4a = M4aFile(my_splitext(stream_chapter_tmp_file.file_name)[0] + '.m4a')
+                m4a = M4aFile(my_splitext(stream_chapter_tmp_file)[0] + '.m4a')
                 m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
                 m4a.album_tags = copy.copy(mux_dict['tags'])
                 m4a.tags.track = track_no  # Since a copy was taken and not fully connected to album_tags anymore
@@ -3812,7 +4289,7 @@ def action_extract_music(inputdir, in_tags):
                                                yes=app.args.yes)
                 m4a.tags.picture = None  # Not supported by taged TODO
 
-                if stream_chapter_tmp_file.file_name != m4a.file_name:
+                if stream_chapter_tmp_file.file_name.resolve() != m4a.file_name.resolve():
                     audio_bitrate = 640000 if channels >= 4 else 384000
                     audio_bitrate = min(audio_bitrate, int(ffprobe_json['streams'][0]['bit_rate']))
                     audio_bitrate = audio_bitrate // 1000
@@ -3844,7 +4321,7 @@ def external_subtitle_file_name(output_file, stream_file_name, stream_dict):
         pass
     # stream_file_name = stream_dict['file_name']
     stream_language = isolang(stream_dict.get('language', 'und'))
-    external_stream_file_name = my_splitext(output_file.file_name)[0]
+    external_stream_file_name = my_splitext(output_file)[0]
     external_stream_file_name += "." + stream_language.code3
     if stream_dict['disposition'].get('hearing_impaired', None):
         external_stream_file_name += '.hearing_impaired'
@@ -3876,7 +4353,7 @@ def action_demux(inputdir, in_tags):
     outputdir = inputdir
 
     input_mux_file_name = inputdir / 'mux.json'
-    mux_dict = load_mux_dict(input_mux_file_name, in_tags)
+    mux_dict = load_mux_dict(input_mux_file_name, in_tags=in_tags)
 
     # ffmpeg messes up timestamps, mkvmerge doesn't support WebVTT yet
     # https://trac.ffmpeg.org/ticket/7736#ticket
@@ -3889,138 +4366,182 @@ def action_demux(inputdir, in_tags):
     attachment_counts = collections.defaultdict(lambda: 0)
 
     external_stream_file_names_seen = set()
-    stream_characteristics_seen = set()
     estimated_duration = None
 
     def handle_StreamCharacteristicsSeenError(e):
+        nonlocal mux_dict
         nonlocal stream_dict
+        nonlocal sorted_streams
+        nonlocal enumerated_sorted_streams
         update_mux_conf = False
-        return_retry = False
 
         if not app.args.interactive:
             raise
 
         stream_codec_type = stream_dict['codec_type']
 
-        from prompt_toolkit.formatted_text import FormattedText
-        from prompt_toolkit.completion import WordCompleter
-        completer = WordCompleter([
-            'help',
-            'skip',
-            'open',
-            'continue',
-            'retry',
-            'quit',
-            'forced',
-            'hearing_impaired',
-            'comment',
-            'karaoke',
-            'lyrics',
-            'original',
-            'title',
-        ])
-        print('')
-        app.print(
-            FormattedText([
-                ('class:error', str(e)),
-            ]))
-        while True:
-            print(describe_stream_dict(stream_dict))
-            c = app.prompt(completer=completer)
-            if c in ('help', 'h', '?'):
-                print('')
-                print('List of commands:')
-                print('')
-                print('help -- Print this help')
-                print('skip -- Skip this stream -- done')
-                print('print -- Print streams summary')
-                if stream_codec_type in ('subtitle',):
-                    print('forced -- Toggle forced disposition (%r)' % (True if stream_dict['disposition'].get('forced', None) else False,))
-                    print('hearing_impaired -- Toggle hearing_impaired disposition (%r)' % (True if stream_dict['disposition'].get('hearing_impaired', None) else False,))
-                if stream_codec_type in ('audio', 'subtitle'):
-                    print('comment -- Toggle comment disposition (%r)' % (True if stream_dict['disposition'].get('comment', None) else False,))
-                if stream_codec_type in ('audio',):
-                    print('karaoke -- Toggle karaoke disposition (%r)' % (True if stream_dict['disposition'].get('karaoke', None) else False,))
-                if stream_codec_type in ('subtitle',):
-                    print('lyrics -- Toggle lyrics disposition (%r)' % (True if stream_dict['disposition'].get('lyrics', None) else False,))
-                if stream_codec_type in ('audio',):
-                    print('original -- Toggle original disposition (%r)' % (True if stream_dict['disposition'].get('original', None) else False,))
-                if stream_codec_type in ('audio',):
-                    print('title -- Edit title (%s)' % (stream_dict.get('title', None),))
-                print('open -- Open this stream')
-                print('continue -- Continue/retry processing this stream -- done')
-                print('quit -- quit')
-                print('')
-            elif c in ('skip', 's'):
-                stream_dict['skip'] = True
-                return_retry = False
-                update_mux_conf = True
-                break
-            elif c in ('open',):
-                try:
+        with app.need_user_attention():
+            from prompt_toolkit.formatted_text import FormattedText
+            from prompt_toolkit.completion import WordCompleter
+            completer = WordCompleter([
+                'help',
+                'skip',
+                'open',
+                'goto',
+                'continue',
+                'retry',
+                'quit',
+                'print',
+                'forced',
+                'hearing_impaired',
+                'comment',
+                'karaoke',
+                'lyrics',
+                'original',
+                'title',
+            ] + (['suffix'] if isinstance(e, StreamExternalSubtitleAlreadyCreated) else []))
+            print('')
+            app.print(
+                FormattedText([
+                    ('class:error', str(e)),
+                ]))
+            while True:
+                print(describe_stream_dict(stream_dict))
+                c = app.prompt(completer=completer)
+                if c in ('help', 'h', '?'):
+                    print('')
+                    print('List of commands:')
+                    print('')
+                    print('help -- Print this help')
+                    print('skip -- Skip this stream -- done')
+                    print('print -- Print streams summary')
                     if stream_codec_type in ('subtitle',):
-                        from qip.subtitleedit import SubtitleEdit
-                        stream_language = isolang(stream_dict.get('language', 'und'))
-                        subtitleedit_args = [
-                            inputdir / stream_file_name,
-                            ]
-                        SubtitleEdit(*subtitleedit_args,
-                                     language=stream_language,
-                                     #seed_file_name=inputdir / new_stream_file_name,
-                                     dry_run=app.args.dry_run,
-                                     )
-                    else:
-                        xdg_open(inputdir / stream_dict['file_name'])
-                except Exception as e:
-                    app.log.error(e)
-            elif c in ('continue', 'c', 'retry'):
-                return_retry = True
-                break
-            elif c in ('quit', 'q'):
-                raise
-            elif c in ('print', 'p'):
-                print_streams_summary(mux_dict=mux_dict, current_stream_index=stream_dict['index'])
-            elif c == 'forced':
-                stream_dict['disposition']['forced'] = not stream_dict['disposition'].get('forced', None)
-                update_mux_conf = True
-            elif c == 'hearing_impaired':
-                stream_dict['disposition']['hearing_impaired'] = not stream_dict['disposition'].get('hearing_impaired', None)
-                update_mux_conf = True
-            elif c == 'comment':
-                stream_dict['disposition']['comment'] = not stream_dict['disposition'].get('comment', None)
-                update_mux_conf = True
-            elif c == 'karaoke':
-                stream_dict['disposition']['karaoke'] = not stream_dict['disposition'].get('karaoke', None)
-                update_mux_conf = True
-            elif c == 'lyrics':
-                stream_dict['disposition']['lyrics'] = not stream_dict['disposition'].get('lyrics', None)
-                update_mux_conf = True
-            elif c == 'original':
-                stream_dict['disposition']['original'] = not stream_dict['disposition'].get('original', None)
-                update_mux_conf = True
-            elif c == 'title':
-                stream_title = app.input_dialog(
-                    title=describe_stream_dict(stream_dict),
-                    text='Please input stream title:',
-                    initial_text=stream_dict.get('title', None) or '')
-                if stream_title is None:
-                    print('Cancelled by user!')
-                else:
-                    if stream_title == '':
-                        stream_dict.pop('title', None)
-                    else:
-                        stream_dict['title'] = stream_title
+                        print('forced -- Toggle forced disposition (%r)' % (True if stream_dict['disposition'].get('forced', None) else False,))
+                        print('hearing_impaired -- Toggle hearing_impaired disposition (%r)' % (True if stream_dict['disposition'].get('hearing_impaired', None) else False,))
+                    if stream_codec_type in ('audio', 'subtitle'):
+                        print('comment -- Toggle comment disposition (%r)' % (True if stream_dict['disposition'].get('comment', None) else False,))
+                    if stream_codec_type in ('audio',):
+                        print('karaoke -- Toggle karaoke disposition (%r)' % (True if stream_dict['disposition'].get('karaoke', None) else False,))
+                    if stream_codec_type in ('subtitle',):
+                        print('lyrics -- Toggle lyrics disposition (%r)' % (True if stream_dict['disposition'].get('lyrics', None) else False,))
+                    if stream_codec_type in ('audio',):
+                        print('original -- Toggle original disposition (%r)' % (True if stream_dict['disposition'].get('original', None) else False,))
+                    if stream_codec_type in ('audio',):
+                        print('title -- Edit title (%s)' % (stream_dict.get('title', None),))
+                    if isinstance(e, StreamExternalSubtitleAlreadyCreated):
+                        print('suffix -- Edit external stream file name suffix ()' % (stream_dict.get('external_stream_file_name_suffix', None)))
+                    print('open -- Open this stream')
+                    print('goto -- Jump to another past stream')
+                    print('continue -- Continue/retry processing this stream -- done')
+                    print('quit -- quit')
+                    print('')
+                elif c in ('skip', 's'):
+                    stream_dict['skip'] = True
                     update_mux_conf = True
-            else:
-                app.log.error('Invalid input')
+                    break
+                elif c in ('open',):
+                    try:
+                        if stream_codec_type in ('subtitle',):
+                            from qip.subtitleedit import SubtitleEdit
+                            stream_language = isolang(stream_dict.get('language', 'und'))
+                            subtitleedit_args = [
+                                inputdir / stream_file_name,
+                                ]
+                            SubtitleEdit(*subtitleedit_args,
+                                         language=stream_language,
+                                         #seed_file_name=inputdir / new_stream_file_name,
+                                         dry_run=app.args.dry_run,
+                                         )
+                        else:
+                            xdg_open(inputdir / stream_dict['file_name'])
+                    except Exception as e:
+                        app.log.error(e)
+                elif c in ('continue', 'c', 'retry'):
+                    i = next(i for i, d in enumerate(sorted_streams) if d is stream_dict)
+                    enumerated_sorted_streams.send(i)
+                    break
+                elif c in ('goto', 'g'):
+                    goto_index = app.prompt('goto stream index: ')
+                    if goto_index:
+                        goto_index = int(goto_index)
+                        forward = False
+                        for i, d in enumerate(sorted_streams):
+                            if d['index'] == goto_index:
+                                break
+                            if d is stream_dict:
+                                forward = True
+                        else:
+                            app.log.error('Stream index %r not found', goto_index)
+                            continue
+                        if forward:
+                            app.log.error('Can\'t jump forward to stream index %r', goto_index)
+                            continue
+                        if stream_dict is not d:
+                            if update_mux_conf:
+                                save_mux_dict(input_mux_file_name, mux_dict)
+                                update_mux_conf = False
+                            sorted_stream_index = i
+                            stream_dict = d
+                            enumerated_sorted_streams.send(sorted_stream_index)
+                            if stream_dict.get('skip', False):
+                                app.log.warning('Stream index %r skip cancelled', stream_dict['index'])
+                                del stream_dict['skip']
+                                update_mux_conf = True
+                elif c in ('quit', 'q'):
+                    raise
+                elif c in ('print', 'p'):
+                    print_streams_summary(mux_dict=mux_dict, current_stream_index=stream_dict['index'])
+                elif c == 'forced':
+                    stream_dict['disposition']['forced'] = not stream_dict['disposition'].get('forced', None)
+                    update_mux_conf = True
+                elif c == 'hearing_impaired':
+                    stream_dict['disposition']['hearing_impaired'] = not stream_dict['disposition'].get('hearing_impaired', None)
+                    update_mux_conf = True
+                elif c == 'comment':
+                    stream_dict['disposition']['comment'] = not stream_dict['disposition'].get('comment', None)
+                    update_mux_conf = True
+                elif c == 'karaoke':
+                    stream_dict['disposition']['karaoke'] = not stream_dict['disposition'].get('karaoke', None)
+                    update_mux_conf = True
+                elif c == 'lyrics':
+                    stream_dict['disposition']['lyrics'] = not stream_dict['disposition'].get('lyrics', None)
+                    update_mux_conf = True
+                elif c == 'original':
+                    stream_dict['disposition']['original'] = not stream_dict['disposition'].get('original', None)
+                    update_mux_conf = True
+                elif c == 'title':
+                    stream_title = app.input_dialog(
+                        title=describe_stream_dict(stream_dict),
+                        text='Please input stream title:',
+                        initial_text=stream_dict.get('title', None) or '')
+                    if stream_title is None:
+                        print('Cancelled by user!')
+                    else:
+                        if stream_title == '':
+                            stream_dict.pop('title', None)
+                        else:
+                            stream_dict['title'] = stream_title
+                        update_mux_conf = True
+                elif c == 'suffix':
+                    external_stream_file_name_suffix = app.input_dialog(
+                        title=describe_stream_dict(stream_dict),
+                        text='Please input external stream file name suffix:',
+                        initial_text=stream_dict.get('external_stream_file_name_suffix', None) or '')
+                    if external_stream_file_name_suffix is None:
+                        print('Cancelled by user!')
+                    else:
+                        if external_stream_file_name_suffix == '':
+                            stream_dict.pop('external_stream_file_name_suffix', None)
+                        else:
+                            stream_dict['external_stream_file_name_suffix'] = external_stream_file_name_suffix
+                        update_mux_conf = True
+                else:
+                    app.log.error('Invalid input')
 
         if update_mux_conf:
-            with open(input_mux_file_name, 'w') as fp:
-                json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
-        return return_retry
+            save_mux_dict(input_mux_file_name, mux_dict)
 
     if use_mkvmerge:
-        post_process_subtitles = []
         cmd = [
             'mkvmerge',
             ]
@@ -4029,22 +4550,38 @@ def action_demux(inputdir, in_tags):
                 '--webm',
             ]
         cmd += [
-            '-o', output_file.file_name,
+            '-o', output_file,
             '--no-track-tags',
             '--no-global-tags',
             ]
         # --title handled with write_tags
-        new_stream_index = -1
-        streams_todo = sorted_stream_dicts(mux_dict['streams'])
-        while streams_todo:
-            stream_dict = streams_todo.pop(0)
+        video_angle = 0
+
+        for stream_dict in mux_dict['streams']:
+            stream_dict['_temp'] = types.SimpleNamespace(
+                stream_characteristics=None,
+                post_process_subtitle=False,
+                out_index=-1,
+            )
+
+        sorted_streams = sorted_stream_dicts(mux_dict['streams'])
+        enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
+        for sorted_stream_index, stream_dict in enumerated_sorted_streams:
             if stream_dict.get('skip', False):
                 continue
             stream_index = stream_dict['index']
             stream_file_name = stream_dict['file_name']
             stream_codec_type = stream_dict['codec_type']
             stream_language = isolang(stream_dict.get('language', 'und'))
+            stream_title = stream_dict.get('title', None)
+
             stream_characteristics = (stream_codec_type, stream_language)
+            if stream_codec_type == 'video':
+                video_angle += 1
+                if video_angle > 1:
+                    stream_characteristics += (('angle', video_angle),)
+                if stream_title is not None:
+                    stream_characteristics += (('title', stream_title),)
             if stream_codec_type == 'subtitle':
                 stream_characteristics += (
                     'hearing_impaired' if stream_dict['disposition'].get('hearing_impaired', None) else '',
@@ -4056,15 +4593,19 @@ def action_demux(inputdir, in_tags):
                     'forced' if stream_dict['disposition'].get('forced', None) else '',
                     'closed_caption' if stream_dict['disposition'].get('closed_caption', None) else '',
                 )
-            if stream_characteristics in stream_characteristics_seen:
+
+            if stream_characteristics in (
+                    stream_dict2['_temp'].stream_characteristics
+                    for stream_dict2 in sorted_streams[:sorted_stream_index]
+                    if not stream_dict2.get('skip', False)):
                 try:
                     raise StreamCharacteristicsSeenError(stream_index=stream_index,
                                                          stream_characteristics=stream_characteristics)
                 except StreamCharacteristicsSeenError as e:
-                    if handle_StreamCharacteristicsSeenError(e):
-                        streams_todo.insert(0, stream_dict)
+                    handle_StreamCharacteristicsSeenError(e)
                     continue
-            stream_characteristics_seen.add(stream_characteristics)
+            stream_dict['_temp'].stream_characteristics = stream_characteristics
+
             if stream_codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_file_names = [stream_file_name]
@@ -4085,16 +4626,32 @@ def action_demux(inputdir, in_tags):
                     continue
                 if webm:
                     # mkvmerge does not yet support subtitles of webm files due to standard not being finalized
-                    post_process_subtitles.append(stream_dict)
+                    stream_dict['_temp'].post_process_subtitle = True
                     continue
-            new_stream_index += 1
-            stream_dict['index'] = new_stream_index
+
+        sorted_streams = sorted_stream_dicts(mux_dict['streams'])
+        enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
+        for sorted_stream_index, stream_dict in enumerated_sorted_streams:
+            if stream_dict.get('skip', False):
+                continue
+            stream_index = stream_dict['index']
+            stream_file_name = stream_dict['file_name']
+            stream_codec_type = stream_dict['codec_type']
+            stream_language = isolang(stream_dict.get('language', 'und'))
+            stream_title = stream_dict.get('title', None)
+
+            stream_dict['_temp'].out_index = max(
+                (stream_index2['_temp'].out_index
+                 for stream_index2 in sorted_streams[:sorted_stream_index]),
+                default=-1) + 1
+
             if stream_codec_type == 'image':
                 attachment_type = stream_dict['attachment_type']
                 if webm:
                     # attachments not supported
+                    stream_dict['_temp'].out_index = -1
                     attachment_counts[attachment_type] += 1
-                    external_stream_file_name = '{type}{num_suffix}{ext}'.format(
+                    external_stream_file_name = output_file.file_name.parent / '{type}{num_suffix}{ext}'.format(
                         type=attachment_type,
                         num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
                         ext=my_splitext(stream_file_name)[1],
@@ -4122,6 +4679,8 @@ def action_demux(inputdir, in_tags):
                     cmd += ['--language', '0:%s' % (stream_language.code3,)]
                 stream_forced = stream_dict['disposition'].get('forced', None)
                 cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
+                if stream_title is not None:
+                    cmd += ['--track-name', '%d:%s' % (0, stream_title)]
                 # TODO --tags
                 if stream_codec_type == 'subtitle' and my_splitext(stream_file_name)[1] == '.sub':
                     cmd += [inputdir / '%s.idx' % (my_splitext(stream_file_name)[0],)]
@@ -4133,7 +4692,8 @@ def action_demux(inputdir, in_tags):
         with perfcontext('mkvmerge'):
             do_spawn_cmd(cmd)
 
-        if post_process_subtitles:
+        if any(stream_dict['_temp'].post_process_subtitle
+               for stream_dict in sorted_streams):
             num_inputs = 0
             noss_file_name = output_file.file_name + '.noss%s' % ('.webm' if webm else '.mkv',)
             if not app.args.dry_run:
@@ -4145,14 +4705,22 @@ def action_demux(inputdir, in_tags):
             option_args = [
                 '-map', str(num_inputs-1),
                 ]
-            for stream_dict in post_process_subtitles:
-                assert not stream_dict.get('skip', False)
-                stream_file_name = stream_dict['file_name']
+            for stream_dict in sorted_streams:
+                if not stream_dict['_temp'].post_process_subtitle:
+                    continue
+                if stream_dict.get('skip', False):
+                    continue
                 stream_index = stream_dict['index']
+                stream_file_name = stream_dict['file_name']
                 stream_codec_type = stream_dict['codec_type']
-                assert stream_codec_type == 'subtitle'
-                new_stream_index += 1
-                stream_dict['index'] = new_stream_index
+                stream_language = isolang(stream_dict.get('language', 'und'))
+                stream_title = stream_dict.get('title', None)
+
+                stream_dict['_temp'].out_index = max(
+                    (stream_index2['_temp'].out_index
+                     for stream_index2 in sorted_streams),
+                    default=-1) + 1
+
                 num_inputs += 1
                 ffmpeg_args += [
                     '-i', inputdir / stream_file_name,
@@ -4163,7 +4731,7 @@ def action_demux(inputdir, in_tags):
                 stream_language = isolang(stream_dict.get('language', 'und'))
                 if stream_language is not isolang('und'):
                     #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_language.code3)]
-                    option_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (stream_language.code3,),]
+                    option_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'language=%s' % (stream_language.code3,),]
 
                 disposition_flags = []
                 if stream_dict['disposition'].get('default', None):
@@ -4171,7 +4739,7 @@ def action_demux(inputdir, in_tags):
                 if stream_dict['disposition'].get('forced', None):
                     disposition_flags.append('forced')
                 ffmpeg_output_args += [
-                    '-disposition:%d' % (new_stream_index,),
+                    '-disposition:%d' % (stream_dict['_temp'].out_index,),
                     '+'.join(disposition_flags or ['0']),
                     ]
 
@@ -4186,8 +4754,8 @@ def action_demux(inputdir, in_tags):
             #  headers (see mkvinfo). Some players, like VLC, exhibit playback
             #  issues with images stretched vertically, a lot.
             ffmpeg_args += [
-                '-f', ext_to_container(my_splitext(output_file.file_name)[1]),
-                output_file.file_name,
+                '-f', ext_to_container(my_splitext(output_file)[1]),
+                output_file,
                 ]
             with perfcontext('merge subtitles w/ ffmpeg'):
                 ffmpeg(*ffmpeg_args,
@@ -4198,6 +4766,7 @@ def action_demux(inputdir, in_tags):
             raise NotImplementedError('BUG: unable to synchronize timestamps before and after adding subtitles, ffmpeg shifts video by 7ms (due to pre-skip of opus streams) and of vtts')
             if not app.args.dry_run:
                 os.unlink(noss_file_name)
+
     else:
         ffmpeg_input_args = []
         ffmpeg_output_args = []
@@ -4210,13 +4779,21 @@ def action_demux(inputdir, in_tags):
             #'-vsync', 'drop',
             ]
         time_offset = 0  # ffmpeg.Timestamp(-0.007)
-        new_stream_index = -1
         has_opus_streams = any(
                 my_splitext(stream_dict['file_name'])[1] in ('.opus', '.opus.ogg')
                 for stream_dict in mux_dict['streams'])
-        streams_todo = sorted_stream_dicts(mux_dict['streams'])
-        while streams_todo:
-            stream_dict = streams_todo.pop(0)
+        video_angle = 0
+
+        for stream_dict in mux_dict['streams']:
+            stream_dict['_temp'] = types.SimpleNamespace(
+                stream_characteristics=None,
+                out_index=-1,
+                external=False,
+            )
+
+        sorted_streams = sorted_stream_dicts(mux_dict['streams'])
+        enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
+        for sorted_stream_index, stream_dict in enumerated_sorted_streams:
             if stream_dict.get('skip', False):
                 continue
             stream_index = stream_dict['index']
@@ -4225,11 +4802,28 @@ def action_demux(inputdir, in_tags):
             stream_codec_type = stream_dict['codec_type']
             stream_language = isolang(stream_dict.get('language', 'und'))
             stream_title = stream_dict.get('title', None)
+
             stream_characteristics = (stream_codec_type, stream_language)
+            if stream_codec_type == 'video':
+                video_angle += 1
+                if video_angle > 1:
+                    stream_characteristics += (
+                        ('angle', video_angle),
+                    )
+                if stream_title is not None:
+                    stream_characteristics += (
+                        ('title', stream_title),
+                    )
             if stream_codec_type == 'subtitle':
                 stream_characteristics += (
-                    'forced' if stream_dict['disposition'].get('forced', None) else '',
                     'hearing_impaired' if stream_dict['disposition'].get('hearing_impaired', None) else '',
+                    'visual_impaired' if stream_dict['disposition'].get('visual_impaired', None) else '',
+                    'karaoke' if stream_dict['disposition'].get('karaoke', None) else '',
+                    'dub' if stream_dict['disposition'].get('dub', None) else '',
+                    'lyrics' if stream_dict['disposition'].get('lyrics', None) else '',
+                    'comment' if stream_dict['disposition'].get('comment', None) else '',
+                    'forced' if stream_dict['disposition'].get('forced', None) else '',
+                    'closed_caption' if stream_dict['disposition'].get('closed_caption', None) else '',
                 )
             if stream_codec_type == 'audio':
                 if stream_dict['disposition'].get('comment', None):
@@ -4242,17 +4836,34 @@ def action_demux(inputdir, in_tags):
                     if stream_title is None:
                         stream_title = 'Karaoke'
                     stream_characteristics += (
-                        ('comment', stream_title),
+                        ('karaoke', stream_title),
                     )
                 elif stream_dict['disposition'].get('original', None):
                     if stream_title is None:
                         stream_title = 'Original'
                     stream_characteristics += (
-                        ('comment', stream_title),
+                        ('title', stream_title),
                     )
+                elif app.args.audio_track_titles:
+                    if stream_title is None:
+                        stream_title = stream_language.name
+                    stream_characteristics += (
+                        ('title', stream_title),
+                    )
+                else:
+                    if stream_title is not None:
+                        stream_characteristics += (
+                            ('title', stream_title),
+                        )
             if stream_codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_characteristics += ('external',)
+                    try:
+                        stream_characteristics += (
+                            ('suffix', stream_dict['external_stream_file_name_suffix']),
+                        )
+                    except KeyError:
+                        pass
                     stream_file_names = [stream_file_name]
                     if my_splitext(stream_dict['file_name'])[1] == '.sub':
                         stream_file_names.append(my_splitext(stream_file_name)[0] + '.idx')
@@ -4271,10 +4882,60 @@ def action_demux(inputdir, in_tags):
                                             external_stream_file_name,
                                             follow_symlinks=True)
                     except StreamExternalSubtitleAlreadyCreated as e:
-                        if handle_StreamCharacteristicsSeenError(e):
-                            streams_todo.insert(0, stream_dict)
+                        handle_StreamCharacteristicsSeenError(e)
                         continue
+                    stream_dict['_temp'].external = True
                     continue
+
+            if stream_characteristics in (
+                    stream_dict2['_temp'].stream_characteristics
+                    for stream_dict2 in sorted_streams[:sorted_stream_index]
+                    if not stream_dict2.get('skip', False)):
+                try:
+                    raise StreamCharacteristicsSeenError(stream_index=stream_index,
+                                                         stream_characteristics=stream_characteristics)
+                except StreamCharacteristicsSeenError as e:
+                    handle_StreamCharacteristicsSeenError(e)
+                    continue
+            stream_dict['_temp'].stream_characteristics = stream_characteristics
+
+        sorted_streams = sorted_stream_dicts(mux_dict['streams'])
+        enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
+        for sorted_stream_index, stream_dict in enumerated_sorted_streams:
+            if stream_dict.get('skip', False):
+                continue
+            if stream_dict['_temp'].external:
+                # Already processed
+                continue
+            stream_index = stream_dict['index']
+            stream_file_name = stream_dict['file_name']
+            stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+            stream_codec_type = stream_dict['codec_type']
+            stream_language = isolang(stream_dict.get('language', 'und'))
+            stream_title = stream_dict.get('title', None)
+
+            if stream_codec_type == 'image':
+                attachment_type = stream_dict['attachment_type']
+                if webm:
+                    # attachments not supported
+                    attachment_counts[attachment_type] += 1
+                    external_stream_file_name = output_file.file_name.parent / '{type}{num_suffix}{ext}'.format(
+                        type=attachment_type,
+                        num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
+                        ext=my_splitext(stream_file_name)[1],
+                    )
+                    app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
+                    shutil.copyfile(inputdir / stream_file_name,
+                                    external_stream_file_name,
+                                    follow_symlinks=True)
+                    continue
+
+            stream_dict['_temp'].out_index = max(
+                (stream_index2['_temp'].out_index
+                 for stream_index2 in sorted_streams[:sorted_stream_index]),
+                default=-1) + 1
+
+            if stream_codec_type == 'subtitle':
                 if my_splitext(stream_dict['file_name'])[1] == '.sub':
                     # ffmpeg doesn't read the .idx file?? Embed .sub/.idx into a .mkv first
                     tmp_stream_file_name = stream_file_name + '.mkv'
@@ -4287,31 +4948,7 @@ def action_demux(inputdir, in_tags):
                     do_spawn_cmd(mkvmerge_cmd)
                     stream_file_name = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-            if stream_characteristics in stream_characteristics_seen:
-                try:
-                    raise StreamCharacteristicsSeenError(stream_index=stream_index,
-                                                         stream_characteristics=stream_characteristics)
-                except StreamCharacteristicsSeenError as e:
-                    if handle_StreamCharacteristicsSeenError(e):
-                        streams_todo.insert(0, stream_dict)
-                    continue
-            stream_characteristics_seen.add(stream_characteristics)
-            if stream_codec_type == 'image':
-                attachment_type = stream_dict['attachment_type']
-                if webm:
-                    # attachments not supported
-                    attachment_counts[attachment_type] += 1
-                    external_stream_file_name = '{type}{num_suffix}{ext}'.format(
-                        type=attachment_type,
-                        num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
-                        ext=my_splitext(stream_file_name)[1],
-                    )
-                    app.log.warning('Stream #%d %s -> %s', stream_index, stream_file_name, external_stream_file_name)
-                    shutil.copyfile(inputdir / stream_file_name,
-                                    external_stream_file_name,
-                                    follow_symlinks=True)
-                    continue
-            new_stream_index += 1
+
             disposition_flags = []
             for k, v in stream_dict['disposition'].items():
                 if k in (
@@ -4321,17 +4958,17 @@ def action_demux(inputdir, in_tags):
                 if v:
                     disposition_flags.append(k)
             ffmpeg_output_args += [
-                '-disposition:%d' % (new_stream_index,),
+                '-disposition:%d' % (stream_dict['_temp'].out_index,),
                 '+'.join(disposition_flags or ['0']),
                 ]
             stream_language = isolang(stream_dict.get('language', 'und'))
             if stream_language is not isolang('und'):
-                ffmpeg_output_args += ['-metadata:s:%d' % (new_stream_index,), 'language=%s' % (stream_language.code3,),]
+                ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'language=%s' % (stream_language.code3,),]
             if stream_title:
-                ffmpeg_output_args += ['-metadata:s:%d' % (new_stream_index,), 'title=%s' % (stream_title,),]
+                ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'title=%s' % (stream_title,),]
             display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
             if display_aspect_ratio:
-                ffmpeg_output_args += ['-aspect:%d' % (new_stream_index,), display_aspect_ratio]
+                ffmpeg_output_args += ['-aspect:%d' % (stream_dict['_temp'].out_index,), display_aspect_ratio]
 
             stream_start_time = ffmpeg.Timestamp(stream_dict.get('start_time', 0))
             if stream_start_time:
@@ -4346,7 +4983,7 @@ def action_demux(inputdir, in_tags):
                     ]
 
             if stream_codec_type == 'video':
-                if stream_file_ext in ('.vp9', '.vp9.ivf',):
+                if stream_file_ext in {'.vp9', '.vp9.ivf',}:
                     # ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
                     estimated_duration = estimated_duration or estimate_stream_duration(
                         ffprobe_json=MovieFile.new_by_file_name(inputdir / stream_file_name).extract_ffprobe_json())
@@ -4356,6 +4993,7 @@ def action_demux(inputdir, in_tags):
                             '-codec', 'copy',
                             inputdir / tmp_stream_file_name,
                         ]
+                    assert estimated_duration is None or float(estimated_duration) > 0.0
                     ffmpeg(
                         *ffmpeg_args,
                         progress_bar_max=estimated_duration,
@@ -4377,11 +5015,11 @@ def action_demux(inputdir, in_tags):
                 ]
             # Include all streams from this input file:
             ffmpeg_output_args += [
-                '-map', new_stream_index,
+                '-map', stream_dict['_temp'].out_index,
                 ]
         ffmpeg_output_args += [
-            '-f', ext_to_container(output_file.file_name),
-            output_file.file_name,
+            '-f', ext_to_container(output_file),
+            output_file,
             ]
         ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args + ffmpeg_output_args
         with perfcontext('merge w/ ffmpeg'):
@@ -4408,8 +5046,8 @@ def action_demux(inputdir, in_tags):
                 chapters_xml_file.close()
             cmd = [
                 'mkvpropedit',
-                output_file.file_name,
-                '--chapters', chapters_xml_file.file_name,
+                output_file,
+                '--chapters', chapters_xml_file,
             ]
             with perfcontext('add chapters w/ mkvpropedit'):
                 do_spawn_cmd(cmd)
@@ -4422,11 +5060,81 @@ def action_demux(inputdir, in_tags):
                  ' (dry-run)' if app.args.dry_run else '')
 
     if app.args.auto_verify:
-        old_interactive, app.args.interactive = app.args.interactive, False
         try:
-            action_verify(output_file, in_tags=AlbumTags())
-        finally:
-            app.args.interactive = old_interactive
+            old_interactive, app.args.interactive = app.args.interactive, False
+            try:
+                action_verify(output_file, in_tags=AlbumTags())
+            finally:
+                app.args.interactive = old_interactive
+        except LargeDiscrepancyInStreamDurationsError as e:
+            if not app.args.interactive:
+                raise
+
+            with app.need_user_attention():
+                from prompt_toolkit.formatted_text import FormattedText
+                from prompt_toolkit.completion import WordCompleter
+                completer = WordCompleter([
+                    'help',
+                    'continue',
+                    'retry',
+                    'remux',
+                    'open',
+                    'quit',
+                    'print',
+                ])
+                print('')
+                app.print(
+                    FormattedText([
+                        ('class:error', str(e)),
+                    ]))
+                while True:
+                    c = app.prompt(completer=completer)
+                    if c in ('help', 'h', '?'):
+                        print('')
+                        print('List of commands:')
+                        print('')
+                        print('help -- Print this help')
+                        print('continue -- Continue processing next action -- done')
+                        print('retry -- Retry verification')
+                        print('remux -- Remux from original media file')
+                        print('open -- Open the output media file')
+                        print('print -- Print streams summary')
+                        print('quit -- Quit')
+                    elif c in ('continue', 'c'):
+                        break
+                    elif c in ('quit', 'q'):
+                        raise
+                    elif c in ('remux',):
+                        for original_inputfile_ext in ('.mkv', '.webm'):
+                            original_inputfile = inputdir.with_name(inputdir.name + original_inputfile_ext)
+                            if original_inputfile.exists():
+                                break
+                        else:
+                            app.log.error('Original mux input file not found!')
+                            continue
+                        if e.inputdir.exists():
+                            shutil.rmtree(e.inputdir)
+                        old_remux, app.args.remux = app.args.remux, True
+                        old_chain, app.args.chain = app.args.chain, False
+                        try:
+                            action_mux(original_inputfile, in_tags=in_tags)
+                        finally:
+                            app.args.chain = old_chain
+                            app.args.remux = old_remux
+                        if app.args.chain:
+                            action_optimize(inputdir, in_tags=in_tags)
+                            action_demux(inputdir, in_tags=in_tags)
+                            return True
+                    elif c in ('open',):
+                        try:
+                            xdg_open(output_file)
+                        except Exception as e:
+                            app.log.error(e)
+                    elif c in ('print', 'p'):
+                        print_streams_summary(mux_dict=mux_dict)
+                    else:
+                        app.log.error('Invalid input')
+
         app.log.info('DONE writing & verifying %s%s',
                      output_file.file_name,
                      ' (dry-run)' if app.args.dry_run else '')
@@ -4437,8 +5145,80 @@ def action_demux(inputdir, in_tags):
 
     return True
 
-def action_tag_episodes_files(episode_file_names, in_tags):
+def action_merge(merge_files, in_tags):
     tags = copy.copy(in_tags)
+
+    merged_file_name = 'merged.mkv'
+    merged_file = MediaFile.new_by_file_name(merged_file_name)
+
+    merge_files = [
+        inputfile if isinstance(inputfile, MediaFile) else MediaFile.new_by_file_name(inputfile)
+        for inputfile in merge_files]
+
+    chaps = Chapters()
+    prev_chap = Chapter(0, 0)
+    for inputfile in merge_files:
+        ffprobe_json = inputfile.extract_ffprobe_json()
+        inputfile.duration = float(ffmpeg.Timestamp(ffprobe_json['format']['duration']))
+        # inputfile.extract_info(need_actual_duration=True)
+        chap = Chapter(start=prev_chap.end,
+                       end=prev_chap.end + inputfile.duration,
+                       title=re.sub(r'\.demux$', '', my_splitext(inputfile.file_name.name)[0]),
+                       )
+        chaps.append(chap)
+    chapters_xml = chaps.to_mkv_xml()
+    if app.args.interactive:
+        chapters_xml = edvar(chapters_xml,
+                             preserve_whitespace_tags=Chapters.MKV_XML_VALUE_TAGS)[1]
+    chapters_xml_file = TempFile.mkstemp(suffix='.chapters.xml', open=True, text=True)
+    chapters_xml.write(chapters_xml_file.fp,
+                       xml_declaration=True,
+                       encoding='unicode',  # Force string
+                       )
+    chapters_xml_file.close()
+
+    concat_list_temp_file = TempFile.mkstemp(suffix='.concat.lst', open=True, text=True)
+    concat_list_file = ffmpeg.ConcatScriptFile(concat_list_temp_file)
+    concat_list_file.files += [
+        concat_list_file.File(inputfile.file_name.resolve())  # absolute
+        for inputfile in merge_files]
+    concat_list_file.create()
+
+    ffmpeg_concat_args = []
+    ffmpeg_args = default_ffmpeg_args + [
+        '-f', 'concat', '-safe', '0', '-i', concat_list_file,
+        '-codec', 'copy',
+    ] + ffmpeg_concat_args + [
+        '-start_at_zero',
+        '-f', ext_to_container(merged_file), merged_file,
+    ]
+    with perfcontext('Merge w/ ffmpeg'):
+        ffmpeg(*ffmpeg_args,
+               progress_bar_max=chaps.chapters[-1].end,
+               progress_bar_title=f'Merge w/ ffmpeg',
+               dry_run=app.args.dry_run,
+               y=app.args.yes)
+
+    cmd = [
+        'mkvpropedit',
+        merged_file,
+        '--chapters', chapters_xml_file,
+    ]
+    with perfcontext('add chapters w/ mkvpropedit'):
+        do_spawn_cmd(cmd)
+
+    return True
+
+def action_tag_episodes(episode_file_names, in_tags):
+    tags = copy.copy(in_tags)
+
+    t = [os.fspath(e) for e in episode_file_names]
+    if t != sorted(t):
+        m = 'Episode file names not sorted; This is likely a mistake.'
+        if app.args.force:
+            app.log.warning(m + ' (--force used; Bypassing)')
+        else:
+            raise ValueError(m + ' (use --force to bypass)')
 
     if episode_file_names[0].is_dir():
         seed_initial_text = episode_file_names[0].name
@@ -4471,11 +5251,11 @@ def action_tag_episodes_files(episode_file_names, in_tags):
 
     global tvdb
     if tvdb is None:
+        global qip
         import qip.thetvdb
         tvdb = qip.thetvdb.Tvdb(
             apikey='d38d1a8df34d030f1be077798db952bc',  # mmdemux
             interactive=app.args.interactive,
-            debug=app.log.isEnabledFor(logging.DEBUG),
         )
     tvdb.language = tags.language
 
@@ -4493,6 +5273,7 @@ def action_tag_episodes_files(episode_file_names, in_tags):
         if i is None:
             raise ValueError('Cancelled by user!')
     d_series = l_series[i]
+    tags.tvshow = d_series['seriesName']
 
     if tags.season is None and app.args.interactive:
         initial_text = ''
@@ -4564,7 +5345,7 @@ def action_tag_episodes_files(episode_file_names, in_tags):
         #  'thumbHeight': '360',
         #  'thumbWidth': '640',
         #  'writers': ['Rick Mittleman']}
-        episode_file.load_tags(file_type='tvshow')
+        episode_file.tags.update(episode_file.load_tags(file_type='tvshow'))
         episode_file.tags.update(tags)
         episode_file.tags.episode = o_episode['airedEpisodeNumber']
         episode_file.tags.title = o_episode['episodeName']
@@ -4572,6 +5353,19 @@ def action_tag_episodes_files(episode_file_names, in_tags):
         app.log.info('%s: %s', episode_file, episode_file.tags.short_str())
         episode_file.write_tags(tags=episode_file.tags,
                                 dry_run=app.args.dry_run)
+        if app.args.rename:
+            from qip.bin.organize_media import organize_tvshow
+            opath = organize_tvshow(episode_file, suggest_tags=TrackTags())
+            opath = episode_file.file_name.with_name(opath.name)
+            if opath != episode_file.file_name:
+                if opath.exists():
+                    raise OSError(errno.EEXIST, opath)
+                if app.args.dry_run:
+                    app.log.info('  Rename to %s. (dry-run)', opath)
+                else:
+                    app.log.info('  Rename to %s.', opath)
+                    episode_file.rename(opath)
+                    episode_file.file_name = opath
 
 if __name__ == "__main__":
     main()
