@@ -26,6 +26,8 @@ __all__ = [
         'nice',
         'renice',
         'ionice',
+        'list2cmdlist',
+        'list2cmdline',
         'stdout_wrapper',
         ]
 
@@ -41,6 +43,7 @@ import pexpect
 import pexpect.popen_spawn
 import pexpect.spawnbase
 import pexpect.utils
+import pexpect.fdpexpect
 import re
 import shutil
 import signal
@@ -55,10 +58,24 @@ log = logging.getLogger(__name__)
 from qip.app import app  # Also setup log.verbose
 from qip.utils import byte_decode
 
+_mswindows = (sys.platform == "win32")
+
 try:
     from queue import Queue, Empty  # Python 3
 except ImportError:
     from Queue import Queue, Empty  # Python 2
+
+def arg2cmdarg(arg):
+    return (os.fspath(arg) if isinstance(arg, os.PathLike)
+            else (
+                str(arg)))
+
+def list2cmdlist(cmd):
+    return [arg2cmdarg(e) for e in cmd]
+
+def list2cmdline(cmd):
+    return subprocess.list2cmdline(
+        list2cmdlist(cmd))
 
 class SpawnedProcessError(subprocess.CalledProcessError):
 
@@ -68,6 +85,9 @@ class SpawnedProcessError(subprocess.CalledProcessError):
 
 
 class _SpawnMixin(pexpect.spawnbase.SpawnBase):
+
+    def __init__(self, *args, errors=None, **kwargs):
+        super().__init__(*args, codec_errors=errors, **kwargs)
 
     def communicate(self, pattern_dict, **kwargs):
         pattern_kv_list = list(pattern_dict.items())
@@ -99,19 +119,35 @@ class _SpawnMixin(pexpect.spawnbase.SpawnBase):
 
 class spawn(_SpawnMixin, pexpect.spawn):
 
-    def __init__(self, command, args=[], *_args, **kwargs):
+    def __init__(self, command, args=[],
+                 **kwargs):
         if command is not None:
             command = os.fspath(command)
-        args = [os.fspath(e) if isinstance(e, os.PathLike) else str(e)
-                for e in args]
-        super().__init__(command=command, args=args, *_args, **kwargs)
+        args = list2cmdlist(args)
+        super().__init__(command=command, args=args,
+                         **kwargs)
+
+class fdspawn(_SpawnMixin, pexpect.fdpexpect.fdspawn):
+
+    def __init__(self, fd, command=None, args=None,
+                 cwd=None,
+                 **kwargs):
+        assert cwd is None  # Not supported by pexpect.fdpexpect.fdspawn
+        super().__init__(fd=fd, args=args, **kwargs)
+        self.args = args  # pexpect.fdpexpect.fdspawn sets to None
+        self.command = command  # pexpect.fdpexpect.fdspawn sets to None
+
+    def close(self, *, force=None, **kwargs):
+        return super().close(
+            # force=force  # Not supported by pexpect.fdpexpect.fdspawn
+            **kwargs)
 
 class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
     # See pexpect/popen_spawn.py
 
     def __init__(self, cmd, *, timeout=30, maxread=2000, searchwindowsize=None,
                  logfile=None, env=None, encoding=None,
-                 codec_errors='strict', preexec_fn=None,
+                 errors='strict', preexec_fn=None,
                  bufsize=0,
                  stdin=None, stdout=None, stderr=None,
                  read_from='auto',
@@ -119,7 +155,7 @@ class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
         pexpect.spawnbase.SpawnBase.__init__(  # Skip pexpect.popen_spawn.PopenSpawn!
                 self, timeout=timeout, maxread=maxread,
                 searchwindowsize=searchwindowsize, logfile=logfile,
-                encoding=encoding, codec_errors=codec_errors)
+                encoding=encoding, codec_errors=errors)
 
         # Note that `SpawnBase` initializes `self.crlf` to `\r\n`
         # because the default behaviour for a PTY is to convert
@@ -194,12 +230,15 @@ class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
         self.kill(signal.SIGKILL if force else signal.SIGTERM)
         self.closed = True
 
-def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_CompletedProcess=False,
+def dbg_exec_cmd(cmd, *, hidden_args=[],
+                 dry_run=None, log_append='', return_CompletedProcess=False,
+                 fd=None,
                  stdout=None,
                  **kwargs):
+    assert fd is None
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
-                    subprocess.list2cmdline([str(e) for e in cmd]),
+                    list2cmdline(cmd),
                     log_append)
     # return subprocess.check_output(cmd + hidden_args, **kwargs)
     if 'input' in kwargs and kwargs['input'] is None:
@@ -208,6 +247,8 @@ def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_Com
         kwargs['input'] = '' if kwargs.get('universal_newlines', False) else b''
     if stdout is None:
         stdout = subprocess.PIPE
+    cmd = list2cmdlist(cmd)
+    hidden_args = list2cmdlist(hidden_args)
     run_out = subprocess.run(cmd + hidden_args,
                              stdout=stdout,
                              check=True, **kwargs)
@@ -216,12 +257,14 @@ def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_Com
     else:
         return run_out.stdout
 
-def do_exec_cmd(cmd, *, dry_run=None, log_append='', return_CompletedProcess=False, **kwargs):
+def do_exec_cmd(cmd, *,
+                dry_run=None, log_append='', return_CompletedProcess=False,
+                **kwargs):
     if dry_run is None:
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
-                    subprocess.list2cmdline([str(e) for e in cmd]),
+                    list2cmdline(cmd),
                     log_append)
         if return_CompletedProcess:
             return subprocess.CompletedProcess(args=None, returncode=0, stdout='', stderr='')
@@ -232,14 +275,22 @@ def do_exec_cmd(cmd, *, dry_run=None, log_append='', return_CompletedProcess=Fal
 
 def suggest_exec_cmd(cmd, dry_run=None, **kwargs):
     log.info('SUGGEST: %s',
-             subprocess.list2cmdline([str(e) for e in cmd]))
+             list2cmdline(cmd))
 
-def dbg_system_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
+def dbg_system_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='',
+                   cwd=None,
+                   fd=None,
+                   encoding=None, errors=None, text=None,
+                   **kwargs):
+    assert fd is None
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
-                    subprocess.list2cmdline([str(e) for e in cmd]),
+                    list2cmdline(cmd),
                     log_append)
-    return os.system(subprocess.list2cmdline([str(e) for e in cmd + hidden_args]),
+    # text_mode = text or encoding or errors
+    assert not kwargs, kwargs
+    assert cwd is None
+    return os.system(list2cmdline(cmd),
                      **kwargs)
 
 def do_system_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
@@ -247,7 +298,7 @@ def do_system_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
-                    subprocess.list2cmdline([str(e) for e in cmd]),
+                    list2cmdline(cmd),
                     log_append)
         return ''
     else:
@@ -256,8 +307,10 @@ def do_system_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
 def dbg_popen_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
-                    subprocess.list2cmdline([str(e) for e in cmd]),
+                    list2cmdline(cmd),
                     log_append)
+    cmd = list2cmdlist(cmd)
+    hidden_args = list2cmdlist(hidden_args)
     return subprocess.Popen(cmd + hidden_args, **kwargs)
 
 def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
@@ -265,7 +318,7 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
-                    subprocess.list2cmdline([str(e) for e in cmd]),
+                    list2cmdline(cmd),
                     log_append)
         import contextlib
         p = types.SimpleNamespace()
@@ -279,7 +332,7 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
 def dbg_popen_spawn_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
-                    subprocess.list2cmdline([str(e) for e in cmd]),
+                    list2cmdline(cmd),
                     log_append)
     return popen_spawn(cmd + hidden_args, **kwargs)
 
@@ -288,7 +341,7 @@ def do_popen_spawn_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
-                    subprocess.list2cmdline([str(e) for e in cmd]),
+                    list2cmdline(cmd),
                     log_append)
         import contextlib
         p = types.SimpleNamespace()
@@ -299,17 +352,25 @@ def do_popen_spawn_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
     else:
         return dbg_popen_spawn_cmd(cmd, log_append=log_append, **kwargs)
 
-def dbg_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False, logfile=True):
+def dbg_spawn_cmd(cmd, hidden_args=[],
+                  fd=None,
+                  dry_run=None, no_status=False, yes=False, logfile=True,
+                  cwd=None,
+                  encoding=None, errors=None,
+                  ):
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.verbose('CMD: %s',
-                        subprocess.list2cmdline([str(e) for e in cmd]))
+                        list2cmdline(cmd))
     out = ''
     if logfile is True:
         logfile = sys.stdout.buffer
     elif logfile is False:
         logfile = None
-    p = spawn(cmd[0], args=cmd[1:] + hidden_args, timeout=None,
-            logfile=logfile)
+    spawn_func = functools.partial(fdspawn, fd=fd) if fd is not None else spawn
+    p = spawn_func(cmd[0], args=cmd[1:] + hidden_args, timeout=None,
+                   cwd=cwd,
+                   encoding=encoding, errors=errors,
+                   logfile=logfile)
     while True:
         index = p.expect([
             r'Select match, 0 for none(?: \[0-\d+\]\?\r*\n)?',  # 0
@@ -379,7 +440,7 @@ def dbg_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False,
     if not no_status and p.exitstatus:
         raise subprocess.CalledProcessError(
                 returncode=p.exitstatus,
-                cmd=subprocess.list2cmdline([str(e) for e in cmd]),
+                cmd=list2cmdline(cmd),
                 output=out)
     return out
 
@@ -388,14 +449,13 @@ def do_spawn_cmd(cmd, dry_run=None, **kwargs):
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         app.log.verbose('CMD (dry-run): %s',
-                        subprocess.list2cmdline([str(e) for e in cmd]))
+                        list2cmdline(cmd))
         return ''
     else:
         return dbg_spawn_cmd(cmd, **kwargs)
 
 def clean_cmd_output(out):
-    if isinstance(out, bytes):
-        out = byte_decode(out)
+    out = byte_decode(out)
     out = re.sub(r'\x1B\[[0-9;]*m', '', out)
     out = re.sub(r'\r\n', '\n', out)
     out = re.sub(r'.*\r', '', out, flags=re.MULTILINE)
@@ -410,20 +470,95 @@ class IoniceClass(enum.IntEnum):
     Idle = 3
 
 
+class FakeDryRunPopen(subprocess.Popen):
+
+    def __init__(self, args, *,
+                 stdin=None, stdout=None, stderr=None,
+                 **kwargs):
+        self._in_stdout = stdout
+        self._in_stderr = stderr
+        super().__init__(args=args,
+                         stdin=None, stdout=None, stderr=None,
+                         **kwargs)
+
+    def _execute_child(self, *args, **kwargs):
+        self._child_created = False
+        self._closed_child_pipe_fds = True
+
+    def communicate(self, *args, **kwargs):
+        self._communication_started = True
+        self.returncode = 0
+        stdout = ('' if self.text_mode else b'') if self._in_stdout == subprocess.PIPE else None
+        stderr = ('' if self.text_mode else b'') if self._in_stderr == subprocess.PIPE else None
+        return (stdout, stderr)
+
+
+class Args(object):
+    """Save given arguments and keywords.
+    """
+
+    def __new__(cls,
+                # 3.8: /,
+                *args, **keywords):
+
+        self = super(Args, cls).__new__(cls)
+
+        self.args = args
+        self.keywords = keywords
+        return self
+
+    @classmethod
+    def new_from(cls, other):
+        if isinstance(other, Args):
+            return Args(*other.args, **other.keywords)
+        if isinstance(other, collections.Mapping):
+            return Args(**other)
+        if isinstance(other, collections.Sequence):
+            return Args(*other)
+        raise TypeError(other)
+
+    def __add__(self, other):
+        args = self.args + other.args
+        keywords = dict(self.keywords)
+        keywords.update(other.keywords)
+        return self.__class__(*args, **keywords)
+
+
 class Executable(metaclass=abc.ABCMeta):
+
+    Args = Args
+
+    popen_class = subprocess.Popen
 
     run_func = None
     run_func_options = tuple()
     popen_func = None
+    popen_func_options = tuple()
+
+    encoding = None
+    encoding_errors = None
 
     nice_adjustment = None
     ionice_class = None
     ionice_level = None
     ionice_ignore = True
 
-    def _spawn_run_func(self, cmd, hidden_args=[], dry_run=None, no_status=False, logfile=None,
+    needs_tty = False
+
+    def _spawn_run_func(self, cmd=None, *, fd=None, hidden_args=[], dry_run=None, no_status=False, logfile=None,
                         stdin=None, stdout=None, stderr=None,
+                        encoding=None, errors=None, text=None, universal_newlines=None,
                         **kwargs):
+
+        if universal_newlines:
+            # Backward compatibility
+            text = True
+
+        text_mode = encoding or errors or text
+        if text_mode and encoding is None:
+            # Sane default -- See _pyio.py TextIOWrapper
+            encoding = 'utf-8'
+
         if stdin or stdout or stderr:
             stdin = stdin or subprocess.PIPE
             stdout = stdout or subprocess.PIPE
@@ -431,14 +566,21 @@ class Executable(metaclass=abc.ABCMeta):
             assert self.popen_func and self.popen_spawn, f'self={self!r}: popen_func={self.popen_func!r} and popen_spawn={self.popen_spawn!r}'
             assert logfile is None
             assert no_status == False
+            assert fd is None
             return self.popen(cmd, hidden_args=hidden_args, dry_run=dry_run,
                               stdin=stdin, stdout=stdout, stderr=stderr,
+                              encoding=encoding, errors=errors, text=text,
                               **kwargs)
+
+        if fd is not None:
+            if cmd is None:
+                cmd = ['<fd>']
+
         if dry_run is None:
              dry_run = getattr(app.args, 'dry_run', False)
         if dry_run:
             app.log.verbose('CMD (dry-run): %s',
-                            subprocess.list2cmdline([str(e) for e in cmd]))
+                            list2cmdline(cmd))
             return ''
         if logfile is True:
             logfile = sys.stdout.buffer
@@ -446,15 +588,19 @@ class Executable(metaclass=abc.ABCMeta):
             logfile = None
         if app.log.isEnabledFor(logging.DEBUG):
             app.log.verbose('CMD: %s',
-                            subprocess.list2cmdline([str(e) for e in cmd]))
-        p = self.spawn(cmd[0], args=cmd[1:] + hidden_args, logfile=logfile, **kwargs)
+                            list2cmdline(cmd))
+
+        spawn_func = functools.partial(self.fdspawn, fd=fd) if fd is not None else self.spawn
+        p = spawn_func(cmd[0], args=cmd[1:] + hidden_args, logfile=logfile,
+                       encoding=encoding, errors=errors,  # text=text,
+                       **kwargs)
         with p:
             pattern_dict = p.get_pattern_dict()
-            out = ''
+            out = '' if text_mode else b''
             for v in p.communicate(pattern_dict=pattern_dict):
-                out += byte_decode(p.before)
+                out += p.before
                 if p.match and p.match is not pexpect.EOF:
-                    out += byte_decode(p.match.group(0))
+                    out += p.match.group(0)
                 if callable(v):
                     if p.match is pexpect.EOF:
                         b = v(None)
@@ -469,21 +615,26 @@ class Executable(metaclass=abc.ABCMeta):
         if not no_status and p.exitstatus:
             raise SpawnedProcessError(
                 returncode=p.exitstatus,
-                cmd=subprocess.list2cmdline([str(e) for e in cmd]),
+                cmd=list2cmdline(cmd),
                 output=out,
                 spawn=p)
-        return out
+        if text_mode:
+            out = byte_decode(out)
+        return {
+            'out': out,
+            'spawn': p,
+        }
 
     def _spawn_popen_func(self, cmd, hidden_args=[], dry_run=None, no_status=False, logfile=None, **kwargs):
         if dry_run is None:
              dry_run = getattr(app.args, 'dry_run', False)
         if dry_run:
             app.log.verbose('CMD (dry-run): %s',
-                            subprocess.list2cmdline([str(e) for e in cmd]))
+                            list2cmdline(cmd))
             return ''
         if app.log.isEnabledFor(logging.DEBUG):
             app.log.verbose('CMD: %s',
-                            subprocess.list2cmdline([str(e) for e in cmd]))
+                            list2cmdline(cmd))
         if logfile is True:
             logfile = sys.stdout.buffer
         elif logfile is False:
@@ -510,7 +661,7 @@ class Executable(metaclass=abc.ABCMeta):
         if not no_status and p.exitstatus:
             raise SpawnedProcessError(
                 returncode=p.exitstatus,
-                cmd=subprocess.list2cmdline([str(e) for e in cmd]),
+                cmd=list2cmdline(cmd),
                 output=out,
                 spawn=p)
         return out
@@ -521,12 +672,13 @@ class Executable(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     def which(self, mode=os.F_OK | os.X_OK, path=None, assert_found=True):
-        cmd = shutil.which(self.name, mode=mode, path=path)
+        cmd = shutil.which(os.fspath(self.name), mode=mode, path=path)
         if cmd is None and assert_found:
             raise OSError(errno.ENOENT, 'Command not found', self.name)
         return cmd
 
-    def clean_cmd_output(self, out):
+    @classmethod
+    def clean_cmd_output(cls, out):
         return clean_cmd_output(out)
 
     @classmethod
@@ -551,7 +703,7 @@ class Executable(metaclass=abc.ABCMeta):
             else:
                 cmdargs.append('--' + k)
             if v is not True:
-                cmdargs.append(str(v))
+                cmdargs.append(arg2cmdarg(v))
         return cmdargs
 
     @classmethod
@@ -567,7 +719,7 @@ class Executable(metaclass=abc.ABCMeta):
             }.get(k, k)
             cmdargs.append('/' + k)
             if v is not True:
-                cmdargs.append(str(v))
+                cmdargs.append(arg2cmdarg(v))
         return cmdargs
 
     def build_cmd(self, *args, **kwargs):
@@ -577,7 +729,7 @@ class Executable(metaclass=abc.ABCMeta):
         ionice_ignore = kwargs.pop('ionice_ignore', self.ionice_ignore)
 
         cmd = [self.which()] \
-            + list(str(e) for e in args) \
+            + list2cmdlist(args) \
             + self.kwargs_to_cmdargs(**kwargs)
 
         if ionice_class is not None or ionice_level is not None:
@@ -602,19 +754,113 @@ class Executable(metaclass=abc.ABCMeta):
 
         return cmd
 
-    def _run(self, *args, run_func=None, dry_run=False, **kwargs):
+    def popen_new(self, *args,
+                  cwd=None,
+                  stdin=None, stdout=None, stderr=None,
+                  capture_output=False,
+                  text=None, encoding=None, errors=None,
+                  dry_run=None,
+                  **kwargs):
+        if dry_run is None:
+             dry_run = getattr(app.args, 'dry_run', False)
+
+        if capture_output:
+            if stdout is not None or stderr is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            stdout = subprocess.PIPE
+            stderr = subprocess.PIPE
+
+        cmd = self.build_cmd(*args, **kwargs)
+        cmd = list2cmdlist(cmd)
+        text_mode, encoding, errors = self.get_text_mode_info(
+            cmd=cmd, text=text, encoding=encoding, errors=errors)
+
+        if dry_run:
+            log.verbose('CMD (dry-run): %s',
+                        list2cmdline(cmd))
+            popen_class = FakeDryRunPopen
+        else:
+            if log.isEnabledFor(logging.DEBUG):
+                log.verbose('CMD: %s',
+                            list2cmdline(cmd))
+            popen_class = self.popen_class
+
+        return popen_class(cmd,
+                           cwd=cwd,
+                           stdin=stdin, stdout=stdout, stderr=stderr,
+                           encoding=encoding, errors=errors,
+                           **kwargs)
+
+    def run_new(self, *args,
+                cwd=None,
+                stdin=None, stdout=None, stderr=None,
+                capture_output=False,
+                text=None, encoding=None, errors=None,
+                timeout=None, check=False,
+                dry_run=None,
+                **kwargs):
+
+        with self.popen_new(*args,
+                            cwd=cwd,
+                            stdin=stdin, stdout=stdout, stderr=stderr,
+                            capture_output=capture_output,
+                            encoding=encoding, errors=errors,
+                            dry_run=dry_run,
+                            **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+        comp = subprocess.CompletedProcess(process.args, retcode, stdout, stderr)
+        if check:
+            comp.check_returncode()
+        return comp
+
+    def _run(self, *args,
+             fd=None,
+             cwd=None,
+             run_func=None, dry_run=False,
+             **kwargs):
+        #print(f'Executable._run(args={args!r}, fd={fd!r}, cwd={cwd!r}, run_func={run_func!r}, dry_run={dry_run!r}, kwargs={kwargs!r}')
         d = types.SimpleNamespace()
+
         run_func_kwargs = {}
         for k in self.run_func_options:
             try:
                 run_func_kwargs[k] = kwargs.pop(k)
             except KeyError:
                 pass
+        run_func_kwargs.setdefault('encoding', self.encoding)
+        run_func_kwargs.setdefault('errors', self.encoding_errors)
         cmd = self.build_cmd(*args, **kwargs)
+        cmd = list2cmdlist(cmd)
+
         run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
+
         t0 = time.time()
-        out = run_func(cmd, dry_run=dry_run, **run_func_kwargs)
-        if isinstance(out, collections.Mapping):
+        out = run_func(cmd, fd=fd,
+                       cwd=cwd,
+                       dry_run=dry_run,
+                       **run_func_kwargs)
+        if isinstance(out, collections.abc.Mapping):
             for k, v in out.items():
                 setattr(d, k, v)
         else:
@@ -623,24 +869,6 @@ class Executable(metaclass=abc.ABCMeta):
         d.elapsed_time = t1 - t0
         return d
 
-    def _popen(self, *args, popen_func=None, dry_run=False,
-               stdin=None, stdout=None, stderr=None,
-               text=None, encoding=None, bufsize=-1,
-               **kwargs):
-        """p1 = myexe1.popen([...], stdout=subprocess.PIPE)
-           p2 = myexe2.popen([...], stdin=p1.stdout, stdout=myfile.fp)
-        """
-        cmd = self.build_cmd(*args, **kwargs)
-        popen_func = popen_func or self.popen_func or do_popen_cmd
-        return popen_func(
-            cmd,
-            dry_run=dry_run,
-            stdin=stdin, stdout=stdout, stderr=stderr,
-            universal_newlines=text,  # 3.7: text=text
-            encoding=encoding,
-            bufsize=bufsize,
-            )
-
     def run(self, *args, **kwargs):
         return self._run(*args, **kwargs)
 
@@ -648,6 +876,46 @@ class Executable(metaclass=abc.ABCMeta):
 
     def popen(self, *args, **kwargs):
         return self._popen(*args, **kwargs)
+
+    def get_text_mode_info(self, cmd=None, text=None, encoding=None, errors=None):
+        encoding = encoding or self.encoding
+        errors = errors or self.encoding_errors
+        text_mode = bool(text or encoding or errors)
+        if text_mode:
+            if encoding is None:
+                encoding = 'utf-8'
+            if errors is None:
+                errors = 'strict'
+        return text_mode, encoding, errors
+
+    def _popen(self, *args, popen_func=None, dry_run=False,
+               cwd=None,
+               stdin=None, stdout=None, stderr=None,
+               text=None, encoding=None, bufsize=-1,
+               **kwargs):
+        text_mode, encoding, errors = self.get_text_mode_info(text=text, encoding=encoding)
+        """p1 = myexe1.popen([...], stdout=subprocess.PIPE)
+           p2 = myexe2.popen([...], stdin=p1.stdout, stdout=myfile.fp)
+        """
+        popen_func_kwargs = {}
+        for k in self.popen_func_options:
+            try:
+                popen_func_kwargs[k] = kwargs.pop(k)
+            except KeyError:
+                pass
+        cmd = self.build_cmd(*args, **kwargs)
+        cmd = list2cmdlist(cmd)
+        popen_func = popen_func or self.popen_func or do_popen_cmd
+        return popen_func(
+            cmd,
+            cwd=cwd,
+            dry_run=dry_run,
+            stdin=stdin, stdout=stdout, stderr=stderr,
+            encoding=encoding, errors=errors,
+            universal_newlines=text,  # 3.7: text=text
+            bufsize=bufsize,
+            **popen_func_kwargs,
+            )
 
 class PipedExecutable(Executable):
     pass
@@ -675,9 +943,10 @@ class Nice(Executable):
     kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
 
     def build_cmd(self, *args, **kwargs):
+        # kwargs before args
         cmd = [self.which()] \
             + self.kwargs_to_cmdargs(**kwargs) \
-            + list(str(e) for e in args)
+            + list2cmdlist(args)
         return cmd
 
 nice = Nice()
@@ -700,7 +969,7 @@ class Renice(Executable):
         cmd = [self.which()] \
             + self.kwargs_to_cmdargs(**{k: v for k, v in kwargs.items() if k in keys1}) \
             + self.kwargs_to_cmdargs(**{k: v for k, v in kwargs.items() if k in keys2}) \
-            + list(str(e) for e in args)
+            + list2cmdlist(args)
         return cmd
 
 renice = Renice()
@@ -722,7 +991,7 @@ class Ionice(Executable):
         cmd = [self.which()] \
             + self.kwargs_to_cmdargs(**{k: v for k, v in kwargs.items() if k in keys1}) \
             + self.kwargs_to_cmdargs(**{k: v for k, v in kwargs.items() if k in keys2}) \
-            + list(str(e) for e in args)
+            + list2cmdlist(args)
         return cmd
 
 ionice = Ionice()
@@ -771,6 +1040,7 @@ class SlurmError(Exception):
 
 
 def do_srun_cmd(cmd,
+        fd=None,
         stdin=None, stdin_file=None,
         stdout=None, stdout_file=None,
         stderr=None, stderr_file=None,
@@ -782,13 +1052,17 @@ def do_srun_cmd(cmd,
         slurm_kill_on_bad_exit=True,
         chdir=None,
         uid=None,
+        cwd=None,
         dry_run=None,
+        encoding=None, errors=None, text=None,
         ):
     if dry_run is None:
          dry_run = getattr(app.args, 'dry_run', False)
     slurm_args = [
         'srun',
         ]
+
+    assert fd is None
 
     gres_args = []
     if stdin_file is not None:
@@ -824,7 +1098,7 @@ def do_srun_cmd(cmd,
         slurm_args += ['--gres', ','.join(gres_args)]
 
     slurm_args.extend(cmd)
-    slurm_args = [str(e) for e in slurm_args]
+    slurm_args = list2cmdlist(slurm_args)
     thread = PipeRecordThread(text=True)
     assert stderr is None
     def stderr_copier(out):
@@ -832,8 +1106,11 @@ def do_srun_cmd(cmd,
     thread.target = stderr_copier
     thread.start()
     try:
-        run_out = do_exec_cmd(slurm_args, dry_run=dry_run,
+        run_out = do_exec_cmd(slurm_args,
+                              cwd=cwd,
+                              dry_run=dry_run,
                               stdin=stdin, stdout=stdout, stderr=thread.file_w,
+                              encoding=encoding, errors=errors, text=text,
                               return_CompletedProcess=True)
     finally:
         thread.file_w.close()
@@ -858,6 +1135,7 @@ def do_sbatch_cmd(cmd,
         chdir=None,
         uid=None,
         wait=False,
+        cwd=None,
         ):
     slurm_args = [
         'sbatch',
@@ -898,8 +1176,9 @@ def do_sbatch_cmd(cmd,
         slurm_args += ['--wait']
 
     slurm_args.extend(cmd)
-    slurm_args = [str(e) for e in slurm_args]
+    slurm_args = list2cmdlist(slurm_args)
     return do_exec_cmd(slurm_args,
+                       cwd=cwd,
                        stdin=stdin, stdout=stdout, stderr=stderr)
 
 class Editor(Executable):
