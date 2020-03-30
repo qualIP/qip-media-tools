@@ -4,18 +4,25 @@ __all__ = (
     'MkvFile',
     'WebmFile',
     'MkaFile',
+    'mkvextract',
+    'mkvpropedit',
 )
 
 # https://matroska.org/technical/specs/tagging/index.html
 # https://www.webmproject.org/docs/container/
 # http://wiki.webmproject.org/webm-metadata/global-metadata
 
+from pathlib import Path
+import copy
 import collections
+import io
 import logging
+import re
 log = logging.getLogger(__name__)
 
-from .mm import MediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType
-from .utils import KwVarsObject
+from .mm import MediaTagEnum, MediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters
+from .utils import KwVarsObject, byte_decode
+from .exec import Executable
 
 
 class MatroskaTagTarget(KwVarsObject):
@@ -103,7 +110,7 @@ default_tag_map = (
     # XXXJST CONFLICT TagInfo(None, None, 'TODO','albumartist'),
     TagInfo(None, None, 'ARTIST', 'artist'),  # CONFLICT
     # XXXJST CONFLICT TagInfo(None, None, 'TODO', 'albumtitle'),
-    TagInfo(None, None, 'TITLE', 'title'),  # CONFLCT, also a property
+    TagInfo(None, None, 'TITLE', 'title'),  # CONFLICT, also a property
     TagInfo(None, None, 'SUBTITLE', 'subtitle'),
     TagInfo(None, None, 'COMPOSER', 'composer'),
     TagInfo(None, None, 'PUBLISHER', 'publisher'),
@@ -225,7 +232,7 @@ class MatroskaFile(MediaFile):
             ]
         if file_type in ('audiobook',):
             tag_map += [
-                TagInfo(30, None, 'LEAD_PERFORMER', 'composer'),
+                TagInfo(30, None, 'ACTOR', 'composer'),
             ]
         if file_type in ('musicvideo',):
             default_TargetTypes.update({
@@ -331,12 +338,12 @@ class MatroskaFile(MediaFile):
             #if log.isEnabledFor(logging.DEBUG):
             #    with open(tmp_tags_xml_file.file_name, 'r') as fd:
             #        log.debug('Tags XML: %s', fd.read())
-            cmd = [
-                'mkvpropedit',
-                '--tags', 'all:%s' % (tmp_tags_xml_file.file_name),
-                self.file_name,
-            ]
-            do_exec_cmd(cmd)
+            mkvpropedit(
+                self,
+                actions=mkvpropedit.ActionArgs(
+                    tags=f'all:{tmp_tags_xml_file}',
+                ),
+            )
 
     @classmethod
     def iter_matroska_tags(cls, tags_xml):
@@ -462,10 +469,16 @@ class MatroskaFile(MediaFile):
         from .exec import do_exec_cmd
         default_TargetTypeValue, default_TargetTypes, tag_map = self.get_matroska_tag_map()
         tags_list = None
-        for tag, value in self.tags.items():
+
+        tags_to_set = set(self.tags.keys())
+
+        for tag in tags_to_set:
+            if tag in (
+                    MediaTagEnum.type,  # Mostly implicit from tag map choices
+            ):
+                continue
             tag = tag.name
-            if tag == 'type':
-                continue  # Mostly implicit from tag map choices
+            value = self.tags[tag]
 
             for tag_info in tag_map:
                 if tag_info.tag != tag:
@@ -473,7 +486,9 @@ class MatroskaFile(MediaFile):
                 log.debug(f'tag_info = %r', tag_info)
                 break
             else:
-                raise NotImplementedError(f'Tag not supported in Matroska w/ type {self.deduce_type()}: {tag}')
+                if value is None:
+                    continue
+                raise NotImplementedError(f'Tag not supported in Matroska w/ type {self.deduce_type()}: {tag} = {value}')
 
             if tag_info.TargetTypeValue is None:
                 tag_info = tag_info._replace(
@@ -489,23 +504,21 @@ class MatroskaFile(MediaFile):
             else:
                 mkv_value = str(value)
             if tag == 'title':
-                cmd = [
-                    'mkvpropedit',
-                    '--edit', 'info',
-                    '--set', 'title=%s' % (value,),
-                    self.file_name,
-                ]
-                do_exec_cmd(cmd)
+                mkvpropedit(
+                    self,
+                    actions=mkvpropedit.ActionArgs(
+                        '--edit', 'info',
+                        '--set', 'title=%s' % (value,),
+                    ))
             elif tag == 'language':
                 # https://www.matroska.org/technical/specs/index.html#languages
                 from qip.isolang import isolang
-                cmd = [
-                    'mkvpropedit',
-                    '--edit', 'track:@1',  # TODO
-                    '--set', 'language=%s' % (isolang(value).iso639_2,),
-                    self.file_name,
-                ]
-                do_exec_cmd(cmd)
+                mkvpropedit(
+                    self,
+                    actions=mkvpropedit.ActionArgs(
+                        '--edit', 'track:@1',  # TODO
+                        '--set', 'language=%s' % (isolang(value or 'und').iso639_2,),
+                    ))
                 continue
             if tags_list is None:
                 tags_xml = self.get_tags_xml()
@@ -597,12 +610,14 @@ class MatroskaFile(MediaFile):
         tags_xml = self.get_tags_xml()
         tags_list = self.iter_matroska_tags(tags_xml)
         tags_list = list(tags_list)
-        if file_type is None:
+
+        tags.type = file_type
+        if tags.type is None:
             for d_tag in tags_list:
                 if (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue) == (0, 50):
                     try:
-                        file_type = {
-                            'ALBUM': 'normal',  # TODO Differentiate from audiobook!
+                        tags.type = {
+                            'ALBUM': 'normal',
                             'MOVIE': 'movie',
                             'CONCERT': 'musicvideo',
                             'EPISODE': 'tvshow',
@@ -610,19 +625,19 @@ class MatroskaFile(MediaFile):
                             # TODO ringtone
                         }[d_tag.Target.TargetType]
                     except KeyError:
+                        log.debug('Deduced type is %r based on %r', tags.type, d_tag)
                         pass
                     else:
                         break
-        if file_type is None:
+        if tags.contenttype is None:
             for d_tag in tags_list:
                 if (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue, d_tag.Name) == (0, 50, 'CONTENT_TYPE'):
-                    contenttype = str(ContentType(d_tag.String))
-                    if 'Music Video' in contenttype \
-                            or 'Concert' in contenttype:
-                        file_type = 'musicvideo'
-                        log.debug('Deduced type is %r based on %r', file_type, d_tag)
-                        break
-        if file_type is None:
+                    tags.contenttype = d_tag.String
+                    log.debug('Deduced contenttype is %r based on %r', tags.contenttype, d_tag)
+                    break
+        if (tags.type, tags.contenttype) == ('normal', ContentType.audiobook):
+            tags.type = 'audiobook'
+        if tags.type is None:
             d_tag_collection_title = None
             d_tag_episode = None
             for d_tag in tags_list:
@@ -633,17 +648,24 @@ class MatroskaFile(MediaFile):
                 else:
                     continue
                 if d_tag_collection_title and d_tag_episode:
-                    file_type = 'tvshow'
-                    log.debug('Deduced type is %r based on %r + %r', file_type, d_tag_collection_title, d_tag_episode)
+                    tags.type = 'tvshow'
+                    log.debug('Deduced type is %r based on %r + %r', tags.type, d_tag_collection_title, d_tag_episode)
                     break
-        if file_type is None:
-            file_type = self.deduce_type()
-        if file_type is not None:
-            tags.type = file_type
-        default_TargetTypeValue, default_TargetTypes, tag_map = self.get_matroska_tag_map(file_type=file_type)
+        if tags.type is None:
+            tags.type = self.deduce_type()
+
+        default_TargetTypeValue, default_TargetTypes, tag_map = self.get_matroska_tag_map(file_type=tags.type)
         for d_tag in tags_list:
             log.debug('d_tag = %r', d_tag)
-            target_tags = tags if d_tag.Target.TrackUID == 0 else tags.tracks_tags[d_tag.Target.TrackUID]
+            if False:
+                target_tags = tags if d_tag.Target.TrackUID == 0 else tags.tracks_tags[d_tag.Target.TrackUID]
+            else:
+                if d_tag.Target.TrackUID != 0:
+                    target_tags = tags.tracks_tags[d_tag.Target.TrackUID]
+                elif False and d_tag.Target.TargetTypeValue is not None and d_tag.Target.TargetTypeValue <= default_TargetTypeValue:
+                    target_tags = tags.tracks_tags[1]
+                else:
+                    target_tags = tags
             for tag_info in tag_map:
                 if tag_info.Name != d_tag.Name:
                     continue
@@ -675,9 +697,214 @@ class MatroskaFile(MediaFile):
                     if not isinstance(d_tag.String, tuple):
                         d_tag = d_tag._replace(String=(d_tag.String,))
                     d_tag = d_tag._replace(String=old_value + d_tag.String)
-                #log.debug('%s = %r', mapped_tag, d_tag.String)
+                log.debug('%s = %r', mapped_tag, d_tag.String)
                 target_tags.set_tag(mapped_tag, d_tag.String)
         return tags
+
+    def load_chapters(self, *, add_pre_gap=True, fix=True, return_raw_xml=False):
+        import xml.etree.ElementTree as ET
+        from qip.perf import perfcontext
+        with perfcontext('mkvextract chapters'):
+            chapters_out = mkvextract('chapters', self).out
+        chapters_out = self.fix_chapters_out(chapters_out)
+        if return_raw_xml:
+            return chapters_out
+        chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
+        chaps = Chapters.from_mkv_xml(chapters_xml, add_pre_gap=add_pre_gap)
+        return chaps
+
+    @classmethod
+    def fix_chapters_out(cls, chapters_out):
+        import xml.etree.ElementTree as ET
+        from .ffmpeg import ffmpeg
+        chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
+        chapters_root = chapters_xml.getroot()
+        for eEditionEntry in chapters_root.findall('EditionEntry'):
+            for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
+                e = eChapterAtom.find('ChapterTimeStart')
+                v = ffmpeg.Timestamp(e.text)
+                if v != 0.0:
+                    # In case initial frame is a I frame to be displayed after
+                    # subqequent P or B frames, the start time will be
+                    # incorrect.
+                    log.warning('Fixing first chapter start time %s to 0', v)
+                    if False:
+                        # mkvpropedit doesn't like unknown elements
+                        e.tag = 'original_ChapterTimeStart'
+                        e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
+                    e.text = str(ffmpeg.Timestamp(0))
+                    chapters_xml_io = io.StringIO()
+                    chapters_xml.write(chapters_xml_io,
+                                       xml_declaration=True,
+                                       encoding='unicode',  # Force string
+                                       )
+                    chapters_out = chapters_xml_io.getvalue()
+                break
+        return chapters_out
+
+    def save_chapters(self, chaps):
+        from qip.file import TempFile
+        chapters_xml = chaps.to_mkv_xml()
+        chapters_xml_file = TempFile.mkstemp(suffix='.chapters.xml', open=True, text=True)
+        chapters_xml.write(chapters_xml_file.fp,
+                           xml_declaration=True,
+                           encoding='unicode',  # Force string
+                           )
+        chapters_xml_file.close()
+
+        from qip.perf import perfcontext
+        with perfcontext('save chapters w/ mkvpropedit'):
+            mkvpropedit(
+                self,
+                actions=mkvpropedit.ActionArgs(
+                    '--chapters', chapters_xml_file,
+                ))
+
+    def prep_picture(self, src_picture, *,
+            yes=False,
+            ipod_compat=True,  # unused
+            keep_picture_file_name=None,
+            ):
+        from .file import TempFile
+        from .exec import do_exec_cmd
+
+        if not src_picture:
+            return None
+        picture = src_picture = Path(src_picture)
+
+        if src_picture.suffix not in (
+                #'.gif',
+                '.png',
+                '.jpg',
+                '.jpeg'):
+            if keep_picture_file_name:
+                picture = ImageFile(keep_picture_file_name)
+            else:
+                picture = TempFile.mkstemp(suffix='.png')
+            if src_picture.resolve() != picture.file_name.resolve():
+                log.info('Writing new picture %s...', picture)
+            from .ffmpeg import ffmpeg
+            ffmpeg_args = []
+            if True or yes:
+                ffmpeg_args += ['-y']
+            ffmpeg_args += ['-i', src_picture]
+            ffmpeg_args += ['-an', str(picture)]
+            ffmpeg(*ffmpeg_args)
+            src_picture = picture
+
+        return picture
+
+    def encode(self, *,
+               inputfiles,
+               chapters_file=None,
+               force_input_bitrate=None,
+               target_bitrate=None,
+               yes=False,
+               force_encode=False,
+               ipod_compat=True,
+               itunes_compat=True,
+               use_qaac=True,
+               channels=None,
+               picture=None,
+               expected_duration=None):
+        from .exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
+        from .parser import lines_parser
+        from .qaac import qaac
+        from .ffmpeg import ffmpeg
+        from .file import TempFile, safe_write_file_eval, safe_read_file
+        output_file = self
+
+        log.info('Writing %s...', output_file)
+
+        ffmpeg_cmd = []
+
+        ffmpeg_input_cmd = []
+        ffmpeg_output_cmd = []
+        if yes:
+            ffmpeg_cmd += ['-y']
+        ffmpeg_cmd += ['-stats']
+        # ffmpeg_output_cmd += ['-vn']
+        ffmpeg_format = 'matroska'
+        bCopied = False
+
+        if len(inputfiles) > 1:
+            temp_concat_file = TempFile.mkstemp(suffix='.concat.lst')
+            concat_file = ffmpeg.ConcatScriptFile(temp_concat_file)
+            concat_file.files = inputfiles
+            log.info('Writing %s...', concat_file)
+            concat_file.create(absolute=True)
+            log.info('Files:\n' +
+                         re.sub(r'^', '    ', safe_read_file(concat_file), flags=re.MULTILINE))
+            ffmpeg_input_cmd += [
+                '-f', 'concat', '-safe', '0', '-i', concat_file,
+            ]
+        else:
+            ffmpeg_input_cmd += [
+                '-i', inputfiles[0],
+            ]
+        ffmpeg_output_cmd += [
+            '-map', '0:a',
+        ]
+
+        if picture is not None:
+            ffmpeg_input_cmd += [
+                '-i', picture,
+            ]
+            ffmpeg_output_cmd += [
+                '-map', '1:v',
+            ]
+
+        ffmpeg_output_cmd += [
+            '-codec', 'copy',
+        ]
+
+        ffmpeg_output_cmd += [
+            '-map_chapters', -1,
+        ]
+
+        ffmpeg_output_cmd += [
+            '-f', ffmpeg_format,
+            output_file.file_name,
+        ]
+
+        out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd))
+        out = out.out
+        out_time = None
+        # {{{
+        out = clean_cmd_output(out)
+        parser = lines_parser(out.split('\n'))
+        while parser.advance():
+            parser.line = parser.line.strip()
+            if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
+                # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
+                # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
+                out_time = mm.parse_time_duration(parser.match.group('out_time'))
+            elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
+                log.warning('TODO: %s', parser.line)
+                pass
+            else:
+                pass  # TODO
+        # }}}
+        print('')
+        if expected_duration is not None:
+            expected_duration = ffmpeg.Timestamp(expected_duration)
+            log.info('Expected final duration: %s (%.3f seconds)', expected_duration, expected_duration)
+        if out_time is None:
+            log.warning('final duration unknown!')
+        else:
+            out_time = ffmpeg.Timestamp(out_time)
+            log.info('Final duration:          %s (%.3f seconds)', out_time, out_time)
+
+        if chapters_file:
+            log.info("Adding chapters...")
+            from .mp4 import mp4chaps
+            chaps = mp4chaps.parse_chapters_out(chapters_file.read())
+            output_file.save_chapters(chaps)
+
+        log.info('Adding tags...')
+        tags = copy.copy(output_file.tags)
+        tags.picture = None
+        output_file.write_tags(tags=tags, run_func=do_exec_cmd)
 
 class MkvFile(MatroskaFile, MovieFile):
 
@@ -699,4 +926,33 @@ class MkaFile(MatroskaFile, SoundFile):
 
 MatroskaFile._build_extension_to_class_map()
 
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
+class Mkvextract(Executable):
+
+    name = 'mkvextract'
+
+mkvextract = Mkvextract()
+
+class Mkvpropedit(Executable):
+
+    name = 'mkvpropedit'
+
+    OptionArgs = Executable.Args
+
+    ActionArgs = Executable.Args
+
+    kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
+
+    def build_cmd(self, file, *, options=None, actions=None):
+        # mkvpropedit [options] <file> <actions>
+        args = []
+        if options is not None:
+            options = Mkvpropedit.OptionArgs.new_from(options)
+            args += list(options.args) + self.kwargs_to_cmdargs(**options.keywords)
+        if file is not None:
+            args.append(file)
+        if actions is not None:
+            actions = Mkvpropedit.ActionArgs.new_from(actions)
+            args += list(actions.args) + self.kwargs_to_cmdargs(**actions.keywords)
+        return super().build_cmd(*args)
+
+mkvpropedit = Mkvpropedit()
