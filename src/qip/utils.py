@@ -25,6 +25,7 @@ from decimal import Decimal
 from fractions import Fraction
 import abc
 import collections
+import contextlib
 import datetime
 import enum
 import functools
@@ -34,6 +35,8 @@ import os
 import re
 import shutil
 import stat
+import sys
+import termios
 import time
 log = logging.getLogger(__name__)
 
@@ -745,5 +748,15 @@ def adviter(iterable, start=0):
         k = yield v
         while k is not None:
             k = yield iterable.send(k)
+
+@contextlib.contextmanager
+def save_and_restore_tcattr(*, fd=None, when=termios.TCSADRAIN):
+    if fd is None:
+        fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        yield
+    finally:
+        termios.tcsetattr(fd, when, old)
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
