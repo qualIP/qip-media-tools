@@ -116,6 +116,28 @@ class File(object):
         default='',
         type=propex.test_in(('', 't', 'b')))
 
+    @contextmanager
+    def rename_temporarily(self, *, suffix='.tmp',
+                           unlink_except=True,
+                           replace_ok=False,
+                           unlink_ok=False,
+                           ):
+        orig_name = self.file_name
+        temp_name = orig_name.with_name(orig_name.name + suffix)
+        try:
+            self.file_name = temp_name
+            yield
+        except:
+            if unlink_except:
+                self.unlink(force=True)
+            raise
+        finally:
+            self.file_name = orig_name
+        if replace_ok:
+            temp_name.replace(target=self)
+        if unlink_ok:
+            temp_name.unlink(force=True)
+
     @classmethod
     def argparse_type(cls, *args, **kwargs):
         return _argparse_type(file_cls=cls, *args, **kwargs)
