@@ -7,6 +7,8 @@
 
 from pathlib import Path
 import argparse
+import concurrent.futures
+import contextlib
 import decimal
 import errno
 import functools
@@ -27,11 +29,14 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
-from qip.mp4 import M4bFile, mp4chaps
-from qip.parser import *
 from qip.mm import *
-from qip.utils import byte_decode
+from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps
+from qip.matroska import MkaFile
+from qip.parser import *
+from qip.utils import byte_decode, save_and_restore_tcattr
 import qip.mm
+import qip.utils
+Auto = qip.utils.Constants.Auto
 
 # https://www.ffmpeg.org/ffmpeg.html
 
@@ -68,36 +73,11 @@ def get_audio_file_chapters(snd_file, chapter_naming_format):
         if hasattr(snd_file, 'OverDrive_MediaMarkers'):
             chaps = parse_OverDrive_MediaMarkers(snd_file.OverDrive_MediaMarkers)
     if not chaps and snd_file.file_name.suffix in qip.mm.get_mp4v2_app_support().extensions_can_read:
-        if mp4chaps.which(assert_found=False):
-            # {{{
-            try:
-                out = mp4chaps('-l', snd_file).out
-            except subprocess.CalledProcessError:
-                pass
-            else:
-                out = clean_cmd_output(out)
-                parser = lines_parser(out.split('\n'))
-                while parser.advance():
-                    if parser.line == '':
-                        pass
-                    elif parser.re_search(r'^(QuickTime|Nero) Chapters of "(.*)"$'):
-                        # QuickTime Chapters of "../Carl Hiaasen - Bad Monkey.m4b"
-                        # Nero Chapters of "../Carl Hiaasen - Bad Monkey.m4b"
-                        pass
-                    elif parser.re_search(r'^ +Chapter #0*(\d+) - (\d+:\d+:\d+\.\d+) - "(.*)"$'):
-                        #     Chapter #001 - 00:00:00.000 - "Bad Monkey"
-                        chaps.append(qip.mm.Chapter(
-                            start=parser.match.group(2), end=None,
-                            title=parser.match.group(3),
-                        ))
-                    elif parser.re_search(r'^File ".*" does not contain chapters'):
-                        # File "Mario Jean_ Gare au gros nounours!.m4a" does not contain chapters of type QuickTime and Nero
-                        pass
-                    else:
-                        app.log.debug('TODO: %s', parser.line)
-                        raise ValueError('Invalid mp4chaps line: %s' % (parser.line,))
-                        # TODO
-            # }}}
+        try:
+            chaps = snd_file.load_chapters()
+        except subprocess.CalledProcessError:
+            # TODO
+            raise
     if not chaps:
         chaps.append(qip.mm.Chapter(
             start=0, end=None,
@@ -152,6 +132,10 @@ def clean_audio_file_title(d, title):
     track = d.tags.track
     if track is not None:
         title = re.sub(r'^0*%s( *\[:-\] *)'.format(track), '', title)
+    m = re.search(r'^Chapter *0*(?P<chapter_no>\d+)$', title)
+    if m:
+        chapter_no = int(m.group('chapter_no'))
+        title = f'Chapter {chapter_no}'
     return title
 
 # }}}
@@ -214,7 +198,7 @@ def main():
 
     app.cache_dir = 'mkm4b-cache'  # in current directory!
 
-    in_tags = TrackTags(type='audiobook')
+    in_tags = TrackTags(contenttype='audiobook')
 
     # TODO app.parser.add_argument('--help', '-h', action='help')
     app.parser.add_argument('--version', '-V', action='version')
@@ -228,6 +212,7 @@ def main():
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
+    pgroup.add_argument('--jobs', '-j', type=int, nargs='?', default=1, const=Auto, help='Specifies the number of jobs (threads) to run simultaneously')
 
     pgroup = app.parser.add_argument_group('Alternate Actions')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -237,15 +222,12 @@ def main():
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--single', action='store_true', help='create single audiobooks files')
-    pgroup.add_argument('--output', '-o', dest='outputfile', default=argparse.SUPPRESS, help='specify the output file name')
+    pgroup.add_argument('--output', '-o', dest='outputfile', default=argparse.SUPPRESS, type=Path, help='specify the output file name')
+    pgroup.add_argument('--format', default=Auto, choices=('m4b', 'mka'), help='specify the output file format')
 
     pgroup = app.parser.add_argument_group('Compatibility')
-    xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--ipod-compat', dest='ipod_compat', default=True, action='store_true', help='iPod compatibility (default)')
-    xgroup.add_argument('--no-ipod-compat', dest='ipod_compat', default=argparse.SUPPRESS, action='store_false', help='iPod compatibility (disable)')
-    xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--itunes-compat', dest='itunes_compat', default=True, action='store_true', help='iTunes compatibility (default)')
-    xgroup.add_argument('--no-itunes-compat', dest='itunes_compat', default=argparse.SUPPRESS, action='store_false', help='iTunes compatibility (disable)')
+    pgroup.add_bool_argument('--ipod-compat', default=False, help='iPod compatibility')
+    pgroup.add_bool_argument('--itunes-compat', default=True, help='iTunes compatibility')
 
     pgroup = app.parser.add_argument_group('Chapters Control')
     pgroup.add_argument('--chapters', dest='chaptersfile', default=argparse.SUPPRESS, type=Path, help='specify the chapters file name')
@@ -382,22 +364,45 @@ def clean_file_name(file_name):
 # }}}
 
 def mkm4b(inputfiles, default_tags):
-    m4b = M4bFile(file_name=None)
+    exit_stack = contextlib.ExitStack()
+    thread_executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=None if app.args.jobs is Auto else app.args.jobs)
+    exit_stack.enter_context(thread_executor)
+
+    if app.args.format is Auto:
+        if 'outputfile' in app.args:
+            m4b = SoundFile.new_by_file_name(app.args.outputfile)
+        else:
+            m4b = M4bFile(file_name=None)
+    else:
+        if app.args.format == 'm4b':
+            m4b = M4bFile(file_name=None)
+        elif app.args.format == 'mka':
+            m4b = MkaFile(file_name=None)
+        else:
+            raise NotImplementedError(app.args.format)
     m4b.tags.update(default_tags)
 
     inputfiles = [
             inputfile if isinstance(inputfile, SoundFile) else SoundFile.new_by_file_name(file_name=inputfile)
             for inputfile in inputfiles]
-    for inputfile in inputfiles:
+    def task_extract_info(inputfile):
         if not inputfile.file_name.is_file():
             raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
         app.log.info('Reading %s...', inputfile)
         inputfile.extract_info(need_actual_duration=(len(inputfiles) > 1))
         #inputfile.tags.picture = None
         #app.log.debug(inputfile)
+    with save_and_restore_tcattr():
+        for x in thread_executor.map(task_extract_info, inputfiles):
+            pass
 
     app.log.debug('inputfiles = %r', inputfiles)
+    orig_inputfiles = inputfiles
     inputfiles = sorted(inputfiles, key=functools.cmp_to_key(qip.mm.soundfilecmp))
+    if inputfiles != orig_inputfiles:
+        app.log.warning("Rearranged list of input files!")
+
     for inputfile in inputfiles:
         if inputfile.tags[MediaTagEnum.title] is not None:
             inputfile.tags[MediaTagEnum.title] = clean_audio_file_title(inputfile, inputfile.tags[MediaTagEnum.title])
@@ -432,7 +437,7 @@ def mkm4b(inputfiles, default_tags):
             [MediaTagEnum.copyright,   MediaTagEnum.copyright],
             [MediaTagEnum.encodedby,   MediaTagEnum.encodedby],
             [MediaTagEnum.tool,        MediaTagEnum.tool],
-            [MediaTagEnum.type,        MediaTagEnum.type],
+            [MediaTagEnum.contenttype, MediaTagEnum.contenttype],
             ]:
             if m4b.tags[tag1] is None:
                 if m4b.tags[tag2] is not None:
@@ -472,23 +477,8 @@ def mkm4b(inputfiles, default_tags):
                 del parts[i]
             else:
                 i += 1
-        m4b.file_name = clean_file_name(" - ".join(parts) + '.m4b')
+        m4b.file_name = clean_file_name(" - ".join(parts) + m4b._common_extensions[0])
     # }}}
-
-    if len(inputfiles) > 1:
-        filesfile = m4b.file_name.with_suffix('.files.txt')
-        app.log.info('Writing %s...', filesfile)
-        def body(fp):
-            print('ffconcat version 1.0', file=fp)
-            for inputfile in inputfiles:
-                print('file \'%s\'' % (
-                    os.fspath(inputfile.file_name).replace('\\', '\\\\').replace('\'', '\'\\\'\''),
-                    ), file=fp)
-                if hasattr(inputfile, 'duration'):
-                    print('duration %.3f' % (inputfile.duration,), file=fp)
-        safe_write_file_eval(filesfile, body, text=True)
-        print('Files:')
-        print(re.sub(r'^', '    ', safe_read_file(filesfile), flags=re.MULTILINE))
 
     expected_duration = None
     chapters_file = TextFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
@@ -502,11 +492,18 @@ def mkm4b(inputfiles, default_tags):
         app.log.info('Reusing %s...', chapters_file)
     else:
         app.log.info('Writing %s...', chapters_file)
+        inputfile_to_chapters = {}
+        def task_fill_inputfile_to_chapters(inputfile):
+            nonlocal inputfile_to_chapters
+            inputfile_to_chapters[inputfile.file_name] = get_audio_file_chapters(inputfile, chapter_naming_format=app.args.chapter_naming_format)
+            print(f'inputfile_to_chapters[{inputfile.file_name}] = {inputfile_to_chapters[inputfile.file_name]!r}')
+        for x in thread_executor.map(task_fill_inputfile_to_chapters, inputfiles):
+            pass
         def body(fp):
             nonlocal expected_duration
             offset = qip.utils.Timestamp(0)
             for inputfile in inputfiles:
-                for chap_info in get_audio_file_chapters(inputfile, chapter_naming_format=app.args.chapter_naming_format):
+                for chap_info in inputfile_to_chapters[inputfile.file_name]:
                     print('%s %s' % (
                         mp4chaps.Timestamp(offset + chap_info.start),
                         replace_html_entities(chap_info.title),
@@ -638,7 +635,7 @@ def mkm4b(inputfiles, default_tags):
 
     app.log.info('DONE!')
 
-    if mp4info.which(assert_found=False):
+    if isinstance(m4b, Mpeg4ContainerFile) and mp4info.which(assert_found=False):
         print('')
         cmd = [mp4info.which()]
         cmd += [m4b.file_name]
