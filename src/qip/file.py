@@ -171,7 +171,10 @@ class File(object):
         return os.fspath(self.file_name)
 
     def __str__(self):
-        return str(self.file_name)
+        if self.file_name is None:
+            return 'None'
+        else:
+            return os.fspath(self)
 
     def __repr__(self):
         return "%s(%r)" % (self.__class__.__name__, str(self))
