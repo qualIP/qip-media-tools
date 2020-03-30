@@ -9,6 +9,7 @@ from pathlib import Path
 import collections
 import contextlib
 import copy
+import errno
 import functools
 import logging
 import os
@@ -26,6 +27,7 @@ from .utils import byte_decode
 from .utils import Timestamp as _BaseTimestamp, Ratio
 from qip.file import *
 from qip.collections import OrderedSet
+from qip.app import app
 
 class Timestamp(_BaseTimestamp):
     '''hh:mm:ss.sssssssss format'''
@@ -117,9 +119,11 @@ class _FfmpegSpawnMixin(_SpawnMixin):
     current_info_section = None
     streams_info = None
 
-    def __init__(self, cmd, invocation_purpose=None,
+    def __init__(self, *args, invocation_purpose=None,
                  show_progress_bar=None, progress_bar_max=None, progress_bar_title=None,
+                 encoding=None, errors=None,
                  env=None, **kwargs):
+        assert encoding is not None or errors is not None, 'text mode required for ffmpeg spawn parsing'
         self.invocation_purpose = invocation_purpose
         if show_progress_bar is None:
             show_progress_bar = progress_bar_max is not None
@@ -131,16 +135,40 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             'input': {},
             'output': {},
         }
+        if self.invocation_purpose == 'cropdetect':
+            self.cropdetect_result = None
+            self.cropdetect_frames_count = 0
         env = dict(env or os.environ)
         env['AV_LOG_FORCE_NOCOLOR'] = '1'
         env['TERM'] = 'dumb'
         env.pop('TERMCAP', None)
-        super().__init__(cmd, env=env, **kwargs)
+        super().__init__(*args, env=env,
+                         encoding=encoding, errors=errors,
+                         **kwargs)
 
-    def generic_info(self, str):
-        if not log.isEnabledFor(logging.DEBUG):
-            return True
-        return self.unknown_line(str)
+    def log_line(self, str, *, level=logging.INFO):
+        if log.isEnabledFor(level):
+            str = str.rstrip('\r\n')
+            if str:
+                if self.on_progress_bar_line:
+                    print('')
+                    self.on_progress_bar_line = False
+                log.log(level, str)
+        return True
+
+    def print_line(self, str, *, level=logging.INFO, style=None):
+        if log.isEnabledFor(level):
+            str = str.rstrip('\r\n')
+            if str:
+                if self.on_progress_bar_line:
+                    print('')
+                    self.on_progress_bar_line = False
+                if style:
+                    from prompt_toolkit.formatted_text import FormattedText
+                    app.print(FormattedText([(style, str)]))
+                else:
+                    app.print(str)
+        return True
 
     def start_file_info_section(self, str, inout):
         file_index = int(byte_decode(self.match.group('index')))
@@ -155,7 +183,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             except KeyError:
                 pass
         log.debug('streams_info=%r', self.streams_info)
-        self.generic_info(str)
+        self.print_line(str, level=logging.DEBUG)
         return True
 
     start_input_info_section = functools.partialmethod(start_file_info_section, inout='input')
@@ -172,19 +200,22 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             except KeyError:
                 pass
         log.debug('streams_info=%r', self.streams_info)
-        self.generic_info(str)
+        self.print_line(str, level=logging.DEBUG)
         return True
 
     def progress_line(self, str):
         if self.progress_bar is not None:
             if self.progress_bar_max:
-                if isinstance(self.progress_bar_max, Timestamp):
-                    self.progress_bar.goto(Timestamp(byte_decode(self.match.group('time'))).seconds)
+                if isinstance(self.progress_bar_max, _BaseTimestamp):
+                    if Timestamp(byte_decode(self.match.group('time'))).seconds >= 0.0:
+                        self.progress_bar.goto(Timestamp(byte_decode(self.match.group('time'))).seconds)
                 else:
-                    self.progress_bar.goto(int(self.match.group('frame')))
+                    if int(self.match.group('frame')) >= 0:
+                        self.progress_bar.goto(int(self.match.group('frame')))
                 fps = self.match.group('fps')
                 if fps:
-                    self.progress_bar.fps = Decimal(byte_decode(fps))
+                    if Decimal(byte_decode(fps)) >= 0:
+                        self.progress_bar.fps = Decimal(byte_decode(fps))
             else:
                 self.progress_bar.next()
             self.on_progress_bar_line = True
@@ -197,16 +228,19 @@ class _FfmpegSpawnMixin(_SpawnMixin):
         return True
 
     def parsed_cropdetect_line(self, str):
+        self.cropdetect_result = byte_decode(self.match.group('crop'))
+        if self.invocation_purpose == 'cropdetect':
+            self.cropdetect_frames_count += 1
         if self.progress_bar is not None:
-            crop = None
             if self.progress_bar_max:
                 if self.progress_bar.index == 0:
                     #self.progress_bar.message = f'{self.command} cropdetect'
                     self.progress_bar.message = 'cropdetect'
                     self.progress_bar.suffix += ' crop=%(crop)s'
-                self.progress_bar.crop = crop = byte_decode(self.match.group('crop'))
-                if isinstance(self.progress_bar_max, Timestamp):
-                    self.progress_bar.goto(Timestamp(byte_decode(self.match.group('time'))).seconds)
+                self.progress_bar.crop = self.cropdetect_result
+                if isinstance(self.progress_bar_max, _BaseTimestamp):
+                    if Timestamp(byte_decode(self.match.group('time'))).seconds >= 0.0:
+                        self.progress_bar.goto(Timestamp(byte_decode(self.match.group('time'))).seconds)
                 else:
                     # self.progress_bar.goto(int(self.match.group('frame')))
                     self.progress_bar.next()
@@ -216,14 +250,14 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             self.on_progress_bar_line = True
             try:
                 stop_crop = self.invocation_purpose == 'cropdetect' \
-                    and crop and crop == '{width}:{height}:0:0'.format_map(self.streams_info['input'][0]['streams']['0:0'])
+                    and self.cropdetect_result == '{width}:{height}:0:0'.format_map(self.streams_info['input'][0]['streams']['0:0'])
             except KeyError as e:
                 pass  # print('') ; print(f'e={e}')
             else:
                 if stop_crop:
                     log.debug('No cropping possible; Quit!')
-                    self.send(b'q')
-                    return False
+                    self.send(b'q' if self.string_type is bytes else 'q')
+                    # return False
         else:
             str = byte_decode(str).rstrip('\r\n')
             if self.on_progress_bar_line:
@@ -247,36 +281,37 @@ class _FfmpegSpawnMixin(_SpawnMixin):
         return True
 
     def unknown_info_line(self, str):
-        if not log.isEnabledFor(logging.DEBUG):
-            return True
-        return self.unknown_line(str)
+        return self.unknown_line(str, level=logging.DEBUG, style='class:info')
 
     def unknown_verbose_line(self, str):
-        if not log.isEnabledFor(logging.DEBUG):
-            return True
-        return self.unknown_line(str)
+        return self.unknown_line(str, level=logging.DEBUG, style='class:verbose')
+
+    def unknown_warning_line(self, str):
+        return self.unknown_line(str, level=logging.WARNING, style='class:warning')
 
     def unknown_error_line(self, str):
-        return self.generic_error(str)
+        return self.unknown_line(str, level=logging.ERROR, style='class:error')
 
-    def unknown_line(self, str):
-        str = byte_decode(str).rstrip('\r\n')
+    def unknown_line(self, str, **kwargs):
+        str = str.rstrip('\r\n')
         if str:
-            if self.on_progress_bar_line:
-                print('')
-                self.on_progress_bar_line = False
-            print(f'UNKNOWN: {str!r}')
+            self.print_line(f'UNKNOWN: {str!r}', **kwargs)
         return True
 
-    def generic_error(self, str):
-        str = byte_decode(str).rstrip('\r\n')
-        if self.on_progress_bar_line:
-            print('')
-            self.on_progress_bar_line = False
-        log.error(str)
+    def generic_error(self, str, level=logging.ERROR, error_tag=None):
+        str = str.rstrip('\r\n')
+        self.log_line(str, level=level)
         self.num_errors += 1
-        self.errors_seen.add(str)
+        self.errors_seen.add(error_tag or str)
         return True
+
+    def generic_debug_line(self, str):
+        self.log_line(str, level=logging.DEBUG)
+        return True
+
+    def prompt_file_overwrite(self, str):
+        self.generic_error(str, error_tag='file-already-exists')
+        raise OSError(errno.EEXIST, byte_decode(self.match.group('file_name')))
 
     def terminal_escape_sequence(self, str):
         return True
@@ -298,29 +333,36 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [info] frame=  776 fps=119 q=-0.0 size=  129161kB time=00:00:25.86 bitrate=40915.9kbits/s speed=3.95x
             # size=       0kB time=01:03:00.94 bitrate=   0.0kbits/s speed=2.17e+07x
             # frame= 2235 fps=221 q=-0.0 size= 1131482kB time=00:01:14.60 bitrate=124237.6kbits/s dup=447 drop=0 speed=7.37x
-            (fr'^(?:\[info\] )?(?:frame= *(?P<frame>\d+) +fps= *(?P<fps>\S+) +q= *(?P<q>\S+) )?L?size= *(?P<size>\S+) +time= *(?P<time>\S+) +bitrate= *(?P<bitrate>\S+)(?: +dup= *(?P<dup>\S+))?(?: +drop= *(?P<drop>\S+))? +speed= *(?P<speed>\S+) *{re_eol}', self.progress_line),
+            (fr'^(?:\[info\]\s)?(?:frame= *(?P<frame>\d+) +fps= *(?P<fps>\S+) +q= *(?P<q>\S+) )?L?size= *(?P<size>\S+) +time= *(?P<time>\S+) +bitrate= *(?P<bitrate>\S+)(?: +dup= *(?P<dup>\S+))?(?: +drop= *(?P<drop>\S+))? +speed= *(?P<speed>\S+) *{re_eol}', self.progress_line),
 
             # [Parsed_cropdetect_1 @ 0x56473433ba40] x1:0 x2:717 y1:0 y2:477 w:718 h:478 x:0 y:0 pts:504504000 t:210.210000 crop=718:478:0:0
-            (fr'^\[Parsed_cropdetect\S* @ \S+\] (?:\[info\] )?x1:(?P<x1>\S+) x2:(?P<x2>\S+) y1:(?P<y1>\S+) y2:(?P<y2>\S+) w:(?P<w>\S+) h:(?P<h>\S+) x:(?P<x>\S+) y:(?P<y>\S+) pts:(?P<pts>\S+) t:(?P<time>\S+) crop=(?P<crop>\S+) *{re_eol}', self.parsed_cropdetect_line),
+            (fr'^\[Parsed_cropdetect\S* @ \S+\]\s(?:\[info\]\s)?x1:(?P<x1>\S+) x2:(?P<x2>\S+) y1:(?P<y1>\S+) y2:(?P<y2>\S+) w:(?P<w>\S+) h:(?P<h>\S+) x:(?P<x>\S+) y:(?P<y>\S+) pts:(?P<pts>\S+) t:(?P<time>\S+) crop=(?P<crop>\S+) *{re_eol}', self.parsed_cropdetect_line),
 
-            (fr'^\[ffmpeg-2pass-pipe\] (?P<pass>PASS [12]){re_eol}', self.progress_pass),
+            (fr'^\[ffmpeg-2pass-pipe\]\s(?P<pass>PASS [12]){re_eol}', self.progress_pass),
 
             # [info] Input #0, h264, from 'test-movie3/track-00-video.h264':
             # [info] Input #0, h264, from 'pipe:':
-            (fr'^(?:\[info\] )? *Input #(?P<index>\S+), (?P<format>\S+), from \'(?P<file_name>.+)\':{re_eol}', self.start_input_info_section),
+            (fr'^(?:\[info\]\s)? *Input #(?P<index>\S+), (?P<format>\S+), from \'(?P<file_name>.+?)\':{re_eol}', self.start_input_info_section),
             # [info] Output #0, null, to 'pipe:':
-            (fr'^(?:\[info\] )? *Output #(?P<index>\S+), (?P<format>\S+), to \'(?P<file_name>.+)\':{re_eol}', self.start_output_info_section),
+            (fr'^(?:\[info\]\s)? *Output #(?P<index>\S+), (?P<format>\S+), to \'(?P<file_name>.+?)\':{re_eol}', self.start_output_info_section),
             # [info]     Stream #0:0: Video: h264 (High), yuv420p(progressive), 1920x1080 [SAR 1:1 DAR 16:9], 24.08 fps, 23.98 tbr, 1200k tbn, 47.95 tbc
             # [info]     Stream #0:0: Video: wrapped_avframe, yuv420p, 1920x1080 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn, 23.98 tbc
             # [info]     Stream #0:0: Video: wrapped_avframe, 1 reference frame, yuv420p(left), 720x480 [SAR 8:9 DAR 4:3], q=2-31, 200 kb/s, 29.97 fps, 29.97 tbn, 29.97 tbc
             # [info]     Stream #0:0: Video: mpeg2video (Main), 1 reference frame, yuv420p(tv, top first, left), 720x480 [SAR 8:9 DAR 4:3], 29.97 fps, 29.97 tbr, 1200k tbn, 59.94 tbc
             # [info]     Stream #0:0: Video: h264 (High), 1 reference frame, yuv420p(progressive, left), 1920x1080 (1920x1088) [SAR 1:1 DAR 16:9], 24.08 fps, 23.98 tbr, 1200k tbn, 47.95 tbc
             # [info]     Stream #0:0: Video: vc1 (Advanced), 1 reference frame (WVC1 / 0x31435657), yuv420p(bt709, progressive, left), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 23.98 tbn, 47.95 tbc
-            (fr'^(?:\[info\] )? *Stream #(?P<stream_no>\S+): (?P<stream_type>Video): (?P<format1>[^,]+)(?:, (?P<num_ref_frames>\d+) reference frame(?: \([^)]+\))?)?, (?P<format2>[^(,]+(?:\([^)]+\))?), (?P<width>\d+)x(?P<height>\d+) .*{re_eol}', self.start_stream_info_section),
+            (fr'^(?:\[info\]\s)? *Stream #(?P<stream_no>\S+): (?P<stream_type>Video): (?P<format1>[^,]+)(?:, (?P<num_ref_frames>\d+) reference frame(?: \([^)]+\))?)?, (?P<format2>[^(,]+(?:\([^)]+\))?), (?P<width>\d+)x(?P<height>\d+) [^\r\n]*{re_eol}', self.start_stream_info_section),
 
-            (fr'^\[info\] [^\r\n]*?{re_eol}', self.unknown_info_line),
-            (fr'^\[verbose\] [^\r\n]*?{re_eol}', self.unknown_verbose_line),
-            (fr'^\[error\] [^\r\n]*?{re_eol}', self.unknown_error_line),
+            (fr'^(?:\[warning\]\s)?Overriding aspect ratio with stream copy may produce invalid files{re_eol}', self.generic_debug_line),
+            (fr'^(?:\[warning\]\s)?Output file is empty, nothing was encoded \(check -ss / -t / -frames parameters if used\){re_eol}', functools.partial(self.generic_error, level=logging.WARNING, error_tag='output-file-empty-nothing-encoded')),
+
+            # File 'TheTruthAboutCatsAndDogs/title_t00.demux.mkv' already exists. Overwrite ? [y/N]
+            (fr'^File \'(?P<file_name>.+?)\' already exists\. Overwrite \? \[y/N\] *$', self.prompt_file_overwrite),
+
+            (fr'^\[info\]\s[^\r\n]*?{re_eol}', self.unknown_info_line),
+            (fr'^\[verbose\]\s[^\r\n]*?{re_eol}', self.unknown_verbose_line),
+            (fr'^\[warning\]\s[^\r\n]*?{re_eol}', self.unknown_warning_line),
+            (fr'^\[error\]\s[^\r\n]*?{re_eol}', self.unknown_error_line),
 
             # \x1b[48;5;0m
             # \x1b[38;5;226m
@@ -340,7 +382,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
                 except ImportError:
                     pass
                 else:
-                    if isinstance(self.progress_bar_max, Timestamp):
+                    if isinstance(self.progress_bar_max, _BaseTimestamp):
                         self.progress_bar = ProgressBar(self.progress_bar_title or self.command,
                                                         max=self.progress_bar_max.seconds)
                         self.progress_bar.suffix = '%(percent).1f%% time=%(index).1f/%(max).1f fps=%(fps).2f remaining=%(eta)ds'
@@ -370,6 +412,10 @@ class _FfmpegSpawnMixin(_SpawnMixin):
         return super().__exit__(exc_type, exc_value, exc_traceback)
 
 class FfmpegSpawn(_FfmpegSpawnMixin, _exec_spawn):
+
+    def __init__(self, *args, logfile=None, **kwargs):
+        # if logfile is None: import sys ; logfile = sys.stdout
+        super().__init__(*args, logfile=logfile, **kwargs)
     pass
 
 class FfmpegPopenSpawn(_FfmpegSpawnMixin, _exec_popen_spawn):
@@ -379,6 +425,9 @@ class _Ffmpeg(Executable):
 
     Timestamp = Timestamp
     ConcatScriptFile = ConcatScriptFile
+
+    encoding = 'utf-8'
+    encoding_errors = 'replace'
 
     run_func = Executable._spawn_run_func
     # TODO popen_func = Executable._spawn_popen_func
@@ -588,39 +637,39 @@ class Ffmpeg(_Ffmpeg):
                    default_ffmpeg_args=[],
                    dry_run=False):
         stream_crop = None
+        ffmpeg_args = list(default_ffmpeg_args)
+        if cropdetect_seek is not None:
+            ffmpeg_args += [
+                '-ss', Timestamp(cropdetect_seek),
+            ]
+        if skip_frame_nokey:
+            ffmpeg_args += [
+                '-skip_frame', 'nokey',
+            ]
+        video_filter_specs = list(video_filter_specs or [])
+        video_filter_specs.append('cropdetect=24:2:0:0')  # Handbrake?
+        #video_filter_specs.append('cropdetect=24:16:0:0')  # ffmpeg default
+        ffmpeg_args += [
+            '-i', input_file,
+            '-t', Timestamp(cropdetect_duration),
+            '-filter:v', ','.join(video_filter_specs),
+        ]
+        ffmpeg_args += [
+            '-f', 'null', '-',
+        ]
+
+        if log.isEnabledFor(logging.DEBUG):
+            loglevel = 'level+verbose'
+        elif log.isEnabledFor(logging.VERBOSE):
+            loglevel = 'info'
+            loglevel = 'level+' + loglevel
+            # kwargs.setdefault('stats', True)  # included in info
+        else:
+            loglevel = 'info'  # 'warning'
+            loglevel = 'level+' + loglevel
+            # kwargs.setdefault('stats', True)  # included in info
+
         with perfcontext('Cropdetect w/ ffmpeg'):
-            ffmpeg_args = list(default_ffmpeg_args)
-            if cropdetect_seek is not None:
-                ffmpeg_args += [
-                    '-ss', Timestamp(cropdetect_seek),
-                ]
-            if skip_frame_nokey:
-                ffmpeg_args += [
-                    '-skip_frame', 'nokey',
-                ]
-            video_filter_specs = list(video_filter_specs or [])
-            video_filter_specs.append('cropdetect=24:2:0:0')  # Handbrake?
-            #video_filter_specs.append('cropdetect=24:16:0:0')  # ffmpeg default
-            ffmpeg_args += [
-                '-i', input_file,
-                '-t', Timestamp(cropdetect_duration),
-                '-filter:v', ','.join(video_filter_specs),
-            ]
-            ffmpeg_args += [
-                '-f', 'null', '-',
-            ]
-
-            if log.isEnabledFor(logging.DEBUG):
-                loglevel = 'level+verbose'
-            elif log.isEnabledFor(logging.VERBOSE):
-                loglevel = 'info'
-                loglevel = 'level+' + loglevel
-                # kwargs.setdefault('stats', True)  # included in info
-            else:
-                loglevel = 'info'  # 'warning'
-                loglevel = 'level+' + loglevel
-                # kwargs.setdefault('stats', True)  # included in info
-
             out = self(*ffmpeg_args,
                        show_progress_bar=show_progress_bar,
                        progress_bar_max=Timestamp(cropdetect_duration),
@@ -628,28 +677,22 @@ class Ffmpeg(_Ffmpeg):
                        invocation_purpose='cropdetect',
                        dry_run=dry_run,
                        loglevel=loglevel)
+
         if not dry_run:
-            frames_count = 0
-            last_cropdetect_match = None
-            parser = lines_parser(byte_decode(out.out).split('\n'))
-            while parser.advance():
-                parser.line = parser.line.strip()
-                m = re.match(r'.*Parsed_cropdetect.* crop=(\d+):(\d+):(\d+):(\d+)$', parser.line)
-                if m:
-                    frames_count += 1
-                    last_cropdetect_match = m
-            if not last_cropdetect_match:
-                # Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)
-                # -> skip_frame_nokey=False
-                raise ValueError('Crop detection failed')
-            if skip_frame_nokey and frames_count < 2:
+            if skip_frame_nokey and out.spawn.cropdetect_frames_count < 2:
+                log.warning('Crop detection failed; Trying again with non-key frames.')
                 return self.cropdetect(input_file,
                                        skip_frame_nokey=False,
                                        cropdetect_seek=cropdetect_seek,
                                        cropdetect_duration=cropdetect_duration,
                                        default_ffmpeg_args=default_ffmpeg_args,
                                        dry_run=dry_run)
-            m = last_cropdetect_match
+            if not out.spawn.cropdetect_frames_count:
+                # Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)
+                # -> skip_frame_nokey=False
+                raise ValueError('Crop detection failed')
+            m = re.match(r'^(\d+):(\d+):(\d+):(\d+)$', out.spawn.cropdetect_result)
+            assert m, f'Unrecognized cropdetect result: {out.spawn.cropdetect_result!r}'
             w, h, l, t = stream_crop = (
                 int(m.group(1)),
                 int(m.group(2)),
@@ -736,9 +779,14 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
                 run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', stdout_file.name))
             else:
                 run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
-                if not dry_run:
-                    run_kwargs['stdin'] = stack.enter_context(stdin_file.open("rb"))
-                    run_kwargs['stdout'] = stack.enter_context(stdout_file.open("wb"))
+                args = [
+                    '-i', stdin_file,
+                    '-o', stdout_file,
+                    '--',
+                ] + args
+                # if not dry_run:
+                #     run_kwargs['stdin'] = stack.enter_context(stdin_file.open("rb"))
+                #     run_kwargs['stdout'] = stack.enter_context(stdout_file.open("wb"))
                 if progress_bar_max is not None:
                     run_kwargs['progress_bar_max'] = progress_bar_max
                 if progress_bar_title is not None:
@@ -818,7 +866,7 @@ class Ffprobe(_Ffmpeg):
             'pkt_dts_time': NA_or_Decimal,  # 0.000000
             'pkt_duration': NA_or_int,  # 32
             'pkt_duration_time': NA_or_Decimal,  # 0.032000
-            'pkt_pos': int,  # 13125
+            'pkt_pos': NA_or_int,  # 13125
             'pkt_pts': NA_or_int,  # 0
             'pkt_pts_time': NA_or_Decimal,  # 0.000000
             'pkt_size': int,  # 1536
