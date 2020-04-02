@@ -5,17 +5,14 @@ all:
 install-pip3:
 	sudo apt-get install python3-pip
 
-.PHONY: install-audio-tools
-install-audio-tools:
-	sudo apt-get install ffmpeg
+.PHONY: install-read-only
+install-read-only:
+	pip3 install . --user
 
 .PHONY: develop
 develop:
-	pip3 install --user --editable .
-
-.PHONY: install-recommends
-install-recommends:
-	pip3 install --user -r recommends.txt
+	# pip3 install . --user --editable
+	python3 setup.py develop --user
 
 .PHONY: build-qip-tools-depends
 build-qip-tools-depends: qip-tools-depends_1.0_all.deb

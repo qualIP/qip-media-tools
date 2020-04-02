@@ -77,7 +77,15 @@ setup(
             'pexpect',
             'pint',
             'ConfigArgParse',
+            'configobj',
             'mutagen>=1.42.0',
+            'musicbrainzngs',
+            'unidecode',
+            'progress',
+            'prompt_toolkit >= 2, <3',
+            'tmdbv3api',
+            'tvdb_api',
+            'coloredlogs',
             ],
 
     # List additional groups of dependencies here (e.g. development
