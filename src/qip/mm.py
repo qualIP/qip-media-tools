@@ -51,7 +51,8 @@ from qip.isocountry import isocountry, IsoCountry
 from qip.file import *
 from qip.parser import *
 from qip.propex import propex
-from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise
+from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise, Timestamp
+import qip.utils
 
 from fractions import Fraction
 import io
@@ -63,9 +64,113 @@ from .file import BinaryFile
 from .ffmpeg import ffmpeg, ffprobe
 
 
+def _tDebugTag(value):
+    app.log.debug('_tDebugTag(value=%r)', value)
+    raise ValueError('_tDebugTag(value=%r)' % (value,))
+
+def _tNullTag(value):
+    if value is None:
+        return None
+    elif type(value) is str:
+        if value.strip() in ('', 'null', 'XXX'):
+            return None
+    raise ValueError('Not a null tag')
+
+def _tNullDate(value):
+    try:
+        return _tNullTag(value)
+    except ValueError:
+        if type(value) is str:
+            value = int(value)
+        if type(value) is int:
+            if value == 0:
+                return None
+    raise ValueError('Not a null date tag')
+
+def _tPosIntNone0(value):
+    value = int(value)
+    if value < 0:
+        raise ValueError('Not a positive integer')
+    return value or None
+
+def _tBool(value):
+    if type(value) is bool:
+        return value
+    elif type(value) is int:
+        if value == 0:
+            return False
+        elif value == 1:
+            return True
+    elif type(value) is str:
+        try:
+            return {
+                '0': False,
+                'false': False,
+                'off': False,
+                'no': False,
+                '1': True,
+                'true': True,
+                'on': True,
+                'yes': True,
+            }[value.lower()]
+        except KeyError:
+            pass
+    raise ValueError('Not a boolean')
+
+def _tCommentTag(value):
+    if value is None:
+        return None
+    elif type(value) is str:
+        return (value,)
+    else:
+        return tuple(value)
+
+def _tIntOrList(value):
+    if type(value) is int:
+        return (value,)
+    if type(value) is str:
+        value = value.replace(',', ' ').split()
+    if isinstance(value, (tuple, list)):
+        if not value:
+            return None
+        return tuple(int(e) for e in value)
+    raise ValueError('Not a valid integer or list of: %r' % (value,))
+
+def _tPicture(value, accept_iterable=True):
+    if accept_iterable and isinstance(value, (tuple, list)):
+        return tuple(_tPicture(e, accept_iterable=False) for e in value)
+    if type(value) is str:
+        # value = qip.file.cache_url(value)
+        return value
+    if isinstance(value, File):
+        return value
+    if isinstance(value, PictureTagInfo):
+        return value
+    raise ValueError('Not a valid string or file: %r' % (value,))
+
+
+# parse_time_duration {{{
+
+def parse_time_duration(dur):
+    from .utils import Timestamp as utils_Timestamp
+    try:
+        return utils_Timestamp(dur)
+    except ValueError:
+        from .ffmpeg import Timestamp as ffmpeg_Timestamp
+        try:
+            return utils_Timestamp(ffmpeg_Timestamp(dur))
+        except ValueError:
+            pass
+        raise
+
+# }}}
+
 class PictureTagInfo(object):
 
     def __init__(self, format, description, **kwargs):
+        """
+        format: mime type (image/jpeg)
+        """
         self.format = format
         self.description = description
         super().__init__(**kwargs)
@@ -76,15 +181,55 @@ class PictureTagInfo(object):
 
 class Chapter(object):
 
+    start = propex(
+        name='start',
+        type=(parse_time_duration))
+
+    end = propex(
+        name='end',
+        type=(None, parse_time_duration))
+
+    uid = propex(
+        name='uid',
+        type=(None, int))
+
+    hidden = propex(
+        name='hidden',
+        type=(None, _tBool))
+
+    enabled = propex(
+        name='enabled',
+        type=(None, _tBool))
+
+    title = propex(
+        name='title',
+        type=(None, propex.test_istype(str)))
+
+    no = propex(
+        name='no',
+        type=(None, int))
+
+    lang = propex(
+        name='lang',
+        type=(None, isolang))
+
     def __init__(self, start, end, *,
-                 uid=None, hidden=False, enabled=True, title=None, no=None):
-        self.start = ffmpeg.Timestamp(start)
-        self.end = ffmpeg.Timestamp(end)
-        self.uid = uid
+                 uid=None, hidden=False, enabled=True, title=None, no=None,
+                 lang=None):
+        self.start = parse_time_duration(start)
+        self.end = None if end is None else parse_time_duration(end)
+        self.uid = None if uid is None else int(uid)
+        if hidden not in (None, True, False):
+            raise ValueError(f'Invalid hidden argument: {hidden!r}')
         self.hidden = hidden
+        if enabled not in (None, True, False):
+            raise ValueError(f'Invalid enabled argument: {enabled!r}')
         self.enabled = enabled
+        if title is not None and type(title) is not str:
+            raise ValueError(f'Invalid title argument: {title!r}')
         self.title = title
-        self.no = no
+        self.no = None if no is None else int(no)
+        self.lang = None if lang is None else isolang(lang)
 
     @classmethod
     def from_mkv_xml_ChapterAtom(cls, eChapterAtom, **kwargs):
@@ -95,21 +240,48 @@ class Chapter(object):
         start = eChapterAtom.find('ChapterTimeStart').text
         #   <ChapterFlagHidden>0</ChapterFlagHidden>
         eChapterFlagHidden = eChapterAtom.find('ChapterFlagHidden')
-        hidden = eChapterFlagHidden and {'0': False, '1': True}[eChapterFlagHidden.text]
+        hidden = {'0': False, '1': True}[eChapterFlagHidden.text] if eChapterFlagHidden is not None else False
         #   <ChapterFlagEnabled>1</ChapterFlagEnabled>
         eChapterFlagEnabled = eChapterAtom.find('ChapterFlagEnabled')
         enabled = (not eChapterFlagEnabled) or {'0': False, '1': True}[eChapterFlagEnabled.text]
         #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>
         end = eChapterAtom.find('ChapterTimeEnd').text
+        # TODO multi-language
         #   <ChapterDisplay>
+        eChapterDisplay = eChapterAtom.find('ChapterDisplay')
         #     <ChapterString>Chapter 01</ChapterString>
-        title = eChapterAtom.find('ChapterDisplay').find('ChapterString').text
+        title = eChapterDisplay.find('ChapterString').text
         #     <ChapterLanguage>eng</ChapterLanguage>
+        lang = eChapterDisplay.find('ChapterLanguage').text
         #   </ChapterDisplay>
         # </ChapterAtom>
         return cls(start=start, end=end,
                    uid=uid, hidden=hidden, enabled=enabled,
-                   title=title, **kwargs)
+                   title=title, lang=lang, **kwargs)
+
+    def to_mkv_xml_ChapterAtom(self):
+        eChapterAtom = ET.Element('ChapterAtom')
+        if self.uid is not None:
+            eChapterUID = ET.SubElement(eChapterAtom, 'ChapterUID')
+            eChapterUID.text = str(self.uid)
+        eChapterTimeStart = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
+        eChapterTimeStart.text = str(ffmpeg.Timestamp(self.start))
+        eChapterFlagHidden = ET.SubElement(eChapterAtom, 'ChapterFlagHidden')
+        eChapterFlagHidden.text = '0' if self.hidden is False else '1'
+        eChapterFlagEnabled = ET.SubElement(eChapterAtom, 'ChapterFlagEnabled')
+        eChapterFlagEnabled.text = '0' if self.enabled is False else '1'
+        if self.end is not None:
+            eChapterTimeEnd = ET.SubElement(eChapterAtom, 'ChapterTimeEnd')
+            eChapterTimeEnd.text = str(ffmpeg.Timestamp(self.end))
+        # TODO multi-language
+        if self.title is not None:
+            eChapterDisplay = ET.SubElement(eChapterAtom, 'ChapterDisplay')
+            eChapterString = ET.SubElement(eChapterDisplay, 'ChapterString')
+            eChapterString.text = self.title
+            if self.lang is not None:
+                eChapterLanguage = ET.SubElement(eChapterDisplay, 'ChapterLanguage')
+                eChapterLanguage.text = self.lang.iso639_2
+        return eChapterAtom
 
     def __str__(self):
         s = ''
@@ -120,13 +292,63 @@ class Chapter(object):
             s += ' %r' % (self.title,)
         return s
 
+    def __deepcopy__(self, memo=None):
+        return self.__class__(start=self.start,
+                              end=self.end,
+                              uid=getattr(self, 'uid', None),
+                              hidden=self.hidden,
+                              enabled=self.enabled,
+                              title=self.title,
+                              no=self.no,
+                              lang=self.lang,
+                              )
+
+    deepcopy = __deepcopy__
+
+    __copy__ = __deepcopy__
+
+    copy = __copy__
+
+    def __sub__(self, other):
+        v = self.copy()
+        v -= other
+        return v
+
+    def __isub__(self, other):
+        if isinstance(other, Chapter):
+            self.end -= other.start
+            self.start -= other.start
+            update_title = (self.title == f'Chapter {self.no}'
+                            or self.title == f'Chapter {self.no:02d}')
+            self.no -= other.no
+            if update_title:
+                self.title = f'Chapter {self.no}'
+        else:
+            other = Timestamp(other)
+            self.start -= other
+            self.end -= other
+        return self
 
 class Chapters(object):
+
+    MKV_XML_VALUE_TAGS = {
+        'EditionFlagHidden',
+        'EditionFlagDefault',
+        'ChapterUID',
+        'ChapterTimeStart',
+        'ChapterFlagHidden',
+        'ChapterFlagEnabled',
+        'ChapterTimeEnd',
+        'ChapterString',
+        'ChapterLanguage',
+    }
 
     def __init__(self, chapters=None, add_pre_gap=False):
         self.chapters = list(chapters or [])
         if self.chapters and add_pre_gap and self.chapters[0].start > 0:
-            chap = Chapter(0, self.chapters[0].start, title='pre-gap', hidden=True)
+            chap = Chapter(
+                start=0, end=self.chapters[0].start,
+                title='pre-gap', hidden=True)
             self.chapters.insert(0, chap)
 
     @classmethod
@@ -158,9 +380,52 @@ class Chapters(object):
             for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1)]
         return cls(chapters, **kwargs)
 
+    def to_mkv_xml(self):
+        xml = ET.ElementTree(ET.fromstring(
+            '''<?xml version="1.0"?>
+<!-- <!DOCTYPE Chapters SYSTEM "matroskachapters.dtd"> -->
+<Chapters>
+  <EditionEntry>
+    <EditionFlagHidden>0</EditionFlagHidden>
+    <EditionFlagDefault>1</EditionFlagDefault>
+  </EditionEntry>
+</Chapters>'''))
+        # <EditionUID>13224937737530795440</EditionUID>
+        root = xml.getroot()
+        eEditionEntry = root.find('EditionEntry')
+        for chap in self.chapters:
+            eChapterAtom = chap.to_mkv_xml_ChapterAtom()
+            eEditionEntry.append(eChapterAtom)
+        return xml
+
     def __iter__(self):
         return iter(self.chapters)
 
+    def append(self, *args):
+        return self.chapters.append(*args)
+
+    def __deepcopy__(self, memo=None):
+        return self.__class__(chapters=copy.deepcopy(self.chapters, memo=memo))
+
+    deepcopy = __deepcopy__
+
+    def __copy__(self):
+        return self.__class__(chapters=copy.copy(self.chapters))
+
+    copy = __copy__
+
+    def __sub__(self, other):
+        return self.__class__(chapters=[chap - other
+                                        for chap in self.chapters])
+
+    def __isub__(self, other):
+        if isinstance(other, Chapter):
+            pass
+        else:
+            other = Timestamp(other)
+        for chap in self.chapters:
+            chap -= other
+        return self
 
 class MediaFile(BinaryFile):
 
@@ -202,7 +467,7 @@ class MediaFile(BinaryFile):
         kwargs.setdefault('show_chapters', True)
         kwargs.setdefault('show_error', True)
 
-        d = ffprobe(i=self.file_name,
+        d = ffprobe(i=self,
                     #threads=0,
                     v='info',
                     print_format='json',
@@ -281,6 +546,12 @@ class MediaFile(BinaryFile):
                     ):
                 continue
             try:
+                id3_tag = {
+                    'COMM:ID3v1 Comment': 'COMM',
+                }[id3_tag]
+            except KeyError:
+                pass
+            try:
                 mapped_tag = sound_tag_info['map'][id3_tag]
             except:
                 app.log.debug('id3_tag=%r, tag_value=%r', id3_tag, tag_value)
@@ -294,8 +565,10 @@ class MediaFile(BinaryFile):
             if mapped_tag == 'picture':
                 assert isinstance(tag_value, mutagen.id3.APIC)
                 # tag_value=APIC(encoding=<Encoding.LATIN1: 0>, mime='image/jpeg', type=<PictureType.OTHER: 0>, desc='', data=b'...')
-                file_desc = byte_decode(dbg_exec_cmd(['file', '-b', '-'], input=tag_value.data)).strip()
-                tag_value = '(%s: %s: %s)' % (tag_value.mime, tag_value.desc, file_desc)
+                file_desc = byte_decode(do_exec_cmd(['file', '-b', '-'], input=tag_value.data, dry_run=False)).strip()
+                if tag_value.desc:
+                    file_desc = f'{tag_value.desc}, {file_desc}'
+                tag_value = PictureTagInfo(tag_value.mime, file_desc)
             if isinstance(tag_value, mutagen.id3.TextFrame):
                 tag_value = tag_value.text
             if isinstance(tag_value, list) and len(tag_value) == 1:
@@ -335,10 +608,10 @@ class MediaFile(BinaryFile):
                 for cover in tag_value:
                     assert isinstance(cover, mutagen.mp4.MP4Cover)
                     imageformat = {
-                            mutagen.mp4.MP4Cover.FORMAT_JPEG: 'JPEG',
-                            mutagen.mp4.MP4Cover.FORMAT_PNG: 'PNG',
+                            mutagen.mp4.MP4Cover.FORMAT_JPEG: 'image/jpeg',
+                            mutagen.mp4.MP4Cover.FORMAT_PNG: 'png',
                             }.get(cover.imageformat, repr(cover.imageformat))
-                    file_desc = byte_decode(dbg_exec_cmd(['file', '-b', '-'], input=bytes(cover))).strip()
+                    file_desc = byte_decode(do_exec_cmd(['file', '-b', '-'], input=bytes(cover), dry_run=False)).strip()
                     new_tag_value.append(PictureTagInfo(imageformat, file_desc))
                 tag_value = new_tag_value
             if isinstance(tag_value, list) and len(tag_value) == 1:
@@ -406,6 +679,12 @@ class MediaFile(BinaryFile):
             raise NotImplementedError(f'{self}: Loading tags unsupported')
         return tags
 
+    def load_chapters(self):
+        chaps = None
+        if chaps is None:
+            raise NotImplementedError(f'{self}: Loading chapters unsupported')
+        return chaps
+
     def extract_ffprobe_json(self,
             show_streams=True,
             show_format=True,
@@ -414,7 +693,7 @@ class MediaFile(BinaryFile):
         ):
         cmd = [
             'ffprobe',
-            '-i', self.file_name,
+            '-i', self,
             '-threads', '0',
             '-v', 'info',
             '-print_format', 'json',
@@ -429,7 +708,7 @@ class MediaFile(BinaryFile):
             cmd += ['-show_error']
         try:
             # ffprobe -print_format json -show_streams -show_format -i ...
-            out = dbg_exec_cmd(cmd, stderr=subprocess.STDOUT)
+            out = do_exec_cmd(cmd, stderr=subprocess.STDOUT, dry_run=False)
         except subprocess.CalledProcessError:
             # TODO ignore/report failure only?
             raise
@@ -450,7 +729,7 @@ class MediaFile(BinaryFile):
                     pass
             if ffprobe_dict:
                 return ffprobe_dict
-            raise ValueError('No json found in output of %r' % subprocess.list2cmdline(cmd))
+            raise ValueError('No json found in output of %r' % (list2cmdline(cmd),))
 
     def extract_info(self, need_actual_duration=False):
         tags_done = False
@@ -620,7 +899,7 @@ class MediaFile(BinaryFile):
                     # id3info is not reliable on WAVE files as it may perceive some raw bytes as MPEG/Layer I and give out incorrect info
                     # {{{
                     try:
-                        out = dbg_exec_cmd(['id3info', self.file_name])
+                        out = do_exec_cmd(['id3info', self.file_name], dry_run=False)
                     except subprocess.CalledProcessError as err:
                         log.debug(err)
                         pass
@@ -630,7 +909,7 @@ class MediaFile(BinaryFile):
             if not tags_done and shutil.which('id3v2'):
                 # {{{
                 try:
-                    out = dbg_exec_cmd(['id3v2', '-l', self.file_name])
+                    out = do_exec_cmd(['id3v2', '-l', self.file_name], dry_run=False)
                 except subprocess.CalledProcessError as err:
                     log.debug(err)
                     pass
@@ -641,7 +920,7 @@ class MediaFile(BinaryFile):
             if not tags_done and shutil.which('soxi'):
                 # {{{
                 try:
-                    out = dbg_exec_cmd(['soxi', self.file_name])
+                    out = do_exec_cmd(['soxi', self.file_name], dry_run=False)
                 except subprocess.CalledProcessError:
                     pass
                 else:
@@ -735,7 +1014,7 @@ class MediaFile(BinaryFile):
             if shutil.which('file'):
                 # {{{
                 try:
-                    out = dbg_exec_cmd(['file', '-b', '-L', self.file_name])
+                    out = do_exec_cmd(['file', '-b', '-L', self.file_name], dry_run=False)
                 except subprocess.CalledProcessError:
                     pass
                 else:
@@ -1059,9 +1338,10 @@ class ITunesXid(object):
         super().__init__()
 
 class MediaTagRating(enum.Enum):
-    none = 'None'          # 0
-    clean = 'Clean'        # 2
-    explicit = 'Explicit'  # 3
+    none = 'None'            # 0
+    explicit = 'Explicit'    # 1
+    clean = 'Clean'          # 2
+    explicit3 = 'Explicit3'  # 3  # ??
 
     def __str__(self):
         return self.value
@@ -1082,8 +1362,9 @@ class MediaTagRating(enum.Enum):
 MediaTagRating.__new__ = MediaTagRating._MediaTagRating__new
 MediaTagRating._value2member_map_.update({
     '0': MediaTagRating.none,
+    '1': MediaTagRating.explicit,
     '2': MediaTagRating.clean,
-    '3': MediaTagRating.explicit,
+    '3': MediaTagRating.explicit3,
     })
 for _e in MediaTagRating:
     MediaTagRating._value2member_map_[_e.value.lower()] = _e
@@ -1304,90 +1585,6 @@ MediaTagEnum.iTunesInternalTags = frozenset((
     MediaTagEnum.itunesplaylistid,
 ))
 
-def _tDebugTag(value):
-    app.log.debug('_tDebugTag(value=%r)', value)
-    raise ValueError('_tDebugTag(value=%r)' % (value,))
-
-def _tNullTag(value):
-    if value is None:
-        return None
-    elif type(value) is str:
-        if value.strip() in ('', 'null', 'XXX'):
-            return None
-    raise ValueError('Not a null tag')
-
-def _tNullDate(value):
-    try:
-        return _tNullTag(value)
-    except ValueError:
-        if type(value) is str:
-            value = int(value)
-        if type(value) is int:
-            if value == 0:
-                return None
-    raise ValueError('Not a null date tag')
-
-def _tPosIntNone0(value):
-    value = int(value)
-    if value < 0:
-        raise ValueError('Not a positive integer')
-    return value or None
-
-def _tBool(value):
-    if type(value) is bool:
-        return value
-    elif type(value) is int:
-        if value == 0:
-            return False
-        elif value == 1:
-            return True
-    elif type(value) is str:
-        try:
-            return {
-                '0': False,
-                'false': False,
-                'off': False,
-                'no': False,
-                '1': True,
-                'true': True,
-                'on': True,
-                'yes': True,
-            }[value.lower()]
-        except KeyError:
-            pass
-    raise ValueError('Not a boolean')
-
-def _tCommentTag(value):
-    if value is None:
-        return None
-    elif type(value) is str:
-        return (value,)
-    else:
-        return tuple(value)
-
-def _tIntOrList(value):
-    if type(value) is int:
-        return (value,)
-    if type(value) is str:
-        value = value.replace(',', ' ').split()
-    if isinstance(value, (tuple, list)):
-        if not value:
-            return None
-        return tuple(int(e) for e in value)
-    raise ValueError('Not a valid integer or list of: %r' % (value,))
-
-def _tPicture(value, accept_iterable=True):
-    if accept_iterable and isinstance(value, (tuple, list)):
-        return tuple(_tPicture(e, accept_iterable=False) for e in value)
-    if type(value) is str:
-        # value = qip.file.cache_url(value)
-        return value
-    if isinstance(value, File):
-        return value
-    if isinstance(value, PictureTagInfo):
-        return value
-    raise ValueError('Not a valid string or file: %r' % (value,))
-
 # MediaType {{{
 
 class MediaType(enum.Enum):
@@ -1446,6 +1643,8 @@ class ContentType(enum.Enum):
     sound_fx = 'Sound FX'
     trailer = 'Trailer'  # movie
     video = 'Video'  # artist video (default), music video (default)
+    # Non-default
+    audiobook = 'Audiobook'
 
     def __hash__(self):
         return hash(id(self))
@@ -1469,6 +1668,7 @@ for _e in ContentType:
     ContentType._value2member_map_[_e.value.lower()] = _e
     ContentType._value2member_map_[_e.name.lower()] = _e
     ContentType._value2member_map_[_e.name.lower().replace('_', '')] = _e
+ContentType._value2member_map_['making of'] = ContentType.behind_the_scenes
 ContentType._value2member_map_['sfx'] = ContentType.sound_fx
 ContentType._value2member_map_['live music video'] = ContentType.live
 ContentType._value2member_map_['artist video'] = ContentType.video
@@ -1514,6 +1714,10 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 ContentType.feature_film,
         ):
             return 'movie'
+        if self.contenttype in (
+                ContentType.audiobook,
+        ):
+            return 'audiobook'
         if self.tvshow is not None:
             return 'tvshow'
         raise MissingMediaTagError(MediaTagEnum.type)
@@ -1942,12 +2146,14 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             xid = ITunesXid(xid)
             for tag_enum, prefix, scheme in (
                     (MediaTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
-                    (MediaTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
                     (MediaTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
                     (MediaTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
                     (MediaTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
                     (MediaTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
+                    (MediaTagEnum.isrc, 'URBNETCommunicationsInc', ITunesXid.Scheme.isrc),
+                    (MediaTagEnum.isrc, 'CDBaby', ITunesXid.Scheme.isrc),
+                    (MediaTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
+                    (MediaTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
             ):
                 if xid.scheme is not scheme:
                     continue
@@ -2162,11 +2368,13 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 value = None
             else:
                 try:
-                    l = self[tag] or []
+                    l = list(self[tag] or [])
                 except KeyError:
                     l = []
                     pass
                 if value not in l:
+                    if type(value) is tuple:
+                        value = list(value)
                     l.append(value)
                 value = l
 
@@ -4142,7 +4350,7 @@ def get_sox_app_support():
         if shutil.which('sox'):
             # sox --help-format all {{{
             try:
-                out = dbg_exec_cmd(['sox', '--help-format', 'all'])
+                out = do_exec_cmd(['sox', '--help-format', 'all'], dry_run=False)
             except subprocess.CalledProcessError as e:
                 if e.returncode == 1:
                     # NOTE: sox will exit with code 1
@@ -4192,7 +4400,7 @@ def get_sox_app_support():
                     pass
             # }}}
             # sox --help {{{
-            out = dbg_exec_cmd(['sox', '--help'])
+            out = do_exec_cmd(['sox', '--help'], dry_run=False)
             out = clean_cmd_output(out)
             parser = lines_parser(out.splitlines())
             while parser.advance():
@@ -4236,26 +4444,6 @@ def get_mp4v2_app_support():
 
 # }}}
 
-# parse_time_duration {{{
-
-def parse_time_duration(dur):
-    match = re.search(r'^(?:(?:0*(?P<h>\d+):)?0*(?P<m>\d+):)?0*(?P<s>\d+.\d+)$', dur)
-    if match:
-        # 00:00:00.000
-        # 00:00.000
-        # 00.000
-        h = match.group('h')
-        m = match.group('m')
-        s = decimal.Decimal(match.group('s'))
-        if m:
-            s += int(m) * 60
-        if h:
-            s += int(h) * 60 * 60
-    else:
-        raise ValueError('Invalid time offset format: %s' % (dur,))
-    return s
-
-# }}}
 # parse_disk_track {{{
 
 def parse_disk_track(dt, default=None):
@@ -4285,19 +4473,6 @@ def soundfilecmp(f1, f2):
     if c:
         return c
     return dictionarycmp(f1.file_name, f2.file_name)
-
-# mp4chaps_format_time_offset {{{
-
-def mp4chaps_format_time_offset(offset):
-    s, ms = ('%.3f' % (offset,)).split('.')
-    s = int(s)
-    m = s / 60
-    s = s % 60
-    h = m / 60
-    m = m % 60
-    return '%02d:%02d:%02d.%s' % (h, m, s, ms)
-
-# }}}
 
 # AudioType {{{
 
@@ -4355,9 +4530,6 @@ AudioType.__new__ = AudioType._AudioType__new
 # class SoundFile {{{
 
 class SoundFile(MediaFile):
-
-    class Chapter(collections.namedtuple('Chapter', ['time', 'name'])):
-        __slots__ = ()
 
     @property
     def audio_type(self):
@@ -4435,7 +4607,7 @@ def get_audio_file_sox_stats(d):
         app.log.info('Analyzing %s...', d.file_name)
         # NOTE --ignore-length: see #251 soxi reports invalid rate (M instead of K) for some VBR MP3s. (https://sourceforge.net/p/sox/bugs/251/)
         try:
-            out = dbg_exec_cmd(['sox', '--ignore-length', d.file_name, '-n', 'stat'], stderr=subprocess.STDOUT)
+            out = do_exec_cmd(['sox', '--ignore-length', d.file_name, '-n', 'stat'], stderr=subprocess.STDOUT, dry_run=False)
         except subprocess.CalledProcessError:
             # TODO ignore/report failure only?
             raise
@@ -4455,7 +4627,7 @@ def get_audio_file_sox_stats(d):
             pass  # d.TODO = parser.match.group(1)
         elif parser.re_search(r'^Length +\(seconds\): +(\d+(?:\.\d+)?)$'):
             # Length (seconds):   4513.410612
-            d.actual_duration = decimal.Decimal(parser.match.group(1))
+            d.actual_duration = parse_time_duration(parser.match.group(1))
         elif parser.re_search(r'^Scaled +by: +(\S+)$'):
             # Scaled by:         2147483647.0
             pass  # d.TODO = parser.match.group(1)
@@ -4515,13 +4687,13 @@ def get_audio_file_ffmpeg_stats(d):
         app.log.info('Analyzing %s...', d.file_name)
         # TODO 16056 emby      20   0  289468   8712   7148 R   0.7  0.1   0:00.02 /opt/emby-server/bin/ffprobe -i file:/mnt/media1/Audiobooks/Various Artists/Enivrez-vous.m4b -threads 0 -v info -print_format json -show_streams -show_format
         try:
-            out = dbg_exec_cmd([
+            out = do_exec_cmd([
                 'ffmpeg',
                 '-i', d.file_name,
                 '-vn',
                 '-f', 'null',
                 '-y',
-                '/dev/null'], stderr=subprocess.STDOUT)
+                '/dev/null'], stderr=subprocess.STDOUT, dry_run=False)
         except subprocess.CalledProcessError:
             # TODO ignore/report failure only?
             raise
@@ -4556,7 +4728,22 @@ def get_audio_file_ffmpeg_stats(d):
 
 class RingtoneFile(SoundFile): pass  # TODO
 
-class MovieFile(SoundFile): pass  # TODO
+class MovieFile(SoundFile):
+
+    _common_extensions = (
+        '.avi',
+        '.h264',
+        '.h265',
+        '.ivf',
+        '.m2ts',
+        '.mjpeg',
+        '.mp2v',
+        '.mpeg2',
+        '.vc1',
+        '.vp8',
+        '.vp9',
+        '.y4m',
+    )
 
 class AudiobookFile(SoundFile): pass  # TODO
 
@@ -4737,7 +4924,7 @@ class Mp4info(Executable):
         track_tags = TrackTags(album_tags=None)
         d = {}
         # rund = self(file_name)
-        rund = self(file_name, run_func=dbg_exec_cmd)
+        rund = self(file_name, run_func=functools.partial(do_exec_cmd, dry_run=False))
         out = clean_cmd_output(rund.out)
         parser = lines_parser(out.split('\n'))
         while parser.advance():
@@ -4951,5 +5138,3 @@ class Taged(Executable):
 taged = Taged()
 
 MediaFile._build_extension_to_class_map()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
