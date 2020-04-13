@@ -212,7 +212,7 @@ def make_sort_tag(value):
 
 def do_suggest_tags(inputfile, *, suggest_tags):
     if suggest_tags:
-        do_apply_suggestions = app.args.apply_suggestions
+        do_apply_suggestions = getattr(app.args, 'apply_suggestions', False)
         if not do_apply_suggestions:
             inputfile.write_tags(tags=suggest_tags, run_func=suggest_exec_cmd)
             if app.args.interactive:
