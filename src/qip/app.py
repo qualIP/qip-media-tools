@@ -476,6 +476,21 @@ class App(XdgResource):
             )
         return c
 
+    def run_dialog(self, dialog, style=None, async_=False):
+        " Turn the `Dialog` into an `Application` and run it. "
+        style = None if style is False else (style or self.prompt_style)
+        from prompt_toolkit.application.current import get_app
+        application = get_app(return_none=True)
+        if application:
+            return dialog.run()
+        else:
+            from prompt_toolkit.shortcuts.dialogs import _create_app
+            application = _create_app(dialog, style)
+            if async_:
+                return application.run_async()
+            else:
+                return application.run()
+
     def message_dialog(self, title='', text='', ok_text='Ok', style=None, async_=False):
         """
         Display a simple message box and wait until the user presses enter.
@@ -497,9 +512,9 @@ class App(XdgResource):
             ],
             with_background=True)
 
-        return _run_dialog(dialog,
-                           style=None if style is False else (style or self.prompt_style),
-                           async_=async_)
+        return self.run_dialog(dialog,
+                               style=None if style is False else (style or self.prompt_style),
+                               async_=async_)
 
     def input_dialog(self, title='', text='', initial_text='', ok_text='OK', cancel_text='Cancel',
                      completer=None, password=False, style=None, async_=False):
@@ -550,9 +565,9 @@ class App(XdgResource):
             buttons=[ok_button, cancel_button],
             with_background=True)
 
-        return _run_dialog(dialog,
-                           style=None if style is False else (style or self.prompt_style),
-                           async_=async_)
+        return self.run_dialog(dialog,
+                               style=style,
+                               async_=async_)
 
     def radiolist_dialog(self, title='', text='', ok_text='Ok', cancel_text='Cancel',
                          values=None, style=None, async_=False,
@@ -599,9 +614,9 @@ class App(XdgResource):
             ],
             with_background=True)
 
-        return _run_dialog(dialog,
-                           style=None if style is False else (style or self.prompt_style),
-                           async_=async_)
+        return self.run_dialog(dialog,
+                               style=None if style is False else (style or self.prompt_style),
+                               async_=async_)
 
     def print(self, *args, style=DEFAULT, **kwargs):
         self.init_prompt_session()
