@@ -5248,26 +5248,101 @@ def action_tag_episodes(episode_file_names, in_tags):
     else:
         seed_initial_text = episode_file_names[0].parent.name
 
-    if tags.tvshow is None and app.args.interactive:
-        initial_text = ''
-        m = re.search(r'^(.*?)(?:S(\d+))?$', seed_initial_text)
-        if m:
-            initial_text = m.group(1)
-            initial_text = unmangle_search_string(initial_text)
-        tags.tvshow = app.input_dialog(title='Episode tagging',
-                                       text='Please provide tvshow',
-                                       initial_text=initial_text)
-    language = tags.language
-    m = re.match(r'^(?P<tvshow>.+) \[(?P<language>\w+)\]', tags.tvshow or '')
-    if m:
-        try:
-            language = isolang(m.group('language'))
-        except ValueError:
-            pass
+    if app.args.interactive:
+
+        if tags.tvshow is None:
+            tvshow_initial_text = ''
+            m = re.search(r'^(.*?)(?:S(\d+))?$', seed_initial_text)
+            if m:
+                tvshow_initial_text = m.group(1)
+                tvshow_initial_text = unmangle_search_string(tvshow_initial_text)
         else:
-            tags.tvshow = m.group('tvshow').strip()
+            tvshow_initial_text = tags.tvshow
+
+        if tags.season is None:
+            season_initial_text = ''
+            m = re.search(r'^(.*)S(\d+)$', seed_initial_text)
+            if m:
+                season_initial_text = m.group(2)
+        else:
+            season_initial_text = str(tags.season)
+
+        from prompt_toolkit.application.current import get_app
+        from prompt_toolkit.layout.dimension import Dimension as D
+        from prompt_toolkit.layout.containers import HSplit, VSplit
+        from prompt_toolkit.widgets import (
+            Box,
+            Button,
+            TextArea,
+            Dialog,
+            Label,
+        )
+        from prompt_toolkit.shortcuts.dialogs import (
+            _return_none,
+        )
+
+        def tvshow_accept(buf):
+            get_app().layout.focus(season_textarea)
+            return True  # Keep text.
+        tvshow_textarea = TextArea(
+            text=tvshow_initial_text,
+            multiline=False,
+            accept_handler=tvshow_accept)
+
+        def season_accept(buf):
+            get_app().layout.focus(language_textarea)
+            return True  # Keep text.
+        season_textarea = TextArea(
+            text=season_initial_text,
+            multiline=False,
+            accept_handler=season_accept)
+
+        def language_accept(buf):
+            get_app().layout.focus(ok_button)
+            return True  # Keep text.
+        language_textarea = TextArea(
+            text=str(tags.language or ''),
+            multiline=False,
+            accept_handler=language_accept)
+
+        def ok_handler():
+            get_app().exit(result=(
+                tvshow_textarea.text,
+                season_textarea.text,
+                language_textarea.text,
+            ))
+        ok_button = Button(text='Ok', handler=ok_handler)
+
+        cancel_button = Button(text='Cancel', handler=_return_none)
+
+        dialog = Dialog(
+            title='Episode tagging',
+            body=HSplit([
+                VSplit([
+                    Box(Label(text='TV Show:'), padding_left=0, width=10),
+                    tvshow_textarea,
+                ]),
+                VSplit([
+                    Box(Label(text='Season:'), padding_left=0, width=10),
+                    season_textarea,
+                ]),
+                VSplit([
+                    Box(Label(text='Language:'), padding_left=0, width=10),
+                    language_textarea,
+                ]),
+            ], padding=D(preferred=1, max=1)),
+            buttons=[ok_button, cancel_button],
+            with_background=True)
+
+        result = app.run_dialog(dialog)
+        if result is None:
+            raise ValueError('Cancelled by user!')
+        tags.tvshow, tags.season, tags.language = result
+
     if not tags.tvshow:
         raise ValueError('Missing tvshow')
+    if tags.season is None:
+        raise ValueError('Missing season number')
 
     tags.type = tags.deduce_type()
     assert str(tags.type) == 'tvshow'
@@ -5297,17 +5372,6 @@ def action_tag_episodes(episode_file_names, in_tags):
             raise ValueError('Cancelled by user!')
     d_series = l_series[i]
     tags.tvshow = d_series['seriesName']
-
-    if tags.season is None and app.args.interactive:
-        initial_text = ''
-        m = re.search(r'^(.*)S(\d+)$', seed_initial_text)
-        if m:
-            initial_text = m.group(2)
-        tags.season = app.input_dialog(title='Episode tagging',
-                                       text='Please provide season number',
-                                       initial_text=initial_text)
-    if tags.season is None:
-        raise ValueError('Missing season number')
 
     o_show = tvdb[d_series['id']]
     app.log.debug('o_show=%r', o_show)
