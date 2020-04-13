@@ -1770,7 +1770,8 @@ def chop_chapters(chaps,
     if chapter_file_ext is None:
         chapter_file_ext = inputfile_ext
 
-    chapter_file_name_pat = '%s-chap%%02d%s' % (inputfile_base, chapter_file_ext)
+    chapter_file_name_pat = '%s-chap%%02d%s' % (inputfile_base.replace('%', '%%'),
+                                                chapter_file_ext.replace('%', '%%'))
 
     if chop_chaps is not None:
         chaps_list = []
@@ -3561,8 +3562,10 @@ def action_optimize(inputdir, in_tags):
                                 '.vc1.avi': '.ffv1.mkv',
                                 '.ffv1.mkv': '.ffv1.mkv',
                             }.get(stream_file_ext, stream_file_ext)
-                        stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, chapter_stream_file_ext)
-                        new_stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base, new_stream_file_ext)
+                        stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base.replace('%', '%%'),
+                                                                           chapter_stream_file_ext.replace('%', '%%'))
+                        new_stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base.replace('%', '%%'),
+                                                                               new_stream_file_ext.replace('%', '%%'))
 
                         threads = []
 
@@ -3658,7 +3661,9 @@ def action_optimize(inputdir, in_tags):
                                               inputfile=inputdir / stream_file_name,
                                               chapter_file_ext=chapter_stream_file_ext,
                                               chapter_lossless=chapter_lossless)
-                            stream_chapter_file_name_pat = os.fspath(Path(stream_chapter_file_name_pat).relative_to(inputdir))
+                            stream_chapter_file_name_pat = os.fspath(
+                                Path(stream_chapter_file_name_pat).relative_to(
+                                    os.fspath(inputdir).replace('%', '%%')))
 
                             # Encode
                             for chap in chaps:
