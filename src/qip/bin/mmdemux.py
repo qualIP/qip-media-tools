@@ -87,6 +87,7 @@ except ImportError:
 from qip import argparse
 from qip import json
 from qip.app import app
+from qip.ddrescue import ddrescue
 from qip.exec import *
 from qip.ffmpeg import ffmpeg, ffprobe
 from qip.mencoder import mencoder
@@ -674,6 +675,7 @@ def main():
     pgroup.add_argument('--minlength', default=Auto, type=qip.utils.Timestamp, help='minimum title length for ripping (default: ' + default_minlength_movie.friendly_str() + ' (movie), ' + default_minlength_tvshow.friendly_str() + ' (tvshow))')
     pgroup.add_argument('--sp-remove-method', default='auto', choices=('auto', 'CellWalk', 'CellTrim'), help='DVD structure protection removal method')
     pgroup.add_bool_argument('--check-start-time', default=Auto, help='check start time of tracks')
+    pgroup.add_argument('--stage', default=Auto, type=int, choices=range(1, 3 + 1), help='specify ripping stage')
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -762,6 +764,7 @@ def main():
     pgroup.add_argument('--channels', type=int, default=argparse.SUPPRESS, help='force the number of audio channels')
 
     pgroup = app.parser.add_argument_group('Actions')
+    pgroup.add_argument('--rip-iso', dest='rip_iso', nargs='+', default=(), type=Path, help='iso file to rip device to')
     pgroup.add_argument('--rip', dest='rip_dir', nargs='+', default=(), type=Path, help='directory to rip device to')
     pgroup.add_argument('--backup', dest='backup_dir', nargs='+', default=(), type=Path, help='directory to backup device to')
     pgroup.add_argument('--hb', dest='hb_files', nargs='+', default=(), type=Path, help='files to run through HandBrake')
@@ -817,6 +820,9 @@ def main():
             slurm_executor = thread_executor
 
         did_something = False
+        for rip_iso in  app.args.rip_iso:
+            action_rip_iso(rip_iso, app.args.device, in_tags=in_tags)
+            did_something = True
         for backup_dir in  app.args.backup_dir:
             action_backup(backup_dir, app.args.device, in_tags=in_tags)
             did_something = True
@@ -1392,6 +1398,74 @@ def do_edit_tags(tags):
             del tags[tag]
     return tags
 
+def action_rip_iso(rip_iso, device, in_tags):
+    app.log.info('Ripping %s from %s...', rip_iso, device)
+
+    if rip_iso.suffix != '.iso':
+        raise ValueError(f'File is not a .iso: {rip_iso}')
+
+    iso_file = BinaryFile(rip_iso)
+    log_file = TextFile(rip_iso.with_suffix('.log'))
+
+    app.log.info('Identifying mounted media type...')
+    out = dbg_exec_cmd(['dvd+rw-mediainfo', app.args.device], dry_run=False)
+    out = clean_cmd_output(out)
+    m = re.search(r'Mounted Media: .*(BD|DVD)', out)
+    if not m:
+        raise ValueError('Unable to identify mounted media type')
+    media_type = MediaType(m.group(1))
+
+    if media_type is MediaType.DVD:
+        app.log.info('Decrypting DVD...')
+        cmd = [
+            'mplayer',
+            f'dvd://1/{device.resolve()}',
+            '-endpos', 1,
+            '-vo', 'null',
+            '-ao', 'null',
+        ]
+        dbg_exec_cmd(cmd)
+
+    stage = app.args.stage
+    if stage is Auto:
+        if not iso_file.exists():
+            stage = 1
+        else:
+            # TODO
+            stage = 2
+
+    if stage == 1:
+        ddrescue_args = [
+            # Sector size of input device
+            '-b', 2048,
+            # Skip the scraping phase
+            '-n',
+            device,
+            iso_file, log_file,
+        ]
+    elif stage == 2:
+        ddrescue_args = [
+            # Mark all failed blocks as non-trimmed
+            '-M',
+            # Start from 0
+            '-i', 0,
+            device,
+            iso_file, log_file,
+        ]
+    elif stage == 3:
+        ddrescue_args = [
+            # Use direct disc access for input file; This requires correct sector size
+            '-d', '-b', 2048,
+            # Exit after 3 retry passes
+            '-r', 3,
+            device,
+            iso_file, log_file,
+        ]
+    else:
+        raise NotImplementedError(f'Unsupported ripping stage {stage}')
+
+    ddrescue(*ddrescue_args)
+
 def action_rip(rip_dir, device, in_tags):
     app.log.info('Ripping %s from %s...', rip_dir, device)
 
@@ -1432,6 +1506,13 @@ def action_rip(rip_dir, device, in_tags):
             makemkvcon_settings['dvd_SPRemoveMethod'] = dvd_SPRemoveMethod[0]
         settings_changed = True
 
+    if device.is_block_device():
+        source = f'dev:{device.resolve()}'  # makemkv is picky
+    else:
+        if device.suffix != '.iso':
+            raise ValueError(f'File is not a .iso: {device}')
+        source = f'iso:{os.fspath(device)}'
+
     if not app.args.dry_run and settings_changed:
         app.log.warning('Changing makemkv settings!')
         makemkvcon.write_settings_conf(makemkvcon_settings)
@@ -1445,11 +1526,11 @@ def action_rip(rip_dir, device, in_tags):
 
             try:
                 rip_info = makemkvcon.mkv(
-                    source='dev:%s' % (device.resolve(),),  # makemkv is picky
+                    source=source,
                     dest_dir=rip_dir,
                     minlength=int(minlength),
                     profile=tmp_profile_xml_file,
-                    retry_no_cd=True,
+                    retry_no_cd=device.is_block_device(),
                     noscan=True,
                     robot=True,
                 )
@@ -1475,7 +1556,7 @@ def action_rip(rip_dir, device, in_tags):
             pass
         app.log.debug('rip_info.spawn.angles=%r', rip_info.spawn.angles)
 
-    if app.args.eject:
+    if app.args.eject and device.is_block_device():
         app.log.info('Ejecting...')
         cmd = [
             shutil.which('eject'),
@@ -1499,7 +1580,7 @@ def action_pick_title_streams(backup_dir, in_tags):
     from qip.makemkv import makemkvcon
     makemkvcon_info_func = functools.partial(
         makemkvcon.info,
-        source='file:' + os.fspath(backup_dir),
+        source=f'file:{os.fspath(backup_dir)}',
         noscan=True,
         robot=True,
     )
@@ -1596,40 +1677,24 @@ def action_backup(backup_dir, device, in_tags):
     from qip.makemkv import makemkvcon
 
     try:
-        disc_info = makemkvcon.info(
-            source='disc:9999',
-            ignore_failed_to_open_disc=True,
-            retry_no_cd=True,
-            noscan=True,
-            robot=True,
-        )
-    except:
-        if app.args.dry_run:
-            app.log.verbose('CMD (dry-run): %s', list2cmdline(['rmdir', backup_dir]))
+
+        if device.is_block_device():
+            drive_info = makemkvcon.device_to_drive_info(device)
+            source = f'disc:{drive_info.index}'
         else:
-            try:
-                os.rmdir(backup_dir)
-            except OSError:
-                pass
-            else:
-                app.log.info('Ripping failed; Removed %s.', backup_dir)
-        raise
+            if device.suffix != '.iso':
+                raise ValueError(f'File is not a .iso: {device}')
+            source = f'iso:{os.fspath(device)}'
 
-    for drive_info in disc_info.spawn.drives.values():
-        if drive_info.device_name.samefile(device):
-            break
-    else:
-        raise ValueError(f'No matching device detected by {makemkvcon.name}: {device}')
-
-    try:
         makemkvcon.backup(
-            source='disc:%d' % (drive_info.index,),
+            source=source,
             dest_dir=backup_dir,
             decrypt=True,
             retry_no_cd=True,
             noscan=True,
             robot=True,
         )
+
     except:
         if app.args.dry_run:
             app.log.verbose('CMD (dry-run): %s', list2cmdline(['rmdir', backup_dir]))
@@ -1642,7 +1707,7 @@ def action_backup(backup_dir, device, in_tags):
                 app.log.info('Ripping failed; Removed %s.', backup_dir)
         raise
 
-    if app.args.eject:
+    if app.args.eject and device.is_block_device():
         app.log.info('Ejecting...')
         cmd = [
             shutil.which('eject'),
@@ -2216,8 +2281,8 @@ def action_mux(inputfile, in_tags,
                     mediainfo_track_dict = None  # Not its own track
                     # General
                     # ...
-                    # Cover                                    : Yes                                                                                                                                                                                                
-                    # Attachments                              : cover.jpg                                                                                                                                                                                          
+                    # Cover                                    : Yes
+                    # Attachments                              : cover.jpg
                 else:
                     raise NotImplementedError(stream_codec_type)
 
@@ -2268,9 +2333,9 @@ def action_mux(inputfile, in_tags,
                         except KeyError:
                             pass
                         # TODO
-                        # opusinfo TheTruthAboutCatsAndDogs/title_t00/track-02-audio.fra.opus.ogg 
+                        # opusinfo TheTruthAboutCatsAndDogs/title_t00/track-02-audio.fra.opus.ogg
                         # Processing file "TheTruthAboutCatsAndDogs/title_t00/track-02-audio.fra.opus.ogg"...
-                        # 
+                        #
                         # New logical stream (#1, serial: 00385013): type opus
                         # Encoded with libopus 1.3
                         # User comments section follows...

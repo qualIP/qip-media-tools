@@ -815,4 +815,22 @@ class Makemkvcon(Executable):
         profile_xml = ET.ElementTree(ET.fromstring(profile_xml))
         return profile_xml
 
+    def device_to_drive_info(self, device):
+
+        disc_info = self.info(
+            source='disc:9999',
+            ignore_failed_to_open_disc=True,
+            retry_no_cd=True,
+            noscan=True,
+            robot=True,
+        )
+
+        for drive_info in disc_info.spawn.drives.values():
+            if drive_info.device_name.samefile(device):
+                break
+        else:
+            raise ValueError(f'No matching device detected by {makemkvcon.name}: {device}')
+
+        return drive_info
+
 makemkvcon = Makemkvcon()
