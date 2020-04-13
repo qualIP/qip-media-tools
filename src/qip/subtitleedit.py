@@ -3,9 +3,10 @@ __all__ = [
         'SubtitleEdit',
         ]
 
+from pathlib import Path
 import logging
 import os
-from pathlib import Path
+import xdg
 log = logging.getLogger(__name__)
 
 from .exec import *
@@ -13,32 +14,33 @@ from .file import *
 from qip.app import app
 from qip.isolang import isolang
 
-class CSubtitleEdit(Executable):
+class CSubtitleEdit(XdgExecutable):
 
     name = 'SubtitleEdit'
+    xdg_resource = 'Subtitle Edit'
 
     run_func = staticmethod(do_spawn_cmd)
 
     kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_win_slash
 
     @property
-    def config_dir(self):
-        config_home = os.environ.get('XDG_CONFIG_HOME', None)
-        config_home = Path(config_home) if config_home else Path.home() / '.config'
-        return config_home / 'Subtitle Edit'
-
-    @property
     def settings_file_name(self):
-        return self.config_dir / 'Settings.xml'
+        return 'Settings.xml'
 
     def read_settings_xml(self):
         import xml.etree.ElementTree as ET
-        settings_xml = ET.parse(os.fspath(self.settings_file_name))
+        for path in self.load_config_paths():
+            settings_file = path / self.settings_file_name
+            if settings_file.exists():
+                break
+        else:
+            return None
+        settings_xml = ET.parse(os.fspath(settings_file))
         return settings_xml
 
     def save_settings_xml(self, settings_xml):
         from qip.file import TempFile
-        settings_file = File.new_by_file_name(self.settings_file_name)
+        settings_file = File.new_by_file_name(self.save_config_path() / self.settings_file_name)
         with settings_file.rename_temporarily(replace_ok=True):
             with settings_file.open(mode='w') as fp:
                 settings_xml.write(fp,

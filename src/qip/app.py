@@ -18,6 +18,7 @@ import urllib
 
 from . import argparse
 from .propex import propex
+from .xdg import XdgResource
 
 HAVE_ARGCOMPLETE = False
 try:
@@ -103,29 +104,26 @@ class ConfigParser(configparser.ConfigParser):
             assert TypeError('No file_name or fp provided')
         return super().write(fp=fp, **kwargs)
 
-def _run_dialog(dialog, style, async_=False):
-    " Turn the `Dialog` into an `Application` and run it. "
-    from prompt_toolkit.application.current import get_app
-    application = get_app(return_none=True)
-    if application:
-        return dialog.run()
-    else:
-        from prompt_toolkit.shortcuts.dialogs import _create_app
-        application = _create_app(dialog, style)
-        if async_:
-            return application.run_async()
-        else:
-            return application.run()
-
 def _resolved_Path(path):
     return Path(path).resolve()
 
-class App(object):
+class App(XdgResource):
 
     prog = None
     descripton = None
     version = None
     contact = None
+
+    @property
+    def xdg_resource(self):
+        try:
+            return self._xdg_resource
+        except AttributeError:
+            return self.prog
+
+    @xdg_resource.setter
+    def xdg_resource(self, value):
+        self._xdg_resource = value
 
     log = logging.getLogger('__main__')
 
@@ -273,18 +271,9 @@ class App(object):
             coloredlogs.set_level(level)
 
     def default_config_file(self):
-        if not self.prog:
-            return None
-        config_file = None
-        config_home = os.environ.get('XDG_CONFIG_HOME', None)
-        config_home = Path(config_home) if config_home else Path.home() / '.config'
-        config_file1 = config_home / self.prog / 'config'
-        if config_file1.exists():
-            return config_file1
-        config_file2 = Path('~', self.prog + '.conf')
-        if config_file2.exists():
-            return config_file2
-        return config_file1  # The default that doesn't exist
+        assert self.xdg_resource
+        config_file1 = self.save_config_path() / 'config'
+        return config_file1
 
     def parse_args(self, args=None, namespace=None):
         if HAVE_ARGCOMPLETE:

@@ -15,15 +15,14 @@ import os
 import tvdb_api
 
 from .isolang import isolang
+from .xdg import XdgResource
 
-class Tvdb(tvdb_api.Tvdb):
+class Tvdb(tvdb_api.Tvdb, XdgResource):
 
-    @staticmethod
-    def default_config_file():
-        config_file = None
-        config_home = os.environ.get('XDG_CONFIG_HOME', None)
-        config_home = Path(config_home) if config_home else Path.home() / '.config'
-        config_file1 = config_home / 'thetvdb/config'
+    xdg_resource = 'thetvdb'
+
+    def default_config_file(self):
+        config_file1 = self.save_config_path() / 'config'
         if config_file1.exists():
             return config_file1
         config_file2 = Path.home() / '.thetvdb.conf'

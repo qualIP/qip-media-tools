@@ -15,6 +15,7 @@ __all__ = [
         'PipedExecutable',
         'PipedScript',
         'PipedPortableScript',
+        'XdgExecutable',
         'do_srun_cmd',
         'do_sbatch_cmd',
         'EDITOR',
@@ -52,11 +53,13 @@ import sys
 import threading
 import time
 import types
+import xdg
 import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
 from qip.app import app  # Also setup log.verbose
 from qip.utils import byte_decode
+from qip.xdg import XdgResource
 
 _mswindows = (sys.platform == "win32")
 
@@ -926,6 +929,11 @@ class PipedScript(PipedExecutable):
 class PipedPortableScript(PipedScript):
     pass
 
+class XdgExecutable(Executable, XdgResource):
+
+    @property
+    def xdg_resource(self):
+        return self.name
 
 class Xdg_open(Executable):
 
