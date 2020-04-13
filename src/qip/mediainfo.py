@@ -63,6 +63,19 @@ class Mediainfo(Executable):
             track_dict = {
                 '@type': track_type,
             }
+            def scan_mediainfo_timestamp(v):
+                v = re.sub(r' h *', 'h', v)
+                v = re.sub(r' min *', 'm', v)
+                v = re.sub(r' s *', 's', v)
+                v = re.sub(r'(?P<s>\d+)s(?P<ms>\d{1,3}) ms', lambda m: '%d.%03d' % (int(m.group('s')), int(m.group('ms'))), v)
+                v = re.sub(r'^(?P<ms>\d{1,3}) ms', lambda m: '0.%03d' % (int(m.group('ms')),), v)
+                v = Timestamp(v)
+                return v
+            def scan_mediainfo_pixels(v):
+                m = re.match(r'^(?P<v>\d+(?: \d\d\d)*) pixels$', v)
+                assert m, (k, v)
+                v = int(m.group('v').replace(' ', ''))
+                return v
             while parser.advance():
                 line = parser.line.strip()
                 if line == '':
@@ -82,12 +95,13 @@ class Mediainfo(Executable):
                 elif k == 'Duration':
                     # 2 h 13 min
                     k = 'Duration'
-                    v = re.sub(r' h *', 'h', v)
-                    v = re.sub(r' min *', 'm', v)
-                    v = re.sub(r' s *', 's', v)
-                    v = re.sub(r'(?P<s>\d+)s(?P<ms>\d{1,3}) ms', lambda m: '%d.%03d' % (int(m.group('s')), int(m.group('ms'))), v)
-                    v = re.sub(r'^(?P<ms>\d{1,3}) ms', lambda m: '0.%03d' % (int(m.group('ms')),), v)
-                    v = str(Timestamp(v).seconds)
+                    v = str(scan_mediainfo_timestamp(v).seconds)
+                elif k == 'Delay relative to video':
+                    # 7 m 7 s
+                    k = 'Delay'
+                    v = str(scan_mediainfo_timestamp(v).seconds)
+                    assert 'Delay_Source' not in track_dict
+                    track_dict['Delay_Source'] = 'Container'
                 elif k in (
                     'Original frame rate',
                     'Frame rate',
@@ -123,16 +137,12 @@ class Mediainfo(Executable):
                     # 780 pixels
                     # 1 920 pixels
                     k = 'Width'
-                    m = re.match(r'^(?P<v>\d+(?: \d\d\d)*) pixels$', v)
-                    assert m, (k, v)
-                    v = m.group('v').replace(' ', '')
+                    v = str(scan_mediainfo_pixels(v))
                 elif k == 'Height':
                     # 480 pixels
                     # 1 080 pixels
                     k = 'Height'
-                    m = re.match(r'^(?P<v>\d+(?: \d\d\d)*) pixels$', v)
-                    assert m, (k, v)
-                    v = m.group('v').replace(' ', '')
+                    v = str(scan_mediainfo_pixels(v))
                 elif k == 'Sampling rate':
                     k = 'SamplingRate'
                     # 48.0 kHz
