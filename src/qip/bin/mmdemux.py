@@ -2014,10 +2014,12 @@ def action_mux(inputfile, in_tags,
     ffprobe_dict = None
     mediainfo_dict = None
     if inputfile_ext in (
-            '.mkv',
             '.ffv1.mkv',
-            '.webm',
-            ):
+    ) \
+            + Mp4File._common_extensions \
+            + MkvFile._common_extensions \
+            + WebmFile._common_extensions \
+            :
         ffprobe_dict = inputfile.extract_ffprobe_json()
         mediainfo_dict = inputfile.extract_mediainfo_dict()
 
@@ -2163,10 +2165,12 @@ def action_mux(inputfile, in_tags,
     num_extract_errors = 0
 
     if inputfile_ext in (
-            '.mkv',
             '.ffv1.mkv',
-            '.webm',
-            ):
+    ) \
+            + Mp4File._common_extensions \
+            + MkvFile._common_extensions \
+            + WebmFile._common_extensions \
+            :
 
         has_forced_subtitle = False
         subtitle_counts = []
