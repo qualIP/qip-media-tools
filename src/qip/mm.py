@@ -517,6 +517,9 @@ class MediaFile(BinaryFile):
 
     def _load_tags_mf(self, mf):
         import mutagen
+        if mf.tags is None:
+            tags = TrackTags(album_tags=AlbumTags())
+            return tags
         if isinstance(mf.tags, mutagen.id3.ID3):
             return self._load_tags_mf_id3(mf)
         if isinstance(mf.tags, mutagen.mp4.MP4Tags):
@@ -673,7 +676,7 @@ class MediaFile(BinaryFile):
             #from qip.perf import perfcontext
             #with perfcontext('mf.load'):
             mf = mutagen.File(self.file_name)
-        if tags is None and mf:
+        if tags is None and mf is not None:
             tags = self._load_tags_mf(mf)
         if tags is None:
             raise NotImplementedError(f'{self}: Loading tags unsupported')
