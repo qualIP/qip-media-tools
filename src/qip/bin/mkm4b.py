@@ -336,33 +336,6 @@ def main():
     else:
         raise ValueError('Invalid action \'%s\'' % (app.args.action,))
 
-# clean_file_name {{{
-
-def clean_file_name(file_name):
-    name, ext = os.path.splitext(os.fspath(file_name))
-    # http://en.wikipedia.org/wiki/Filename {{{
-    # UNIX: a leading . indicates that ls and file managers will not show the file by default
-    name = re.sub(r'^[.]+', '', name)
-    # Remove leading spaces too
-    name = re.sub(r'^[ ]+', '', name)
-    # NTFS: The Win32 API strips trailing space and period (full-stop) characters from filenames, except when UNC paths are used.
-    name = re.sub(r'[ .]+$', '', name)
-    # most: forbids the use of 0x00
-    name = re.sub(r'\x00', '_', name)
-    # NTFS/vfat: forbids the use of characters in range 1-31 (0x01-0x1F) and characters " * : < > ? \ / | unless the name is flagged as being in the Posix namespace.
-    name = re.sub(r'[\x01-\x1F\"*:<>?\\/|]', '_', name)
-    # vfat: forbids the use of 0x7F
-    name = re.sub(r'\x7F', '_', name)
-    # NTFS allows each path component (directory or filename) to be 255 characters long.
-    over = len(name) + len(ext) - 255
-    if over > 0:
-        name = name[:len(name)-over]
-    # }}}
-    file_name = Path(name + ext)
-    return file_name
-
-# }}}
-
 def mkm4b(inputfiles, default_tags):
     exit_stack = contextlib.ExitStack()
     thread_executor = concurrent.futures.ThreadPoolExecutor(

@@ -1228,6 +1228,7 @@ def estimate_stream_duration(ffprobe_json):
 def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=None):
 
     inputfile_base, inputfile_ext = my_splitext(inputfile)
+    inputfile.tags.update(inputfile.load_tags())
     inputfile.tags.pop('type', None)
 
     name_scan_str = Path(inputfile_base).name
@@ -1317,6 +1318,19 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
             m = re.match('^(?P<title>.+) \((?P<date>\d{4})\)$', d['title'])
             if m:
                 d.update(m.groupdict())
+        for tag in (
+                'title',
+                'tvshow',
+                'comment',
+        ):
+            try:
+                v1, v2 = d[tag] or '', inputfile.tags[tag] or ''
+            except KeyError:
+                continue
+            if type(v2) is tuple:
+                v2 = v2[0]
+            if clean_file_name(v1, keep_ext=False) == clean_file_name(v2, keep_ext=False):
+                del d[tag]
         inputfile.tags.update(d)
         done = True
 

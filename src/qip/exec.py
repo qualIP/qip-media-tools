@@ -30,6 +30,7 @@ __all__ = [
         'list2cmdlist',
         'list2cmdline',
         'stdout_wrapper',
+        'clean_file_name',
         ]
 
 from pathlib import Path
@@ -41,10 +42,10 @@ import functools
 import logging
 import os
 import pexpect
+import pexpect.fdpexpect
 import pexpect.popen_spawn
 import pexpect.spawnbase
 import pexpect.utils
-import pexpect.fdpexpect
 import re
 import shutil
 import signal
@@ -53,6 +54,7 @@ import sys
 import threading
 import time
 import types
+import unidecode
 import xdg
 import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
@@ -1344,5 +1346,38 @@ class Stdout_wrapper(Executable):
     name = Path(__file__).parent / 'bin' / 'stdout-wrapper'
 
 stdout_wrapper = Stdout_wrapper()
+
+def clean_file_name(file_name, keep_ext=True, extra=''):
+    if keep_ext:
+        name, ext = os.path.splitext(os.fspath(file_name))
+    else:
+        name, ext = os.fspath(file_name), ''
+    name = unidecode.unidecode(name)
+    # http://en.wikipedia.org/wiki/Filename {{{
+    # UNIX: a leading . indicates that ls and file managers will not show the file by default
+    name = re.sub(r'^[.]+', '', name)
+    # Remove leading spaces too
+    name = re.sub(r'^[ ]+', '', name)
+    # NTFS: The Win32 API strips trailing space and period (full-stop) characters from filenames, except when UNC paths are used.
+    # XXXJST: Include ! which may be considered as an event command even within double-quotes
+    name = re.sub(r'[ .!]+$', '', name)
+    # most: forbids the use of 0x00
+    name = re.sub(r'\x00', '_', name)
+    # NTFS/vfat: forbids the use of characters in range 1-31 (0x01-0x1F) and characters " * : < > ? \ / | unless the name is flagged as being in the Posix namespace.
+    name = re.sub(r'[\x01-\x1F\"*:<>?\\/|]', '_', name)
+    # XXXJST: Include ! which may be considered as an event command even within double-quotes
+    name = re.sub(r'[!]', '_', name)
+    # vfat: forbids the use of 0x7F
+    name = re.sub(r'\x7F', '_', name)
+    # Shouldn't be empty!
+    if len(name) + len(extra) == 0:
+        name = '_'
+    # NTFS allows each path component (directory or filename) to be 255 characters long.
+    over = len(name) + len(extra) + len(ext) - 255
+    if over > 0:
+        name = name[:len(name)-over]
+    # }}}
+    file_name = name + extra + ext
+    return file_name
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et
