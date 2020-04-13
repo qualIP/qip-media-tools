@@ -22,6 +22,8 @@ Depends:
     graphicsmagick,
     cdparanoia,
     ffmpeg,
+    mediainfo,
+    dvd+rw-mediainfo,
     libid3-tools,
     id3v2,
     cuetools,
