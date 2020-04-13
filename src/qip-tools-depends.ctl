@@ -23,7 +23,7 @@ Depends:
     cdparanoia,
     ffmpeg,
     mediainfo,
-    dvd+rw-mediainfo,
+    dvd+rw-mediainfo | dvd+rw-tools,
     libid3-tools,
     id3v2,
     cuetools,
