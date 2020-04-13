@@ -5,7 +5,6 @@ __all__ = [
 
 from pathlib import Path
 import collections
-import configobj
 import contextlib
 import enum
 import functools
@@ -13,6 +12,7 @@ import logging
 import os
 import pexpect
 import progress
+import re
 import subprocess
 import sys
 import time
@@ -27,6 +27,23 @@ from qip.utils import byte_decode, compile_pattern_list, KwVarsObject
 from qip.collections import OrderedSet
 from qip.isolang import isolang
 from qip.ffmpeg import ffmpeg
+from qip.configobj import ConfigObj
+
+class MakemkvSettingsConfigObj(ConfigObj):
+
+    # groups: (list_values, single, empty_list, comment)
+    _valueexp = re.compile(
+        r'''^
+        ()      # list_value, empty
+        (".*")  # single
+        (){0}   # empty_list, must not match
+        \s*()   # comment, not supported
+        $''',
+        re.VERBOSE)
+
+    def quote_value(self, value, multiline=True):
+        # MakeMKV doesn't care what's in the string, it just surrounds with double quotes
+        return f'"{value}"'
 
 def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[],
                              fd=None,
@@ -740,7 +757,7 @@ class Makemkvcon(Executable):
 
     def read_settings_conf(self):
         settings_file_name = self.settings_file_name
-        settings = configobj.ConfigObj(os.fspath(settings_file_name))
+        settings = MakemkvSettingsConfigObj(os.fspath(settings_file_name))
         return settings
 
     def write_settings_conf(self, settings):
