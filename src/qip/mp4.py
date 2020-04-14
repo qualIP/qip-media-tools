@@ -7,9 +7,11 @@ __all__ = (
     'M4aFile',
     'M4bFile',
     'M4rFile',
+    'mp4chaps',
 )
 
 from pathlib import Path
+import copy
 import logging
 import os
 import re
@@ -23,11 +25,13 @@ from .mm import SoundFile
 from .mm import RingtoneFile
 from .mm import MovieFile
 from .mm import AudiobookFile
+from .mm import Chapter, Chapters
 import qip.mm as mm
 import qip.wav as wav
 import qip.cdda as cdda
 from .img import ImageFile
-from .utils import byte_decode
+from .utils import byte_decode, Timestamp as _BaseTimestamp
+from .exec import Executable
 
 # https://en.wikipedia.org/wiki/MPEG-4_Part_14
 
@@ -57,13 +61,13 @@ class Mpeg4ContainerFile(MediaFile):
             ipod_compat=True,
             keep_picture_file_name=None,
             ):
-        from .app import app
         from .file import TempFile
         from .exec import do_exec_cmd
 
         if not src_picture:
             return None
         picture = src_picture = Path(src_picture)
+
         if src_picture.suffix not in (
                 #'.gif',
                 '.png',
@@ -74,7 +78,7 @@ class Mpeg4ContainerFile(MediaFile):
             else:
                 picture = TempFile.mkstemp(suffix='.png')
             if src_picture.resolve() != picture.file_name.resolve():
-                app.log.info('Writing new picture %s...', picture)
+                log.info('Writing new picture %s...', picture)
             from .ffmpeg import ffmpeg
             ffmpeg_args = []
             if True or yes:
@@ -83,17 +87,19 @@ class Mpeg4ContainerFile(MediaFile):
             ffmpeg_args += ['-an', str(picture)]
             ffmpeg(*ffmpeg_args)
             src_picture = picture
+
         if ipod_compat and shutil.which('gm'):
             if keep_picture_file_name:
                 picture = ImageFile(keep_picture_file_name)
             else:
                 picture = TempFile.mkstemp(suffix='.png')
-            app.log.info('Writing iPod-compatible picture %s...', picture)
+            log.info('Writing iPod-compatible picture %s...', picture)
             cmd = [shutil.which('gm'),
                     'convert', str(src_picture),
                     '-resize', 'x480>',
                     str(picture)]
             do_exec_cmd(cmd)
+
         return picture
 
     def encode(self, *,
@@ -109,7 +115,6 @@ class Mpeg4ContainerFile(MediaFile):
                channels=None,
                picture=None,
                expected_duration=None):
-        from .app import app
         from .exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
         from .parser import lines_parser
         from .qaac import qaac
@@ -117,7 +122,7 @@ class Mpeg4ContainerFile(MediaFile):
         from .file import TempFile, safe_write_file_eval, safe_read_file
         m4b = self
 
-        app.log.info('Writing %s...', m4b)
+        log.info('Writing %s...', m4b)
         use_qaac_cmd = False
         use_qaac_intermediate = False
         ffmpeg_cmd = []
@@ -193,18 +198,18 @@ class Mpeg4ContainerFile(MediaFile):
                     else:
                         if False and kbitrate >= 160:
                             # http://wiki.hydrogenaud.io/index.php?title=FAAC
-                            app.log.info('NOTE: Using recommended high-quality LC-AAC libfaac settings; If it fails, try: --bitrate %dk', kbitrate)
+                            log.info('NOTE: Using recommended high-quality LC-AAC libfaac settings; If it fails, try: --bitrate %dk', kbitrate)
                             ffmpeg_output_cmd += ['-c:a', 'libfaac', '-q:a', '330', '-cutoff', '15000']  # 100% ~= 128k, 330% ~= ?
                         elif kbitrate > 64:
-                            app.log.info('NOTE: Using recommended high-quality LC-AAC libfdk_aac settings; If it fails, try: --bitrate %dk', kbitrate)
+                            log.info('NOTE: Using recommended high-quality LC-AAC libfdk_aac settings; If it fails, try: --bitrate %dk', kbitrate)
                             ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-b:a', '%dk' % (kbitrate,)]
                         elif kbitrate >= 48:
-                            app.log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 64k settings; If it fails, try: --bitrate %dk', kbitrate)
+                            log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 64k settings; If it fails, try: --bitrate %dk', kbitrate)
                             ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he', '-b:a', '64k']
                             if itunes_compat:
                                 ffmpeg_output_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
                         elif True:
-                            app.log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 32k settings; If it fails, try: --bitrate %dk', kbitrate)
+                            log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 32k settings; If it fails, try: --bitrate %dk', kbitrate)
                             ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he_v2', '-b:a', '32k']
                             if itunes_compat:
                                 ffmpeg_output_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
@@ -228,21 +233,14 @@ class Mpeg4ContainerFile(MediaFile):
                 pass
         inputfiles_names = [inputfile.file_name for inputfile in inputfiles]
         if len(inputfiles_names) > 1:
-            filesfile = TempFile.mkstemp(suffix='.files.txt')
-            app.log.info('Writing %s...', filesfile)
-            def body(fp):
-                print('ffconcat version 1.0', file=fp)
-                for inputfile in inputfiles:
-                    print('file \'%s\'' % (
-                        os.fspath(inputfile.file_name.resolve()) \
-                            .replace('\\', '\\\\').replace('\'', '\'\\\'\''),
-                        ), file=fp)
-                    if hasattr(inputfile, 'duration'):
-                        print('duration %.3f' % (inputfile.duration,), file=fp)
-            safe_write_file_eval(filesfile, body, text=True)
-            app.log.info('Files:\n' +
-                         re.sub(r'^', '    ', safe_read_file(filesfile), flags=re.MULTILINE))
-            ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', filesfile.file_name]
+            temp_concat_file = TempFile.mkstemp(suffix='.concat.lst')
+            concat_file = ffmpeg.ConcatScriptFile(temp_concat_file)
+            concat_file.files = inputfiles
+            log.info('Writing %s...', concat_file)
+            concat_file.create(absolute=True)
+            log.info('Files:\n' +
+                         re.sub(r'^', '    ', safe_read_file(concat_file), flags=re.MULTILINE))
+            ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', concat_file]
         else:
             ffmpeg_input_cmd += ['-i', inputfiles_names[0]]
 
@@ -309,44 +307,52 @@ class Mpeg4ContainerFile(MediaFile):
                         # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
                         out_time = mm.parse_time_duration(parser.match.group('out_time'))
                     elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
-                        app.log.warning('TODO: %s', parser.line)
+                        log.warning('TODO: %s', parser.line)
                         pass
                     else:
                         pass  # TODO
             # }}}
             print('')
             if expected_duration is not None:
-                app.log.info('Expected final duration: %s (%.3f seconds)', mm.mp4chaps_format_time_offset(expected_duration), expected_duration)
+                expected_duration = mp4chaps.Timestamp(expected_duration)
+                log.info('Expected final duration: %s (%.3f seconds)', expected_duration, expected_duration)
             if out_time is None:
-                app.log.warning('final duration unknown!')
+                log.warning('final duration unknown!')
             else:
-                app.log.info('Final duration:          %s (%.3f seconds)', mm.mp4chaps_format_time_offset(out_time), out_time)
+                out_time = mp4chaps.Timestamp(out_time)
+                log.info('Final duration:          %s (%.3f seconds)', out_time, out_time)
 
         finally:
             for intermediate_wav_file in intermediate_wav_files:
                 intermediate_wav_file.unlink(force=True)
 
         if not use_qaac_cmd and chapters_file:
-            app.log.info("Adding chapters...")
-            cmd = [shutil.which('mp4chaps')]
-            cmd += ['-i', m4b.file_name]
-            out = do_exec_cmd(cmd)
+            log.info("Adding chapters...")
+            out = mp4chaps('-i', m4b.file_name).out
 
-        app.log.info('Adding tags...')
-        m4b.write_tags(run_func=do_exec_cmd)
+        log.info('Adding tags...')
+        tags = copy.copy(m4b.tags)
+        tags.picture = None
+        m4b.write_tags(tags=tags, run_func=do_exec_cmd)
 
         if not use_qaac_cmd:
             if picture is not None:
-                app.log.info('Adding picture...')
+                log.info('Adding picture...')
                 cmd = [shutil.which('mp4art')]
                 cmd += ['--add', str(picture), m4b.file_name]
                 out = do_exec_cmd(cmd)
+
+    def load_chapters(self):
+        chapters_out = mp4chaps('-l', self).out
+        chaps = mp4chaps.parse_chapters_out(chapters_out)
+        return chaps
 
 class Mp4File(Mpeg4ContainerFile, MovieFile):
 
     _common_extensions = (
         '.mp4',
         '.m4v',  # Raw MPEG-4 Visual bitstreams m4v but also sometimes used for video in MP4 container format.
+        '.mpeg4',
     )
 
 class M4aFile(Mpeg4ContainerFile, SoundFile):
@@ -394,4 +400,56 @@ class M4bFile(M4aFile, AudiobookFile):
 
 Mpeg4ContainerFile._build_extension_to_class_map()
 
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
+class Mp4chapsTimestamp(_BaseTimestamp):
+    '''hh:mm:ss.sss format'''
+
+    def canonical_str(self):
+        s = self.seconds
+        if s < 0.0:
+            sign = '-'
+            s = -s
+        else:
+            sign = ''
+        m = s // 60
+        s = s - m * 60
+        h = m // 60
+        m = m - h * 60
+        return '%s%02d:%02d:%s' % (sign, h, m, ('%.3f' % (s + 100.0))[1:])
+
+class Mp4chaps(Executable):
+
+    name = 'mp4chaps'
+
+    Timestamp = Mp4chapsTimestamp
+
+    @classmethod
+    def parse_chapters_out(cls, chapters_out):
+        from .parser import lines_parser
+        chaps = Chapters()
+        chapters_out = mp4chaps.clean_cmd_output(chapters_out)
+        parser = lines_parser(chapters_out.split('\n'))
+        while parser.advance():
+            if parser.line == '':
+                pass
+            elif parser.re_search(r'^(QuickTime|Nero) Chapters of "(.*)"$'):
+                # QuickTime Chapters of "../Carl Hiaasen - Bad Monkey.m4b"
+                # Nero Chapters of "../Carl Hiaasen - Bad Monkey.m4b"
+                pass
+            elif parser.re_search(r'^ +Chapter #0*(?P<chapter_no>\d+) - (?P<start>\d+:\d+:\d+\.\d+) - "(?P<title>.*)"$') \
+                or parser.re_search(r'^(?P<start>\d+:\d+:\d+\.\d+) (?P<title>.*)$'):
+                #     Chapter #001 - 00:00:00.000 - "Bad Monkey"
+                # 00:00:00.000 Chapter 1
+                chaps.append(Chapter(
+                    start=parser.match.group('start'), end=None,
+                    title=parser.match.group('title'),
+                ))
+            elif parser.re_search(r'^File ".*" does not contain chapters'):
+                # File "Mario Jean_ Gare au gros nounours!.m4a" does not contain chapters of type QuickTime and Nero
+                pass
+            else:
+                log.debug('TODO: %s', parser.line)
+                raise ValueError('Invalid mp4chaps line: %s' % (parser.line,))
+                # TODO
+        return chaps
+
+mp4chaps = Mp4chaps()
