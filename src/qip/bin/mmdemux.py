@@ -1434,6 +1434,7 @@ def action_rip_iso(rip_iso, device, in_tags):
             # TODO
             stage = 2
 
+    # See `info ddrescue`
     if stage == 1:
         ddrescue_args = [
             # Sector size of input device
@@ -1445,6 +1446,8 @@ def action_rip_iso(rip_iso, device, in_tags):
         ]
     elif stage == 2:
         ddrescue_args = [
+            # Sector size of input device
+            '-b', 2048,
             # Mark all failed blocks as non-trimmed
             '-M',
             # Start from 0
@@ -1454,8 +1457,10 @@ def action_rip_iso(rip_iso, device, in_tags):
         ]
     elif stage == 3:
         ddrescue_args = [
+            # Sector size of input device
+            '-b', 2048,
             # Use direct disc access for input file; This requires correct sector size
-            '-d', '-b', 2048,
+            '-d',
             # Exit after 3 retry passes
             '-r', 3,
             device,
