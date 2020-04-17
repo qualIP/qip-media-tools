@@ -87,21 +87,22 @@ except ImportError:
 from qip import argparse
 from qip import json
 from qip.app import app
+from qip.avi import *
 from qip.ddrescue import ddrescue
 from qip.exec import *
 from qip.ffmpeg import ffmpeg, ffprobe
-from qip.mencoder import mencoder
 from qip.file import *
 from qip.handbrake import *
 from qip.isolang import isolang
+from qip.matroska import *
+from qip.mediainfo import *
+from qip.mencoder import mencoder
+from qip.mm import *
+from qip.mm import MediaFile, MovieFile, Chapter, Chapters, FrameRate
 from qip.mp2 import *
 from qip.mp4 import *
-from qip.mediainfo import *
-from qip.matroska import *
-from qip.mm import MediaFile, MovieFile, Chapter, Chapters, FrameRate
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
-from qip.mm import *
 from qip.threading import *
 from qip.utils import byte_decode, Ratio, round_half_away_from_zero
 import qip.mm

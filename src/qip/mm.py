@@ -4734,7 +4734,6 @@ class RingtoneFile(SoundFile): pass  # TODO
 class MovieFile(SoundFile):
 
     _common_extensions = (
-        '.avi',
         '.h264',
         '.h265',
         '.ivf',
