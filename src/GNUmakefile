@@ -13,6 +13,7 @@ install-read-only:
 develop:
 	# pip3 install . --user --editable
 	python3 setup.py develop --user
+	echo Execute: ln -s $(CURDIR)/qip ~/.local/lib/pythonX.X/site-packages/qip
 
 .PHONY: build-qip-tools-depends
 build-qip-tools-depends: qip-tools-depends_1.0_all.deb
