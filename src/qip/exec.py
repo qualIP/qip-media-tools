@@ -91,8 +91,8 @@ class SpawnedProcessError(subprocess.CalledProcessError):
 
 class _SpawnMixin(pexpect.spawnbase.SpawnBase):
 
-    def __init__(self, *args, errors=None, **kwargs):
-        super().__init__(*args, codec_errors=errors, **kwargs)
+    def __init__(self, *args, errors=None, timeout=None, **kwargs):
+        super().__init__(*args, codec_errors=errors, timeout=timeout, **kwargs)
 
     def communicate(self, pattern_dict, **kwargs):
         pattern_kv_list = list(pattern_dict.items())
