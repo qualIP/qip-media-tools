@@ -125,6 +125,7 @@ setup(
             'mmdemux = qip.bin.mmdemux:main',
             'organize-media = qip.bin.organize_media:main',
             'taged = qip.bin.taged:main',
+            'cdrom-ready = qip.bin.cdrom_ready:main',
         ],
     },
 )
