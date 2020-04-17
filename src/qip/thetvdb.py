@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """TheTVDB API Access
 
 See: https://api.thetvdb.com/swagger
@@ -83,5 +84,34 @@ class Tvdb(tvdb_api.Tvdb, XdgResource):
     @language.setter
     def language(self, value):
         self.config['language'] = 'en' if value is None else isolang(value).iso639_1
+
+if __name__ == "__main__":
+    import logging
+    import re
+    from qip.app import app
+
+    @app.main_wrapper
+    def main():
+
+        app.init(logging_level=logging.DEBUG)
+
+        tvdb = Tvdb(
+            apikey='d38d1a8df34d030f1be077798db952bc',  # mmdemux
+            interactive=True)
+
+        tvshow = app.input_dialog(title='TheTVDB',
+                                  text='Please provide tvshow [lang]')
+        m = re.match(r'^(?P<tvshow>.+) \[(?P<language>\w\w\w)\]', tvshow)
+        if m:
+            tvdb.language = m.group('language')
+            tvshow = m.group('tvshow').strip()
+
+        l_series = tvdb.search(tvshow)
+        assert l_series, "No series!"
+
+        for i, d_series in enumerate(l_series):
+            print('{seriesName} [{language}], {network}, {firstAired}, {status} (#{id})'.format_map(d_series))
+
+    main()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
