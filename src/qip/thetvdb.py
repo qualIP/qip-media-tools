@@ -9,14 +9,16 @@ Attribution: TV information and images are provided by TheTVDB.com, but we are n
 __all__ = [
 ]
 
+import qip  # Executable support
+
 from pathlib import Path
 import configparser
 import io
 import os
 import tvdb_api
 
-from .isolang import isolang
-from .xdg import XdgResource
+from qip.isolang import isolang
+from qip.xdg import XdgResource
 
 class Tvdb(tvdb_api.Tvdb, XdgResource):
 
