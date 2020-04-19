@@ -680,6 +680,7 @@ def main():
     pgroup.add_argument('--sp-remove-method', default='auto', choices=('auto', 'CellWalk', 'CellTrim'), help='DVD structure protection removal method')
     pgroup.add_bool_argument('--check-start-time', default=Auto, help='check start time of tracks')
     pgroup.add_argument('--stage', default=Auto, type=int, choices=range(1, 3 + 1), help='specify ripping stage')
+    pgroup.add_bool_argument('--decrypt', default=True, help='create decrypted backup')
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -1708,7 +1709,7 @@ def action_backup(backup_dir, device, in_tags):
         makemkvcon.backup(
             source=source,
             dest_dir=backup_dir,
-            decrypt=True,
+            decrypt=app.args.decrypt,
             retry_no_cd=True,
             noscan=True,
             robot=True,
