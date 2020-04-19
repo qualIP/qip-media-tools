@@ -88,6 +88,7 @@ from qip import argparse
 from qip import json
 from qip.app import app
 from qip.avi import *
+from qip.cdrom import cdrom_ready
 from qip.ddrescue import ddrescue
 from qip.exec import *
 from qip.ffmpeg import ffmpeg, ffprobe
@@ -670,6 +671,8 @@ def main():
     pgroup.add_argument('--pullup-tool', default=Auto, choices=('yuvkineco', 'ffmpeg', 'mencoder'), help='tool to pullup any 23pulldown video tracks')
     pgroup.add_argument('--ionice', default=None, type=int, help='ionice process level')
     pgroup.add_argument('--nice', default=None, type=int, help='nice process adjustment')
+    pgroup.add_bool_argument('--check-cdrom-ready', default=True, help='check CDROM readiness')
+    pgroup.add_argument('--cdrom-ready-timeout', default=24, type=int, help='CDROM readiness timeout')
 
     pgroup = app.parser.add_argument_group('Ripping Control')
     pgroup.add_argument('--device', default=Path(os.environ.get('CDROM', '/dev/cdrom')), type=_resolved_Path, help='specify alternate cdrom device')
@@ -1408,6 +1411,10 @@ def action_rip_iso(rip_iso, device, in_tags):
     iso_file = BinaryFile(rip_iso)
     log_file = TextFile(rip_iso.with_suffix('.log'))
 
+    if app.args.check_cdrom_ready:
+        if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
+            raise Exception("CDROM not ready")
+
     app.log.info('Identifying mounted media type...')
     out = dbg_exec_cmd(['dvd+rw-mediainfo', app.args.device], dry_run=False)
     out = clean_cmd_output(out)
@@ -1513,6 +1520,9 @@ def action_rip(rip_dir, device, in_tags):
         settings_changed = True
 
     if device.is_block_device():
+        if app.args.check_cdrom_ready:
+            if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
+                raise Exception("CDROM not ready")
         source = f'dev:{device.resolve()}'  # makemkv is picky
     else:
         if device.suffix != '.iso':
@@ -1536,7 +1546,7 @@ def action_rip(rip_dir, device, in_tags):
                     dest_dir=rip_dir,
                     minlength=int(minlength),
                     profile=tmp_profile_xml_file,
-                    retry_no_cd=device.is_block_device(),
+                    #retry_no_cd=device.is_block_device(),
                     noscan=True,
                     robot=True,
                 )
@@ -1685,6 +1695,9 @@ def action_backup(backup_dir, device, in_tags):
     try:
 
         if device.is_block_device():
+            if app.args.check_cdrom_ready:
+                if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
+                    raise Exception("CDROM not ready")
             drive_info = makemkvcon.device_to_drive_info(device)
             source = f'disc:{drive_info.index}'
         else:

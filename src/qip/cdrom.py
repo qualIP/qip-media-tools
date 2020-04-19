@@ -19,6 +19,7 @@ __all__ = [
 #include <asm/byteorder.h>
 
 from pathlib import Path
+import contextlib
 import enum
 import errno
 import fcntl
@@ -981,60 +982,78 @@ def cdrom_ready(device=None, timeout=0, progress_bar=None):
     assert timeout >= 0
     t0 = time.perf_counter() if timeout else None
     device = _resolve_cdrom_device(device=device)
-    if progress_bar:
-        progress_bar.timeout = timeout
-        progress_bar.state = ''
-        progress_bar.suffix = '[%(elapsed).1f/%(timeout).1f] %(state)s'
-        progress_bar.update()
-    while True:
-        try:
-            fp = _open_cdrom_device(device=device)
-        except OSError as e:
-            log.debug(e)
-            if e.errno == errno.ENOMEDIUM:
-                if timeout and time.perf_counter() <= t0 + timeout:
-                    time.sleep(0.1)
-                    continue
-            if progress_bar:
-                progress_bar.state = e
-                progress_bar.update()
-            return False
-        break
-    with fp:
-        old_status = None
-        while True:
-            status = cdrom_drive_status(fd=fp)
-            if status != old_status:
-                status = CdromDriveStatus(status)
-                log.debug('CDROM status=%r', status)
-                old_status = status
-                if progress_bar:
-                    progress_bar.state = status.name
-                    progress_bar.update()
-            if status is CdromDriveStatus.CDS_DISC_OK:
-                break
-            if timeout and time.perf_counter() <= t0 + timeout:
-                time.sleep(0.1)
-                continue
-            if progress_bar:
-                if timeout:
-                    pass  # progress_bar.state += ' -> timeout!'
-                progress_bar.update()
-            return False
+
+    with contextlib.ExitStack() as exit_stack:
+
+        if progress_bar is True:
+            progress_bar = None
+            try:
+                from qip.utils import ProgressBar
+            except ImportError:
+                pass
+            else:
+                progress_bar = ProgressBar('CDROM ready?')
+                exit_stack.callback(progress_bar.finish)
+        if progress_bar:
+            progress_bar.timeout = timeout
+            progress_bar.state = ''
+            progress_bar.suffix = '[%(elapsed).1f/%(timeout).1f] %(state)s'
+            progress_bar.update()
+
         while True:
             try:
-                fp.read(2048)
-            except Exception as e:
-                log.debug('Exception: %r', e)
+                fp = _open_cdrom_device(device=device)
+            except OSError as e:
+                log.debug(e)
                 if progress_bar:
                     progress_bar.state = e
                     progress_bar.update()
+                if e.errno == errno.ENOMEDIUM:
+                    if timeout and time.perf_counter() <= t0 + timeout:
+                        time.sleep(0.1)
+                        continue
+                if progress_bar:
+                    if timeout:
+                        # progress_bar.state += ' -> timeout!'
+                        progress_bar.update()
+                return False
+            break
+        with fp:
+            old_status = None
+            while True:
+                status = cdrom_drive_status(fd=fp)
+                if status != old_status:
+                    status = CdromDriveStatus(status)
+                    log.debug('CDROM status=%r', status)
+                    old_status = status
+                    if progress_bar:
+                        progress_bar.state = status.name
+                        progress_bar.update()
+                if status is CdromDriveStatus.CDS_DISC_OK:
+                    break
                 if timeout and time.perf_counter() <= t0 + timeout:
                     time.sleep(0.1)
                     continue
+                if progress_bar:
+                    if timeout:
+                        # progress_bar.state += ' -> timeout!'
+                        progress_bar.update()
                 return False
-            break
-        if progress_bar:
-            progress_bar.state = 'Ready!'
-            progress_bar.update()
+            while True:
+                try:
+                    fp.read(2048)
+                except Exception as e:
+                    log.debug('Exception: %r', e)
+                    if progress_bar:
+                        progress_bar.state = e
+                        progress_bar.update()
+                    if timeout and time.perf_counter() <= t0 + timeout:
+                        time.sleep(0.1)
+                        continue
+                    return False
+                break
+            if progress_bar:
+                progress_bar.state = 'Ready!'
+                progress_bar.update()
+
     return True

@@ -41,22 +41,9 @@ def main():
         app.args.logging_level = logging.INFO
     app.set_logging_level(app.args.logging_level)
 
-    progress_bar = None
-    if app.args.progress:
-        try:
-            from qip.utils import ProgressBar
-        except ImportError:
-            pass
-        else:
-            progress_bar = ProgressBar('CDROM ready?')
-
-    try:
-        return cdrom_ready(device=app.args.device,
-                           timeout=app.args.timeout,
-                           progress_bar=progress_bar)
-    finally:
-        if progress_bar:
-            progress_bar.finish()
+    return cdrom_ready(device=app.args.device,
+                       timeout=app.args.timeout,
+                       progress_bar=app.args.progress)
 
 
 if __name__ == "__main__":
