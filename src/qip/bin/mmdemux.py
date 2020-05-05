@@ -105,6 +105,7 @@ from qip.mp4 import *
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
 from qip.threading import *
+from qip.udisksctl import udisksctl
 from qip.utils import byte_decode, Ratio, round_half_away_from_zero
 import qip.mm
 import qip.utils
@@ -1692,28 +1693,63 @@ def action_backup(backup_dir, device, in_tags):
         raise OSError(errno.EEXIST, backup_dir)
 
     from qip.makemkv import makemkvcon
+    decrypt = app.args.decrypt
+    discatt_dat_file = None
 
     try:
 
         if device.is_block_device():
+
             if app.args.check_cdrom_ready:
                 if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
                     raise Exception("CDROM not ready")
-            drive_info = makemkvcon.device_to_drive_info(device)
+            try:
+                drive_info = makemkvcon.device_to_drive_info(device)
+            except ValueError:
+                if not app.args.dry_run:
+                    raise
+                drive_info = types.SimpleNamespace(index=0)
             source = f'disc:{drive_info.index}'
+
+            makemkvcon.backup(
+                source=source,
+                dest_dir=backup_dir,
+                decrypt=decrypt,
+                retry_no_cd=True,
+                noscan=True,
+                robot=True,
+            )
+
         else:
+
             if device.suffix != '.iso':
                 raise ValueError(f'File is not a .iso: {device}')
-            source = f'iso:{os.fspath(device)}'
 
-        makemkvcon.backup(
-            source=source,
-            dest_dir=backup_dir,
-            decrypt=app.args.decrypt,
-            retry_no_cd=True,
-            noscan=True,
-            robot=True,
-        )
+            discatt_dat_file = device.with_suffix('.discatt.dat')
+            if discatt_dat_file.exists():
+                app.log.info('%s file found.', discatt_dat_file)
+                # decrypt = True
+            else:
+                app.log.warning('%s file not found.', discatt_dat_file)
+                discatt_dat_file = None
+                # decrypt = False
+
+            app.log.info('Mounting %s.', device)
+            from qip.lodev import LoopDevice
+            #with LoopDevice.context_from_file(device) as lodev:
+            with udisksctl.loop_context(file=device) as lodev:
+                with udisksctl.mount_context(block_device=lodev) as mountpoint:
+
+                    app.log.info('Copying %s to %s...', mountpoint, backup_dir)
+                    shutil.copytree(src=mountpoint, dst=backup_dir,
+                                    dirs_exist_ok=False)
+
+            app.log.info('Setting write permissions...')
+            do_exec_cmd(['chmod', '-R', 'u+w', backup_dir])
+
+            if discatt_dat_file is not None:
+                app.log.info('Copying %s...', backup_dir / 'discatt.dat')
+                shutil.copyfile(src=discatt_dat_file, dst=backup_dir / 'discatt.dat')
 
     except:
         if app.args.dry_run:

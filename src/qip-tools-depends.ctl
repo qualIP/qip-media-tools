@@ -35,6 +35,7 @@ Depends:
     libtesseract-dev,
     lockfile-progs,
     ccextractor,
+    udisks2,
 Recommends:
     winetricks,
     q4wine,
