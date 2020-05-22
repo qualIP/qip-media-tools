@@ -55,7 +55,7 @@ set -- ffmpeg $init_args -i "$input_file" \
     "${extra_args[@]}" \
     -- "$tmp_pass1output_file"
 if [ "$input_file" = "pipe:0" ] ; then
-    tee "$tmp_input_file" | "$@" > /dev/null
+    ( set -o pipefail ; tee --output-error=exit "$tmp_input_file" | "$@" ) > /dev/null
     input_file="$tmp_input_file"
 else
     "$@" > /dev/null
