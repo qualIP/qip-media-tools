@@ -1533,9 +1533,12 @@ def action_rip(rip_dir, device, in_tags):
                 raise Exception("CDROM not ready")
         source = f'dev:{device.resolve()}'  # makemkv is picky
     else:
-        if device.suffix != '.iso':
-            raise ValueError(f'File is not a .iso: {device}')
-        source = f'iso:{os.fspath(device)}'
+        if device.is_dir():
+            source = f'file:{os.fspath(device)}'
+        else:
+            if device.suffix != '.iso':
+                raise ValueError(f'File is not a .iso: {device}')
+            source = f'iso:{os.fspath(device)}'
 
     if not app.args.dry_run and settings_changed:
         app.log.warning('Changing makemkv settings!')
