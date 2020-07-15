@@ -1627,7 +1627,7 @@ def action_pick_title_streams(backup_dir, in_tags):
 
     def pick_a_title(titles):
         i = app.radiolist_dialog(
-            title='Pick a title',
+            title=f'Pick a title for offset {time_offset}',
             values=[(i, f'{title.title}: {title.stream_nos_str} ({title.duration}, {title.info_str})')
                     for i, title in enumerate(titles)],
         )
