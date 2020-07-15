@@ -693,7 +693,7 @@ class Executable(metaclass=abc.ABCMeta):
         return []
 
     @classmethod
-    def kwargs_to_cmdargs_gnu_getopt(cls, **kwargs):
+    def kwargs_to_cmdargs_gnu_getopt(cls, /, **kwargs):
         cmdargs = []
         for k, v in kwargs.items():
             if v in (None, False):
@@ -712,7 +712,13 @@ class Executable(metaclass=abc.ABCMeta):
         return cmdargs
 
     @classmethod
-    def kwargs_to_cmdargs_win_slash(cls, **kwargs):
+    def kwargs_to_cmdargs_gnu_getopt_dash(cls, /, **kwargs):
+        return cls.kwargs_to_cmdargs_gnu_getopt(
+            **{k.replace('_', '-'): v
+               for k, v in kwargs.items()})
+
+    @classmethod
+    def kwargs_to_cmdargs_win_slash(cls, /, **kwargs):
         cmdargs = []
         for k, v in kwargs.items():
             if v in (None, False):
