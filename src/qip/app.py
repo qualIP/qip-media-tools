@@ -480,7 +480,10 @@ class App(XdgResource):
         " Turn the `Dialog` into an `Application` and run it. "
         style = None if style is False else (style or self.prompt_style)
         from prompt_toolkit.application.current import get_app
-        application = get_app(return_none=True)
+        from prompt_toolkit.application.dummy import DummyApplication
+        application = get_app()
+        if isinstance(application, DummyApplication):
+            application = None
         if application:
             return dialog.run()
         else:
