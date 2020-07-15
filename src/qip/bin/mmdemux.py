@@ -682,6 +682,7 @@ def main():
     pgroup.add_bool_argument('--check-start-time', default=Auto, help='check start time of tracks')
     pgroup.add_argument('--stage', default=Auto, type=int, choices=range(1, 3 + 1), help='specify ripping stage')
     pgroup.add_bool_argument('--decrypt', default=True, help='create decrypted backup')
+    pgroup.add_argument('--makemkv-profile', default='default', type=str, help='MakeMKV profile name (e.g.: default, flac, wdtv, aac-st)')
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -1504,7 +1505,7 @@ def action_rip(rip_dir, device, in_tags):
     from qip.makemkv import makemkvcon
 
     # See ~/.MakeMKV/settings.conf
-    profile_xml = makemkvcon.get_profile_xml()
+    profile_xml = makemkvcon.get_profile_xml(f'{app.args.makemkv_profile}.mmcp.xml')
     eMkvSettings = profile_xml.find('mkvSettings')
     eMkvSettings.set('ignoreForcedSubtitlesFlag', 'false')
     eProfileSettings = profile_xml.find('profileSettings')
