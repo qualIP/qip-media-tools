@@ -150,7 +150,7 @@ class fdspawn(_SpawnMixin, pexpect.fdpexpect.fdspawn):
 class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
     # See pexpect/popen_spawn.py
 
-    def __init__(self, cmd, *, timeout=30, maxread=2000, searchwindowsize=None,
+    def __init__(self, cmd, *, timeout=None, maxread=2000, searchwindowsize=None,
                  logfile=None, env=None, encoding=None,
                  errors='strict', preexec_fn=None,
                  bufsize=0,
