@@ -85,8 +85,8 @@ def main():
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
 
     pgroup = app.parser.add_argument_group('Database Control')
-    pgroup.add_argument('--cddb', dest='use_cddb', default=True, action='store_true', help='Use CDDB')
-    pgroup.add_argument('--no-cddb', dest='use_cddb', default=argparse.SUPPRESS, action='store_false', help='Do not use CDDB')
+    pgroup.add_argument('--cddb', dest='use_cddb', default=False, action='store_true', help='Use CDDB (closed!)')
+    pgroup.add_argument('--no-cddb', dest='use_cddb', default=argparse.SUPPRESS, action='store_false', help='Do not use CDDB (closed!)')
     pgroup.add_argument('--musicbrainz', dest='use_musicbrainz', default=True, action='store_true', help='Use MusicBrainz')
     pgroup.add_argument('--no-musicbrainz', dest='use_musicbrainz', default=argparse.SUPPRESS, action='store_false', help='Do not use MusicBrainz')
     pgroup.add_argument('--cache', dest='use_cache', default=True, action='store_true', help='Use caching')
