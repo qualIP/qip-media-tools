@@ -446,7 +446,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^Using direct disc access mode{re_eol}', True),
             (fr'^Downloading latest SDF to (?P<dest_dir>[^\r\n]+) \.\.\.{re_eol}', True),
             (fr'^Downloading latest SVQ to (?P<dest_dir>[^\r\n]+) \.\.\.{re_eol}', True),
-            (fr'^Using LibreDrive mode \(v(?P<version>\d+) id=(?P<id>[0-9a-fA-F]+)\){re_eol}', self.generic_info),
+            (fr'^Using LibreDrive mode \(v(?P<version>\S+) id=(?P<id>[0-9a-fA-F]+)\){re_eol}', self.generic_info),
             (fr'^LibreDrive firmware support is not yet available for this drive \(id=(?P<drive_id>[A-Fa-f0-9]+)\){re_eol}', self.generic_info),
             (fr'^LibreDrive mode for this drive is only possible with firmware upgrade \(id=(?P<drive_id>[A-Fa-f0-9]+)\){re_eol}', self.generic_warning),
             (fr'^Loaded content hash table, will verify integrity of M2TS files\.{re_eol}', True),
