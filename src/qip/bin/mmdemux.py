@@ -2123,14 +2123,14 @@ def action_mux(inputfile, in_tags,
     remux = False
     if outputdir.is_dir():
         if app.args.remux:
-            app.log.warning('Directory exists: %r; Just remuxing', outputdir)
+            app.log.warning('Directory exists: %s; Just remuxing', outputdir)
             remux = True
         else:
             if app.args.chain:
-                app.log.warning('Directory exists: %r; Just chaining', outputdir)
+                app.log.warning('Directory exists: %s; Just chaining', outputdir)
                 return True
             elif app.args._continue:
-                app.log.warning('Directory exists: %r; Ignoring', outputdir)
+                app.log.warning('Directory exists: %s; Ignoring', outputdir)
                 return True
             else:
                 raise OSError(errno.EEXIST, outputdir)
@@ -4582,7 +4582,7 @@ def action_demux(inputdir, in_tags):
                     if stream_codec_type in ('audio',):
                         print('title -- Edit title (%s)' % (stream_dict.get('title', None),))
                     if isinstance(e, StreamExternalSubtitleAlreadyCreated):
-                        print('suffix -- Edit external stream file name suffix ()' % (stream_dict.get('external_stream_file_name_suffix', None)))
+                        print('suffix -- Edit external stream file name suffix (%s)' % (stream_dict.get('external_stream_file_name_suffix', None)))
                     print('open -- Open this stream')
                     print('goto -- Jump to another past stream')
                     print('continue -- Continue/retry processing this stream -- done')
