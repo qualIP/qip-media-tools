@@ -1458,10 +1458,15 @@ def action_rip_iso(rip_iso, device, in_tags):
         ddrescue_args = [
             # Sector size of input device
             '-b', 2048,
-            # Mark all failed blocks as non-trimmed
-            '-M',
-            # Start from 0
-            '-i', 0,
+        ]
+        if not app.args._continue:
+            ddrescue_args += [
+                # Mark all failed blocks as non-trimmed
+                '-M',
+                # Start from 0
+                '-i', 0,
+            ]
+        ddrescue_args += [
             device,
             iso_file, log_file,
         ]
