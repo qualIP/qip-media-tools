@@ -36,6 +36,7 @@ Depends:
     lockfile-progs,
     ccextractor,
     udisks2,
+    libdvdcss2,
 Recommends:
     winetricks,
     q4wine,
@@ -46,6 +47,7 @@ Recommends:
     fuseiso,
     mp4v2-utils,
 # NOTE: mp4v2-utils: https://www.deb-multimedia.org
+# NOTE: libdvdcss2: https://download.videolan.org/pub/debian/stable/
 # Suggests: <comma-separated list of packages>
 # Provides: <comma-separated list of packages>
 # Replaces: <comma-separated list of packages>
