@@ -233,7 +233,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
     angles = None
     backup_done = None
 
-    def __init__(self, *args, timeout=60 * 60, ignore_failed_to_open_disc=False, **kwargs):
+    def __init__(self, *args, timeout=None, ignore_failed_to_open_disc=False, **kwargs):
         self.operations_performed = OrderedSet()
         self.errors_seen = OrderedSet()
         self.ignore_failed_to_open_disc = ignore_failed_to_open_disc
