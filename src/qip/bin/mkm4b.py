@@ -131,7 +131,7 @@ def get_audio_file_default_chapter(d, chapter_naming_format):
 def clean_audio_file_title(d, title):
     track = d.tags.track
     if track is not None:
-        title = re.sub(r'^0*%s( *\[:-\] *)'.format(track), '', title)
+        title = re.sub(fr'^0*{track}( *[:-] *)', '', title)
     m = re.search(r'^Chapter *0*(?P<chapter_no>\d+)$', title)
     if m:
         chapter_no = int(m.group('chapter_no'))
