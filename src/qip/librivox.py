@@ -61,7 +61,7 @@ class LibrivoxIndexFile(XmlFile):
     def metadata_files(self):
         return (file_info
                 for file_info in self.files.values()
-                if file_info.source == 'metadata')
+                if file_info.format == 'Metadata')
 
     def derivative_files_of(self, original):
         return (file_info
