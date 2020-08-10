@@ -231,6 +231,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Chapters Control')
     pgroup.add_argument('--chapters', dest='chaptersfile', default=argparse.SUPPRESS, type=Path, help='specify the chapters file name')
+    pgroup.add_argument('--no-chapters', default=False, action='store_true', help='do not generate chapters')
     pgroup.add_argument('--reuse-chapters', action='store_true', help='reuse chapters.txt file')
     pgroup.add_argument('--chapter-naming', dest='chapter_naming_format', default="default", help='chapters naming format',
             choices=["default", "title", "track", "disc", "disk", "disc-track", "disk-track"])
@@ -470,6 +471,9 @@ def mkm4b(inputfiles, default_tags):
             shutil.copyfile(app.args.chaptersfile, chapters_file.file_name)
     elif app.args.reuse_chapters and chapters_file.exists():
         app.log.info('Reusing %s...', chapters_file)
+    elif app.args.no_chapters:
+        app.log.info('Writing empty %s...', chapters_file)
+        chapters_file.touch()
     else:
         app.log.info('Writing %s...', chapters_file)
         inputfile_to_chapters = {}
@@ -600,7 +604,7 @@ def mkm4b(inputfiles, default_tags):
                 app.log.error('Invalid input')
 
     m4b.encode(inputfiles=inputfiles,
-               chapters_file=chapters_file,
+               chapters_file=chapters_file if chapters_file.getsize() else None,
                force_input_bitrate=getattr(app.args, 'bitrate', None),
                target_bitrate=getattr(app.args, 'target_bitrate', None),
                yes=app.args.yes,
