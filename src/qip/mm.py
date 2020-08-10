@@ -4350,7 +4350,8 @@ def get_sox_app_support():
     global _sox_app_support
     if _sox_app_support is None:
         _sox_app_support = AudioAppSupport('sox')
-        if shutil.which('sox'):
+        # XXXJST sox use disabled because it messes with the tty
+        if False and shutil.which('sox'):
             # sox --help-format all {{{
             try:
                 out = do_exec_cmd(['sox', '--help-format', 'all'], dry_run=False)
