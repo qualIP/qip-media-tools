@@ -8,6 +8,7 @@ import contextlib
 import logging
 import os
 import re
+import subprocess
 log = logging.getLogger(__name__)
 
 from .file import BinaryFile
@@ -131,6 +132,7 @@ class Udisksctl(Executable):
                      file,                                    # setup
                      no_user_interaction=True,                # setup/delete
                      **kwargs):                               # setup
+        import retrying
         lodev = self.loop_setup(
             file=file,
             no_user_interaction=no_user_interaction,
@@ -138,7 +140,11 @@ class Udisksctl(Executable):
         try:
             yield lodev
         finally:
-            self.loop_delete(
+            retrying.retry(
+                wait_fixed=100,
+                stop_max_delay=5000,
+                retry_on_exception=lambda e: isinstance(e, subprocess.CalledProcessError) and e.returncode == 1,\
+            )(self.loop_delete)(
                 block_device=lodev,
                 no_user_interaction=no_user_interaction)
 
