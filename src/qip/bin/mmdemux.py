@@ -5495,8 +5495,7 @@ def action_tag_episodes(episode_file_names, in_tags):
     assert l_series, "No series!"
     i = 0
     if len(l_series) > 1 and app.args.interactive:
-        from prompt_toolkit.shortcuts.dialogs import radiolist_dialog
-        i = radiolist_dialog(
+        i = app.radiolist_dialog(
             title='Please select a series',
             values=[(i, '{seriesName} [{language}], {network}, {firstAired}, {status} (#{id})'.format_map(d_series))
                     for i, d_series in enumerate(l_series)],
