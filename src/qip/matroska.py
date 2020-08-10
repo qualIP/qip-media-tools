@@ -321,7 +321,7 @@ class MatroskaFile(MediaFile):
             dbg_exec_cmd(cmd)
             # https://mkvtoolnix.download/doc/mkvextract.html
             # If no tags are found in the file, the output file is not created.
-            if tmp_tags_xml_file.exists():
+            if tmp_tags_xml_file.exists() and tmp_tags_xml_file.getsize() > 0:
                 tags_xml = ET.parse(tmp_tags_xml_file.file_name)
             else:
                 tags_xml = self.create_empty_tags_xml()
