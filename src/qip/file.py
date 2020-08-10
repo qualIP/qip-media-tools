@@ -206,6 +206,10 @@ class File(object):
             self.assert_file_name_defined()
             os.truncate(self.file_name, length)
 
+    def touch(self):
+        self.assert_file_name_defined()
+        return self.file_name.touch()
+
     def test_integrity(self):
         raise NotImplementedError()
 
