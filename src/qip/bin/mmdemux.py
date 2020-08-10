@@ -1496,63 +1496,64 @@ def action_rip(rip_dir, device, in_tags):
     else:
         os.mkdir(rip_dir)
 
-    minlength = app.args.minlength
-    if minlength is Auto:
-        if in_tags.type == 'tvshow':
-            minlength = default_minlength_tvshow
-        else:
-            minlength = default_minlength_movie
-
-    from qip.makemkv import makemkvcon
-
-    # See ~/.MakeMKV/settings.conf
-    profile_xml = makemkvcon.get_profile_xml(f'{app.args.makemkv_profile}.mmcp.xml')
-    eMkvSettings = profile_xml.find('mkvSettings')
-    eMkvSettings.set('ignoreForcedSubtitlesFlag', 'false')
-    eProfileSettings = profile_xml.find('profileSettings')
-    eProfileSettings.set('app_DefaultSelectionString', '+sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,-sel:mvcvideo,=100:all,-10:favlang')
-
-    settings_changed = False
-    makemkvcon_settings = makemkvcon.read_settings_conf()
-    orig_makemkvcon_settings = makemkvcon.read_settings_conf()
-
-    dvd_SPRemoveMethod = {
-        'auto': (None, '0'),
-        'CellWalk': ('1',),
-        'CellTrim': ('2',),
-    }[app.args.sp_remove_method]
-    if makemkvcon_settings.get('dvd_SPRemoveMethod', None) not in dvd_SPRemoveMethod:
-        if dvd_SPRemoveMethod[0] is None:
-            del makemkvcon_settings['dvd_SPRemoveMethod']
-        else:
-            makemkvcon_settings['dvd_SPRemoveMethod'] = dvd_SPRemoveMethod[0]
-        settings_changed = True
-
-    if device.is_block_device():
-        if app.args.check_cdrom_ready:
-            if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
-                raise Exception("CDROM not ready")
-        source = f'dev:{device.resolve()}'  # makemkv is picky
-    else:
-        if device.is_dir():
-            source = f'file:{os.fspath(device)}'
-        else:
-            if device.suffix != '.iso':
-                raise ValueError(f'File is not a .iso: {device}')
-            source = f'iso:{os.fspath(device)}'
-
-    if not app.args.dry_run and settings_changed:
-        app.log.warning('Changing makemkv settings!')
-        makemkvcon.write_settings_conf(makemkvcon_settings)
     try:
 
-        with TempFile.mkstemp(text=True, suffix='.profile.xml') as tmp_profile_xml_file:
-            profile_xml.write(tmp_profile_xml_file.file_name,
-                #encoding='unicode',
-                xml_declaration=True,
-                )
+        minlength = app.args.minlength
+        if minlength is Auto:
+            if in_tags.type == 'tvshow':
+                minlength = default_minlength_tvshow
+            else:
+                minlength = default_minlength_movie
 
-            try:
+        from qip.makemkv import makemkvcon
+
+        # See ~/.MakeMKV/settings.conf
+        profile_xml = makemkvcon.get_profile_xml(f'{app.args.makemkv_profile}.mmcp.xml')
+        eMkvSettings = profile_xml.find('mkvSettings')
+        eMkvSettings.set('ignoreForcedSubtitlesFlag', 'false')
+        eProfileSettings = profile_xml.find('profileSettings')
+        eProfileSettings.set('app_DefaultSelectionString', '+sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,-sel:mvcvideo,=100:all,-10:favlang')
+
+        settings_changed = False
+        makemkvcon_settings = makemkvcon.read_settings_conf()
+        orig_makemkvcon_settings = makemkvcon.read_settings_conf()
+
+        dvd_SPRemoveMethod = {
+            'auto': (None, '0'),
+            'CellWalk': ('1',),
+            'CellTrim': ('2',),
+        }[app.args.sp_remove_method]
+        if makemkvcon_settings.get('dvd_SPRemoveMethod', None) not in dvd_SPRemoveMethod:
+            if dvd_SPRemoveMethod[0] is None:
+                del makemkvcon_settings['dvd_SPRemoveMethod']
+            else:
+                makemkvcon_settings['dvd_SPRemoveMethod'] = dvd_SPRemoveMethod[0]
+            settings_changed = True
+
+        if device.is_block_device():
+            if app.args.check_cdrom_ready:
+                if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
+                    raise Exception("CDROM not ready")
+            source = f'dev:{device.resolve()}'  # makemkv is picky
+        else:
+            if device.is_dir():
+                source = f'file:{os.fspath(device)}'
+            else:
+                if device.suffix != '.iso':
+                    raise ValueError(f'File is not a .iso: {device}')
+                source = f'iso:{os.fspath(device)}'
+
+        if not app.args.dry_run and settings_changed:
+            app.log.warning('Changing makemkv settings!')
+            makemkvcon.write_settings_conf(makemkvcon_settings)
+        try:
+
+            with TempFile.mkstemp(text=True, suffix='.profile.xml') as tmp_profile_xml_file:
+                profile_xml.write(tmp_profile_xml_file.file_name,
+                    #encoding='unicode',
+                    xml_declaration=True,
+                    )
+
                 rip_info = makemkvcon.mkv(
                     source=source,
                     dest_dir=rip_dir,
@@ -1562,22 +1563,23 @@ def action_rip(rip_dir, device, in_tags):
                     noscan=True,
                     robot=True,
                 )
-            except:
-                if app.args.dry_run:
-                    app.log.verbose('CMD (dry-run): %s', list2cmdline(['rmdir', rip_dir]))
-                else:
-                    try:
-                        os.rmdir(rip_dir)
-                    except OSError:
-                        pass
-                    else:
-                        app.log.info('Ripping failed; Removed %s.', rip_dir)
-                raise
 
-    finally:
-        if not app.args.dry_run and settings_changed:
-            app.log.warning('Restoring makemkv settings!')
-            makemkvcon.write_settings_conf(orig_makemkvcon_settings)
+        finally:
+            if not app.args.dry_run and settings_changed:
+                app.log.warning('Restoring makemkv settings!')
+                makemkvcon.write_settings_conf(orig_makemkvcon_settings)
+
+    except:
+        if app.args.dry_run:
+            app.log.verbose('CMD (dry-run): %s', list2cmdline(['rmdir', rip_dir]))
+        else:
+            try:
+                os.rmdir(rip_dir)
+            except OSError:
+                pass
+            else:
+                app.log.info('Removed %s.', rip_dir)
+        raise
 
     if not app.args.dry_run:
         for title_no, angle_no in rip_info.spawn.angles:
