@@ -356,6 +356,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
     assert mutagen.version >= (1, 42, 0), f'Update mutagen ({mutagen.version_string}) module to at least 1.42.0'
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('Old tags: %r', list(mf.tags.keys()))
+
     tags_to_set = set(tags.keys())
     #app.log.debug('tags %r, tags_to_set: %r', type(tags), tags_to_set)
     if MediaTagEnum.disk in tags_to_set:
@@ -377,6 +378,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
         if tag in tags_to_set:
             tags_to_set.remove(tag)
             tags_to_set.add(MediaTagEnum.xid)
+
     for tag in tags_to_set:
         if tag in (
                 MediaTagEnum.musicbrainz_releaseid,
@@ -392,6 +394,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             value = mm_file.deduce_type()
         else:
             value = tags[tag]
+
         try:
             mapped_tag = qip.mm.sound_tag_info['map'][tag]
             mp4_tag = qip.mm.sound_tag_info['tags'][mapped_tag]['mp4v2_tag']
@@ -578,6 +581,16 @@ def tageditor(file_name):
         if modified:
             mm_file.set_tags_xml(tags_xml)
         return True
+    if isinstance(mm_file, qip.mp4.Mpeg4ContainerFile):
+        tags = mm_file.load_tags()
+        try:
+            del tags.picture
+        except AttributeError:
+            pass
+        modified, tags = edvar(tags)
+        if modified:
+            mm_file.write_tags(tags=tags)
+        return True
     raise NotImplementedError(mm_file)
 
 def taglist(file_name, format):
@@ -599,5 +612,3 @@ def taglist(file_name, format):
 
 if __name__ == "__main__":
     main()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
