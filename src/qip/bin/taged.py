@@ -374,6 +374,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             MediaTagEnum.musicbrainz_discid,
             MediaTagEnum.cddb_discid,
             MediaTagEnum.accuraterip_discid,
+            MediaTagEnum.isbn,
     ):
         if tag in tags_to_set:
             tags_to_set.remove(tag)

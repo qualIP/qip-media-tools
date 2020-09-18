@@ -152,6 +152,7 @@ default_tag_map = (
     #TagInfo(None, None, 'TODO', 'musicbrainz_releaseid'),
     #TagInfo(None, None, 'TODO', 'musicbrainz_cdstubid'),
     #TagInfo(None, None, 'TODO', 'accuraterip_discid'),
+    #TagInfo(None, None, 'TODO', 'isbn'),
     TagInfo(None, None, 'ISRC', 'isrc'),
     TagInfo(None, None, 'BARCODE', 'barcode'),
     #TagInfo(None, None, 'TODO', 'asin'),
