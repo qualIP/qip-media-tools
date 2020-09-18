@@ -1550,6 +1550,7 @@ class MediaTagEnum(enum.Enum):
     isrc = 'isrc'
     barcode = 'barcode'
     asin = 'asin'
+    isbn = 'isbn'
 
     contentrating = 'contentrating'  # None|MediaTagRating  Set the Rating(none, clean, explicit)
 
@@ -2136,6 +2137,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                     (MediaTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
                     (MediaTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
                     (MediaTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
+                    (MediaTagEnum.isbn, 'isbn', ITunesXid.Scheme.vendor_id),
             ):
                 identifier = self[tag_enum]
                 if identifier is not None:
@@ -2153,6 +2155,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                     (MediaTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
                     (MediaTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
                     (MediaTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
+                    (MediaTagEnum.isbn, 'isbn', ITunesXid.Scheme.vendor_id),
                     (MediaTagEnum.isrc, 'URBNETCommunicationsInc', ITunesXid.Scheme.isrc),
                     (MediaTagEnum.isrc, 'CDBaby', ITunesXid.Scheme.isrc),
                     (MediaTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
