@@ -56,6 +56,7 @@ class MatroskaTagSimple(KwVarsObject):
     String = None
     Binary = None
     TagLanguage = None
+    TagLanguageIETF = None
 
     def __init__(self, *,
                  Target,
@@ -63,6 +64,7 @@ class MatroskaTagSimple(KwVarsObject):
                  String=None,
                  Binary=None,
                  TagLanguage=None,
+                 TagLanguageIETF=None,
                  **kwargs):
         self.Target = Target
         self.Name = Name
@@ -72,6 +74,8 @@ class MatroskaTagSimple(KwVarsObject):
             self.Binary = Binary
         if TagLanguage is not None:
             self.TagLanguage = TagLanguage
+        if TagLanguageIETF is not None:
+            self.TagLanguageIETF = TagLanguageIETF
         super().__init__(**kwargs)
 
     def apply_default_TargetTypes(self, default_TargetTypes):
@@ -178,6 +182,7 @@ class MatroskaFile(MediaFile):
         'Name',
         'String',
         'TagLanguage',
+        'TagLanguageIETF',
         'TargetType',
         'TargetTypeValue',
         'TrackUID',
@@ -192,6 +197,7 @@ class MatroskaFile(MediaFile):
     #     </Targets>
     #     <Simple>
     #       <Name>BPS</Name>
+    #       <TagLanguageIETF>-CA-x-ca</TagLanguageIETF>
     #       <TagLanguage>eng</TagLanguage>
     #       <String>4203293</String>
     #       <Binary>...</Binary>
@@ -428,6 +434,7 @@ class MatroskaFile(MediaFile):
         vString = None
         vBinary = None
         vTagLanguage = None
+        vTagLanguageIETF = None
         lSubSimples = []
         for eSub in eSimple:
             if eSub.tag == 'Name':
@@ -446,6 +453,9 @@ class MatroskaFile(MediaFile):
             elif eSub.tag == 'TagLanguage':
                 assert vTagLanguage is None
                 vTagLanguage = isolang(eSub.text)
+            elif eSub.tag == 'TagLanguageIETF':
+                assert vTagLanguageIETF is None
+                vTagLanguageIETF = eSub.text  # TODO isolang(eSub.text)
             elif eSub.tag == 'DefaultLanguage':
                 # Deprecated; Was always 1.
                 pass
@@ -462,6 +472,7 @@ class MatroskaFile(MediaFile):
                 String=vString,
                 Binary=vBinary,
                 TagLanguage=vTagLanguage,
+                TagLanguageIETF=vTagLanguageIETF,
             )
         for eSub in lSubSimples:
             yield from cls._parse_tags_xml_Simple(eSub, d_target, parent_Simple_names=parent_Simple_names)
@@ -603,6 +614,11 @@ class MatroskaFile(MediaFile):
                 if d_tag.TagLanguage is not None:
                     eTagLanguage = ET.SubElement(eSimple, 'TagLanguage')
                     eTagLanguage.text = str(d_tag.TagLanguage)
+                    eTagLanguageIETF = ET.SubElement(eSimple, 'TagLanguageIETF')
+                    eTagLanguageIETF.text = isolang(d_tag.TagLanguageIETF).iso639_2
+                # if d_tag.TagLanguageIETF is not None:
+                #     eTagLanguageIETF = ET.SubElement(eSimple, 'TagLanguageIETF')
+                #     eTagLanguageIETF.text = str(d_tag.TagLanguageIETF)
         return tags_xml
 
     def load_tags(self, file_type=None):
