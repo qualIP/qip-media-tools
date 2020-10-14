@@ -32,6 +32,7 @@ from qip.exec import *
 from qip.file import *
 from qip.parser import *
 from qip.mm import *
+from qip.mp3 import *
 from qip.utils import byte_decode
 from qip.mm import MediaFile
 import qip.mm
@@ -139,7 +140,7 @@ def main():
 
     for prog in (
             'ffmpeg',  # ffmpeg | libav-tools
-            'mp4info',  # mp4v2-utils
+            #'mp4info',  # mp4v2-utils
             ):
         if not shutil.which(prog):
             raise Exception('%s: command not found' % (prog,))
