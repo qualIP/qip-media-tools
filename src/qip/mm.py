@@ -576,6 +576,29 @@ class MediaFile(BinaryFile):
                 tag_value = tag_value.text
             if isinstance(tag_value, list) and len(tag_value) == 1:
                 tag_value = tag_value[0]
+            if isinstance(tag_value, mutagen.id3.ID3TimeStamp):
+                try:
+                    tag_value = datetime.datetime(year=tag_value.year,
+                                          month=tag_value.month,
+                                          day=tag_value.day,
+                                          hour=tag_value.hour,
+                                          minute=tag_value.minute,
+                                          second=tag_value.second,
+                                          )
+                except TypeError:
+                    try:
+                        tag_value = datetime.datetime(year=tag_value.year,
+                                              month=tag_value.month,
+                                              day=tag_value.day,
+                                              )
+                    except TypeError:
+                        try:
+                            tag_value = datetime.datetime(year=tag_value.year,
+                                                          month=1,
+                                                          day=1,
+                                                          ).year
+                        except TypeError:
+                            raise TypeError(tag_value)
             old_value = tags[mapped_tag] if mapped_tag in ('episode',) else None
             if old_value is not None:
                 if not isinstance(old_value, tuple):
