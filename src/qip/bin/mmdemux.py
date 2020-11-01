@@ -5253,6 +5253,50 @@ def action_demux(inputdir, in_tags):
                     )
                     stream_file_name = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+
+                elif stream_file_ext in {
+                        '.h264',
+                }:
+                    # h264:
+                    #   [matroska @ 0x5637c1c58a40] Timestamps are unset in a packet for stream 0. This is deprecated and will stop working in the future. Fix your code to set the timestamps properly
+                    #   [matroska @ 0x5637c1c58a40] Can't write packet with unknown timestamp
+                    #   av_interleaved_write_frame(): Invalid argument
+                    estimated_duration = estimated_duration or estimate_stream_duration(
+                        ffprobe_json=MovieFile.new_by_file_name(inputdir / stream_file_name).extract_ffprobe_json())
+
+                    tmp_stream_file_name = stream_file_name + '.mp4'
+                    ffmpeg_args = default_ffmpeg_args + [
+                            '-i', inputdir / stream_file_name,
+                            '-codec', 'copy',
+                            inputdir / tmp_stream_file_name,
+                        ]
+                    assert estimated_duration is None or float(estimated_duration) > 0.0
+                    ffmpeg(
+                        *ffmpeg_args,
+                        progress_bar_max=estimated_duration,
+                        progress_bar_title=f'Encap {stream_codec_type} stream {stream_index} w/ ffmpeg',
+                        dry_run=app.args.dry_run,
+                        y=True,  # TODO temp file
+                    )
+                    stream_file_name = tmp_stream_file_name
+                    stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+
+                    tmp_stream_file_name = stream_file_name + '.mkv'
+                    ffmpeg_args = default_ffmpeg_args + [
+                            '-i', inputdir / stream_file_name,
+                            '-codec', 'copy',
+                            inputdir / tmp_stream_file_name,
+                        ]
+                    assert estimated_duration is None or float(estimated_duration) > 0.0
+                    ffmpeg(
+                        *ffmpeg_args,
+                        progress_bar_max=estimated_duration,
+                        progress_bar_title=f'Encap {stream_codec_type} stream {stream_index} w/ ffmpeg',
+                        dry_run=app.args.dry_run,
+                        y=True,  # TODO temp file
+                    )
+                    stream_file_name = tmp_stream_file_name
+                    stream_file_base, stream_file_ext = my_splitext(stream_file_name)
                 elif stream_file_ext.endswith('.mkv'):
                     pass
                 elif stream_file_ext in still_image_exts:
