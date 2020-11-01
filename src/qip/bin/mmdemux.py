@@ -819,6 +819,7 @@ def main():
     pgroup.add_argument('--demux', dest='demux_dirs', nargs='+', default=(), type=Path, help='directories to demux')
     pgroup.add_argument('--merge', dest='merge_files', nargs='+', default=(), type=Path, help='files to merge')
     pgroup.add_argument('--tag-episodes', dest='tag_episodes_files', nargs='+', default=(), type=Path, help='files to tag based on tvshow episodes')
+    pgroup.add_argument('--identify', dest='identify_files', nargs='+', default=(), type=Path, help='identify files')
     pgroup.add_argument('--pick-title-streams', dest='pick_title_streams_dirs', nargs='+', default=(), type=Path, help='directories to pick title streams from')
     pgroup.add_argument('--status', '--print', dest='status_dirs', nargs='+', default=(), type=Path, help='directories to print the status of')
 
@@ -903,6 +904,9 @@ def main():
             did_something = True
         if getattr(app.args, 'tag_episodes_files', ()):
             action_tag_episodes(app.args.tag_episodes_files, in_tags=in_tags)
+            did_something = True
+        if getattr(app.args, 'identify_files', ()):
+            action_identify_files(app.args.identify_files, in_tags=in_tags)
             did_something = True
         for inputdir in getattr(app.args, 'status_dirs', ()):
             action_status(inputdir)
@@ -5661,6 +5665,327 @@ def action_tag_episodes(episode_file_names, in_tags):
                     app.log.info('  Rename to %s.', opath)
                     episode_file.rename(opath)
                     episode_file.file_name = opath
+
+def action_identify_files(file_names, in_tags):
+
+    t = [os.fspath(e) for e in file_names]
+    if t != sorted(t):
+        m = 'File names not sorted; This is likely a mistake.'
+        if app.args.force:
+            app.log.warning(m + ' (--force used; Bypassing)')
+        else:
+            raise ValueError(m + ' (use --force to bypass)')
+
+    if file_names[0].is_dir():
+        seed_initial_text = file_names[0].name
+    else:
+        seed_initial_text = file_names[0].parent.name
+
+    from prompt_toolkit.application.current import get_app
+    from prompt_toolkit.layout.dimension import Dimension as D
+    from prompt_toolkit.layout.containers import HSplit, VSplit
+    from prompt_toolkit.widgets import (
+        Box,
+        Button,
+        TextArea,
+        Dialog,
+        Label,
+    )
+    from prompt_toolkit.shortcuts.dialogs import (
+        _return_none,
+    )
+
+    global tvdb
+    if tvdb is None:
+        global qip
+        import qip.thetvdb
+        tvdb = qip.thetvdb.Tvdb(
+            apikey='d38d1a8df34d030f1be077798db952bc',  # mmdemux
+            interactive=app.args.interactive,
+        )
+    o_show_cache = {}
+
+    files = [MovieFile.new_by_file_name(file_name)
+             for file_name in file_names]
+    tags = files[0].load_tags()
+    tags.update(in_tags)
+    i_file = -1
+    while (i_file + 1) < len(files):
+        i_file += 1
+        o_file = files[i_file]
+
+        if tags.type is None:
+            type_initial_text = 'movie'
+        else:
+            type_initial_text = tags.type
+
+        if tags.tvshow is None:
+            tvshow_initial_text = ''
+            m = re.search(r'^(.*?)(?:S(\d+))?$', seed_initial_text)
+            if m:
+                tvshow_initial_text = m.group(1)
+                tvshow_initial_text = unmangle_search_string(tvshow_initial_text)
+        else:
+            tvshow_initial_text = tags.tvshow
+
+        if tags.season is None:
+            season_initial_text = ''
+            m = re.search(r'^(.*)S(\d+)$', seed_initial_text)
+            if m:
+                season_initial_text = m.group(2)
+        else:
+            season_initial_text = str(tags.season)
+
+        if tags.episode is None:
+            episode_initial_text = ''  # '1' if str(tags.type) == 'tvshow' else ''
+        else:
+            episode_initial_text = ','.join(str(e) for e in tags.episode)
+
+        if tags.contenttype is None:
+            contenttype_initial_text = ''
+        else:
+            contenttype_initial_text = str(tags.contenttype)
+
+        if not tags.comment:
+            comment_initial_text = ''
+        else:
+            comment_initial_text = str(tags.comment[0])
+
+        def type_accept(buf):
+            get_app().layout.focus(tvshow_textarea)
+            return True  # Keep text.
+        type_textarea = TextArea(
+            text=type_initial_text,
+            multiline=False,
+            accept_handler=type_accept,
+            auto_suggest=AutoSuggestFromHistory())
+
+        def tvshow_accept(buf):
+            get_app().layout.focus(season_textarea)
+            return True  # Keep text.
+        tvshow_textarea = TextArea(
+            text=tvshow_initial_text,
+            multiline=False,
+            accept_handler=tvshow_accept,
+            auto_suggest=AutoSuggestFromHistory())
+
+        def season_accept(buf):
+            get_app().layout.focus(episode_textarea)
+            return True  # Keep text.
+        season_textarea = NumericTextArea(
+            text=season_initial_text,
+            multiline=False,
+            accept_handler=season_accept,
+            auto_suggest=AutoSuggestFromHistory())
+
+        def episode_accept(buf):
+            get_app().layout.focus(contenttype_textarea)
+            return True  # Keep text.
+        episode_textarea = NumericTextArea(
+            text=episode_initial_text,
+            multiline=False,
+            accept_handler=episode_accept,
+            auto_suggest=AutoSuggestFromHistory())
+
+        def contenttype_accept(buf):
+            get_app().layout.focus(comment_textarea)
+            return True  # Keep text.
+        contenttype_textarea = TextArea(
+            text=contenttype_initial_text,
+            multiline=False,
+            accept_handler=contenttype_accept,
+            auto_suggest=AutoSuggestFromHistory())
+
+        def comment_accept(buf):
+            get_app().layout.focus(language_textarea)
+            return True  # Keep text.
+        comment_textarea = TextArea(
+            text=comment_initial_text,
+            multiline=False,
+            accept_handler=comment_accept,
+            auto_suggest=AutoSuggestFromHistory())
+
+        def language_accept(buf):
+            get_app().layout.focus(ok_button)
+            return True  # Keep text.
+        language_textarea = TextArea(
+            text=str(tags.language or ''),
+            multiline=False,
+            accept_handler=language_accept,
+            auto_suggest=AutoSuggestFromHistory())
+
+        def open_handler():
+            xdg_open(o_file)
+        open_button = Button(text='&Open', handler=open_handler)
+
+        def delete_handler():
+            o_file.send2trash()
+            get_app().exit(result='skip')
+        delete_button = Button(text='&Delete', handler=delete_handler)
+
+        def skip_handler():
+            get_app().exit(result='deleted')
+        skip_button = Button(text='&Skip', handler=skip_handler)
+
+        def ok_handler():
+            get_app().exit(result=(
+                type_textarea.text,
+                tvshow_textarea.text,
+                season_textarea.text,
+                episode_textarea.text,
+                contenttype_textarea.text,
+                comment_textarea.text,
+                language_textarea.text,
+            ))
+        ok_button = Button(text='Ok', handler=ok_handler)
+
+        cancel_button = Button(text='Cancel', handler=_return_none)
+
+        def push_button_handler(button, event):
+            # get_app().layout.focus(button)
+            return button.handler()
+
+        label_width = 14
+        dialog = Dialog(
+            title='Episode tagging',
+            body=HSplit([
+                VSplit([
+                    Box(Label(text='File:'), padding_left=0, width=label_width),
+                    Label(text=os.fspath(o_file)),
+                ]),
+                VSplit([
+                    Box(Label(text='Type:'), padding_left=0, width=label_width),
+                    type_textarea,
+                ]),
+                VSplit([
+                    Box(Label(text='TV Show:'), padding_left=0, width=label_width),
+                    tvshow_textarea,
+                ]),
+                VSplit([
+                    Box(Label(text='Season:'), padding_left=0, width=label_width),
+                    season_textarea,
+                ]),
+                VSplit([
+                    Box(Label(text='Episode:'), padding_left=0, width=label_width),
+                    episode_textarea,
+                ]),
+                VSplit([
+                    Box(Label(text='Content Type:'), padding_left=0, width=label_width),
+                    contenttype_textarea,
+                ]),
+                VSplit([
+                    Box(Label(text='Comment:'), padding_left=0, width=label_width),
+                    comment_textarea,
+                ]),
+                VSplit([
+                    Box(Label(text='Language:'), padding_left=0, width=label_width),
+                    language_textarea,
+                ]),
+            ], padding=D(preferred=1, max=1)),
+            buttons=[open_button, skip_button, delete_button, ok_button, cancel_button],
+            with_background=True)
+        if dialog.body.key_bindings is None:
+            from prompt_toolkit.key_binding.key_bindings import KeyBindings
+            dialog.body.key_bindings = KeyBindings()
+        kb = dialog.body.key_bindings
+        kb.add('escape', 'o')(functools.partial(push_button_handler, open_button))  # Escape, o
+        kb.add('escape', 's')(functools.partial(push_button_handler, skip_button))  # Escape, s
+        kb.add('escape', 'd')(functools.partial(push_button_handler, delete_button))  # Escape, d
+        kb.add('escape', 'escape')(functools.partial(push_button_handler, cancel_button))    # Escape, Escape
+        kb.add('escape', 'enter')(functools.partial(push_button_handler, ok_button))    # Escape, Enter
+
+        result = app.run_dialog(dialog)
+        if result is None:
+            raise ValueError('Cancelled by user!')
+        if result == 'skip':
+            continue
+        elif result == 'deleted':
+            del files[i_file]
+            i_file -= 1
+            continue
+        tags.type, tags.tvshow, tags.season, tags.episode, tags.contenttype, tags.comment, tags.language = result
+        print('tags=%r' % (dict(tags),))
+
+        tags.type = tags.deduce_type()
+        assert str(tags.type) == 'tvshow'
+
+        if str(tags.type) == 'tvshow':
+            if not tags.tvshow:
+                raise ValueError('Missing tvshow')
+            if tags.season is None:
+                raise ValueError('Missing season number')
+            #if tags.episode is None:
+            #    raise ValueError('Missing episode number')
+
+            tvdb.language = tags.language
+
+            try:
+                o_show = o_show_cache[tags.tvshow]
+            except KeyError:
+                l_series = tvdb.search(tags.tvshow)
+                app.log.debug('l_series=%r', l_series)
+                assert l_series, "No series!"
+                i = 0
+                if len(l_series) > 1 and app.args.interactive:
+                    i = app.radiolist_dialog(
+                        title='Please select a series',
+                        values=[(i, '{seriesName} [{language}], {network}, {firstAired}, {status} (#{id})'.format_map(d_series))
+                                for i, d_series in enumerate(l_series)],
+                        style=app.prompt_style)
+                    if i is None:
+                        raise ValueError('Cancelled by user!')
+                d_series = l_series[i]
+                tags.tvshow = d_series['seriesName']
+                o_show = tvdb[d_series['id']]
+                o_show_cache[tags.tvshow] = o_show
+                app.log.debug('o_show=%r', o_show)
+
+            o_season = o_show[tags.season]
+            app.log.debug('o_season=%r', o_season)
+
+            tags.episode = [e for e in (tags.episode or []) if e != 0]
+            if tags.episode:
+                i_episode = tags.episode[0]
+                o_episode = o_season[i_episode]
+            else:
+                i_episode = None
+                o_episode = None
+            app.log.debug('o_file=%r, o_episode=%r:\n%s', o_file, o_episode, o_episode and pprint.pformat(dict(o_episode)))
+
+            # o_file.tags.update(o_file.load_tags(file_type=tags.type))
+            o_file.tags.update(tags)
+            if o_episode:
+                o_file.tags.episode = o_episode['airedEpisodeNumber']
+                o_file.tags.title = o_episode['episodeName']
+                o_file.tags.date = o_episode['firstAired']
+            else:
+                o_file.tags.episode = None
+                o_file.tags.title = None
+                o_file.tags.date = None
+            app.log.info('%s: %s', o_file, o_file.tags.cite())
+            o_file.write_tags(tags=o_file.tags,
+                                    dry_run=app.args.dry_run)
+            if app.args.rename:
+                from qip.bin.organize_media import organize_tvshow
+                try:
+                    old_media_library_app = app.args.media_library_app
+                    app.args.media_library_app = 'mmdemux'
+                    opath = organize_tvshow(o_file, suggest_tags=TrackTags())
+                finally:
+                    app.args.media_library_app = old_media_library_app
+                opath = o_file.file_name.with_name(opath.name)
+                if opath != o_file.file_name:
+                    if opath.exists():
+                        raise OSError(errno.EEXIST, opath)
+                    if app.args.dry_run:
+                        app.log.info('  Rename to %s. (dry-run)', opath)
+                    else:
+                        app.log.info('  Rename to %s.', opath)
+                        o_file.rename(opath)
+                        o_file.file_name = opath
+
+        else:
+            raise NotImplementedError(tags.type)
 
 if __name__ == "__main__":
     main()
