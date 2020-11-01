@@ -3447,6 +3447,8 @@ def action_optimize(inputdir, in_tags):
                     elif pullup_tool == 'ffmpeg':
                         # -> ffmpeg -> .ffv1
 
+                        decimate_using_ffmpeg = True
+
                         new_stream_file_ext = '.ffv1.mkv'
                         lossless = True
                         new_stream_file_name = '.'.join(e for e in stream_file_base.split('.')
@@ -3470,7 +3472,7 @@ def action_optimize(inputdir, in_tags):
                                 ]
                         ffmpeg_args += [
                             '-i', inputdir / stream_file_name,
-                            '-vf', f'pullup,fps={framerate}',
+                            '-vf', f'fieldmatch,yadif,decimate' if decimate_using_ffmpeg else f'pullup,fps={framerate}',
                             '-r', framerate,
                             '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
                             ] + ext_to_codec_args(new_stream_file_ext, lossless=lossless)
