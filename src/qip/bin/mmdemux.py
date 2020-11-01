@@ -98,6 +98,7 @@ from qip.ddrescue import ddrescue
 from qip.exec import *
 from qip.ffmpeg import ffmpeg, ffprobe
 from qip.file import *
+from qip.frim import FRIMDecode
 from qip.handbrake import *
 from qip.isolang import isolang
 from qip.matroska import *
@@ -754,6 +755,7 @@ def main():
     pgroup = app.parser.add_argument_group('Encoding')
     pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
     pgroup.add_bool_argument('--audio-track-titles', default=False, help='Include titles for all audio tracks')
+    pgroup.add_argument('--stereo-3d-mode', '--3d-mode', type=Stereo3DMode, default=Stereo3DMode.full_side_by_side, help='Stereo 3D mode')
 
     pgroup = app.parser.add_argument_group('Tags')
     pgroup.add_argument('--grouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
@@ -1552,7 +1554,8 @@ def action_rip(rip_dir, device, in_tags):
         eMkvSettings = profile_xml.find('mkvSettings')
         eMkvSettings.set('ignoreForcedSubtitlesFlag', 'false')
         eProfileSettings = profile_xml.find('profileSettings')
-        eProfileSettings.set('app_DefaultSelectionString', '+sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,-sel:mvcvideo,=100:all,-10:favlang')
+        # eProfileSettings.set('app_DefaultSelectionString', '+sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,-sel:mvcvideo,=100:all,-10:favlang')
+        eProfileSettings.set('app_DefaultSelectionString', '+sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,=100:all,-10:favlang')
 
         settings_changed = False
         makemkvcon_settings = makemkvcon.read_settings_conf()
@@ -2109,14 +2112,20 @@ def action_hb(inputfile, in_tags):
             inputfile,
             ffprobe_dict, stream_dict, mediainfo_track_dict)
 
+        real_width, real_height = qwidth, qheight = stream_dict['width'], stream_dict['height']
+        if any(f'.{m}' in stream_file_name.upper().split('.')[1:]
+               for m in Stereo3DMode.full_side_by_side.exts + Stereo3DMode.half_side_by_side.exts):
+            real_width = qwidth // 2
+        elif any(f'.{m}' in stream_file_name.upper().split('.')[1:]
+               for m in Stereo3DMode.full_top_and_bottom.exts + Stereo3DMode.half_top_and_bottom.exts):
+            real_height = qheight // 2
+
         video_target_bit_rate = get_vp9_target_bitrate(
-            width=stream_dict['width'],
-            height=stream_dict['height'],
+            width=qwidth, height=qheight,
             frame_rate=framerate,
             )
         video_target_quality = get_vp9_target_quality(
-            width=stream_dict['width'],
-            height=stream_dict['height'],
+            width=real_width, height=real_height,
             frame_rate=framerate,
             )
 
@@ -2512,6 +2521,14 @@ def action_mux(inputfile, in_tags,
                     stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
 
                     try:
+                        stream_out_dict['3d-plane'] = int(stream_dict['tags']['3d-plane'])
+                    except KeyError:
+                        try:
+                            stream_out_dict['3d-plane'] = int(stream_dict['tags']['3d-plane-eng'])
+                        except KeyError:
+                            pass
+
+                    try:
                         stream_title = stream_out_dict['title'] = stream_dict['tags']['title']
                     except KeyError:
                         pass
@@ -2531,20 +2548,40 @@ def action_mux(inputfile, in_tags,
                     if stream_language:
                         stream_out_dict['language'] = str(stream_language)
 
+                    stream_file_format_ext = ''
+                    if stream_codec_type == 'video' \
+                            and stream_codec_name == 'h264' \
+                            and stream_dict.get('profile', '') == 'High' \
+                            and stream_dict.get('tags', {}).get('stereo_mode', '') == 'block_lr' \
+                            and {
+                                'side_data_type': 'Stereo 3D',
+                                'type': 'frame alternate',
+                                'inverted': 0,
+                            } in stream_dict.get('side_data_list', []) \
+                            and mediainfo_track_dict.get('Format', '') == 'AVC' \
+                            and mediainfo_track_dict.get('Format_Profile', '').startswith('Stereo High') \
+                            and int(mediainfo_track_dict.get('MultiView_Count', 1)) == 2 \
+                            and mediainfo_track_dict.get('MultiView_Layout', '') == 'Both Eyes laced in one block (left eye first)':
+                        # 3D Video from MakeMKV, h264+MVC
+                        # and mediainfo_dict['media'].get('Encoded_Application', '').startswith('MakeMKV')
+                        stream_file_format_ext += '.3D.MVC'
+
                     stream_file_name_language_suffix = '.%s' % (stream_language,) if stream_language is not None else ''
                     if stream_disposition_dict['attached_pic']:
                         attachment_index += 1
-                        output_track_file_name = 'attachment-%02d-%s%s%s' % (
+                        output_track_file_name = 'attachment-%02d-%s%s%s%s' % (
                                 attachment_index,
                                 stream_codec_type,
                                 stream_file_name_language_suffix,
+                                stream_file_format_ext,
                                 stream_file_ext,
                                 )
                     else:
-                        output_track_file_name = 'track-%02d-%s%s%s' % (
+                        output_track_file_name = 'track-%02d-%s%s%s%s' % (
                                 stream_index,
                                 stream_codec_type,
                                 stream_file_name_language_suffix,
+                                stream_file_format_ext,
                                 stream_file_ext,
                                 )
                     stream_out_dict['file_name'] = output_track_file_name
@@ -3290,6 +3327,124 @@ def action_optimize(inputdir, in_tags):
 
                 lossless = False
 
+                if stream_file_base.upper().endswith('.MVC'):
+                    if app.args.stereo_3d_mode is Stereo3DMode.frame_packing:
+                        raise NotImplementedError('MVC')  # TODO MVC->MVC may undergo modifications below that would lose the MVC encoding
+                    # .MVC -> FRIMDecode -> SBS/TAB/ALT
+                    assert field_order == 'progressive'
+
+                    assert ffprobe_stream_json['pix_fmt'] == 'yuv420p'
+                    frimdecode_fmt = 'i420'
+                    ffmpeg_pix_fmt = 'yuv420p'
+
+                    new_stream_file_ext = (
+                        '.h264' if app.args.cuda  # Fast lossless
+                        else '.ffv1.mkv')  # Slow lossless
+                    lossless = True
+                    new_stream_file_name_base = stream_file_base[0:-4]
+                    if '3D' not in new_stream_file_name_base.upper().split('.'):
+                        new_stream_file_name_base += '.3D'
+                    new_stream_file_name_base += app.args.stereo_3d_mode.exts[0]
+                    new_stream_file_name = new_stream_file_name_base + new_stream_file_ext
+                    new_stream_file = MediaFile.new_by_file_name(inputdir / new_stream_file_name)
+                    app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
+
+
+                    frimdecode_args = [
+                        '-i:mvc', inputdir / stream_file_name,
+                        {
+                            Stereo3DMode.half_side_by_side: '-sbs',
+                            Stereo3DMode.full_side_by_side: '-sbs',
+                            Stereo3DMode.half_top_and_bottom: '-tab',
+                            Stereo3DMode.full_top_and_bottom: '-tab',
+                            Stereo3DMode.alternate_frame: '-alt',
+                        }[app.args.stereo_3d_mode],
+                        '-o', '-',
+                    ]
+
+                    ffmpeg_enc_args = [] + default_ffmpeg_args
+                    force_input_framerate = getattr(app.args, 'force_input_framerate', None)
+                    assert force_input_framerate or input_framerate or framerate
+                    expected_framerate = force_input_framerate or input_framerate or framerate
+                    if app.args.stereo_3d_mode is Stereo3DMode.alternate_frame:
+                        expected_framerate *= 2
+                    ffmpeg_enc_args += [
+                        '-r', expected_framerate,
+                    ]
+                    ffmpeg_enc_args += [
+                        '-pix_fmt', ffmpeg_pix_fmt,
+                    ]
+                    if app.args.stereo_3d_mode in (
+                            Stereo3DMode.half_side_by_side,
+                            Stereo3DMode.full_side_by_side,
+                    ):
+                        ffmpeg_enc_args += [
+                            '-s:v', '%dx%d' % (ffprobe_stream_json['width'] * 2, ffprobe_stream_json['height']),
+                        ]
+                    elif app.args.stereo_3d_mode in (
+                            Stereo3DMode.half_top_and_bottom,
+                            Stereo3DMode.full_top_and_bottom,
+                    ):
+                        ffmpeg_enc_args += [
+                            '-s:v', '%dx%d' % (ffprobe_stream_json['width'], ffprobe_stream_json['height'] * 2),
+                        ]
+                    elif app.args.stereo_3d_mode in (
+                            Stereo3DMode.alternate_frame,
+                    ):
+                        pass
+                    else:
+                        raise NotImplementedError(app.args.stereo_3d_mode)
+                    ffmpeg_enc_args += [
+                        '-f', 'rawvideo',
+                        '-i', 'pipe:0',
+                    ]
+                    if app.args.stereo_3d_mode is Stereo3DMode.full_side_by_side:
+                        stream_dict['display_aspect_ratio'] = str(Ratio(stream_dict['display_aspect_ratio']) * 2)
+                    elif app.args.stereo_3d_mode is Stereo3DMode.half_side_by_side:
+                        stream_dict['display_aspect_ratio'] = str(Ratio(stream_dict['display_aspect_ratio']) * 2)
+                        stream_dict['pixel_aspect_ratio'] = str(Ratio(stream_dict['pixel_aspect_ratio']) * 2)
+                        ffmpeg_enc_args += [
+                            '-vf', 'scale=%d:%d' % (ffprobe_stream_json['width'], ffprobe_stream_json['height']),
+                        ]
+                    elif app.args.stereo_3d_mode is Stereo3DMode.full_top_and_bottom:
+                        stream_dict['display_aspect_ratio'] = str(Ratio(stream_dict['display_aspect_ratio']) / 2)
+                    elif app.args.stereo_3d_mode is Stereo3DMode.half_top_and_bottom:
+                        stream_dict['display_aspect_ratio'] = str(Ratio(stream_dict['display_aspect_ratio']) / 2)
+                        stream_dict['pixel_aspect_ratio'] = str(Ratio(stream_dict['pixel_aspect_ratio']) / 2)
+                        ffmpeg_enc_args += [
+                            '-vf', 'scale=%d:%d' % (ffprobe_stream_json['width'], ffprobe_stream_json['height']),
+                        ]
+                    ffmpeg_enc_args += [
+                        '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
+                    ] + ext_to_codec_args(new_stream_file_ext, lossless=lossless)
+                    ffmpeg_enc_args += [
+                        '-f', ext_to_container(new_stream_file_ext),
+                        inputdir / new_stream_file_name,
+                    ]
+
+                    with perfcontext('MVC -> FRIMDecode -> SBS/TAB/ALT'):
+                        p1 = FRIMDecode.popen(*frimdecode_args,
+                                              stdout=subprocess.PIPE,
+                                              stderr=open('/dev/stdout', 'wb'),
+                                              dry_run=app.args.dry_run)
+                        try:
+                            p2 = ffmpeg.popen(*ffmpeg_enc_args,
+                                              stdin=p1.stdout,
+                                              # TODO progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
+                                              # TODO progress_bar_title=f'MVC->{app.args.stereo_3d_mode.exts[0]} {stream_codec_type} stream {stream_index} w/ FRIMDecode',
+                                              dry_run=app.args.dry_run,
+                                              y=app.args.yes)
+                        finally:
+                            if not app.args.dry_run:
+                                p1.stdout.close()
+                        if not app.args.dry_run:
+                            p2.communicate()
+                            #assert p1.returncode == 0, f'FRIMDecode returned {p1.returncode}'
+                            assert p2.returncode == 0, f'ffmpeg returned {p2.returncode}'
+
+                    done_optimize_iter()
+                    continue
+
                 if field_order == '23pulldown':
 
                     pullup_tool = app.args.pullup_tool
@@ -3573,7 +3728,18 @@ def action_optimize(inputdir, in_tags):
                     raise NotImplementedError(field_order)
 
                 if not is_sub_stream and app.args.crop in (Auto, True):
-                    if getattr(app.args, 'crop_wh', None) is not None:
+                    if any(stream_file_base.upper().endswith(m)
+                           for m in (
+                                   ()
+                                   + Stereo3DMode.half_side_by_side.exts
+                                   + Stereo3DMode.full_side_by_side.exts
+                                   + Stereo3DMode.half_top_and_bottom.exts
+                                   + Stereo3DMode.full_top_and_bottom.exts
+                                   #+ Stereo3DMode.frame_packing.exts
+                                   #+ Stereo3DMode.alternate_frame.exts
+                           )):
+                        stream_crop = False
+                    elif getattr(app.args, 'crop_wh', None) is not None:
                         w, h = app.args.crop_wh
                         l, t = (mediainfo_width - w) // 2, (mediainfo_height - h) // 2
                         stream_crop_whlt = w, h, l, t
@@ -3677,18 +3843,27 @@ def action_optimize(inputdir, in_tags):
 
                 if new_stream_file_ext == '.vp9.ivf':
                     # https://trac.ffmpeg.org/wiki/Encode/VP9
+
+                    real_width, real_height = qwidth, qheight = mediainfo_width, mediainfo_height
+                    if any(stream_file_base.upper().endswith(m)
+                           for m in Stereo3DMode.full_side_by_side.exts + Stereo3DMode.half_side_by_side.exts):
+                        real_width = qwidth // 2
+                    elif any(stream_file_base.upper().endswith(m)
+                           for m in Stereo3DMode.full_top_and_bottom.exts + Stereo3DMode.half_top_and_bottom.exts):
+                        real_height = qheight // 2
+
                     # https://developers.google.com/media/vp9/settings/vod/
                     video_target_bit_rate = get_vp9_target_bitrate(
-                        width=mediainfo_width, height=mediainfo_height,
+                        width=qwidth, height=qheight,
                         frame_rate=framerate,
                         )
                     video_target_bit_rate = int(video_target_bit_rate * 1.5)  # 1800 * 1.5 = 2700
                     video_target_quality = get_vp9_target_quality(
-                        width=mediainfo_width, height=mediainfo_height,
+                        width=real_width, height=real_height,
                         frame_rate=framerate,
                         )
                     vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
-                        width=mediainfo_width, height=mediainfo_height,
+                        width=qwidth, height=qheight,
                         )
 
                     if app.args.video_rate_control_mode == 'Q':
@@ -5232,6 +5407,17 @@ def action_demux(inputdir, in_tags):
                     ]
 
             if stream_codec_type == 'video':
+
+                if any(stream_file_base.upper().endswith(m)
+                       for m in Stereo3DMode.full_side_by_side.exts + Stereo3DMode.half_side_by_side.exts):
+                    ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'stereo_mode=left_right']
+                elif any(stream_file_base.upper().endswith(m)
+                         for m in Stereo3DMode.full_top_and_bottom.exts + Stereo3DMode.half_top_and_bottom.exts):
+                    ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'stereo_mode=top_bottom']
+                elif any(stream_file_base.upper().endswith(m)
+                         for m in Stereo3DMode.alternate_frame.exts):
+                    raise NotImplementedError(Stereo3DMode.alternate_frame)
+
                 if stream_file_ext in {'.vp9', '.vp9.ivf',}:
                     # ivf:
                     #   ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
@@ -5305,6 +5491,10 @@ def action_demux(inputdir, in_tags):
                     pass
                 else:
                     raise NotImplementedError(stream_file_ext)
+            elif stream_codec_type == 'subtitle':
+                if '3d-plane' in stream_dict:
+                    ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), '3d-plane=%d' % (stream_dict['3d-plane'],)]
+
             ffmpeg_input_args += [
                 '-i',
                 inputdir / stream_file_name,
