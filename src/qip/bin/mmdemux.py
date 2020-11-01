@@ -166,40 +166,47 @@ def sorted_stream_dicts(stream_dicts):
         key=stream_dict_key)
 
 def print_streams_summary(mux_dict, current_stream_index=None):
-    print(' index |   type   |       extension       | language | disposition + title')
-    print('-------+----------+-----------------------+----------+---------------------')
+    table = []
     for stream_dict in sorted_stream_dicts(mux_dict['streams']):
-        print('{skip_marker:<1s}{current_marker:<1s}{stream_index:>4d} | {codec_type:<8s} | {extension:<21s} | {language:^8s} | {disposition_title}'.format(
-            skip_marker='S' if stream_dict.get('skip', False) else '',
-            current_marker='*' if stream_dict['index'] == current_stream_index else '',
-            stream_index=stream_dict['index'],
-            codec_type=stream_dict['codec_type'],
-            extension=
-            '->'.join([e for e in [
-                my_splitext(stream_dict.get('original_file_name', ''))[1],
-                my_splitext(stream_dict['file_name'])[1],]
-                       if e]),
-            language=isolang(stream_dict.get('language', 'und')).code3,
-            disposition_title=', '.join([k for k, v in stream_dict['disposition'].items() if v]
-                                        + ([repr(stream_dict['title'])]
-                                           if stream_dict.get('title', None)
-                                           else [])
-                                        + (['suffix=' + repr(stream_dict['external_stream_file_name_suffix'])]
-                                           if stream_dict.get('external_stream_file_name_suffix', None)
-                                           else [])
-                                        + ([f'''*{stream_dict['subtitle_count']}''']
-                                           if stream_dict.get('subtitle_count', None)
-                                           else [])
-                                        ),
-        ))
-        try:
-            original_source_description = stream_dict['original_source_description']
-        except KeyError:
-            pass
-        else:
-            print(f'       |          | source: {original_source_description}')
-
-    print('-------+----------+-----------------------+----------+---------------------')
+        stream_index = stream_dict['index']
+        if stream_dict.get('skip', False):
+            stream_index = f'(S){stream_index}'
+        if stream_dict['index'] == current_stream_index:
+            stream_index = f'*{stream_index}'
+        codec_type = stream_dict['codec_type']
+        extension = '->'.join([e for e in [
+            my_splitext(stream_dict.get('original_file_name', ''))[1],
+            my_splitext(stream_dict['file_name'])[1],]
+                               if e])
+        language = isolang(stream_dict.get('language', 'und')).code3
+        title = stream_dict.get('title', None)
+        disposition = ', '.join(
+            [k for k, v in stream_dict['disposition'].items() if v]
+            + (['suffix=' + repr(stream_dict['external_stream_file_name_suffix'])]
+               if stream_dict.get('external_stream_file_name_suffix', None)
+               else [])
+            + ([f'''*{stream_dict['subtitle_count']}''']
+               if stream_dict.get('subtitle_count', None)
+               else [])
+        )
+        original_source_description = stream_dict.get('original_source_description', None)
+        table.append([stream_index, codec_type, original_source_description, extension, language, title, disposition])
+    if table:
+        print('')
+        print(tabulate(table,
+                       headers=[
+                           'Index',
+                           'Codec',
+                           'Original',
+                           'Extension',
+                           'Language',
+                           'Title',
+                           'Disposition',
+                       ],
+                       colalign=[
+                           'right',
+                       ],
+                       ))
 
 class FieldOrderUnknownError(NotImplementedError):
 
@@ -2875,8 +2882,7 @@ def action_verify(inputfile, in_tags):
     input_mux_file_name = inputdir / 'mux.json'
     mux_dict = load_mux_dict(input_mux_file_name, in_tags=in_tags)
 
-    stream_file_durations = []
-
+    stream_duration_table = []
     for stream_dict in sorted_stream_dicts(mux_dict['streams']):
         if stream_dict.get('skip', False):
             continue
@@ -2894,7 +2900,12 @@ def action_verify(inputfile, in_tags):
                 ffprobe_json = stream_file.extract_ffprobe_json()
                 ffprobe_stream_json, = ffprobe_json['streams']
                 app.log.debug('ffprobe_stream_json=%r', ffprobe_stream_json)
-                stream_duration = qip.utils.Timestamp(ffprobe_stream_json['duration'])
+                try:
+                    stream_duration = ffprobe_stream_json['duration']
+                except KeyError:
+                    stream_duration = None
+                else:
+                    stream_duration = qip.utils.Timestamp(stream_duration)
 
             if False:
                 mediainfo_dict = stream_file.extract_mediainfo_dict()
@@ -2924,18 +2935,30 @@ def action_verify(inputfile, in_tags):
                 stream_duration = qip.utils.Timestamp(mediainfo_track_dict['Duration'])
 
             stream_start_time = ffmpeg.Timestamp(stream_dict['start_time'])
-            stream_total_time = stream_start_time + stream_duration
-            app.log.info('%s: start_time %s + duration %s = %s',
-                         stream_file,
-                         stream_start_time,
-                         stream_duration,
-                         stream_total_time)
-            stream_file_durations.append((stream_file, stream_total_time))
+            stream_total_time = None if stream_duration is None else stream_start_time + stream_duration
+            stream_duration_table.append([stream_file, stream_start_time, stream_duration, stream_total_time])
+    print('')
+    print(tabulate(stream_duration_table,
+                   headers=[
+                       'File',
+                       'Start time',
+                       'Duration',
+                       'Total time',
+                   ],
+                   colalign=[
+                       'left',
+                       'right',
+                       'right',
+                       'right',
+                   ],
+                   ))
 
     min_stream_duration = min(stream_duration
-                              for stream_file, stream_duration in stream_file_durations)
+                              for stream_file, stream_start_time, stream_duration, stream_total_time in stream_duration_table
+                              if stream_duration is not None)
     max_stream_duration = max(stream_duration
-                              for stream_file, stream_duration in stream_file_durations)
+                              for stream_file, stream_start_time, stream_duration, stream_total_time in stream_duration_table
+                              if stream_duration is not None)
     if max_stream_duration - min_stream_duration > 5:
         raise LargeDiscrepancyInStreamDurationsError(inputdir=inputdir)
 
