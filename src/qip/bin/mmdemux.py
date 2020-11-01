@@ -2454,10 +2454,15 @@ def action_mux(inputfile, in_tags,
                     stream_time_base = Fraction(stream_dict['time_base'])
 
                     codec_encoding_delay = get_codec_encoding_delay(inputfile, ffprobe_stream_dict=stream_dict)
-                    stream_start_time = adjust_start_time(
-                        ffmpeg.Timestamp(stream_dict['start_time']),
-                        codec_encoding_delay=codec_encoding_delay,
-                        stream_time_base=stream_time_base)
+                    try:
+                        stream_start_time = stream_dict['start_time']
+                    except KeyError:
+                        stream_start_time = None
+                    else:
+                        stream_start_time = adjust_start_time(
+                            ffmpeg.Timestamp(stream_start_time),
+                            codec_encoding_delay=codec_encoding_delay,
+                            stream_time_base=stream_time_base)
 
                     check_start_time = app.args.check_start_time
                     if stream_codec_type == 'subtitle':
@@ -2499,7 +2504,10 @@ def action_mux(inputfile, in_tags,
                         stream_start_time = ffmpeg.Timestamp(0)
                     if stream_start_time:
                         app.log.warning('%s stream #%d start time is %s', stream_codec_type.title(), stream_index, stream_start_time)
-                    stream_out_dict['start_time'] = str(stream_start_time)
+                    if stream_start_time is None:
+                        stream_out_dict.pop('start_time', None)
+                    else:
+                        stream_out_dict['start_time'] = None if stream_start_time is None else str(stream_start_time)
 
                     stream_disposition_dict = stream_out_dict['disposition'] = stream_dict['disposition']
 
@@ -5205,7 +5213,7 @@ def action_demux(inputdir, in_tags):
             if display_aspect_ratio:
                 ffmpeg_output_args += ['-aspect:%d' % (stream_dict['_temp'].out_index,), display_aspect_ratio]
 
-            stream_start_time = ffmpeg.Timestamp(stream_dict.get('start_time', 0))
+            stream_start_time = ffmpeg.Timestamp(stream_dict.get('start_time', None) or 0)
             if stream_start_time:
                 codec_encoding_delay = get_codec_encoding_delay(inputdir / stream_file_name)
                 stream_start_time += codec_encoding_delay
