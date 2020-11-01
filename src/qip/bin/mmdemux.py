@@ -930,6 +930,7 @@ def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_st
     file_ext = my_splitext(file_name)[1]
     if file_ext in (
             '.y4m',
+            '.yuv',
             '.mpeg2.mp2v',
             '.mjpeg',
             '.msmpeg4v3.avi',
@@ -961,18 +962,17 @@ def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_st
 
 still_image_exts = {
     '.png',
-    '.jpg', '.jepg',
+    '.jpg', '.jpeg',
 }
 
 def codec_name_to_ext(codec_name):
     try:
         codec_ext = {
             # video
-            'rawvideo': '.y4m',
+            'rawvideo': '.y4m',  # '.yuv'
             'mpeg2video': '.mpeg2.mp2v',
             'mp2': '.mpeg2.mp2v',
             'ffv1': '.ffv1.mkv',
-            #'mjpeg': '.mjpeg',
             'msmpeg4v3': '.msmpeg4v3.avi',
             'mpeg4': '.mp4',
             'vc1': '.vc1.avi',
@@ -982,6 +982,7 @@ def codec_name_to_ext(codec_name):
             'vp9': '.vp9.ivf',
             # image
             'png': '.png',
+            'mjpeg': '.jpg',
             # audio
             'ac3': '.ac3',
             'mp3': '.mp3',
@@ -1009,6 +1010,7 @@ def ext_to_container(ext):
             '.webm': 'webm',
             # video
             '.y4m': 'yuv4mpegpipe',
+            '.yuv': 'rawvideo',
             '.mpeg2': 'mpeg2video',
             '.mp2v': 'mpeg2video',
             '.mpegts': 'mpegts',
@@ -2777,7 +2779,7 @@ def action_mux(inputfile, in_tags,
                     if stream_forced:
                         has_forced_subtitle = True
                     # TODO Detect closed_caption
-					# TODO ffprobe -show_frames -i IceAgeContinentalDrift/Ice\ Age\:\ Continental\ Drift\ \(2012\)/track-05-subtitle.eng.sup | grep 'num_rects=[^0]' | wc -l
+                    # TODO ffprobe -show_frames -i IceAgeContinentalDrift/Ice\ Age\:\ Continental\ Drift\ \(2012\)/track-05-subtitle.eng.sup | grep 'num_rects=[^0]' | wc -l
                     if stream_file_ext in ('.sub', '.sup'):
                         try:
                             d = ffprobe(i=outputdir / stream_file_name, show_packets=True)
@@ -3297,13 +3299,13 @@ def action_optimize(inputdir, in_tags):
                         new_stream_file = MediaFile.new_by_file_name(inputdir / new_stream_file_name)
                         app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
-                        if stream_file_ext == '.y4m':
+                        if stream_file_ext in ('.y4m', '.yuv'):
                             assert framerate == FrameRate(30000, 1001)
                             framerate = FrameRate(24000, 1001)
                             app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
 
                         ffmpeg_dec_args = []
-                        if stream_file_ext == '.y4m':
+                        if stream_file_ext in ('.y4m', '.yuv'):
                             pass # Ok; No decode.
                         else:
                             if False and input_framerate:
@@ -3441,10 +3443,10 @@ def action_optimize(inputdir, in_tags):
                         new_stream_file = MediaFile.new_by_file_name(inputdir / new_stream_file_name)
                         app.log.verbose('Stream #%s %s -> %s', stream_index, stream_file_ext, new_stream_file_name)
 
-                        if stream_file_ext == '.y4m':
+                        if stream_file_ext in ('.y4m', '.yuv'):
                             assert framerate == FrameRate(30000, 1001)
                             framerate = FrameRate(24000, 1001)
-                            app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
+                            app.log.verbose('23pulldown %s framerate correction: %s', stream_file_ext, framerate)
 
                         orig_framerate = framerate * 30 / 24
 
@@ -5000,7 +5002,7 @@ def action_demux(inputdir, in_tags):
             if not app.args.dry_run:
                 os.unlink(noss_file_name)
 
-    else:
+    else:  # !use_mkvmerge
         ffmpeg_input_args = []
         ffmpeg_output_args = []
         ffmpeg_output_args += [
@@ -5217,7 +5219,8 @@ def action_demux(inputdir, in_tags):
 
             if stream_codec_type == 'video':
                 if stream_file_ext in {'.vp9', '.vp9.ivf',}:
-                    # ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
+                    # ivf:
+                    #   ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
                     estimated_duration = estimated_duration or estimate_stream_duration(
                         ffprobe_json=MovieFile.new_by_file_name(inputdir / stream_file_name).extract_ffprobe_json())
                     tmp_stream_file_name = stream_file_name + '.mkv'
@@ -5240,12 +5243,14 @@ def action_demux(inputdir, in_tags):
                     pass
                 elif stream_file_ext in still_image_exts:
                     pass
+                elif stream_file_ext in {'.h264', '.h265'}:
+                    pass
                 else:
                     raise NotImplementedError(stream_file_ext)
             ffmpeg_input_args += [
                 '-i',
                 inputdir / stream_file_name,
-                ]
+            ]
             # Include all streams from this input file:
             ffmpeg_output_args += [
                 '-map', stream_dict['_temp'].out_index,
