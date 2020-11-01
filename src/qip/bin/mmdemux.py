@@ -3200,6 +3200,10 @@ def action_optimize(inputdir, in_tags):
         stream_file_base, stream_file_ext = my_splitext(stream_file_name)
         stream_language = isolang(stream_dict.get('language', 'und'))
 
+        if stream_dict.get('optimized', False):
+            app.log.verbose('Stream #%s %s [%s] OPTIMIZED', stream_index, stream_file_ext, stream_language)
+            return
+
         if stream_codec_type == 'video':
 
             expected_framerate = None
