@@ -2904,7 +2904,7 @@ def action_verify(inputfile, in_tags):
         stream_codec_type = stream_dict['codec_type']
         stream_file_name = stream_dict['file_name']
         stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-        if stream_codec_type == 'video' and stream_file_ext in still_image_exts:
+        if stream_codec_type in ('video', 'image') and stream_file_ext in still_image_exts:
             continue
         if stream_codec_type in ('video', 'audio'):
 
