@@ -72,12 +72,17 @@ import pexpect
 import pprint
 import re
 import reprlib
+import shlex
 import shutil
 import subprocess
 import sys
 import types
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
+
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.widgets import TextArea
+from tabulate import tabulate
 
 try:
     from qip.utils import ProgressBar
@@ -625,6 +630,28 @@ num_batch_skips = 0
 
 def _resolved_Path(path):
     return Path(path).resolve()
+
+class NumericTextArea(TextArea):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.control.key_bindings is None:
+            from prompt_toolkit.key_binding.key_bindings import KeyBindings
+            self.control.key_bindings = KeyBindings()
+        self.control.key_bindings.add('c-a')(self.numeric_text_area_incr)
+        self.control.key_bindings.add('c-x')(self.numeric_text_area_decr)
+
+    def numeric_text_area_incr(self, event):
+        try:
+            self.text = str(int(self.text) + 1)
+        except ValueError:
+            pass
+
+    def numeric_text_area_decr(self, event):
+        try:
+            self.text = str(int(self.text) - 1)
+        except ValueError:
+            pass
 
 @app.main_wrapper
 def main():
@@ -1654,7 +1681,10 @@ def action_pick_title_streams(backup_dir, in_tags):
                     xdg_open(stream_file)
                 except Exception as e:
                     app.log.error(e)
-            c = app.prompt(completer=completer)
+            while True:
+                c = app.prompt(completer=completer, prompt_mode='pick')
+                if c.strip():
+                    break
             if c in ('help', 'h', '?'):
                 print('')
                 print('List of commands:')
@@ -2173,26 +2203,42 @@ def action_mux(inputfile, in_tags,
                 'continue',
                 'quit',
             ])
+
+            parser = argparse.NoExitArgumentParser(
+                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                description='Initial tags setup',
+                add_help=False,
+                )
+            subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
+            subparser = subparsers.add_parser('help', aliases=('h', '?'), help='Print this help')
+            subparser = subparsers.add_parser('edit', help='Edit tags')
+            subparser = subparsers.add_parser('search', help='Search The Movie DB')
+            subparser = subparsers.add_parser('continue', aliases=('c', 'retry'), help='Continue/retry processing this stream -- done')
+            subparser = subparsers.add_parser('quit', aliases=('q',), help='Quit')
+
             print('')
             while True:
                 print('Initial tags setup')
-                c = app.prompt(completer=completer)
-                if c in ('help', 'h', '?'):
+                print(mux_dict['tags'].cite())
+                while True:
+                    c = app.prompt(completer=completer, prompt_mode='init')
+                    if c.strip():
+                        break
+                try:
+                    ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
+                except argparse.ArgumentError as e:
+                    app.log.error(e);
                     print('')
-                    print('List of commands:')
-                    print('')
-                    print('help -- Print this help')
-                    print('edit -- Edit tags')
-                    print('search -- Search The Movie DB')
-                    print('continue -- Continue processing')
-                    print('quit -- Quit')
-                elif c in ('continue', 'c'):
+                    continue
+                if ns.action == 'help':
+                    print(parser.format_help())
+                elif ns.action == 'continue':
                     break
-                elif c in ('quit', 'q'):
+                elif ns.action == 'quit':
                     exit(1)
-                elif c in ('edit',):
+                elif ns.action == 'edit':
                     mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
-                elif c in ('search',):
+                elif ns.action == 'search':
                     initial_text = mux_dict['tags'].title or inputfile.file_name.parent.name
                     initial_text = unmangle_search_string(initial_text)
                     if in_tags.language:
@@ -2238,56 +2284,27 @@ def action_mux(inputfile, in_tags,
                                 i = radio_list._selected_index
                                 app.message_dialog(title='Details',
                                                    text=f'i={i}')
+                            movie_tags = tmdb.movie_to_tags(o_movie)
                             i = app.radiolist_dialog(
                                 title='Please select a movie',
-                                values=[(i, '{title}, {release_date} (#{id}) -- {overview}'.format_map(vars(o_movie)))
-                                        for i, o_movie in enumerate(l_movies)],
+                                values=[(i, '{cite} (#{id}) -- {overview}'.format(
+                                             cite=tmdb.cite_movie(o_movie),
+                                             id=o_movie.id,
+                                             overview=o_movie.overview,
+                                         ))
+                                         for i, o_movie in enumerate(l_movies)],
                                 help_handler=help_handler)
                             if i is None:
                                 print('Cancelled by user!')
                                 continue
                         o_movie = l_movies[i]
 
-                        #app.log.debug('o_movie=%r:\n%s', o_movie, pprint.pformat(vars(o_movie)))
-                        #{'adult': False,
-                        # 'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
-                        # 'entries': {'adult': False,
-                        #             'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
-                        #             'genre_ids': [12, 18, 53],
-                        #             'id': 44115,
-                        #             'original_language': 'en',
-                        #             'original_title': '127 Hours',
-                        #             'overview': "The true story of mountain climber Aron Ralston's "
-                        #                         'remarkable adventure to save himself after a fallen '
-                        #                         'boulder crashes on his arm and traps him in an '
-                        #                         'isolated canyon in Utah.',
-                        #             'popularity': 11.822,
-                        #             'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
-                        #             'release_date': '2010-11-05',
-                        #             'title': '127 Hours',
-                        #             'video': False,
-                        #             'vote_average': 7,
-                        #             'vote_count': 4828},
-                        # 'genre_ids': [12, 18, 53],
-                        # 'id': 44115,
-                        # 'original_language': 'en',
-                        # 'original_title': '127 Hours',
-                        # 'overview': "The true story of mountain climber Aron Ralston's remarkable "
-                        #             'adventure to save himself after a fallen boulder crashes on his '
-                        #             'arm and traps him in an isolated canyon in Utah.',
-                        # 'popularity': 11.822,
-                        # 'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
-                        # 'release_date': '2010-11-05',
-                        # 'title': '127 Hours',
-                        # 'video': False,
-                        # 'vote_average': 7,
-                        # 'vote_count': 4828}
                         mux_dict['tags'].title = o_movie.title
                         mux_dict['tags'].date = o_movie.release_date
-                        app.log.info('%s: %s', inputfile, mux_dict['tags'].short_str())
+                        app.log.info('%s: %s', inputfile, mux_dict['tags'].cite())
 
                 else:
-                    app.log.error('Invalid input')
+                    app.log.error('Invalid input: %r' % (ns.action,))
 
     if not remux:
         if app.args.dry_run:
@@ -4218,7 +4235,7 @@ def action_optimize(inputdir, in_tags):
                                             ]))
                                         while True:
                                             print(describe_stream_dict(stream_dict))
-                                            c = app.prompt(completer=completer)
+                                            c = app.prompt(completer=completer, prompt_mode='error')
                                             if c in ('help', 'h', '?'):
                                                 print('')
                                                 print('List of commands:')
@@ -4529,6 +4546,7 @@ def action_demux(inputdir, in_tags):
         nonlocal stream_dict
         nonlocal sorted_streams
         nonlocal enumerated_sorted_streams
+        in_err = e
         update_mux_conf = False
 
         if not app.args.interactive:
@@ -4555,47 +4573,72 @@ def action_demux(inputdir, in_tags):
                 'lyrics',
                 'original',
                 'title',
-            ] + (['suffix'] if isinstance(e, StreamExternalSubtitleAlreadyCreated) else []))
+            ] + (['suffix'] if isinstance(in_err, StreamExternalSubtitleAlreadyCreated) else []))
+
+            def setup_parser(in_err):
+                parser = argparse.NoExitArgumentParser(
+                    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                    description=str(in_err),
+                    add_help=False,
+                    )
+                subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
+                subparser = subparsers.add_parser('help', aliases=('h', '?'), help='Print this help')
+                subparser = subparsers.add_parser('skip', aliases=('s',), help='Skip this stream -- done')
+                subparser = subparsers.add_parser('print', aliases=('p',), help='Print streams summary')
+                if stream_codec_type in ('subtitle',):
+                    subparser = subparsers.add_parser('forced', help='Toggle forced disposition')
+                    subparser = subparsers.add_parser('hearing_impaired', help='Toggle hearing_impaired disposition')
+                if stream_codec_type in ('audio', 'subtitle'):
+                    subparser = subparsers.add_parser('comment', help='Toggle comment disposition')
+                if stream_codec_type in ('audio',):
+                    subparser = subparsers.add_parser('karaoke', help='Toggle karaoke disposition')
+                if stream_codec_type in ('subtitle',):
+                    subparser = subparsers.add_parser('lyrics', help='Toggle lyrics disposition')
+                if stream_codec_type in ('audio',):
+                    subparser = subparsers.add_parser('original', help='Toggle original disposition')
+                if stream_codec_type in ('audio',):
+                    subparser = subparsers.add_parser('title', help='Edit title')
+                    subparser.add_argument('title', nargs='?')
+                if isinstance(in_err, StreamExternalSubtitleAlreadyCreated):
+                    subparser = subparsers.add_parser('suffix', help='Edit external stream file name suffix')
+                    subparser.add_argument('suffix', nargs='?')
+                subparser = subparsers.add_parser('open', help='Open this stream')
+                subparser = subparsers.add_parser('goto', aliases=('g',), help='Jump to another past stream')
+                subparser.add_argument('index', help='Target stream index', nargs='?')
+                subparser = subparsers.add_parser('continue', aliases=('c', 'retry'), help='Continue/retry processing this stream -- done')
+                subparser = subparsers.add_parser('quit', aliases=('q',), help='Quit')
+                return parser
+            parser = setup_parser(in_err)
+
             print('')
             app.print(
                 FormattedText([
-                    ('class:error', str(e)),
+                    ('class:error', str(in_err)),
                 ]))
             while True:
                 print(describe_stream_dict(stream_dict))
-                c = app.prompt(completer=completer)
-                if c in ('help', 'h', '?'):
+                while True:
+                    c = app.prompt(completer=completer, prompt_mode='seen')
+                    if c.strip():
+                        break
+                try:
+                    ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
+                except argparse.ArgumentError as e:
+                    app.log.error(e);
                     print('')
-                    print('List of commands:')
-                    print('')
-                    print('help -- Print this help')
-                    print('skip -- Skip this stream -- done')
-                    print('print -- Print streams summary')
-                    if stream_codec_type in ('subtitle',):
-                        print('forced -- Toggle forced disposition (%r)' % (True if stream_dict['disposition'].get('forced', None) else False,))
-                        print('hearing_impaired -- Toggle hearing_impaired disposition (%r)' % (True if stream_dict['disposition'].get('hearing_impaired', None) else False,))
-                    if stream_codec_type in ('audio', 'subtitle'):
-                        print('comment -- Toggle comment disposition (%r)' % (True if stream_dict['disposition'].get('comment', None) else False,))
-                    if stream_codec_type in ('audio',):
-                        print('karaoke -- Toggle karaoke disposition (%r)' % (True if stream_dict['disposition'].get('karaoke', None) else False,))
-                    if stream_codec_type in ('subtitle',):
-                        print('lyrics -- Toggle lyrics disposition (%r)' % (True if stream_dict['disposition'].get('lyrics', None) else False,))
-                    if stream_codec_type in ('audio',):
-                        print('original -- Toggle original disposition (%r)' % (True if stream_dict['disposition'].get('original', None) else False,))
-                    if stream_codec_type in ('audio',):
-                        print('title -- Edit title (%s)' % (stream_dict.get('title', None),))
-                    if isinstance(e, StreamExternalSubtitleAlreadyCreated):
-                        print('suffix -- Edit external stream file name suffix (%s)' % (stream_dict.get('external_stream_file_name_suffix', None)))
-                    print('open -- Open this stream')
-                    print('goto -- Jump to another past stream')
-                    print('continue -- Continue/retry processing this stream -- done')
-                    print('quit -- quit')
-                    print('')
-                elif c in ('skip', 's'):
+                    continue
+                except argparse.ParserExitException as e:
+                    if e.status:
+                        app.log.error(e);
+                        print('')
+                    continue
+                if ns.action == 'help':
+                    print(parser.format_help())
+                elif ns.action == 'skip':
                     stream_dict['skip'] = True
                     update_mux_conf = True
                     break
-                elif c in ('open',):
+                elif ns.action == 'open':
                     try:
                         if stream_codec_type in ('subtitle',):
                             from qip.subtitleedit import SubtitleEdit
@@ -4612,12 +4655,14 @@ def action_demux(inputdir, in_tags):
                             xdg_open(inputdir / stream_dict['file_name'])
                     except Exception as e:
                         app.log.error(e)
-                elif c in ('continue', 'c', 'retry'):
+                elif ns.action == 'continue':
                     i = next(i for i, d in enumerate(sorted_streams) if d is stream_dict)
                     enumerated_sorted_streams.send(i)
                     break
-                elif c in ('goto', 'g'):
-                    goto_index = app.prompt('goto stream index: ')
+                elif ns.action == 'goto':
+                    goto_index = ns.index
+                    if goto_index is None:
+                        goto_index = app.prompt('goto stream index: ', prompt_mode='')
                     if goto_index:
                         goto_index = int(goto_index)
                         forward = False
@@ -4643,33 +4688,36 @@ def action_demux(inputdir, in_tags):
                                 app.log.warning('Stream index %r skip cancelled', stream_dict['index'])
                                 del stream_dict['skip']
                                 update_mux_conf = True
-                elif c in ('quit', 'q'):
+                        parser = setup_parser(in_err)
+                elif ns.action == 'quit':
                     raise
-                elif c in ('print', 'p'):
+                elif ns.action == 'print':
                     print_streams_summary(mux_dict=mux_dict, current_stream_index=stream_dict['index'])
-                elif c == 'forced':
+                elif ns.action == 'forced':
                     stream_dict['disposition']['forced'] = not stream_dict['disposition'].get('forced', None)
                     update_mux_conf = True
-                elif c == 'hearing_impaired':
+                elif ns.action == 'hearing_impaired':
                     stream_dict['disposition']['hearing_impaired'] = not stream_dict['disposition'].get('hearing_impaired', None)
                     update_mux_conf = True
-                elif c == 'comment':
+                elif ns.action == 'comment':
                     stream_dict['disposition']['comment'] = not stream_dict['disposition'].get('comment', None)
                     update_mux_conf = True
-                elif c == 'karaoke':
+                elif ns.action == 'karaoke':
                     stream_dict['disposition']['karaoke'] = not stream_dict['disposition'].get('karaoke', None)
                     update_mux_conf = True
-                elif c == 'lyrics':
+                elif ns.action == 'lyrics':
                     stream_dict['disposition']['lyrics'] = not stream_dict['disposition'].get('lyrics', None)
                     update_mux_conf = True
-                elif c == 'original':
+                elif ns.action == 'original':
                     stream_dict['disposition']['original'] = not stream_dict['disposition'].get('original', None)
                     update_mux_conf = True
-                elif c == 'title':
-                    stream_title = app.input_dialog(
-                        title=describe_stream_dict(stream_dict),
-                        text='Please input stream title:',
-                        initial_text=stream_dict.get('title', None) or '')
+                elif ns.action == 'title':
+                    stream_title = ns.title
+                    if stream_title is None:
+                        stream_title = app.input_dialog(
+                            title=describe_stream_dict(stream_dict),
+                            text='Please input stream title:',
+                            initial_text=stream_dict.get('title', None) or '')
                     if stream_title is None:
                         print('Cancelled by user!')
                     else:
@@ -4678,11 +4726,13 @@ def action_demux(inputdir, in_tags):
                         else:
                             stream_dict['title'] = stream_title
                         update_mux_conf = True
-                elif c == 'suffix':
-                    external_stream_file_name_suffix = app.input_dialog(
-                        title=describe_stream_dict(stream_dict),
-                        text='Please input external stream file name suffix:',
-                        initial_text=stream_dict.get('external_stream_file_name_suffix', None) or '')
+                elif ns.action == 'suffix':
+                    external_stream_file_name_suffix = ns.suffix
+                    if external_stream_file_name_suffix is None:
+                        external_stream_file_name_suffix = app.input_dialog(
+                            title=describe_stream_dict(stream_dict),
+                            text='Please input external stream file name suffix:',
+                            initial_text=stream_dict.get('external_stream_file_name_suffix', None) or '')
                     if external_stream_file_name_suffix is None:
                         print('Cancelled by user!')
                     else:
@@ -4692,7 +4742,7 @@ def action_demux(inputdir, in_tags):
                             stream_dict['external_stream_file_name_suffix'] = external_stream_file_name_suffix
                         update_mux_conf = True
                 else:
-                    app.log.error('Invalid input')
+                    app.log.error('Invalid input: %r' % (ns.action,))
 
         if update_mux_conf:
             save_mux_dict(input_mux_file_name, mux_dict)
@@ -5244,7 +5294,10 @@ def action_demux(inputdir, in_tags):
                         ('class:error', str(e)),
                     ]))
                 while True:
-                    c = app.prompt(completer=completer)
+                    while True:
+                        c = app.prompt(completer=completer, prompt_mode='error')
+                        if c.strip():
+                            break
                     if c in ('help', 'h', '?'):
                         print('')
                         print('List of commands:')
@@ -5569,7 +5622,7 @@ def action_tag_episodes(episode_file_names, in_tags):
         episode_file.tags.episode = o_episode['airedEpisodeNumber']
         episode_file.tags.title = o_episode['episodeName']
         episode_file.tags.date = o_episode['firstAired']
-        app.log.info('%s: %s', episode_file, episode_file.tags.short_str())
+        app.log.info('%s: %s', episode_file, episode_file.tags.cite())
         episode_file.write_tags(tags=episode_file.tags,
                                 dry_run=app.args.dry_run)
         if app.args.rename:
