@@ -17,7 +17,10 @@ except ImportError:
 from .decorator import trace
 def trace(func, **kwargs): return func
 
-__all__ = list(_argparse.__all__)
+__all__ = list(_argparse.__all__) + [
+    'NoExitArgumentParser',
+    'ParserExitException',
+]
 
 class _AttributeHolder(_argparse._AttributeHolder):
     pass
@@ -216,6 +219,34 @@ class _MockActionDict(dict):
         self[key] = value
         return value
 
+class _SubParsersAction(_argparse._SubParsersAction):
+
+    def add_parser(self, name, **kwargs):
+        parser = super().add_parser(name=name, **kwargs)
+        parser.parser_name = name
+        return parser
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        parser_name = values[0]
+        arg_strings = values[1:]
+
+        # select the subparser
+        try:
+            subparser = self._name_parser_map[parser_name]
+        except KeyError:
+            pass
+        else:
+            # Replace aliases with their original parser name
+            try:
+                parser_name = subparser.parser_name
+            except AttributeError:
+                pass
+            else:
+                values = [parser_name] + arg_strings
+
+        super().__call__(parser=parser, namespace=namespace, values=values,
+                         option_string=option_string)
+
 class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContainer):
 
     def __init__(self,
@@ -242,6 +273,8 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
             argument_default=argument_default,
             conflict_handler=conflict_handler,
             add_help=add_help)
+
+        self.register('action', 'parsers', _SubParsersAction)
 
     @trace
     def parse_args(self, args=None, namespace=None, process_config_file=True):
@@ -316,6 +349,21 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
         # return the modified argument list
         return new_arg_strings
 
+
+class ParserExitException(Exception):
+
+    def __init__(self, status, message):
+        self.status = status
+        self.message = message
+        super().__init__(message)
+
+
+class NoExitArgumentParser(ArgumentParser):
+
+    def exit(self, status=0, message=None):
+        raise ParserExitException(status, message)
+
+
 class DefaultWrapper(object):
 
     def __init__(self, inner):
@@ -324,5 +372,3 @@ class DefaultWrapper(object):
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.inner!r})'
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
