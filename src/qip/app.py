@@ -144,6 +144,7 @@ class App(XdgResource):
     prompt_style = None
     prompt_completer = None
     prompt_message = None
+    prompt_mode = None
 
     def __init__(self):
         self.args = argparse.Namespace()
@@ -433,10 +434,19 @@ class App(XdgResource):
         pass
 
     def get_prompt_message(self):
-        return [
-            ('class:app', self.prog or ''),
+        prompt_message = []
+        if self.prog:
+            prompt_message += [
+                ('class:app', self.prog or ''),
+            ]
+        if self.prompt_mode:
+            prompt_message += [
+                ('class:mode', f'({self.prompt_mode})'),
+            ]
+        prompt_message += [
             ('class:cue', '> '),
         ]
+        return prompt_message
 
     def init_prompt_session(self):
         if self.prompt_session is None:
@@ -452,6 +462,7 @@ class App(XdgResource):
             self.prompt_style = Style.from_dict({
                 '': '#ffffff',
                 'app': '#884444',
+                'mode': '#663333',
                 'cue': '#00aa00',
                 'field': '#884444',
                 # Simiar to coloredlogs.DEFAULT_LEVEL_STYLES:
@@ -466,14 +477,18 @@ class App(XdgResource):
                 'critical': 'red',
             })
 
-    def prompt(self, message=None, *, style=None, completer=None):
+    def prompt(self, message=None, *, style=None, completer=None, auto_suggest=DEFAULT,
+               prompt_mode=None):
+        from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
         with self.need_user_attention():
             self.init_prompt_session()
-            c = self.prompt_session.prompt(
-                message=None if message is False else (message or self.prompt_message),
-                style=None if style is False else (style or self.prompt_style),
-                completer=None if completer is False else (completer or self.prompt_completer),
-            )
+            with self.prompt_mode_context(prompt_mode):
+                c = self.prompt_session.prompt(
+                    message=None if message is False else (message or self.prompt_message),
+                    style=None if style is False else (style or self.prompt_style),
+                    completer=None if completer is False else (completer or self.prompt_completer),
+                    auto_suggest=AutoSuggestFromHistory() if auto_suggest is DEFAULT else auto_suggest,
+                )
         return c
 
     def run_dialog(self, dialog, style=None, async_=False):
@@ -646,7 +661,17 @@ class App(XdgResource):
             finally:
                 self.have_user_attention = False
 
+    @contextlib.contextmanager
+    def prompt_mode_context(self, prompt_mode):
+        prev_prompt_mode = self.prompt_mode
+        try:
+            if prompt_mode is not None:
+                self.prompt_mode = prompt_mode
+            yield
+        finally:
+            self.prompt_mode = prev_prompt_mode
+
 
 app = App()
 
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
+# vim: ft=python ts=8 sw=4 sts=4 ai et
