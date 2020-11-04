@@ -120,9 +120,9 @@ def bincuerip(cue_file):
         with tags_file.open('r', encoding='utf-8') as fp:
             album_tags = AlbumTags.json_load(fp)
         print('{}'.format(
-            album_tags.short_str()))
+            album_tags.cite()))
         for track_no, track_tags in album_tags.tracks_tags.items():
-            print('  Track {:2d}: {}'.format(track_no, track_tags.short_str()))
+            print('  Track {:2d}: {}'.format(track_no, track_tags.cite()))
     #elif app.args.use_bincuetags:
     #    import qip.bin.bincuetags
     #    album_tags = qip.bin.bincuetags.bincuetags(cue_file)
@@ -147,7 +147,7 @@ def bincuerip(cue_file):
 
         track_tags = album_tags.tracks_tags[track_no]
 
-        app.log.info('Ripping %s (%s [%s])...', track_out_file, track_tags.short_str(), track.length)
+        app.log.info('Ripping %s (%s [%s])...', track_out_file, track_tags.cite(), track.length)
         track_out_file.rip_cue_track(track,
                                      bin_file=bin_file,
                                      tags=track_tags)

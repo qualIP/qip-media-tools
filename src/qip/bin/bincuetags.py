@@ -618,9 +618,9 @@ def bincuetags(cue_file):
             for i, album_tags in enumerate(album_tags_list, start=1):
                 print('{}{} - {}'.format(
                     '*' if album_tags_sel == i - 1 else ' ',
-                    i, album_tags.short_str()))
+                    i, album_tags.cite()))
                 for track_no, track_tags in album_tags.tracks_tags.items():
-                    print('  Track {:2d}: {}'.format(track_no, track_tags.short_str()))
+                    print('  Track {:2d}: {}'.format(track_no, track_tags.cite()))
             c = app.prompt(completer=completer)
             try:
                 c = int(c)

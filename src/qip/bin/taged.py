@@ -602,7 +602,7 @@ def taglist(file_name, format):
     tags = mm_file.load_tags()
     assert tags is not None
     if format == 'human':
-        dump_tags(tags)
+        tags.pprint()
         sys.stdout.flush()  # Sync with logging
     elif format == 'json':
         json.dump(tags, fp=sys.stdout)
