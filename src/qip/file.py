@@ -460,6 +460,8 @@ class ConfigFile(File):
 
 
 def cache_url(url, cache_dict={}):
+    if isinstance(url, Path):
+        return url
     assert isinstance(url, str)
     purl = urllib.parse.urlparse(url)
     if purl.scheme == 'file':
@@ -513,7 +515,7 @@ def cache_url(url, cache_dict={}):
         tfp.flush()
         cache_dict[url] = tfp
 
-    return tfp.name
+    return Path(tfp.name)
 
 # safe_write_file {{{
 
