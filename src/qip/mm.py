@@ -1298,7 +1298,7 @@ class _tReMatchGroups(_tReMatchTest):
             raise ValueError('Doesn\'t match r.e. {!r}'.format(self.expr))
         return m.groups()
 
-def _tArtist(value):
+def _tPersonnelString(value):
     if isinstance(value, (tuple, list)):
         value = '; '.join(value)
     if isinstance(value, str):
@@ -1525,6 +1525,7 @@ class MediaTagEnum(enum.Enum):
     parttitle = 'parttitle'  # STR  Set the part title
     composer = 'composer'  # STR  Set the composer information (writer)
     publisher = 'publisher'  # STR  Set the publisher information
+    originaltitle = 'originaltitle'  # STR  Set the original song title
     # TODO originalartist = 'originalartist'
 
     date = 'date'  # None|MediaTagDate
@@ -1842,11 +1843,27 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     albumartist = propex(
         name='albumartist',
-        type=(_tNullTag, _tArtist))
+        type=(_tNullTag, _tPersonnelString))
+
+    @property
+    def albumartist_list(self):
+        return [e.strip() for e in (self.albumartist or '').split(';')]
+
+    @albumartist_list.setter
+    def albumartist_list(self, value):
+        self.albumartist = value
 
     artist = propex(
         name='artist',
-        type=(_tNullTag, _tArtist))
+        type=(_tNullTag, _tPersonnelString))
+
+    @property
+    def artist_list(self):
+        return [e.strip() for e in (self.artist or '').split(';')]
+
+    @artist_list.setter
+    def artist_list(self, value):
+        self.artist = value
 
     disk = propex(
         name='disk',
@@ -2392,6 +2409,10 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             if self.contains(key, strict=True):
                 yield key
 
+    def as_str_dict(self):
+        return {tag.name: val
+                for tag, val in self.items()}
+
     def __len__(self):
         return len(list(iter(self)))
 
@@ -2413,6 +2434,28 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
             return f(name)
         else:
             raise AttributeError(name)
+
+    def __copy__(self):
+        return self.__class__(dict(self))
+
+    copy = __copy__
+
+    def __deepcopy__(self, ):
+        return self.__class__(copy.deepcopy(dict(self)))
+
+    deepcopy = __deepcopy__
+
+    def __sub__(self, other):
+        v = self.copy()
+        v -= other
+        return v
+
+    def __isub__(self, other):
+        tags_to_check = set(self.keys()) | set(other.keys())
+        for tag in tags_to_check:
+            if self[tag] == other[tag]:
+                del self[tag]
+        return self
 
     def set_tag(self, tag, value, source=''):
         if isinstance(tag, MediaTagEnum):
@@ -2546,6 +2589,53 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         formatter = self.Formatter(tags=self)
         return formatter.vformat(format_string, args, kwargs)
 
+    def pprint(self, *, deep=True, heading='Tags:'):
+        tags = self
+        if heading:
+            print(heading)
+        for tag_info in mp4tags.tag_args_info:
+            # Force None values to actually exist
+            if tags[tag_info.tag_enum] is None:
+                tags[tag_info.tag_enum] = None
+        tags_keys = tags.keys() if deep else tags.keys(deep=False)
+
+        import html
+        def replace_html_entities(s):
+            s = html.unescape(s)
+            m = re.search(r'&\w+;', s)
+            if m:
+                raise ValueError('Unknown HTML entity: %s' % (m.group(0),))
+            return s
+
+        for tag in sorted(tags_keys, key=functools.cmp_to_key(dictionarycmp)):
+            value = tags[tag]
+            if isinstance(value, str):
+                tags[tag] = value = replace_html_entities(tags[tag])
+            if value is not None:
+                if type(value) not in (int, str, bool, tuple):
+                    value = str(value)
+                print('    %-13s = %r' % (tag.value, value))
+
+    def cite(self, cite_api=None):
+
+        if cite_api is None:
+            from qip.cite import default as cite_api
+
+        type_ = self.deduce_type()
+        if type_ == 'movie':
+            return cite_api.cite_movie(
+                **self.as_str_dict())
+        if type_ == 'audiobook':
+            return cite_api.cite_book(
+                authors=self.artist_list,
+                medium=self.mediatype or 'Audiobook',
+                **self.as_str_dict())
+        if type_ == 'tvshow':
+            return cite_api.cite_tvshow(
+                **self.as_str_dict())
+
+        raise NotImplementedError(type_)
+
 
 # Set all tags as propex!
 for tag_enum in MediaTagEnum:
@@ -2602,7 +2692,11 @@ class TrackTags(MediaTagDict):
         else:
             raise AttributeError(name)
 
-    def short_str(self):
+    def cite(self, **kwargs):
+        try:
+            return super().cite(**kwargs)
+        except (NotImplementedError, TypeError):
+            pass
         l = []
         for tag_enum in (
                 MediaTagEnum.tvshow,
@@ -2679,7 +2773,11 @@ class AlbumTags(MediaTagDict):
                 for track_no, track_tags in tracks_tags.items()})
         super().__init__(*args, **kwargs)
 
-    def short_str(self):
+    def cite(self, **kwargs):
+        try:
+            return super().cite(**kwargs)
+        except (NotImplementedError, TypeError):
+            pass
         l = []
         for tag_enum in (
                 MediaTagEnum.tvshow,
@@ -2711,6 +2809,11 @@ class AlbumTags(MediaTagDict):
             k: v.__json_encode_vars__()  # implicit class
             for k, v in self.tracks_tags.items()}
         return d
+
+    def pprint(self, *, deep=True, heading='Tags:'):
+        super().pprint(deep=deep, heading=heading)
+        for track_no, track_tags in self.tracks_tags.items():
+            track_tags.pprint(deep=False, heading='- Track %d' % (track_no,))
 
 # }}}
 
