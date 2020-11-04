@@ -11,7 +11,6 @@ import decimal
 import errno
 import functools
 import glob
-import html
 import logging
 import mutagen
 import os
@@ -43,17 +42,6 @@ mutagen.mp4.MP4Tags._MP4Tags__atoms[b'idx'] = (
 )
 
 m4a_prepped_picture = None
-
-# replace_html_entities {{{
-
-def replace_html_entities(s):
-    s = html.unescape(s)
-    m = re.search(r'&\w+;', s)
-    if m:
-        raise ValueError('Unknown HTML entity: %s' % (m.group(0),))
-    return s
-
-# }}}
 
 @app.main_wrapper
 def main():
@@ -666,25 +654,6 @@ def taged(file_name, tags):
         return taged_Matroska(file_name, tags)
     raise NotImplementedError(file_name.suffix)
     return True
-
-def dump_tags(tags, *, deep=True, heading='Tags:'):
-    if heading:
-        print(heading)
-    for tag_info in mp4tags.tag_args_info:
-        # Force None values to actually exist
-        if tags[tag_info.tag_enum] is None:
-            tags[tag_info.tag_enum] = None
-    tags_keys = tags.keys() if deep else tags.keys(deep=False)
-    for tag in sorted(tags_keys, key=functools.cmp_to_key(dictionarycmp)):
-        value = tags[tag]
-        if isinstance(value, str):
-            tags[tag] = value = replace_html_entities(tags[tag])
-        if value is not None:
-            if type(value) not in (int, str, bool, tuple):
-                value = str(value)
-            print('    %-13s = %r' % (tag.value, value))
-    for track_no, track_tags in tags.tracks_tags.items() if isinstance(tags, AlbumTags) else ():
-        dump_tags(track_tags, deep=False, heading='- Track %d' % (track_no,))
 
 def tageditor(file_name):
     app.log.info('Editing %s...', file_name)
