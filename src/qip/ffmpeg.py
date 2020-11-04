@@ -357,7 +357,8 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             (fr'^(?:\[warning\]\s)?Output file is empty, nothing was encoded \(check -ss / -t / -frames parameters if used\){re_eol}', functools.partial(self.generic_error, level=logging.WARNING, error_tag='output-file-empty-nothing-encoded')),
 
             # File 'TheTruthAboutCatsAndDogs/title_t00.demux.mkv' already exists. Overwrite ? [y/N]
-            (fr'^File \'(?P<file_name>.+?)\' already exists\. Overwrite \? \[y/N\] *$', self.prompt_file_overwrite),
+            (fr'^File \'(?P<file_name>.+?)\' already exists\. Overwrite ?\? \[y/N\] *$', self.prompt_file_overwrite),
+
 
             (fr'^\[info\]\s[^\r\n]*?{re_eol}', self.unknown_info_line),
             (fr'^\[verbose\]\s[^\r\n]*?{re_eol}', self.unknown_verbose_line),
@@ -939,7 +940,7 @@ class Ffprobe(_Ffmpeg):
         error_lines = []
 
         # [mpeg2video @ 0x55ea4143fe00] [error] end mismatch left=114 1370 at 0 30
-        re_error_line = re.compile(r'\[(error|panic)\] .+')
+        re_error_line = re.compile(r'\[(?P<type>error|panic)\] (?P<msg>.+)')
         with self.popen(*ffprobe_args,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
@@ -1033,12 +1034,24 @@ class Ffprobe(_Ffmpeg):
                     continue
                 m = re_error_line.search(line)
                 if m:
-                    error_lines.append(line)
+                    if m.group('msg') == 'sps_id 1 out of range':
+                        # [h264 @ 0x55f98a7caa00] [error] sps_id 1 out of range
+                        # [NULL @ 0x55f98a7c3b80] [error] sps_id 1 out of range
+                        pass
+                    elif m.group('msg').startswith('missing picture in access unit with size'):
+                        # [NULL @ 0x555cde195b80] [error] missing picture in access unit with size 802
+                        pass
+                    elif m.group('msg') == 'no frame!':
+                        # [h264 @ 0x555cde19ca00] [error] no frame!
+                        pass
+                    else:
+                        error_lines.append(line)
                     continue
                 raise ValueError('Unrecognized line %d: %s' % (parser.line_no, line))
             if error_lines or p.returncode:
+                print(f'error_lines={error_lines!r}')
                 raise subprocess.CalledProcessError(
-                        returncode=p.returncode,
+                        returncode=p.returncode or 0,
                         cmd=subprocess.list2cmdline(ffprobe_args),
                         output='\n'.join(error_lines))
 
