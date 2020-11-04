@@ -151,6 +151,14 @@ class Mediainfo(Executable):
                         v = int(float(m.group('float')) * 1000)
                     else:
                         raise ValueError((k, v))
+                elif k == 'Writing application':
+                    k = 'Encoded_Application'
+                elif k == 'Format profile':
+                    k = 'Format_Profile'
+                elif k == 'MultiView_Count':
+                    k = 'MultiView_Count'
+                elif k == 'MultiView_Layout':
+                    k = 'MultiView_Layout'
                 else:
                     continue  # skip
                 track_dict[k] = v

@@ -589,6 +589,13 @@ def organize_movie(inputfile, *, suggest_tags, orig_type):
     dst_file_base += format_part_suffix(inputfile)
 
     dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
+    stereo_3d_mode = getattr(inputfile, 'stereo_3d_mode', None)
+    if stereo_3d_mode is not None:
+        # For Kodi compatibility, make sure '3D' is included
+        if '3D' not in dst_file_base.split('.'):
+            dst_file_base += '.3D'
+        # Plex requires 3D mode ((H-?)?(SBS|TAB))
+        dst_file_base += stereo_3d_mode.exts[0]
     dst_file_base += inputfile.file_name.suffix
 
     return dst_dir / dst_file_base

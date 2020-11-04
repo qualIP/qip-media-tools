@@ -111,6 +111,7 @@ default_tag_map = (
     TagInfo(50, None, 'TOTAL_PARTS', 'parts'),
     TagInfo(40, None, 'PART_NUMBER', 'part'),
     TagInfo(40, None, 'TITLE', 'parttitle'),
+    TagInfo(None, None, '3d-plane', 'object_3d_plane'),
     # XXXJST CONFLICT TagInfo(None, None, 'TODO','albumartist'),
     TagInfo(None, None, 'ARTIST', 'artist'),  # CONFLICT
     # XXXJST CONFLICT TagInfo(None, None, 'TODO', 'albumtitle'),
