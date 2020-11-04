@@ -10,6 +10,7 @@ __all__ = (
     'AlbumTags',
     'MediaType',
     'ContentType',
+    'Stereo3DMode',
     'mp4tags',
     'mp4info',
     'id3v2',
@@ -51,7 +52,7 @@ from qip.isocountry import isocountry, IsoCountry
 from qip.file import *
 from qip.parser import *
 from qip.propex import propex
-from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise, Timestamp
+from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise, Timestamp, Ratio
 import qip.utils
 
 from fractions import Fraction
@@ -803,6 +804,37 @@ class MediaFile(BinaryFile):
                             else:
                                 raise e
                     tags_done = True
+                for stream_dict in ffprobe_dict['streams']:
+                    if stream_dict['codec_type'] == 'video':
+                        stereo_mode = stream_dict.get('tags', {}).get('stereo_mode', '')
+                        for side_data in stream_dict.get('side_data_list', ()):
+                            if side_data['side_data_type'] == 'Stereo 3D':
+                                if side_data['type'] == 'side by side':
+                                    if Ratio(stream_dict['sample_aspect_ratio']) == 1:
+                                        self.stereo_3d_mode = Stereo3DMode.full_side_by_side
+                                    else:
+                                        self.stereo_3d_mode = Stereo3DMode.half_side_by_side
+                                    if side_data['inverted']:
+                                        self.stereo_3d_mode_inverted = True
+                                        assert stereo_mode == 'right_left'
+                                    else:
+                                        self.stereo_3d_mode_inverted = False
+                                        assert stereo_mode == 'left_right'
+                                elif side_data['type'] == 'frame alternate':
+                                    if stereo_mode == 'block_lr':
+                                        self.stereo_3d_mode = Stereo3DMode.frame_packing
+                                        self.stereo_3d_mode_inverted = True
+                                        assert not side_data['inverted']
+                                    elif stereo_mode == 'block_rl':
+                                        self.stereo_3d_mode = Stereo3DMode.frame_packing
+                                        self.stereo_3d_mode_inverted = False
+                                        assert side_data['inverted']
+                                    else:
+                                        raise NotImplementedError(stereo_mode, side_data)
+                                else:
+                                    raise NotImplementedError(stereo_mode, side_data)
+
+                        break  # Only first video stream
 
         if self.file_name.suffix in get_mp4v2_app_support().extensions_can_read:
             if not tags_done and mp4info.which(assert_found=False):
@@ -1585,6 +1617,8 @@ class MediaTagEnum(enum.Enum):
     itunescatalogid = 'itunescatalogid'  # NUM  Set the content ID (Catalog ID)
     itunesplaylistid = 'itunesplaylistid'  # NUM  Set the playlist ID
 
+    object_3d_plane = 'object_3d_plane'  # NUM  The 3D plane of this object
+
     def __repr__(self):
         return self.value
 
@@ -1701,6 +1735,63 @@ ContentType._value2member_map_['live music video'] = ContentType.live
 ContentType._value2member_map_['artist video'] = ContentType.video
 ContentType._value2member_map_['music video'] = ContentType.video
 ContentType._value2member_map_['movie'] = ContentType.feature_film
+
+# }}}
+
+# Stereo3DMode {{{
+
+class Stereo3DMode(enum.Enum):
+    half_side_by_side = 'half_side_by_side'
+    full_side_by_side = 'full_side_by_side'
+    half_top_and_bottom = 'half_top_and_bottom'
+    full_top_and_bottom = 'full_top_and_bottom'
+    frame_packing = 'frame_packing'
+    alternate_frame = 'alternate_frame'
+
+    def __hash__(self):
+        return hash(id(self))
+
+    def __str__(self):
+        return self.value
+
+    def __new(cls, value):
+        if type(value) is str:
+            value = value.strip().lower()
+            for pattern, new_value in (
+                ):
+                m = re.search(pattern, value)
+                if m:
+                    value = new_value
+                    break
+        return super().__new__(cls, value)
+
+Stereo3DMode.__new__ = Stereo3DMode._Stereo3DMode__new
+for _e in Stereo3DMode:
+    Stereo3DMode._value2member_map_[_e.value.lower()] = _e
+    Stereo3DMode._value2member_map_[_e.name.lower()] = _e
+    Stereo3DMode._value2member_map_[_e.name.lower().replace('_', '')] = _e
+    Stereo3DMode._value2member_map_[_e.name.lower().replace('_', '-')] = _e
+Stereo3DMode._value2member_map_['f-sbs'] = Stereo3DMode.full_side_by_side
+Stereo3DMode._value2member_map_['h-sbs'] = Stereo3DMode.half_side_by_side
+Stereo3DMode._value2member_map_['f-tab'] = Stereo3DMode.full_top_and_bottom
+Stereo3DMode._value2member_map_['h-tab'] = Stereo3DMode.half_top_and_bottom
+Stereo3DMode._value2member_map_['fsbs'] = Stereo3DMode.full_side_by_side
+Stereo3DMode._value2member_map_['hsbs'] = Stereo3DMode.half_side_by_side
+Stereo3DMode._value2member_map_['ftab'] = Stereo3DMode.full_top_and_bottom
+Stereo3DMode._value2member_map_['htab'] = Stereo3DMode.half_top_and_bottom
+Stereo3DMode._value2member_map_['sbs'] = Stereo3DMode.full_side_by_side
+Stereo3DMode._value2member_map_['tab'] = Stereo3DMode.full_top_and_bottom
+Stereo3DMode._value2member_map_['full_over_under'] = Stereo3DMode._value2member_map_['full-over-under'] = Stereo3DMode._value2member_map_['fulloverunder'] = Stereo3DMode._value2member_map_['f-ou'] = Stereo3DMode.full_top_and_bottom
+Stereo3DMode._value2member_map_['half_over_under'] = Stereo3DMode._value2member_map_['half-over-under'] = Stereo3DMode._value2member_map_['halfoverunder'] = Stereo3DMode._value2member_map_['h-ou'] = Stereo3DMode.half_top_and_bottom
+Stereo3DMode._value2member_map_['mvc'] = Stereo3DMode.frame_packing
+Stereo3DMode._value2member_map_['alt'] = Stereo3DMode.alternate_frame
+
+Stereo3DMode.half_side_by_side.exts = ('.HSBS',)
+Stereo3DMode.full_side_by_side.exts = ('.SBS', '.FSBS',)
+Stereo3DMode.half_top_and_bottom.exts = ('.HTAB', '.HOU',)
+Stereo3DMode.full_top_and_bottom.exts = ('.TAB', '.FTAB', '.OU', '.FOU',)
+Stereo3DMode.frame_packing.exts = ('.MVC',)
+Stereo3DMode.alternate_frame.exts = ('.ALT',)
 
 # }}}
 
@@ -2219,6 +2310,10 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     itunesplaylistid = propex(
         name='itunesplaylistid',
+        type=(_tNullTag, int))
+
+    object_3d_plane = propex(
+        name='object_3d_plane',
         type=(_tNullTag, int))
 
     def __setitem__(self, key, value):
