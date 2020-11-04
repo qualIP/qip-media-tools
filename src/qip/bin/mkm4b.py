@@ -249,6 +249,10 @@ def main():
     pgroup.add_argument('--qaac', dest='use_qaac', default=True, action='store_true', help='use qaac, if available')
     pgroup.add_argument('--no-qaac', dest='use_qaac', default=argparse.SUPPRESS, action='store_false', help='do not use qaac')
 
+    pgroup = app.parser.add_argument_group('Database Control')
+    pgroup.add_argument('--goodreads', dest='use_goodreads', default=True, action='store_true', help='Use Goodreads')
+    pgroup.add_argument('--no-goodreads', dest='use_goodreads', default=argparse.SUPPRESS, action='store_false', help='Do not use Goodreads')
+
     pgroup = app.parser.add_argument_group('Tags')
     pgroup.add_argument('--grouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
@@ -425,6 +429,63 @@ def mkm4b(inputfiles, default_tags):
                     m4b.tags[tag1] = m4b.tags[tag2]
                 elif inputfiles[0].tags[tag2] is not None:
                     m4b.tags[tag1] = inputfiles[0].tags[tag2]
+
+    if app.args.use_goodreads:
+        from qip.goodreads import GoodreadsClient
+
+        gc = GoodreadsClient()
+        gc.authenticate()
+
+        title = app.input_dialog(title='Goodreads',
+                                 text='Please provide book title [lang]',
+                                 initial_text=m4b.tags.albumtitle or m4b.tags.title or '')
+        if not title:
+            raise Exception('Cancelled by user')
+        m = re.match(r'^(?P<title>.+) \[(?P<language>\w\w\w)\]', title)
+        if m:
+            gc.language = m.group('language')
+            title = m.group('title').strip()
+
+        books = gc.search_books(title, search_field='title')
+        if not books:
+            raise ValueError('No books found')
+
+        book = app.radiolist_dialog(
+            title='Books',
+            values=[(book, gc.cite_book(book))
+                     for book in books])
+        if not book:
+            raise Exception('Cancelled by user')
+
+        # m4b.tags.albumtitle = title
+
+        from qip.bin.taged import goodreads_book_to_tags
+        book_tags = goodreads_book_to_tags(book)
+
+        # Force-populate
+        if not m4b.tags.composer:
+            m4b.tags.composer = None
+
+        # Reduce redundancy
+        if m4b.tags.albumartist == m4b.tags.artist:
+            try:
+                del m4b.tags.albumartist
+            except AttributeError:
+                pass
+        if m4b.tags.albumtitle == m4b.tags.title:
+            try:
+                del m4b.tags.albumtitle
+            except AttributeError:
+                pass
+
+        modified, m4b.tags, book_tags = eddiffvar(m4b.tags, book_tags)
+
+        m4b.tags.update(book_tags)
+
+        if m4b.tags.albumartist is None:
+            m4b.tags.albumartist = m4b.tags.artist
+        if m4b.tags.albumtitle is None:
+            m4b.tags.albumtitle = m4b.tags.title
 
     # m4b.file_name {{{
     if 'outputfile' in app.args:

@@ -103,6 +103,7 @@ def main():
     xgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
     xgroup.add_argument('--apply', dest='action', default=argparse.SUPPRESS, action='store_const', const='apply', help='apply tags')
     xgroup.add_argument('--find-lyrics', dest='action', default=argparse.SUPPRESS, action='store_const', const='find_lyrics', help='find lyrics')
+    xgroup.add_argument('--id-audiobooks', dest='action', default=argparse.SUPPRESS, action='store_const', const='id_audiobooks', help='identify audiobooks')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     pgroup.add_argument('--prep-picture', dest='prep_picture', action='store_true', help='prepare picture')
@@ -295,8 +296,123 @@ def main():
                 print_lyrics = False
 
         # }}}
+    elif app.args.action == 'id_audiobooks':
+        # {{{
+
+        from qip.goodreads import GoodreadsClient
+        gc = GoodreadsClient(
+            # taged API key:
+            client_key='OtgaaV6YFDY88U0WoW5h3w',
+            client_secret='I9b9PDjDpK9rLT8iMy09lE1fKIjjvwXt4Vy1DAPiSxo',
+        )
+
+        if not app.args.files:
+            raise Exception('No files provided')
+        file_names = app.args.files
+
+        for file_name in file_names:
+            mm_file = MediaFile.new_by_file_name(file_name)
+            orig_tags = mm_file.load_tags()
+            tags = orig_tags.copy()
+
+            books = gc.search_books(tags.albumtitle or tags.title, search_field='title')
+            if not books:
+                app.log.error('%s: Book not found for %s', prog, file_name)
+                continue
+
+            book = app.radiolist_dialog(title='Books',
+                                        values=[(book, str(book))
+                                                for book in books])
+            if not book:
+                raise ValueError('Cancelled by user!')
+
+            tags.update(goodreads_book_to_tags(book))
+            print_tags = True
+            if app.args.interactive:
+                tags.pprint()
+                print_tags = False
+                while True:
+                    print('')
+                    print('Interactive mode...')
+                    print(' e - edit tags')
+                    print(' q - quit')
+                    print(' y - yes, continue!')
+                    c = input('Choice: ')
+                    if c == 'e':
+                        tags = edvar(tags)[1]
+                    elif c == 'q':
+                        return False
+                    elif c == 'y':
+                        break
+                    else:
+                        app.log.error('Invalid input')
+            if file_name is not None:
+                taged(file_name, tags - orig_tags)
+                print_tags = False
+            if print_tags:
+                tags.pprint()
+                print_tags = False
+
+        # }}}
     else:
         raise ValueError('Invalid action \'%s\'' % (app.args.action,))
+
+def goodreads_book_to_tags(book):
+    from qip.goodreads import goodreads_parse_date
+    image_url = book.image_url
+    full_image_url = re.sub(r'\._SX\d+_(\.jpg)$', r'\1', image_url or '') or None
+
+    def filter_author(author):
+        role = author._author_dict['role']
+        try:
+            return {
+                None: True,
+                'Illustrator': False,
+                'Editor': False,
+                'Introduction': False,
+                'Introduction/Notes': False,
+                'Introduction/Editor': False,
+            }[role]
+        except KeyError as err:
+            raise NotImplementedError from err
+
+    authors = [
+        author
+        for author in book.authors
+        if filter_author(author)
+    ]
+
+    title = book.title
+    if book.series_works:
+        series_work = book.series_works['series_work']
+        series_position = int(series_work['user_position'])
+        series_title = series_work['series']['title']
+        title = re.sub(rf' \({re.escape(series_title)}, #{series_position}\)$', '', title)
+    else:
+        series_position = series_title = None
+    base_title = title
+    if series_title:
+        title = f'{base_title} ({series_title} #{series_position})'
+        sorttitle = f'{series_title} #{series_position:02d} - {base_title}'
+    else:
+        sorttitle = None
+    copyright = book.publisher
+
+    tags = AlbumTags()
+    tags.title = title
+    if sorttitle:
+        tags.sorttitle = sorttitle
+    tags.artist = [str(e) for e in authors]
+    tags.date = goodreads_parse_date(book.publication_date)
+    tags.language = book.language_code
+    if full_image_url:
+        tags.picture = full_image_url
+    tags.longdescription = book.description
+    tags.country = book._book_dict["country_code"]
+    if copyright:
+        tags.copyright = copyright
+
+    return tags
 
 def find_lyrics(file_name, *, genius=None, tags=None, **kwargs):
 
