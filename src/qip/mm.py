@@ -1707,6 +1707,7 @@ class ContentType(enum.Enum):
     video = 'Video'  # artist video (default), music video (default)
     # Non-default
     audiobook = 'Audiobook'
+    image = 'Image'
 
     def __hash__(self):
         return hash(id(self))
