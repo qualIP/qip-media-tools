@@ -199,6 +199,11 @@ class File(object):
             if not force:
                 raise
 
+    def send2trash(self):
+        self.assert_file_name_defined()
+        from send2trash import send2trash
+        send2trash(os.fspath(self))
+
     def truncate(self, length):
         if self.fd is not None:
             os.truncate(self.fd, length)
