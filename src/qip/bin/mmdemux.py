@@ -1366,7 +1366,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None, mediainfo_dict=No
                         del d['title']
         if 'title' in d:
             # TITLE - part 1
-            m = re.match('^(?P<title>.+) *- *part *(?P<part>\d+)$', d['title'])
+            m = re.match('^(?P<title>.+?) *- *part *(?P<part>\d+)$', d['title'])
             if m:
                 d.update(m.groupdict())
         if 'title' in d:
