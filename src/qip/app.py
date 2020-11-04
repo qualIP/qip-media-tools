@@ -509,6 +509,38 @@ class App(XdgResource):
             else:
                 return application.run()
 
+    def yes_no_dialog(self, title='', text='', yes_text='Yes', no_text="No",
+                      style=None, async_=False):
+        """
+        Display a Yes/No dialog.
+        Return a boolean.
+        """
+        from prompt_toolkit.widgets import (
+            Button,
+            Dialog,
+            Label,
+        )
+
+        def yes_handler() -> None:
+            get_app().exit(result=True)
+
+        def no_handler() -> None:
+            get_app().exit(result=False)
+
+        dialog = Dialog(
+            title=title,
+            body=Label(text=text, dont_extend_height=True),
+            buttons=[
+                Button(text=yes_text, handler=yes_handler),
+                Button(text=no_text, handler=no_handler),
+            ],
+            with_background=True,
+        )
+
+        return self.run_dialog(dialog,
+                               style=None if style is False else (style or self.prompt_style),
+                               async_=async_)
+
     def message_dialog(self, title='', text='', ok_text='Ok', style=None, async_=False):
         """
         Display a simple message box and wait until the user presses enter.
@@ -535,7 +567,8 @@ class App(XdgResource):
                                async_=async_)
 
     def input_dialog(self, title='', text='', initial_text='', ok_text='OK', cancel_text='Cancel',
-                     completer=None, password=False, style=None, async_=False):
+                     completer=None, auto_suggest=DEFAULT,
+                     password=False, style=None, async_=False):
         """
         Display a text input box.
         Return the given text, or None when cancelled.
@@ -556,6 +589,7 @@ class App(XdgResource):
         from prompt_toolkit.shortcuts.dialogs import (
             _return_none,
         )
+        from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
         def accept(buf):
             get_app().layout.focus(ok_button)
@@ -572,7 +606,9 @@ class App(XdgResource):
             multiline=False,
             password=password,
             completer=completer,
-            accept_handler=accept)
+            accept_handler=accept,
+            auto_suggest=AutoSuggestFromHistory() if auto_suggest is DEFAULT else auto_suggest,
+        )
 
         dialog = Dialog(
             title=title,
