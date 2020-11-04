@@ -1,10 +1,8 @@
 
 __all__ = (
     'ImageFile',
-    'ImageTagEnum',
     'ImageTags',
     'ImageType',
-    'MissingImageTagError',
 )
 
 import collections
@@ -38,7 +36,7 @@ from qip.file import *
 from qip.parser import *
 from qip.propex import propex
 from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise
-from .mm import MediaFile
+from .mm import MediaFile, MediaTagDict
 
 
 def _tIntRange(value, rng):
@@ -77,21 +75,6 @@ class _tReMatchTest(object):
         )
 
 
-class MissingImageTagError(Exception):
-
-    def __init__(self, tag, file=None):
-        tag = ImageTagEnum(tag)
-        super().__init__(tag)
-        self.tag = tag
-        self.file_name = str(file) if file else None
-
-    def __str__(self):
-        s = '%s tag missing' % (self.tag.name,)
-        if self.file_name:
-            s = '%s: %s' % (self.file_name, s)
-        return s
-
-
 class _tReMatchGroups(_tReMatchTest):
 
     def __call__(self, value):
@@ -123,411 +106,30 @@ def times_1000(v):
 
 # tags {{{
 
-def _tImageTagRating(value):
-    if type(value) is str:
-        value = value.strip()
-        value = {
-            '0': 'None',
-            '1': 'Clean',
-            '2': 'Explicit',
-            }.get(value, value)
-    return ImageTagRating(value)
-
-class ImageTagRating(enum.Enum):
-    none = 'None'          # 0
-    clean = 'Clean'        # 2
-    explicit = 'Explicit'  # 3
-
-    def __str__(self):
-        return self.value
-
-@functools.total_ordering
-class ImageTagDate(object):
-
-    year = propex(
-        name='year',
-        fdel=None,
-        type=_tYear)
-
-    month = propex(
-        name='month',
-        default=None,
-        type=(None, _tMonth))
-
-    day = propex(
-        name='day',
-        default=None,
-        type=(None, _tDay))
-
-    def __init__(self, value):
-
-        if isinstance(value, (ImageTagDate, datetime.datetime, datetime.date)):
-            # Copy constructor (or close)
-            self.year, self.month, self.day = value.year, value.month, value.day
-        elif type(value) is int:
-            self.year = value
-        elif type(value) is str:
-            try:
-                # 2013-11-20T08:00:00Z
-                # 2013-11-20 08:00:00
-                m = re.match(r'^(\d+-\d+-\d+)[T ]', value)
-                tmp_value = m.group(1) if m else value
-                d = datetime.datetime.strptime(tmp_value, '%Y-%m-%d').date()
-            except ValueError:
-                try:
-                    d = datetime.datetime.strptime(value, '%Y:%m:%d').date()
-                except ValueError:
-                    try:
-                        d = datetime.datetime.strptime(value, '%Y-%m').date()
-                    except ValueError:
-                        try:
-                            d = datetime.datetime.strptime(value, '%Y').date()
-                        except ValueError:
-                            raise ValueError('Not a compatible date string')
-                        else:
-                            self.year = d.year
-                    else:
-                        self.year, self.month = d.year, d.month
-                else:
-                    self.year, self.month, self.day = d.year, d.month, d.day
-            else:
-                self.year, self.month, self.day = d.year, d.month, d.day
-        else:
-            raise TypeError('Not a compatible date type')
-
-    def __str__(self):
-        v = str(self.year)
-        if self.month is not None:
-            v += '-{:02}'.format(self.month)
-            if self.day is not None:
-                v += '-{:02}'.format(self.day)
-        return v
-
-    __json_encode__ = __str__
-
-    def __eq__(self, other):
-        if not isinstance(other, ImageTagDate):
-            return NotImplemented
-        return (self.year, self.month, self.day) == (other.year, other.month, other.day)
-
-    def __lt__(self, other):
-        if not isinstance(other, ImageTagDate):
-            return NotImplemented
-        return (self.year, self.month, self.day) < (other.year, other.month, other.day)
-
-@functools.total_ordering
-class ImageTagEnum(enum.Enum):
-
-    title = 'title'  # STR
-    subtitle = 'subtitle'  # STR
-
-    date = 'date'  # None|ImageTagDate
-    year = 'year'  # NUM  Set the release date (*from date)
-    country = 'country'
-
-    description = 'description'  # STR  Set the short description
-    longdescription = 'longdescription'  # STR  Set the long description
-
-    copyright = 'copyright'  # STR  Set the copyright information
-    encodedby = 'encodedby'  # STR  Set the name of the person or company who encoded the file
-    tool = 'tool'  # STR  Set the software used for encoding
-
-    comment = 'comment'  # STR  Set a general comment
-
-    sorttitle = 'sorttitle'
-
-    purchasedate = 'purchasedate'
-
-    contentrating = 'contentrating'  # None|ImageTagRating  Set the Rating(none, clean, explicit)
-
-    def __repr__(self):
-        return self.value
-
-    def __eq__(self, other):
-        other = ImageTagEnum(other)
-        return self.value == other.value
-
-    def __lt__(self, other):
-        other = ImageTagEnum(other)
-        return self.value < other.value
-
-    def __hash__(self):
-        return hash(id(self))
-
-    def __json_encode__(self):
-        return self.value
-
-def _tNullTag(value):
-    if value is None:
-        return None
-    elif type(value) is str:
-        if value.strip() in ('', 'null', 'XXX'):
-            return None
-    raise ValueError('Not a null tag')
-
-def _tNullDate(value):
-    try:
-        return _tNullTag(value)
-    except ValueError:
-        if type(value) is str:
-            value = int(value)
-        if type(value) is int:
-            if value == 0:
-                return None
-    raise ValueError('Not a null date tag')
-
-def _tPosIntNone0(value):
-    value = int(value)
-    if value < 0:
-        raise ValueError('Not a positive integer')
-    return value or None
-
-def _tBool(value):
-    if type(value) is bool:
-        return value
-    elif type(value) is int:
-        if value == 0:
-            return False
-        elif value == 1:
-            return True
-    elif type(value) is str:
-        try:
-            return {
-                '0': False,
-                'false': False,
-                'off': False,
-                'no': False,
-                '1': True,
-                'true': True,
-                'on': True,
-                'yes': True,
-            }[value.lower()]
-        except KeyError:
-            pass
-    raise ValueError('Not a boolean')
-
-def _tCommentTag(value):
-    if value is None:
-        return None
-    elif type(value) is str:
-        return (value,)
-    else:
-        return tuple(value)
-
-class ImageTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMapping):
-
-    def __init__(self, dict=None, **kwargs):
-        if dict is not None:
-            #print('dict=%r' % (dict,))
-            self.update(dict)
-        if len(kwargs):
-            self.update(kwargs)
-
-    def _sanitize_key(self, key):
-        try:
-            return ImageTagEnum(key)
-        except ValueError:
-            raise KeyError(key)
-
-    def __json_encode_vars__(self):
-        d = collections.OrderedDict()
-        for k, v in self.items():
-            d[k.value] = v
-        try:
-            v = d['date']
-        except KeyError:
-            pass
-        else:
-            if v is not None and type(v) not in (int,):
-                d['date'] = str(v)
-        return d
-
-    date = propex(
-        name='date',
-        type=(_tNullDate, ImageTagDate))
-
-    year = propex(
-        name='year',
-        attr='date',
-        type=(None, int),
-        gettype=(None, operator.attrgetter('year')))
-
-    comment = propex(
-        name='comment',
-        type=(_tNullTag, _tCommentTag))
-
-    contentrating = propex(
-        name='contentrating',
-        type=(_tNullTag, _tImageTagRating))
-
-    purchasedate = propex(
-        name='purchasedate',
-        type=(_tNullDate, ImageTagDate))
-
-    def __setitem__(self, key, value):
-        key = self._sanitize_key(key)
-        setattr(self, key.value, value)
-
-    def __delitem__(self, key):
-        key = self._sanitize_key(key)
-        try:
-            delattr(self, key.value)
-        except AttributeError:
-            raise KeyError(key)
-
-    def __contains__(self, key):
-        return self.contains(key)
-
-    def setdefault(self, key, default=None):
-        'od.setdefault(k[,d]) -> od.get(k,d), also set od[k]=d if k not in od'
-        if key in self:
-            return self[key]
-        self[key] = default
-        return default
-
-    def contains(self, key, strict=False):
-        # valid key?
-        try:
-            key = self._sanitize_key(key)
-        except KeyError:
-            return False
-        # value exists?
-        # (could getattr but this avoids descriptor side-effects)
-        try:
-            value = self.__dict__[key.value]
-        except KeyError:
-            pass
-        else:
-            return True
-        # is it a property?
-        descr = _py._PyType_Lookup(type(self), key.value)
-        if inspect.isdatadescriptor(descr):
-            _key = (isinstance(descr, propex) and descr._propex__attr) or '_' + key.value
-            if _key in self.__dict__:
-                # direct property
-                pass
-            else:
-                # indirect property
-                if strict:
-                    return False
-            try:
-                value = getattr(self, key.value)
-            except AttributeError:
-                pass
-            else:
-                return True
-        return False
-
-    def __iter__(self):
-        for key in ImageTagEnum:
-            if self.contains(key, strict=True):
-                yield key
-
-    def __len__(self):
-        return len(list(iter(self)))
-
-    def __getitem__(self, key):
-        key = self._sanitize_key(key)
-        return getattr(self, key.value)
-
-    def __repr__(self):
-        return '%s(%s)' % (
-                self.__class__.__name__,
-                reprlib.aRepr.repr_dict(self, reprlib.aRepr.maxlevel))
-
-    def __getattr__(self, name):
-        if not name.startswith('_'):
-            if name in ImageTagEnum.__members__:
-                return None
-        f = getattr(super(), '__getattr__', None)
-        if f is not None:
-            return f(name)
-        else:
-            raise AttributeError(name)
-
-    def set_tag(self, tag, value, source=''):
-        if isinstance(tag, ImageTagEnum):
-            tag = tag.value
-        else:
-            tag = tag.strip()
-            try:
-                tag = ImageTagEnum(tag.lower()).value
-            except ValueError:
-                try:
-                    tag = image_tag_info['map'][tag]
-                except KeyError:
-                    try:
-                        tag = image_tag_info['map'][tag.lower()]
-                    except:
-                        log.debug('tag %r not known: %r', tag, value)
-                        return False
-        if isinstance(value, str):
-            value = value.strip()
-            if value in ('', 'null', 'XXX'):
-                return False
-
-        elif tag == 'comment':
-            if value == '<p>':
-                return False
-            try:
-                l = self[tag] or []
-            except KeyError:
-                l = []
-                pass
-            if value not in l:
-                l.append(value)
-            value = l
-
-        else:
-            pass  # TODO
-
-        # log.debug('%s: Tag %s = %r', self.file_name, tag, value)
-        self[tag] = value
-        return True
-
-    class Formatter(string.Formatter):
-
-        def __init__(self, tags):
-            self.tags = tags
-            super().__init__()
-
-        def get_value(self, key, args, kwargs):
-            try:
-                value = super().get_value(key, args, kwargs)
-            except KeyError:
-                value = self.tags[key]
-            return value
-
-    def format(self, format_string, *args, **kwargs):
-        return self.vformat(format_string, args, kwargs)
-
-    def vformat(self, format_string, args, kwargs):
-        formatter = self.Formatter(tags=self)
-        return formatter.vformat(format_string, args, kwargs)
-
-
-# Set all tags as propex!
-for tag_enum in ImageTagEnum:
-    if tag_enum.value not in ImageTagDict.__dict__:
-        setattr(ImageTagDict, tag_enum.value,
-                propex(name=tag_enum.value,
-                       type=(None, propex.test_istype(str))))
-
-
-class ImageTags(ImageTagDict):
+class ImageTags(MediaTagDict):
 
     def __init__(self, *args, **kwargs):
         if args:
             d, = args
         super().__init__(*args, **kwargs)
 
-    def short_str(self):
+    def deduce_type(self):
+        if self.type is not None:
+            return self.type
+        # raise MissingMediaTagError(MediaTagEnum.type)
+        return 'image'
+
+    def cite(self, **kwargs):
+        try:
+            return super().cite(**kwargs)
+        except (NotImplementedError, TypeError):
+            pass
         l = []
         for tag_enum in (
-                ImageTagEnum.title,
-                ImageTagEnum.country,
-                ImageTagEnum.date,
-                ImageTagEnum.barcode,
+                MediaTagEnum.title,
+                MediaTagEnum.country,
+                MediaTagEnum.date,
+                MediaTagEnum.barcode,
                 ):
             v = getattr(self, tag_enum.value)
             if v is not None:
