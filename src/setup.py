@@ -87,6 +87,7 @@ setup(
             'tvdb_api',
             'coloredlogs',
             'retrying',
+            'tabulate',
             ],
 
     # List additional groups of dependencies here (e.g. development
