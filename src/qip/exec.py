@@ -182,6 +182,7 @@ class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
             kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
 
         if isinstance(cmd, pexpect.utils.string_types) and sys.platform != 'win32':
+            import shlex
             cmd = shlex.split(cmd, posix=os.name == 'posix')
 
         if read_from == 'auto':
@@ -308,7 +309,7 @@ def do_system_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
                     log_append)
         return ''
     else:
-        return dbg_system_cmd(cmd, log_append=log_append, **kwargs)
+        return dbg_system_cmd(cmd, dry_run=dry_run, log_append=log_append, **kwargs)
 
 def dbg_popen_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
@@ -333,7 +334,7 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
         pcm.stdout = p.stdout = scm
         return pcm
     else:
-        return dbg_popen_cmd(cmd, log_append=log_append, **kwargs)
+        return dbg_popen_cmd(cmd, dry_run=dry_run, log_append=log_append, **kwargs)
 
 def dbg_popen_spawn_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
@@ -356,7 +357,7 @@ def do_popen_spawn_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
         pcm.stdout = p.stdout = scm
         return pcm
     else:
-        return dbg_popen_spawn_cmd(cmd, log_append=log_append, **kwargs)
+        return dbg_popen_spawn_cmd(cmd, dry_run=dry_run, log_append=log_append, **kwargs)
 
 def dbg_spawn_cmd(cmd, hidden_args=[],
                   fd=None,
