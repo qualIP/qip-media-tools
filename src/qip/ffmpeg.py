@@ -331,9 +331,10 @@ class _FfmpegSpawnMixin(_SpawnMixin):
 
             # frame=   39 fps=0.0 q=-0.0 Lsize=    4266kB time=00:00:01.60 bitrate=21801.0kbits/s speed=6.98x
             # [info] frame=  776 fps=119 q=-0.0 size=  129161kB time=00:00:25.86 bitrate=40915.9kbits/s speed=3.95x
+            # [info] frame= 1052 fps=149 q=-1.0 size=N/A time=00:00:43.62 bitrate=N/A speed=6.18x
             # size=       0kB time=01:03:00.94 bitrate=   0.0kbits/s speed=2.17e+07x
             # frame= 2235 fps=221 q=-0.0 size= 1131482kB time=00:01:14.60 bitrate=124237.6kbits/s dup=447 drop=0 speed=7.37x
-            (fr'^(?:\[info\]\s)?(?:frame= *(?P<frame>\d+) +fps= *(?P<fps>\S+) +q= *(?P<q>\S+) )?L?size= *(?P<size>\S+) +time= *(?P<time>\S+) +bitrate= *(?P<bitrate>\S+)(?: +dup= *(?P<dup>\S+))?(?: +drop= *(?P<drop>\S+))? +speed= *(?P<speed>\S+) *{re_eol}', self.progress_line),
+            (fr'^(?:\[info\]\s)?(?:frame= *(?P<frame>\d+) +fps= *(?P<fps>\S+) +q= *(?P<q>\S+) )?L?size= *(?:N/A|(?P<size>\S+)) +time= *(?P<time>\S+) +bitrate= *(?:N/A|(?P<bitrate>\S+))(?: +dup= *(?P<dup>\S+))?(?: +drop= *(?P<drop>\S+))? +speed= *(?P<speed>\S+) *{re_eol}', self.progress_line),
 
             # [Parsed_cropdetect_1 @ 0x56473433ba40] x1:0 x2:717 y1:0 y2:477 w:718 h:478 x:0 y:0 pts:504504000 t:210.210000 crop=718:478:0:0
             (fr'^\[Parsed_cropdetect\S* @ \S+\]\s(?:\[info\]\s)?x1:(?P<x1>\S+) x2:(?P<x2>\S+) y1:(?P<y1>\S+) y2:(?P<y2>\S+) w:(?P<w>\S+) h:(?P<h>\S+) x:(?P<x>\S+) y:(?P<y>\S+) pts:(?P<pts>\S+) t:(?P<time>\S+) crop=(?P<crop>\S+) *{re_eol}', self.parsed_cropdetect_line),
@@ -437,6 +438,7 @@ class _Ffmpeg(Executable):
         'show_progress_bar',
         'progress_bar_max',
         'progress_bar_title',
+        'encoding',
     )
 
     spawn = FfmpegSpawn
