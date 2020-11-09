@@ -4158,6 +4158,16 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 Path(stream_chapter_file_name_pat).relative_to(
                                     os.fspath(stream_dict.inputdir).replace('%', '%%')))
 
+                            # Sometimes the last chapter is past the end
+                            if len(chaps) > 1:
+                                chap = chaps[-1]
+                                stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
+                                if not (stream_dict.inputdir / stream_chapter_file_name).exists():
+                                    stream_chapter_file_name2 = stream_chapter_file_name_pat % (chaps[-2].no,)
+                                    assert (stream_dict.inputdir / stream_chapter_file_name2).exists()
+                                    app.log.warning('Stream #%s chapter %s not outputted!', stream_dict.pprint_index, chap)
+                                    chaps.pop(-1)
+
                             # Encode
                             for chap in chaps:
                                 stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
