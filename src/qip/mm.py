@@ -804,6 +804,7 @@ class MediaFile(BinaryFile):
                             else:
                                 raise e
                     tags_done = True
+                self.stereo_3d_mode = None
                 for stream_dict in ffprobe_dict['streams']:
                     if stream_dict['codec_type'] == 'video':
                         stereo_mode = stream_dict.get('tags', {}).get('stereo_mode', '')
@@ -822,18 +823,24 @@ class MediaFile(BinaryFile):
                                         assert stereo_mode == 'left_right'
                                 elif side_data['type'] == 'frame alternate':
                                     if stereo_mode == 'block_lr':
-                                        self.stereo_3d_mode = Stereo3DMode.frame_packing
+                                        self.stereo_3d_mode = Stereo3DMode.multiview_encoding
                                         self.stereo_3d_mode_inverted = True
                                         assert not side_data['inverted']
                                     elif stereo_mode == 'block_rl':
-                                        self.stereo_3d_mode = Stereo3DMode.frame_packing
+                                        self.stereo_3d_mode = Stereo3DMode.multiview_encoding
                                         self.stereo_3d_mode_inverted = False
                                         assert side_data['inverted']
                                     else:
                                         raise NotImplementedError(stereo_mode, side_data)
                                 else:
                                     raise NotImplementedError(stereo_mode, side_data)
-
+                        if self.stereo_3d_mode is None:
+                            if stereo_mode == '' \
+                                    and (ffprobe_dict['width'], ffprobe_dict['height']) in (
+                                        (1280, 1470),
+                                        (1920, 2205),
+                                    ):
+                                self.stereo_3d_mode = Stereo3DMode.hdmi_frame_packing
                         break  # Only first video stream
 
         if self.file_name.suffix in get_mp4v2_app_support().extensions_can_read:
@@ -1747,8 +1754,9 @@ class Stereo3DMode(enum.Enum):
     full_side_by_side = 'full_side_by_side'
     half_top_and_bottom = 'half_top_and_bottom'
     full_top_and_bottom = 'full_top_and_bottom'
-    frame_packing = 'frame_packing'
     alternate_frame = 'alternate_frame'
+    multiview_encoding = 'multiview_encoding'
+    hdmi_frame_packing = 'hdmi_frame_packing'
 
     def __hash__(self):
         return hash(id(self))
@@ -1777,23 +1785,21 @@ Stereo3DMode._value2member_map_['f-sbs'] = Stereo3DMode.full_side_by_side
 Stereo3DMode._value2member_map_['h-sbs'] = Stereo3DMode.half_side_by_side
 Stereo3DMode._value2member_map_['f-tab'] = Stereo3DMode.full_top_and_bottom
 Stereo3DMode._value2member_map_['h-tab'] = Stereo3DMode.half_top_and_bottom
-Stereo3DMode._value2member_map_['fsbs'] = Stereo3DMode.full_side_by_side
-Stereo3DMode._value2member_map_['hsbs'] = Stereo3DMode.half_side_by_side
-Stereo3DMode._value2member_map_['ftab'] = Stereo3DMode.full_top_and_bottom
-Stereo3DMode._value2member_map_['htab'] = Stereo3DMode.half_top_and_bottom
-Stereo3DMode._value2member_map_['sbs'] = Stereo3DMode.full_side_by_side
-Stereo3DMode._value2member_map_['tab'] = Stereo3DMode.full_top_and_bottom
 Stereo3DMode._value2member_map_['full_over_under'] = Stereo3DMode._value2member_map_['full-over-under'] = Stereo3DMode._value2member_map_['fulloverunder'] = Stereo3DMode._value2member_map_['f-ou'] = Stereo3DMode.full_top_and_bottom
 Stereo3DMode._value2member_map_['half_over_under'] = Stereo3DMode._value2member_map_['half-over-under'] = Stereo3DMode._value2member_map_['halfoverunder'] = Stereo3DMode._value2member_map_['h-ou'] = Stereo3DMode.half_top_and_bottom
-Stereo3DMode._value2member_map_['mvc'] = Stereo3DMode.frame_packing
-Stereo3DMode._value2member_map_['alt'] = Stereo3DMode.alternate_frame
 
 Stereo3DMode.half_side_by_side.exts = ('.HSBS',)
 Stereo3DMode.full_side_by_side.exts = ('.SBS', '.FSBS',)
 Stereo3DMode.half_top_and_bottom.exts = ('.HTAB', '.HOU',)
 Stereo3DMode.full_top_and_bottom.exts = ('.TAB', '.FTAB', '.OU', '.FOU',)
-Stereo3DMode.frame_packing.exts = ('.MVC',)
 Stereo3DMode.alternate_frame.exts = ('.ALT',)
+Stereo3DMode.multiview_encoding.exts = ('.MVC',)
+Stereo3DMode.hdmi_frame_packing.exts = ('.HFP',)
+
+for e in Stereo3DMode:
+    for ext in e.exts:
+        assert ext.startswith('.')
+        Stereo3DMode._value2member_map_[ext[1:].lower()] = e
 
 # }}}
 

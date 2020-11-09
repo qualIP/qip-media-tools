@@ -111,7 +111,8 @@ default_tag_map = (
     TagInfo(50, None, 'TOTAL_PARTS', 'parts'),
     TagInfo(40, None, 'PART_NUMBER', 'part'),
     TagInfo(40, None, 'TITLE', 'parttitle'),
-    TagInfo(None, None, '3d-plane', 'object_3d_plane'),
+    #TagInfo(None, None, '3d-plane', 'object_3d_plane'),
+    TagInfo(None, None, '3D-PLANE', 'object_3d_plane'),
     # XXXJST CONFLICT TagInfo(None, None, 'TODO','albumartist'),
     TagInfo(None, None, 'ARTIST', 'artist'),  # CONFLICT
     # XXXJST CONFLICT TagInfo(None, None, 'TODO', 'albumtitle'),
@@ -675,6 +676,9 @@ class MatroskaFile(MediaFile):
         default_TargetTypeValue, default_TargetTypes, tag_map = self.get_matroska_tag_map(file_type=tags.type)
         for d_tag in tags_list:
             log.debug('d_tag = %r', d_tag)
+            d_tag.Name = {
+                '3d-plane': '3D-PLANE',
+            }.get(d_tag.Name, d_tag.Name)
             if False:
                 target_tags = tags if d_tag.Target.TrackUID == 0 else tags.tracks_tags[d_tag.Target.TrackUID]
             else:

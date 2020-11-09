@@ -2061,12 +2061,18 @@ def action_hb(inputfile, in_tags):
             ffprobe_dict, stream_dict, mediainfo_track_dict)
 
         real_width, real_height = qwidth, qheight = stream_dict['width'], stream_dict['height']
-        if any(f'.{m}' in stream_file_name.upper().split('.')[1:]
+        if any(m.upper()[1:] in stream_file_name.upper().split('.')[1:]
                for m in Stereo3DMode.full_side_by_side.exts + Stereo3DMode.half_side_by_side.exts):
             real_width = qwidth // 2
-        elif any(f'.{m}' in stream_file_name.upper().split('.')[1:]
-               for m in Stereo3DMode.full_top_and_bottom.exts + Stereo3DMode.half_top_and_bottom.exts):
+        elif any(m.upper()[1:] in stream_file_name.upper().split('.')[1:]
+                 for m in Stereo3DMode.full_top_and_bottom.exts + Stereo3DMode.half_top_and_bottom.exts):
             real_height = qheight // 2
+        elif any(m.upper()[1:] in stream_file_name.upper().split('.')[1:]
+                 for m in Stereo3DMode.hdmi_frame_packing.exts):
+            if qheight == 2205:
+                real_height = 1080
+            elif qheight == 1470:
+                real_height = 720
 
         video_target_bit_rate = get_vp9_target_bitrate(
             width=qwidth, height=qheight,
@@ -3394,7 +3400,11 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                 lossless = False
 
                 if stream_file_base.upper().endswith('.MVC'):
-                    if app.args.stereo_3d_mode is Stereo3DMode.frame_packing:
+                    stereo_3d_mode = app.args.stereo_3d_mode
+                    if stereo_3d_mode is Stereo3DMode.hdmi_frame_packing:
+                        # Start with SBS, will reposition later
+                        stereo_3d_mode = Stereo3DMode.full_side_by_side
+                    if stereo_3d_mode is Stereo3DMode.multiview_encoding:
                         raise NotImplementedError('MVC')  # TODO MVC->MVC may undergo modifications below that would lose the MVC encoding
                     # .MVC -> FRIMDecode -> SBS/TAB/ALT
                     assert field_order == 'progressive'
@@ -3410,7 +3420,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     new_stream_file_name_base = stream_file_base[0:-4]
                     if '3D' not in new_stream_file_name_base.upper().split('.'):
                         new_stream_file_name_base += '.3D'
-                    new_stream_file_name_base += app.args.stereo_3d_mode.exts[0]
+                    new_stream_file_name_base += stereo_3d_mode.exts[0]
                     new_stream_file_name = new_stream_file_name_base + new_stream_file_ext
                     new_stream_file = MediaFile.new_by_file_name(stream_dict.inputdir / new_stream_file_name)
                     app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream_file_name)
@@ -3432,7 +3442,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     force_input_framerate = getattr(app.args, 'force_input_framerate', None)
                     assert force_input_framerate or input_framerate or framerate
                     expected_framerate = force_input_framerate or input_framerate or framerate
-                    if app.args.stereo_3d_mode is Stereo3DMode.alternate_frame:
+                    if stereo_3d_mode is Stereo3DMode.alternate_frame:
                         expected_framerate *= 2
                     ffmpeg_enc_args += [
                         '-r', expected_framerate,
@@ -3440,41 +3450,41 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     ffmpeg_enc_args += [
                         '-pix_fmt', ffmpeg_pix_fmt,
                     ]
-                    if app.args.stereo_3d_mode in (
+                    if stereo_3d_mode in (
                             Stereo3DMode.half_side_by_side,
                             Stereo3DMode.full_side_by_side,
                     ):
                         ffmpeg_enc_args += [
                             '-s:v', '%dx%d' % (ffprobe_stream_json['width'] * 2, ffprobe_stream_json['height']),
                         ]
-                    elif app.args.stereo_3d_mode in (
+                    elif stereo_3d_mode in (
                             Stereo3DMode.half_top_and_bottom,
                             Stereo3DMode.full_top_and_bottom,
                     ):
                         ffmpeg_enc_args += [
                             '-s:v', '%dx%d' % (ffprobe_stream_json['width'], ffprobe_stream_json['height'] * 2),
                         ]
-                    elif app.args.stereo_3d_mode in (
+                    elif stereo_3d_mode in (
                             Stereo3DMode.alternate_frame,
                     ):
                         pass
                     else:
-                        raise NotImplementedError(app.args.stereo_3d_mode)
+                        raise NotImplementedError(stereo_3d_mode)
                     ffmpeg_enc_args += [
                         '-f', 'rawvideo',
                         '-i', 'pipe:0',
                     ]
-                    if app.args.stereo_3d_mode is Stereo3DMode.full_side_by_side:
+                    if stereo_3d_mode is Stereo3DMode.full_side_by_side:
                         stream_dict['display_aspect_ratio'] = str(Ratio(stream_dict['display_aspect_ratio']) * 2)
-                    elif app.args.stereo_3d_mode is Stereo3DMode.half_side_by_side:
+                    elif stereo_3d_mode is Stereo3DMode.half_side_by_side:
                         stream_dict['display_aspect_ratio'] = str(Ratio(stream_dict['display_aspect_ratio']) * 2)
                         stream_dict['pixel_aspect_ratio'] = str(Ratio(stream_dict['pixel_aspect_ratio']) * 2)
                         ffmpeg_enc_args += [
                             '-vf', 'scale=%d:%d' % (ffprobe_stream_json['width'], ffprobe_stream_json['height']),
                         ]
-                    elif app.args.stereo_3d_mode is Stereo3DMode.full_top_and_bottom:
+                    elif stereo_3d_mode is Stereo3DMode.full_top_and_bottom:
                         stream_dict['display_aspect_ratio'] = str(Ratio(stream_dict['display_aspect_ratio']) / 2)
-                    elif app.args.stereo_3d_mode is Stereo3DMode.half_top_and_bottom:
+                    elif stereo_3d_mode is Stereo3DMode.half_top_and_bottom:
                         stream_dict['display_aspect_ratio'] = str(Ratio(stream_dict['display_aspect_ratio']) / 2)
                         stream_dict['pixel_aspect_ratio'] = str(Ratio(stream_dict['pixel_aspect_ratio']) / 2)
                         ffmpeg_enc_args += [
@@ -3496,8 +3506,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         try:
                             p2 = ffmpeg.popen(*ffmpeg_enc_args,
                                               stdin=p1.stdout,
-                                              # TODO progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json),
-                                              # TODO progress_bar_title=f'MVC->{app.args.stereo_3d_mode.exts[0]} {stream_codec_type} stream {stream_index} w/ FRIMDecode',
+                                              # TODO progress_bar_max=estimate_stream_duration(ffprobe_json=ffprobe_json, inputfile=stream_file),
+                                              # TODO progress_bar_title=f'MVC->{stereo_3d_mode.exts[0]} {stream_codec_type} stream {stream_dict.pprint_index} w/ FRIMDecode',
                                               dry_run=app.args.dry_run,
                                               y=app.args.yes)
                         finally:
@@ -3795,16 +3805,17 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                 else:
                     raise NotImplementedError(field_order)
 
-                if not is_sub_stream and app.args.crop in (Auto, True):
-                    if any(stream_file_base.upper().endswith(m)
+                if not stream_dict.is_sub_stream and app.args.crop in (Auto, True):
+                    if any(new_stream_file_name_base.upper().endswith(m)
                            for m in (
                                    ()
                                    + Stereo3DMode.half_side_by_side.exts
                                    + Stereo3DMode.full_side_by_side.exts
                                    + Stereo3DMode.half_top_and_bottom.exts
                                    + Stereo3DMode.full_top_and_bottom.exts
-                                   #+ Stereo3DMode.frame_packing.exts
                                    #+ Stereo3DMode.alternate_frame.exts
+                                   + Stereo3DMode.multiview_encoding.exts
+                                   + Stereo3DMode.hdmi_frame_packing.exts
                            )):
                         stream_crop = False
                     elif getattr(app.args, 'crop_wh', None) is not None:
@@ -3875,6 +3886,41 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             # extra_args += ['-aspect', XXX]
                             stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
 
+                if any(new_stream_file_name_base.upper().endswith(m)
+                       for m in Stereo3DMode.full_side_by_side.exts):
+                    # https://etmriwi.home.xs4all.nl/forum/hdmi_spec1.4a_3dextraction.pdf
+                    if app.args.stereo_3d_mode is Stereo3DMode.hdmi_frame_packing:
+                        new_stream_file_name_base = os.path.splitext(new_stream_file_name_base)[0]
+                        if '3D' not in new_stream_file_name_base.upper().split('.'):
+                            new_stream_file_name_base += '.3D'
+                        new_stream_file_name_base += Stereo3DMode.hdmi_frame_packing.exts[0]
+                        if (mediainfo_width, mediainfo_height) == (2*1280, 720):
+                            # 720p: 1280x720@60 -> 1280x1470 w/ 30 active space in the middle
+                            # Modeline "1280x1470@60" 148.5 1280 1390 1430 1650 1470 1475 1480 1500 +hsync +vsync
+                            owidth, oheight, active_space = 1280, 720, 30
+                            if framerate not in (Ratio(60000,1000), Ratio(60000, 1001)):
+                                raise NotImplementedError(f'720p HDMI frame packing at {framerate}fps')
+                        elif (mediainfo_width, mediainfo_height) == (2*1920, 1080):
+                            # 1080p: 1920x1080@24 -> 1920x2205 w/ 45 active space in the middle
+                            # Modeline "1920x2205@24" 148.32 1920 2558 2602 2750 2205 2209 2214 2250 +hsync +vsync
+                            owidth, oheight, active_space = 1920, 1080, 45
+                            if framerate not in (Ratio(24000,1000), Ratio(24000, 1001)):
+                                raise NotImplementedError(f'1080p HDMI frame packing at {framerate}fps')
+                        else:
+                            raise NotImplementedError(f'HDMI frame packing for {mediainfo_width}x{mediainfo_height} SBS resolution')
+                        # split[a][b]; [a]pad=1920:2205[ap]; [b]crop=1920:1080:0:1080[bc]; [ap][bc]overlay=0:1125
+                        # The following rounds down the padding:
+                        # video_filter_specs.append(f'split[a][b]; [a]crop={owidth}:{oheight}[ac]; [ac]pad={owidth}:{2*oheight+active_space}[ap]; [b]crop={owidth}:{oheight}:{owidth}:0[bc]; [ap][bc]overlay=0:{oheight+active_space}')
+                        # 3-eyed version??:
+                        # video_filter_specs.append(f'split[a][b]; [a]crop={owidth}:{oheight}[ac]; [ac]pad={owidth}:{2*oheight+active_space+1}[ap]; [b]crop={owidth}:{oheight}:{owidth}:0[bc]; [ap][bc]overlay=0:{oheight+active_space}[out]; [out]crop=w={owidth}:h={2*oheight+active_space}:exact=1')
+                        video_filter_specs.append(f'stereo3d=sbsl:hdmi')
+                        storage_aspect_ratio = Ratio(mediainfo_width, mediainfo_height)        # 3840:1080
+                        display_aspect_ratio = Ratio(stream_dict['display_aspect_ratio'])      # 32:9
+                        pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio       # 1:1
+                        new_stream_file_name_base = Ratio(owidth, 2 * oheight + active_space)  # 1920:2205 => 128:147
+                        display_aspect_ratio = pixel_aspect_ratio * new_storage_aspect_ratio   # 128:147
+                        stream_dict['display_aspect_ratio'] = str(display_aspect_ratio)
+
                 if video_filter_specs:
                     extra_args += ['-filter:v', ','.join(video_filter_specs)]
 
@@ -3913,12 +3959,18 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     # https://trac.ffmpeg.org/wiki/Encode/VP9
 
                     real_width, real_height = qwidth, qheight = mediainfo_width, mediainfo_height
-                    if any(stream_file_base.upper().endswith(m)
+                    if any(new_stream_file_name_base.upper().endswith(m)
                            for m in Stereo3DMode.full_side_by_side.exts + Stereo3DMode.half_side_by_side.exts):
                         real_width = qwidth // 2
-                    elif any(stream_file_base.upper().endswith(m)
-                           for m in Stereo3DMode.full_top_and_bottom.exts + Stereo3DMode.half_top_and_bottom.exts):
+                    elif any(new_stream_file_name_base.upper().endswith(m)
+                             for m in Stereo3DMode.full_top_and_bottom.exts + Stereo3DMode.half_top_and_bottom.exts):
                         real_height = qheight // 2
+                    elif any(new_stream_file_name_base.upper().endswith(m)
+                             for m in Stereo3DMode.hdmi_frame_packing.exts):
+                        if qheight == 2205:
+                            real_height = 1080
+                        elif qheight == 1470:
+                            real_height = 720
 
                     # https://developers.google.com/media/vp9/settings/vod/
                     video_target_bit_rate = get_vp9_target_bitrate(
