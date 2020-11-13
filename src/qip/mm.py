@@ -836,7 +836,7 @@ class MediaFile(BinaryFile):
                                     raise NotImplementedError(stereo_mode, side_data)
                         if self.stereo_3d_mode is None:
                             if stereo_mode == '' \
-                                    and (ffprobe_dict['width'], ffprobe_dict['height']) in (
+                                    and (stream_dict['width'], stream_dict['height']) in (
                                         (1280, 1470),
                                         (1920, 2205),
                                     ):
