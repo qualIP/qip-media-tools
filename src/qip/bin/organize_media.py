@@ -744,8 +744,7 @@ def organize(inputfile):
     inputfile.extract_info(need_actual_duration=False)
     #inputfile.tags = inputfile.load_tags()  # Already done by extract_info
     if app.log.isEnabledFor(logging.DEBUG):
-        from qip.bin.taged import dump_tags
-        dump_tags(inputfile.tags)
+        inputfile.tags.pprint()
 
     suggest_tags = TrackTags()
 
