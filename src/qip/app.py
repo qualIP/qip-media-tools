@@ -430,7 +430,7 @@ class App(XdgResource):
                 self.log.error("%s: %s", e.__class__.__name__, e)
                 if self.log.isEnabledFor(logging.DEBUG):
                     etype, value, tb = sys.exc_info()
-                    self.log.debug(''.join(traceback.format_exception(etype, value, tb)))
+                    self.log.error(''.join(traceback.format_exception(etype, value, tb)))
                 app.exit(1)
             if ret is True or ret is None:
                 app.exit(0)
