@@ -157,6 +157,7 @@ class App(XdgResource):
             description=None,
             version=None,
             contact=None,
+            parser_suppress_option_strings=None,
             # logging args:
             logging_level=None,
             ):
@@ -167,7 +168,7 @@ class App(XdgResource):
         self.contact = contact
         self.description = description
         self.init_encoding()
-        self.init_parser()
+        self.init_parser(parser_suppress_option_strings=parser_suppress_option_strings)
         self.init_logging(
                 level=logging_level,
                 )
@@ -189,7 +190,9 @@ class App(XdgResource):
                     sys.stderr = codecs.getwriter(e)(old_stderr);
 
     def init_parser(self, allow_config_file=True, fromfile_prefix_chars='@',
+                    parser_suppress_option_strings=None,
                     **kwargs):
+        parser_suppress_option_strings = tuple(parser_suppress_option_strings or ())
         description = self.description
         if self.version is not None:
             description += ' v%s' % (self.version,)
@@ -218,15 +221,28 @@ class App(XdgResource):
                 description=description,
                 add_help=False
                 )
-            self.config_parser.add_argument("--config", "-c", metavar="FILE",
-                                          dest='config_file',
-                                          default=argparse.DefaultWrapper(self.default_config_file()),
-                                          type=argparse.FileType('r'),
-                                          help="Specify config file")
-            self.config_parser.add_argument("--no-config",
-                                          default=argparse.SUPPRESS,
-                                          action='store_false',
-                                          help="Disable config file")
+            option_strings = (e
+                              for e in (
+                                      '--config',
+                                      '-c',
+                              )
+                              if e not in parser_suppress_option_strings)
+            if option_strings:
+                self.config_parser.add_argument(*option_strings, metavar="FILE",
+                                              dest='config_file',
+                                              default=argparse.DefaultWrapper(self.default_config_file()),
+                                              type=argparse.FileType('r'),
+                                              help="Specify config file")
+            option_strings = (e
+                              for e in (
+                                      '--no-config',
+                              )
+                              if e not in parser_suppress_option_strings)
+            if option_strings:
+                self.config_parser.add_argument(*option_strings,
+                                              default=argparse.SUPPRESS,
+                                              action='store_false',
+                                              help="Disable config file")
             parser_parents.append(self.config_parser)
 
         self.parser = argparse.ArgumentParser(
