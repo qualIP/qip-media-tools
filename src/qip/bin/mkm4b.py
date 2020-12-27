@@ -250,8 +250,7 @@ def main():
     pgroup.add_argument('--no-qaac', dest='use_qaac', default=argparse.SUPPRESS, action='store_false', help='do not use qaac')
 
     pgroup = app.parser.add_argument_group('Database Control')
-    pgroup.add_argument('--goodreads', dest='use_goodreads', default=True, action='store_true', help='Use Goodreads')
-    pgroup.add_argument('--no-goodreads', dest='use_goodreads', default=argparse.SUPPRESS, action='store_false', help='Do not use Goodreads')
+    pgroup.add_bool_argument('--goodreads', dest='use_goodreads', default=False, help='querying Goodreads')
 
     pgroup = app.parser.add_argument_group('Tags')
     pgroup.add_argument('--grouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
