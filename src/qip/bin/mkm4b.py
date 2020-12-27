@@ -540,7 +540,6 @@ def mkm4b(inputfiles, default_tags):
         def task_fill_inputfile_to_chapters(inputfile):
             nonlocal inputfile_to_chapters
             inputfile_to_chapters[inputfile.file_name] = get_audio_file_chapters(inputfile, chapter_naming_format=app.args.chapter_naming_format)
-            print(f'inputfile_to_chapters[{inputfile.file_name}] = {inputfile_to_chapters[inputfile.file_name]!r}')
         for x in thread_executor.map(task_fill_inputfile_to_chapters, inputfiles):
             pass
         def body(fp):
