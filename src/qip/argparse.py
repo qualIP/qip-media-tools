@@ -356,6 +356,18 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
         # return the modified argument list
         return new_arg_strings
 
+    def _get_value(self, action, arg_string):
+        try:
+            return super()._get_value(action, arg_string)
+        except ArgumentError:
+            type_func = self._registry_get('type', action.type, action.type)
+            msg = getattr(type_func, 'ArgumentError_msg', None)
+            if msg:
+                raise ArgumentError(action, msg % {
+                    'value': arg_string,
+                })
+            raise
+
 
 class ParserExitException(Exception):
 
