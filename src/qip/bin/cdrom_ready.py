@@ -30,7 +30,7 @@ def main():
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
-    xgroup.add_bool_argument('--progress', default=False, help='display progress bar')
+    xgroup.add_bool_argument('--progress', '-P', default=False, help='display progress bar')
 
     pgroup.add_argument('--device', default=Path(os.environ.get('CDROM', '/dev/cdrom')), type=_resolved_Path, help='specify alternate cdrom device')
     pgroup.add_argument('--timeout', default=0, type=int, help='timeout value (seconds)')
