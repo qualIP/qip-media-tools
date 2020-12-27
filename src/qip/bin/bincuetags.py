@@ -192,7 +192,11 @@ def get_url_location(url):
         class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
             def http_error_302(self, req, fp, code, msg, headers):
                 infourl = urllib.request.addinfourl(fp, headers, req.get_full_url())
-                infourl.status = code
+                try:
+                    infourl.status = code
+                except AttributeError:
+                    # Unsettable property since Python 3.9. Defaults to code value anyway.
+                    pass
                 infourl.code = code
                 return infourl
             http_error_300 = http_error_302
