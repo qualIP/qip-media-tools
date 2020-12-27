@@ -184,7 +184,14 @@ class _ActionsContainer(_argparse._ActionsContainer):
                           **kwargs)
 
 class _ArgumentGroup(_argparse._ArgumentGroup, _ActionsContainer):
-    pass
+
+    def add_argument(self, *args, **kwargs):
+        if 'metavar' not in kwargs:
+            if kwargs.get('type', None) is int:
+                choices = kwargs.get('choices', None)
+                if isinstance(choices, range):
+                    kwargs['metavar'] = f'[{choices[0]}-{choices[-1]}]'
+        return super().add_argument(*args, **kwargs)
 
 class _MutuallyExclusiveGroup(_argparse._MutuallyExclusiveGroup, _ArgumentGroup):
     pass
