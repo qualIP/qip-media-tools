@@ -2623,12 +2623,12 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                     value = str(value)
                 print('    %-13s = %r' % (tag.value, value))
 
-    def cite(self, cite_api=None):
+    def cite(self, cite_api=None, type_=None):
 
         if cite_api is None:
             from qip.cite import default as cite_api
 
-        type_ = self.deduce_type()
+        type_ = type_ or self.deduce_type()
         if type_ == 'movie':
             return cite_api.cite_movie(
                 **self.as_str_dict())

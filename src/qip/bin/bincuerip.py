@@ -119,10 +119,14 @@ def bincuerip(cue_file):
         app.log.info('Reading %s...', tags_file)
         with tags_file.open('r', encoding='utf-8') as fp:
             album_tags = AlbumTags.json_load(fp)
+        try:
+            type_ = album_tags.deduce_type()
+        except MissingMediaTagError:
+            type_ = 'audio'
         print('{}'.format(
-            album_tags.cite()))
+            album_tags.cite(type_=type_)))
         for track_no, track_tags in album_tags.tracks_tags.items():
-            print('  Track {:2d}: {}'.format(track_no, track_tags.cite()))
+            print('  Track {:2d}: {}'.format(track_no, track_tags.cite(type_=type_)))
     #elif app.args.use_bincuetags:
     #    import qip.bin.bincuetags
     #    album_tags = qip.bin.bincuetags.bincuetags(cue_file)
@@ -146,8 +150,12 @@ def bincuerip(cue_file):
             raise ValueError(app.args.format)
 
         track_tags = album_tags.tracks_tags[track_no]
+        try:
+            type_ = track_tags.deduce_type()
+        except MissingMediaTagError:
+            type_ = 'audio'
 
-        app.log.info('Ripping %s (%s [%s])...', track_out_file, track_tags.cite(), track.length)
+        app.log.info('Ripping %s (%s [%s])...', track_out_file, track_tags.cite(type_=type_), track.length)
         track_out_file.rip_cue_track(track,
                                      bin_file=bin_file,
                                      tags=track_tags)
