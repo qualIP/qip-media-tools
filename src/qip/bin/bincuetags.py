@@ -5,7 +5,6 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
-import argparse
 import functools
 import logging
 import musicbrainzngs
@@ -17,7 +16,9 @@ import subprocess
 import sys
 import urllib
 import types
+import shlex
 
+from qip import argparse
 from qip import json
 from qip.app import app
 from qip.cdda import *
@@ -605,66 +606,87 @@ def bincuetags(cue_file):
 
     if album_tags_list:
         album_tags_sel = 0
-        from prompt_toolkit.formatted_text import FormattedText
-        from prompt_toolkit.completion import WordCompleter
-        completer = WordCompleter([
-            'help',
-            'diff',
-            'continue',
-            'quit',
-        ])
-        print('')
-        while True:
-            for i, album_tags in enumerate(album_tags_list, start=1):
-                print('{}{} - {}'.format(
-                    '*' if album_tags_sel == i - 1 else ' ',
-                    i, album_tags.cite()))
-                for track_no, track_tags in album_tags.tracks_tags.items():
-                    print('  Track {:2d}: {}'.format(track_no, track_tags.cite()))
-            c = app.prompt(completer=completer)
-            try:
-                c = int(c)
-            except ValueError:
-                pass
-            if c in ('help', 'h', '?'):
-                print('')
-                print('List of commands:')
-                print('')
-                print('help -- Print this help')
-                print('diff -- Bring up a side-by-side diff of the tags')
-                print('yes, continue -- Yes, continue processing')
-                print('<n> -- Select the n\'th entry')
-                print('quit -- Quit')
-            elif isinstance(c, int):
-                assert 1 <= c <= len(album_tags_list)
-                album_tags_sel = c - 1
-                break
-            elif c in ('quit', 'q'):
-                return False
-            elif c in ('diff', 'd'):
-                edcmd = ['vim', '-d']
+        with app.need_user_attention():
+            from prompt_toolkit.formatted_text import FormattedText
+            from prompt_toolkit.completion import WordCompleter
+
+            parser = argparse.NoExitArgumentParser(
+                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                description='tags selection',
+                add_help=False, usage=argparse.SUPPRESS,
+                )
+            subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
+            subparser = subparsers.add_parser('help', aliases=('h', '?'), help='Print this help')
+            subparser = subparsers.add_parser('print', aliases=('p',), help='Print streams summary')
+            subparser = subparsers.add_parser('diff', aliases=('d',), help='Bring up a side-by-side diff of the tags')
+            subparser = subparsers.add_parser('continue', aliases=('c', 'yes', 'y'), help='Yes, continue processing')
+            subparser = subparsers.add_parser('quit', aliases=('q',), help='Quit')
+            completer = WordCompleter([name for name in subparsers._name_parser_map.keys() if len(name) > 1])
+
+            print('')
+            while True:
                 for i, album_tags in enumerate(album_tags_list, start=1):
-                    if i == 1:
-                        tags_filei = tags_file
-                    else:
-                        tags_filei = json.JsonFile('{}.{}'.format(tags_file.file_name, i))
-                    with tags_filei.open('w', encoding='utf-8') as fp:
-                        album_tags.json_dump(fp)
-                        fp.write('\n')
-                    edcmd.append(tags_filei.file_name)
-                subprocess.call(edcmd)
-                with tags_file.open('r', encoding='utf-8') as fp:
-                    album_tags_list[0] = AlbumTags.json_load(fp)
-                for i, album_tags in enumerate(album_tags_list, start=1):
-                    if i == 1:
+                    try:
+                        type_ = album_tags.deduce_type()
+                    except MissingMediaTagError:
+                        type_ = 'audio'
+                    print('{}{} - {}'.format(
+                        '*' if album_tags_sel == i - 1 else ' ',
+                        i, album_tags.cite(type_=type_)))
+                    for track_no, track_tags in album_tags.tracks_tags.items():
+                        print('  Track {:2d}: {}'.format(track_no, track_tags.cite(type_=type_)))
+                while True:
+                    c = app.prompt(completer=completer, prompt_mode='tags')
+                    if c.strip():
+                        break
+                try:
+                    ns = types.SimpleNamespace(
+                        action='index',
+                        index=int(c))
+                except ValueError:
+                    try:
+                        ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
+                    except argparse.ArgumentError as e:
+                        app.log.error(e);
+                        print('')
                         continue
-                    tags_filei = json.JsonFile('{}.{}'.format(tags_file.file_name, i))
-                    tags_filei.unlink(force=True)
-                album_tags_sel = 0
-            elif c in ('continue', 'c', 'yes', 'y'):
-                break
-            else:
-                app.log.error('Invalid input')
+                    except argparse.ParserExitException as e:
+                        if e.status:
+                            app.log.error(e);
+                            print('')
+                        continue
+                if ns.action == 'index':
+                    assert 1 <= ns.index <= len(album_tags_list)
+                    album_tags_sel = ns.index - 1
+                    break
+                elif ns.action == 'help':
+                    print(parser.format_help())
+                elif ns.action == 'quit':
+                    return False
+                elif ns.action == 'diff':
+                    edcmd = ['vim', '-d']
+                    for i, album_tags in enumerate(album_tags_list, start=1):
+                        if i == 1:
+                            tags_filei = tags_file
+                        else:
+                            tags_filei = json.JsonFile('{}.{}'.format(tags_file.file_name, i))
+                        with tags_filei.open('w', encoding='utf-8') as fp:
+                            album_tags.json_dump(fp)
+                            fp.write('\n')
+                        edcmd.append(tags_filei.file_name)
+                    subprocess.call(edcmd)
+                    with tags_file.open('r', encoding='utf-8') as fp:
+                        album_tags_list[0] = AlbumTags.json_load(fp)
+                    for i, album_tags in enumerate(album_tags_list, start=1):
+                        if i == 1:
+                            continue
+                        tags_filei = json.JsonFile('{}.{}'.format(tags_file.file_name, i))
+                        tags_filei.unlink(force=True)
+                    album_tags_sel = 0
+                elif ns.action == 'continue':
+                    break
+                else:
+                    app.log.error('Invalid input: %r' % (ns.action,))
         album_tags = album_tags_list[album_tags_sel]
 
     else:
