@@ -164,30 +164,12 @@ dvdAudioIds = {
     6: 0x88,
 }
 
-dvdFpss = {
-    0: None,  # TODO
-    1: FrameRate(25000, 1000),
-    2: None,  # TODO
-    3: FrameRate(30000, 1001),
-}
+dvdFpss = libdvdread.dvdFpss
 
 def dvd_lang_code_to_str(u16_lang_code):
     u16_lang_code = socket.ntohs(u16_lang_code)
     lang_code = chr(u16_lang_code & 0xff) + chr(u16_lang_code >> 8)
     return lang_code
-
-def dvd_time_to_Timestamp(dt: 'dvd_time_t *') -> Timestamp:
-    hour, minute, second, frame_u = dt.hour, dt.minute, dt.second, dt.frame_u
-    ms = (((hour & 0xf0) >> 3) * 5 + (hour & 0x0f)) * 3600000
-    ms += (((minute & 0xf0) >> 3) * 5 + (minute & 0x0f)) * 60000
-    ms += (((second & 0xf0) >> 3) * 5 + (second & 0x0f)) * 1000
-
-    fps = dvdFpss[(frame_u & 0xc0) >> 6]
-    if fps is not None:
-        ms += (((frame_u & 0x30) >> 3) * 5 + (frame_u & 0x0f)) * 1000.0 / fps
-
-    ts = Timestamp(ms / 1000.0)
-    return ts
 
 def str_Timestamp(ts):
     s = ts.seconds
@@ -218,14 +200,14 @@ def lsdvd(device,
     max_length = Timestamp(0)
     longest_track = None
 
-    dvd = libdvdread.dvd_reader(device)
-    ifo_zero = dvd.open_ifo(0)
+    dvd_reader = libdvdread.dvd_reader(device)
+    ifo_zero = dvd_reader.open_ifo(0)
 
     ifos = [ifo_zero] + list(itertools.repeat(None, ifo_zero.vts_atrt.nr_of_vtss))
 
     for i in range(1, ifo_zero.vts_atrt.nr_of_vtss + 1):
         try:
-            ifos[i] = dvd_ifo = dvd.open_ifo(i)
+            ifos[i] = dvd_ifo = dvd_reader.open_ifo(i)
         except Exception:
             if target_title is not None and target_title == i:
                 raise
@@ -235,13 +217,13 @@ def lsdvd(device,
         if not (0 <= target_title < num_titles):
             raise ValueError(f'Only {num_titles} on this disc!')
 
-    title = read_dvd_title(dvd.device)
+    title = read_dvd_title(dvd_reader.device)
 
     vmgi_mat = ifo_zero.vmgi_mat
 
     dvd_info = types.SimpleNamespace()
     dvd_info.discinfo = types.SimpleNamespace()
-    dvd_info.discinfo.device = dvd.device
+    dvd_info.discinfo.device = dvd_reader.device
     dvd_info.discinfo.disc_title = title
     dvd_info.discinfo.vmg_id = vmgi_mat.vmg_identifier
     dvd_info.discinfo.provider_id = vmgi_mat.provider_identifier
@@ -284,7 +266,7 @@ def lsdvd(device,
                 dvd_title.subtitle_count_reported = 0
                 dvd_title.subtitle_count = 0
         else:
-            dvd_title.general.playback_time = dvd_time_to_Timestamp(pgc.playback_time)
+            dvd_title.general.playback_time = libdvdread.dvd_time_to_Timestamp(pgc.playback_time)
             dvd_title.chapter_count = pgc.nr_of_programs
             dvd_title.cell_count = pgc.nr_of_cells
             dvd_title.audiostream_count_reported = vtsi_mat.nr_of_vts_audio_streams
@@ -473,7 +455,7 @@ def lsdvd(device,
             dvd_title.cells = list(itertools.repeat(None, dvd_title.cell_count))
             for cell in range(dvd_title.cell_count):
                 dvd_title.cells[cell] = dvd_cell = types.SimpleNamespace()
-                dvd_cell.playback_time = dvd_time_to_Timestamp(pgc.get_cell_playback(cell).playback_time)
+                dvd_cell.playback_time = libdvdread.dvd_time_to_Timestamp(pgc.get_cell_playback(cell).playback_time)
                 dvd_cell.first_sector = pgc.get_cell_playback(cell).first_sector
                 dvd_cell.last_sector = pgc.get_cell_playback(cell).last_sector
 

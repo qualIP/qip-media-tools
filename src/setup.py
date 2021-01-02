@@ -99,6 +99,13 @@ setup(
         'test': ['coverage'],
     },
 
+    ext_modules = [
+        Extension('qip._libdvdread_swig',
+                  sources=['qip/libdvdread_swig_wrap.c',],
+                  libraries=['dvdread',],
+                  ),
+    ],
+
     # If there are data files included in your packages that need to be
     # installed, specify them here.  If using Python 2.6 or less, then these
     # have to be included in MANIFEST.in as well.
@@ -122,6 +129,7 @@ setup(
             'bincuerip = qip.bin.bincuerip:main',
             'bincuetags = qip.bin.bincuetags:main',
             'librivox-dl = qip.bin.librivox_dl:main',
+            'lsdvd = qip.bin.lsdvd:main',
             'mkbincue = qip.bin.mkbincue:main',
             'mkm4b = qip.bin.mkm4b:main',
             'mmdemux = qip.bin.mmdemux:main',
