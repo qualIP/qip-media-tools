@@ -86,7 +86,6 @@ setup(
             'tmdbv3api',
             'tvdb_api',
             'coloredlogs',
-            'retrying',
             'tabulate',
             ],
 

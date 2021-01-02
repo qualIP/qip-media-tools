@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 log = logging.getLogger(__name__)
 
 from .file import BinaryFile
@@ -133,7 +134,6 @@ class Udisksctl(Executable):
                      file,                                    # setup
                      no_user_interaction=True,                # setup/delete
                      **kwargs):                               # setup
-        import retrying
         lodev = self.loop_setup(
             file=file,
             no_user_interaction=no_user_interaction,
@@ -141,13 +141,19 @@ class Udisksctl(Executable):
         try:
             yield lodev
         finally:
-            retrying.retry(
-                wait_fixed=100,
-                stop_max_delay=5000,
-                retry_on_exception=lambda e: isinstance(e, subprocess.CalledProcessError) and e.returncode == 1,\
-            )(self.loop_delete)(
-                block_device=lodev,
-                no_user_interaction=no_user_interaction)
+            for retry_count in range(5, 0, -1):
+                try:
+                    self.loop_delete(
+                        block_device=lodev,
+                        no_user_interaction=no_user_interaction)
+                except subprocess.CalledProcessError as e:
+                    if retry_count > 1 and e.returncode == 1:
+                        log.debug(e)
+                        time.sleep(0.5)
+                        continue
+                    # raise
+                break
+
 
     @contextlib.contextmanager
     def mount_context(self, *,
@@ -163,9 +169,18 @@ class Udisksctl(Executable):
         try:
             yield mountpoint
         finally:
-            self.unmount(
-                object_path=object_path,
-                block_device=block_device,
-                no_user_interaction=no_user_interaction)
+            for retry_count in range(5, 0, -1):
+                try:
+                    self.unmount(
+                        object_path=object_path,
+                        block_device=block_device,
+                        no_user_interaction=no_user_interaction)
+                except subprocess.CalledProcessError as e:
+                    if retry_count > 1 and e.returncode == 1:
+                        log.debug(e)
+                        time.sleep(0.5)
+                        continue
+                    # raise
+                break
 
 udisksctl = Udisksctl()
