@@ -737,7 +737,7 @@ def main():
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='output_file', default=Auto, type=Path, help='specify the output (demuxed) file name')
     pgroup.add_bool_argument('--remux', help='remux original files')
-    pgroup.add_bool_argument('--auto-verify', help='Auto-verify created files')
+    pgroup.add_bool_argument('--auto-verify', default=True, help='Auto-verify created files')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     pgroup.add_bool_argument('--webm', default=Auto, help='webm output format')
