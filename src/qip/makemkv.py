@@ -51,6 +51,7 @@ def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[],
                              cwd=None,
                              encoding=None, errors=None,
                              ignore_failed_to_open_disc=False,
+                             stop_before_copying_files=False,
                              ):
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
@@ -62,7 +63,8 @@ def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[],
     p = spawn_func(command=cmd[0], args=cmd[1:] + hidden_args, logfile=logfile,
                    cwd=cwd,
                    encoding=encoding, errors=errors,
-                   ignore_failed_to_open_disc=ignore_failed_to_open_disc)
+                   ignore_failed_to_open_disc=ignore_failed_to_open_disc,
+                   stop_before_copying_files=stop_before_copying_files)
     with p:
         out = ''
         for v in p.communicate():
@@ -74,11 +76,14 @@ def dbg_makemkvcon_spawn_cmd(cmd, hidden_args=[],
                     break
             if p.after is pexpect.exceptions.EOF:
                 break
-    if p.signalstatus is not None:
-        raise Exception('Command exited due to signal %r' % (p.signalstatus,))
-    if not no_status and p.exitstatus:
+        #try:
+        #    p.wait()
+        #except pexpect.ExceptionPexpect as err:
+        #    if err.value != 'Cannot wait for dead child process.':
+        #        raise
+    if p.signalstatus is not None or (not no_status and p.exitstatus):
         raise SpawnedProcessError(
-            returncode=p.exitstatus,
+            returncode=-p.signalstatus if p.signalstatus else p.exitstatus,
             cmd=subprocess.list2cmdline(cmd),
             output=out,
             spawn=p)
@@ -119,7 +124,7 @@ def do_makemkvcon_spawn_cmd(cmd, dry_run=None, **kwargs):
 
 re_dot = r'[^\r\n]'  # To be used instead of r'.'
 re_eol = r'\r?\n'
-re_title_no = r'(?:[0-9/]+|\d+\.m2ts|\d+\.mpls(?:\(\d+\))?)'  # "1", "1/0/1", "00040.m2ts" "00081.mpls" "00081.mpls(1)"
+re_title_no = r'(?:[0-9/]+|\d+\.m2ts|\d+\.mpls(?:\(\d+\))?)'  # "1", "1/1", "1/0/1", "00040.m2ts" "00081.mpls" "00081.mpls(1)"
 re_stream_no = r'(?:\d+(?:,\d+)*)'  # "1", "1,2"
 
 class DriveInfo(collections.namedtuple(
@@ -219,6 +224,7 @@ class StreamInfo(collections.namedtuple(
 
 class MakemkvconSpawnBase(_SpawnMixin):
 
+    title_count = None
     num_tiltes_saved = None
     num_tiltes_failed = None
     num_errors = 0
@@ -232,8 +238,13 @@ class MakemkvconSpawnBase(_SpawnMixin):
     titles = None
     angles = None
     backup_done = None
+    stop_before_copying_files = False
 
-    def __init__(self, *args, timeout=None, ignore_failed_to_open_disc=False, **kwargs):
+    def __init__(self, *args,
+                 timeout=None,
+                 ignore_failed_to_open_disc=False,
+                 stop_before_copying_files=False,
+                 **kwargs):
         self.operations_performed = OrderedSet()
         self.errors_seen = OrderedSet()
         self.ignore_failed_to_open_disc = ignore_failed_to_open_disc
@@ -241,6 +252,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
         self.titles = collections.OrderedDict()
         self.angles = []
         self.streams = collections.OrderedDict()
+        self.stop_before_copying_files = stop_before_copying_files
         super().__init__(*args, timeout=timeout, **kwargs)
 
     def current_progress(self, str):
@@ -460,7 +472,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^CellWalk algorithm failed \(structure protection is too tough\?\), trying CellTrim algorithm{re_eol}', self.generic_warning),
             (fr'^CellTrim algorithm failed since title has only (?P<num_chapters>\d+) chapters{re_eol}', self.generic_warning),
             (fr'^Complex multiplex encountered - (?P<num_cells>\d+) cells and (?P<num_vobus>\d+) VOBUs have to be scanned\. This may take some time, please be patient - it can\'t be avoided\.{re_eol}', self.generic_warning),
-            # IFO file for VTS #20 is corrupt, VOB file must be scanned. This may take very long time, please be patient.
+            (fr'^IFO file for VTS #(?P<vts_no>\d+) is corrupt, VOB file must be scanned\. This may take very long time, please be patient\.{re_eol}', self.generic_warning),
             (fr'^Region setting of drive (?P<drive_label>[^\r\n]+) does not match the region of currently inserted disc, trying to work around\.\.\.{re_eol}', True),
             (fr'^Title #(?P<title_no>{re_title_no}) was added \((?P<num_cells>\d+) cell\(s\), (?P<time>[0-9:]+)\){re_eol}', True),
             (fr'^File (?P<file_name>\S+) was added as title #(?P<title_no>\d+){re_eol}', True),
@@ -484,7 +496,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^Copy complete\. (?P<num_tiltes_saved>\d+) titles saved, (?P<num_tiltes_failed>\d+) failed\.{re_eol}', self.parse_titles_saved),
             (fr'^Track #(?P<track_no>\d+) turned out to be empty and was removed from output file{re_eol}', self.generic_warning),
             (fr'^Forced subtitles track #(?P<track_no>\d+) turned out to be empty and was removed from output file{re_eol}', self.generic_warning),
-            (fr'^Title #(?P<title_no>\d+) declared length is (?P<declared_length>\S+) while its real length is (?P<real_length>\S+) - assuming fake title{re_eol}', self.generic_warning),
+            (fr'^Title #(?P<title_no>{re_title_no}) declared length is (?P<declared_length>\S+) while its real length is (?P<real_length>\S+) - assuming fake title{re_eol}', self.generic_warning),
             (fr'^Fake cells occupy (?P<percent>\d+)% of the title - assuming fake title{re_eol}', self.generic_warning),
             (fr'^Can\'t locate a cell for VTS (?P<vts>\d+) TTN (?P<ttn>\d+) PGCN (?P<pgcn>\d+) PGN (?P<pgn>\d+){re_eol}', self.generic_warning),
             (fr'^AV synchronization issues were found in file \'(?P<file_name>[^\r\n]+)\' \(title #(?P<title_no>{re_title_no})\){re_eol}', self.generic_warning),
@@ -509,6 +521,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^Program reads data faster than it can write to disk, consider upgrading your hard drive if you see many of these messages\.{re_eol}', self.generic_warning),
             (fr'^(?P<exec>{re_dot}+): (?P<lib>{re_dot}+): no version information available \(required by (?P<req_by>{re_dot}+)\){re_eol}', self.generic_warning),
             (fr'^It appears that you are opening the disc processed by DvdFab/MacTheRipper which is known to produce damaged VOB files\. Errors may follow - please use original disc instead\.{re_eol}', self.generic_warning),
+            (fr'^AACS directory not present, assuming unencrypted disc{re_eol}', self.generic_warning),
             (fr'^The new version (?P<version>\S+) is available for download at (?P<url>\S+){re_eol}', self.new_version_warning),
             (fr'^Debug logging enabled, log will be saved as (?P<debug_log_uri>.*?){re_eol}', self.generic_info),
             (fr'^Opening files on harddrive at (?P<dir_in>[^\r\n]+){re_eol}', True),
@@ -575,6 +588,10 @@ class MakemkvconSpawnBase(_SpawnMixin):
         # id - operation sub-id
         # name - name string
         name = byte_decode(self.match.group('name'))
+        if self.stop_before_copying_files and name == 'Copying file':
+            log.debug('Stopping at operation %r', name)
+            self.terminate()
+            return False
         self.set_current_task('operation', name)
         return True
 
@@ -648,7 +665,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
         # Disc information output messages
         # TCOUT:count
         # count - titles count
-        print(f'\nrobot_titles_count: {str!r}')
+        self.title_count = int(self.match.group('count'))
         return True
 
     def robot_disc_info(self, str):
@@ -731,6 +748,10 @@ class Makemkvcon(Executable):
 
     run_func = staticmethod(do_makemkvcon_spawn_cmd)
 
+    run_func_options = Executable.run_func_options + (
+        'stop_before_copying_files',
+    )
+
     spawn = MakemkvconSpawn
 
     fdspawn = MakemkvconFdspawn
@@ -785,8 +806,10 @@ class Makemkvcon(Executable):
     def mkv(self, *, source, dest_dir, title_id='all', **kwargs):
         return self('mkv', source, title_id, dest_dir, **kwargs)
 
-    def backup(self, *, source, dest_dir, **kwargs):
-        return self('backup', source, dest_dir, **kwargs)
+    def backup(self, *, source, dest_dir, stop_before_copying_files=False, **kwargs):
+        return self('backup', source, dest_dir,
+                    stop_before_copying_files=stop_before_copying_files,
+                    **kwargs)
 
     def info(self, *, source, ignore_failed_to_open_disc=False, run_func=None, **kwargs):
         if ignore_failed_to_open_disc:
@@ -794,12 +817,17 @@ class Makemkvcon(Executable):
             run_func = functools.partial(run_func, ignore_failed_to_open_disc=ignore_failed_to_open_disc)
         return self('info', source, run_func=run_func, **kwargs)
 
-    def _run(self, *args, retry_no_cd=False, **kwargs):
+    def _run(self, *args,
+             retry_no_cd=False,
+             stop_before_copying_files=False,
+             **kwargs):
         if retry_no_cd is True:
             retry_no_cd = 8
         while True:
             try:
-                return super()._run(*args, **kwargs)
+                return super()._run(*args,
+                                    stop_before_copying_files=stop_before_copying_files,
+                                    **kwargs)
             except SpawnedProcessError as e:
                 if retry_no_cd and e.returncode == 11 \
                         and e.spawn.num_errors == 1 and list(e.spawn.errors_seen) == ['Failed to open disc'] \

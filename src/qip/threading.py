@@ -1,9 +1,13 @@
 __all__ = (
-        'ExcThread',
-        )
+    'ExcThread',
+)
 
 import threading
+__all__ += tuple(threading.__all__)
 
+from threading import *
+
+# DEPRECATED use concurrent.futures.ThreadPoolExecutor
 class ExcThread(threading.Thread):
 
     def __init__(self, *, target=None, **kwargs):

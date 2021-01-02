@@ -274,6 +274,18 @@ class File(object):
                   tempfile._TemporaryFileWrapper,
               ))))
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        f = getattr(super(), '__exit__', None)
+        return f(*exc) if f else None
+
+    @property
+    def closed(self):
+        return not self.fp or self.fp.closed
+
     def fileno(self):
         fp = self.fp
         if fp is not None:
@@ -331,9 +343,9 @@ class File(object):
 
     def close(self):
         fp = self.fp
-        if fp:
-            fp.close()
+        if fp is not None:
             self.fp = None
+            fp.close()
         # No exception if no fp, like file objects
 
     @classmethod
@@ -344,8 +356,7 @@ class File(object):
         }
         for sub_cls in cls.__subclasses__():
             sub_cls._build_extension_to_class_map()
-        if cls._extension_to_class_map:
-            cls._update_extension_to_class_map()
+        cls._update_extension_to_class_map()
 
     @classmethod
     def _update_extension_to_class_map(cls):
@@ -358,6 +369,13 @@ class File(object):
                     base_cls._update_extension_to_class_map()
                 except AttributeError:
                     pass
+
+    @classmethod
+    def get_common_extensions(cls):
+        common_extensions = set(cls.__dict__.get('_common_extensions', ()))
+        for sub_cls in cls.__subclasses__():
+            common_extensions |= sub_cls.get_common_extensions()
+        return common_extensions
 
 class TextFile(File):
 

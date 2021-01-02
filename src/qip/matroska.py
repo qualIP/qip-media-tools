@@ -20,7 +20,7 @@ import logging
 import re
 log = logging.getLogger(__name__)
 
-from .mm import MediaTagEnum, MediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters
+from .mm import MediaTagEnum, BinaryMediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters
 from .utils import KwVarsObject, byte_decode
 from .exec import Executable
 
@@ -173,7 +173,7 @@ default_tag_map = (
 )
 
 
-class MatroskaFile(MediaFile):
+class MatroskaFile(BinaryMediaFile):
 
     @property
     def tag_writer(self):

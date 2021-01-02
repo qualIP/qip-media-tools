@@ -347,7 +347,7 @@ class ImageFile(MediaFile):
             tags = self.tags
         self.tag_writer.write_tags(tags=tags, file_name=self.file_name, **kwargs)
 
-    def extract_ffprobe_json(self,
+    def extract_ffprobe_dict(self,
             show_streams=True,
             show_format=True,
             show_error=True,
@@ -394,7 +394,7 @@ class ImageFile(MediaFile):
         tags_done = False
 
         if shutil.which('ffprobe'):
-            ffprobe_dict = self.extract_ffprobe_json()
+            ffprobe_dict = self.extract_ffprobe_dict()
             if ffprobe_dict:
                 # import pprint ; pprint.pprint(ffprobe_dict)
                 stream_dict, = ffprobe_dict['streams']

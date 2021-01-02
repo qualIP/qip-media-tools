@@ -68,7 +68,7 @@ class Mediainfo(Executable):
                 v = re.sub(r' min *', 'm', v)
                 v = re.sub(r' s *', 's', v)
                 v = re.sub(r'(?P<s>\d+)s(?P<ms>\d{1,3}) ms', lambda m: '%d.%03d' % (int(m.group('s')), int(m.group('ms'))), v)
-                v = re.sub(r'^(?P<ms>\d{1,3}) ms', lambda m: '0.%03d' % (int(m.group('ms')),), v)
+                v = re.sub(r'^(?P<sign>-?)(?P<ms>\d{1,3}) ms', lambda m: '%s0.%03d' % (m.group('sign'), int(m.group('ms'))), v)
                 v = Timestamp(v)
                 return v
             def scan_mediainfo_pixels(v):
@@ -86,8 +86,25 @@ class Mediainfo(Executable):
                 )
                 assert m, line
                 k, v = m.group('k').strip(), m.group('v').strip()
-                if k == 'ID':
-                    k = 'ID'
+                if k in ('ID', 'ID in the original source medium'):
+                    k = {
+                        'ID': 'ID',
+                        'ID in the original source medium': 'OriginalSourceMedium_ID',
+                    }[k]
+                    # 1
+                    # 224 (0xE0)
+                    # 189 (0xBD)-128 (0x80)
+                    # 189 (0xBD)32 (0x20)
+                    m = re.match(r'^((?P<int>-?\d{1,3}) \(0x(?P<hex>[0-9A-Fa-f]{2})\))*$', v)
+                    if m:
+                        v = int(
+                            ''.join(tup[1] for tup in re.findall(r'(?P<int>-?\d{1,3}) \(0x(?P<hex>[0-9A-Fa-f]{2})\)', v)),
+                            16)
+                    else:
+                        try:
+                            v = int(v)
+                        except ValueError:
+                            pass
                 elif k == 'Format':
                     k = 'Format'
                 elif k == 'Format version':

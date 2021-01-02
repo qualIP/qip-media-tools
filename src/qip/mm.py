@@ -2,9 +2,15 @@
 __all__ = (
     'Chapter',
     'Chapters',
+    'BroadcastFormat',
     'MediaFile',
+    'BinaryMediaFile',
+    'TextMediaFile',
     'FrameRate',
     'SoundFile',
+    'SubtitleFile',
+    'BinarySubtitleFile',
+    'TextSubtitleFile',
     'MediaTagEnum',
     'TrackTags',
     'AlbumTags',
@@ -214,6 +220,10 @@ class Chapter(object):
         name='lang',
         type=(None, isolang))
 
+    @property
+    def duration(self):
+        return self.end - self.start
+
     def __init__(self, start, end, *,
                  uid=None, hidden=False, enabled=True, title=None, no=None,
                  lang=None):
@@ -330,7 +340,7 @@ class Chapter(object):
             self.end -= other
         return self
 
-class Chapters(object):
+class Chapters(collections.UserList):
 
     MKV_XML_VALUE_TAGS = {
         'EditionFlagHidden',
@@ -344,13 +354,22 @@ class Chapters(object):
         'ChapterLanguage',
     }
 
+    @property
+    def chapters(self):
+        return self.data
+
+    @chapters.setter
+    def chapters(self, value):
+        self.data = value
+
     def __init__(self, chapters=None, add_pre_gap=False):
-        self.chapters = list(chapters or [])
-        if self.chapters and add_pre_gap and self.chapters[0].start > 0:
+        chapters = list(chapters or [])
+        if chapters and add_pre_gap and chapters[0].start > 0:
             chap = Chapter(
-                start=0, end=self.chapters[0].start,
+                start=0, end=chapters[0].start,
                 title='pre-gap', hidden=True)
-            self.chapters.insert(0, chap)
+            chapters.insert(0, chap)
+        super().__init__(chapters)
 
     @classmethod
     def from_mkv_xml(cls, xml, **kwargs):
@@ -399,12 +418,6 @@ class Chapters(object):
             eEditionEntry.append(eChapterAtom)
         return xml
 
-    def __iter__(self):
-        return iter(self.chapters)
-
-    def append(self, *args):
-        return self.chapters.append(*args)
-
     def __deepcopy__(self, memo=None):
         return self.__class__(chapters=copy.deepcopy(self.chapters, memo=memo))
 
@@ -428,7 +441,7 @@ class Chapters(object):
             chap -= other
         return self
 
-class MediaFile(BinaryFile):
+class MediaFile(File):
 
     def __init__(self, file_name, *args, tags=None, **kwargs):
         if tags is None:
@@ -458,7 +471,7 @@ class MediaFile(BinaryFile):
             return False
         return True
 
-    def extract_ffprobe_json(self, **kwargs):
+    def extract_ffprobe_dict(self, **kwargs):
         from .exec import clean_cmd_output
         from .parser import lines_parser
         from . import json
@@ -495,6 +508,14 @@ class MediaFile(BinaryFile):
             return ffprobe_dict
         raise ValueError('No json found in output of ffprobe')
 
+    ffprobe_dict = propex(
+        name='ffprobe_dict',
+        type=propex.test_istype(dict),
+    )
+    @ffprobe_dict.initter
+    def ffprobe_dict(self):
+        return self.extract_ffprobe_dict()
+
     def extract_mediainfo_dict(self,
                                *args, **kwargs):
         from .mediainfo import mediainfo
@@ -507,6 +528,14 @@ class MediaFile(BinaryFile):
                 log.debug('mediainfo_dict:\n%s', pprint.pformat(mediainfo_dict))
             return mediainfo_dict
         raise ValueError('Nothing found in output of mediainfo')
+
+    mediainfo_dict = propex(
+        name='mediainfo_dict',
+        type=propex.test_istype(dict),
+    )
+    @mediainfo_dict.initter
+    def mediainfo_dict(self):
+        return self.extract_mediainfo_dict()
 
     def set_tag(self, tag, value, source=''):
         return self.tags.set_tag(tag, value, source=source)
@@ -712,52 +741,6 @@ class MediaFile(BinaryFile):
             raise NotImplementedError(f'{self}: Loading chapters unsupported')
         return chaps
 
-    def extract_ffprobe_json(self,
-            show_streams=True,
-            show_format=True,
-            show_chapters=True,
-            show_error=True,
-        ):
-        cmd = [
-            'ffprobe',
-            '-i', self,
-            '-threads', '0',
-            '-v', 'info',
-            '-print_format', 'json',
-        ]
-        if show_streams:
-            cmd += ['-show_streams']
-        if show_format:
-            cmd += ['-show_format']
-        if show_chapters:
-            cmd += ['-show_chapters']
-        if show_error:
-            cmd += ['-show_error']
-        try:
-            # ffprobe -print_format json -show_streams -show_format -i ...
-            out = do_exec_cmd(cmd, stderr=subprocess.STDOUT, dry_run=False)
-        except subprocess.CalledProcessError:
-            # TODO ignore/report failure only?
-            raise
-        else:
-            out = clean_cmd_output(out)
-            parser = lines_parser(out.split('\n'))
-            ffprobe_dict = None
-            while parser.advance():
-                if parser.line == '{':
-                    parser.pushback(parser.line)
-                    ffprobe_dict = json.loads('\n'.join(parser.lines_iter))
-                    break
-                parser.line = parser.line.strip()
-                if parser.line == '':
-                    pass
-                else:
-                    #log.debug('TODO: %s', parser.line)
-                    pass
-            if ffprobe_dict:
-                return ffprobe_dict
-            raise ValueError('No json found in output of %r' % (list2cmdline(cmd),))
-
     def extract_info(self, need_actual_duration=False):
         tags_done = False
 
@@ -771,7 +754,7 @@ class MediaFile(BinaryFile):
                 tags_done = True
 
         if shutil.which('ffprobe'):
-            ffprobe_dict = self.extract_ffprobe_json()
+            ffprobe_dict = self.extract_ffprobe_dict()
             if ffprobe_dict:
                 # import pprint ; pprint.pprint(ffprobe_dict)
                 for stream_dict in ffprobe_dict['streams']:
@@ -1185,6 +1168,12 @@ class MediaFile(BinaryFile):
                 return 'normal'
         raise MissingMediaTagError(MediaTagEnum.type, file=self)
 
+class BinaryMediaFile(MediaFile, BinaryFile):
+    pass
+
+class TextMediaFile(MediaFile, TextFile):
+    pass
+
 
 class FrameRate(Fraction):
 
@@ -1424,13 +1413,18 @@ class MediaTagRating(enum.Enum):
                     break
         return super().__new__(cls, value)
 
+    def __int__(self):
+        return self.int_value
+
 MediaTagRating.__new__ = MediaTagRating._MediaTagRating__new
-MediaTagRating._value2member_map_.update({
-    '0': MediaTagRating.none,
-    '1': MediaTagRating.explicit,
-    '2': MediaTagRating.clean,
-    '3': MediaTagRating.explicit3,
-    })
+for _i, _e in (
+    (0, MediaTagRating.none),
+    (1, MediaTagRating.explicit),
+    (2, MediaTagRating.clean),
+    (3, MediaTagRating.explicit3),
+):
+    _e.int_value = _i
+    MediaTagRating._value2member_map_[str(_i)] = _e
 for _e in MediaTagRating:
     MediaTagRating._value2member_map_[_e.value.lower()] = _e
 
@@ -1654,6 +1648,37 @@ MediaTagEnum.iTunesInternalTags = frozenset((
     MediaTagEnum.itunesplaylistid,
 ))
 
+# BroadcastFormat {{{
+
+class BroadcastFormat(enum.Enum):
+    NTSC = 'NTSC'
+    PAL = 'PAL'
+
+    def __hash__(self):
+        return hash(id(self))
+
+    def __str__(self):
+        return self.value
+
+    def __new(cls, value):
+        if type(value) is str:
+            value = value.strip().lower()
+            for pattern, new_value in (
+                ):
+                m = re.search(pattern, value)
+                if m:
+                    value = new_value
+                    break
+        return super().__new__(cls, value)
+
+BroadcastFormat.__new__ = BroadcastFormat._BroadcastFormat__new
+for _e in BroadcastFormat:
+    BroadcastFormat._value2member_map_[_e.value.lower()] = _e
+    BroadcastFormat._value2member_map_[_e.name.lower()] = _e
+    BroadcastFormat._value2member_map_[_e.name.lower().replace('_', '')] = _e
+
+# }}}
+
 # MediaType {{{
 
 class MediaType(enum.Enum):
@@ -1794,7 +1819,7 @@ Stereo3DMode.half_top_and_bottom.exts = ('.HTAB', '.HOU',)
 Stereo3DMode.full_top_and_bottom.exts = ('.TAB', '.FTAB', '.OU', '.FOU',)
 Stereo3DMode.alternate_frame.exts = ('.ALT',)
 Stereo3DMode.multiview_encoding.exts = ('.MVC',)
-Stereo3DMode.hdmi_frame_packing.exts = ('.HFP',)
+Stereo3DMode.hdmi_frame_packing.exts = ('.HDMI',)
 
 for e in Stereo3DMode:
     for ext in e.exts:
@@ -2298,6 +2323,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                     (MediaTagEnum.isrc, 'CDBaby', ITunesXid.Scheme.isrc),
                     (MediaTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
                     (MediaTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
+                    (MediaTagEnum.isrc, 'Universal', ITunesXid.Scheme.isrc),
+                    (MediaTagEnum.isrc, 'Isolation', ITunesXid.Scheme.isrc),
+                    (MediaTagEnum.isrc, 'Warner', ITunesXid.Scheme.isrc),
             ):
                 if xid.scheme is not scheme:
                     continue
@@ -4721,6 +4749,7 @@ class AudioType(enum.Enum):
     vorbis = 'vorbis'
     wav = 'wav'
     ac3 = 'ac3'
+    eac3 = 'eac3'
     dts = 'dts'
 
     def __eq__(self, other):
@@ -4764,7 +4793,7 @@ AudioType.__new__ = AudioType._AudioType__new
 
 # class SoundFile {{{
 
-class SoundFile(MediaFile):
+class SoundFile(BinaryMediaFile):
 
     @property
     def audio_type(self):
@@ -4969,10 +4998,7 @@ class MovieFile(SoundFile):
         '.h264',
         '.h265',
         '.ivf',
-        '.m2ts',
         '.mjpeg',
-        '.mp2v',
-        '.mpeg2',
         '.vc1',
         '.vp8',
         '.vp9',
@@ -4980,6 +5006,22 @@ class MovieFile(SoundFile):
     )
 
 class AudiobookFile(SoundFile): pass  # TODO
+
+class SubtitleFile(MediaFile): pass  # TODO
+
+class BinarySubtitleFile(SubtitleFile, BinaryMediaFile):
+
+    _common_extensions = (
+        '.sub',
+        #'.sup',  # See PgsFile
+    )
+
+class TextSubtitleFile(SubtitleFile, TextMediaFile):
+
+    _common_extensions = (
+        '.srt',
+        '.vtt',
+    )
 
 # class ArgparseSetTagAction {{{
 

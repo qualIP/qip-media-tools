@@ -14,18 +14,20 @@ from pathlib import Path
 import copy
 import logging
 import os
+import errno
 import re
 import shutil
 import struct
 import tempfile
 log = logging.getLogger(__name__)
 
-from .mm import MediaFile
+from .mm import BinaryMediaFile
 from .mm import SoundFile
 from .mm import RingtoneFile
 from .mm import MovieFile
 from .mm import AudiobookFile
 from .mm import Chapter, Chapters
+from .file import cache_url
 import qip.mm as mm
 import qip.wav as wav
 import qip.cdda as cdda
@@ -35,7 +37,7 @@ from .exec import Executable
 
 # https://en.wikipedia.org/wiki/MPEG-4_Part_14
 
-class Mpeg4ContainerFile(MediaFile):
+class Mpeg4ContainerFile(BinaryMediaFile):
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None):
         from .qaac import qaac
@@ -66,7 +68,7 @@ class Mpeg4ContainerFile(MediaFile):
 
         if not src_picture:
             return None
-        picture = src_picture = Path(src_picture)
+        picture = src_picture = cache_url(src_picture)
 
         if src_picture.suffix not in (
                 #'.gif',
@@ -132,6 +134,10 @@ class Mpeg4ContainerFile(MediaFile):
         qaac_cmd += ['--threading']
         if yes:
             ffmpeg_cmd += ['-y']
+        else:
+            if self.exists():
+                raise OSError(errno.EEXIST, os.fspath(self))
+
         ffmpeg_cmd += ['-stats']
         qaac_cmd += ['--verbose']
         ffmpeg_output_cmd += ['-vn']

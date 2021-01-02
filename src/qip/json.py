@@ -40,7 +40,9 @@ class JSONEncodable(object):
 
     def __json_encode__(self):
         d = self.__json_encode_vars__()
-        d['__class__'] = self.__json_encode_class_name__()
+        json_class_name = self.__json_encode_class_name__()
+        if json_class_name:
+            d['__class__'] = json_class_name
         return d
 
     def __json_prepare_dump__(self):

@@ -70,14 +70,14 @@ class Tvdb(tvdb_api.Tvdb, XdgResource):
             except KeyError:
                 pass
 
-        language = 'en' if language is None else isolang(language).iso639_1
-
         super().__init__(**kwargs)
 
         # tvdb_api.Tvdb requires all 3 variables to be set so fill them manually instead
         self.config['auth_payload']['apikey'] = apikey
         self.config['auth_payload']['username'] = username
         self.config['auth_payload']['userkey'] = userkey
+
+        self.language = 'en' if language is None else language
 
     @property
     def language(self):
@@ -86,6 +86,8 @@ class Tvdb(tvdb_api.Tvdb, XdgResource):
     @language.setter
     def language(self, value):
         self.config['language'] = 'en' if value is None else isolang(value).iso639_1
+        # Fixup since it is forced in
+        self.headers = {'Content-Type': 'application/json', 'Accept': 'application/json', 'Accept-Language': self.config['language']}
 
 if __name__ == "__main__":
     import logging

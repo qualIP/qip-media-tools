@@ -100,7 +100,8 @@ class Udisksctl(Executable):
 
         out.out = self.clean_cmd_output(out.out)
         # Mounted /dev/loop0 at /media/user/MOUNTPOINT.
-        m = re.search(r'^Mounted (?P<source>.+) at (?P<mountpoint>/.+)\.+', byte_decode(out.out), re.MULTILINE)
+        # Mounted /dev/loop0 at /media/user/MOUNTPOINT   (Without '.' ??)
+        m = re.search(r'^Mounted (?P<source>.+) at (?P<mountpoint>/.+?)\.?$', byte_decode(out.out), re.MULTILINE)
         if not m:
             raise ValueError(f'{self}: Invalid mount point: {out.out!r}')
         mountpoint = m.group('mountpoint')

@@ -18,6 +18,7 @@ __all__ = (
     'indexable',
     'advenumerate',
     'adviter',
+    'dict_from_swig_obj',
 )
 
 from _collections_abc import _check_methods
@@ -352,6 +353,21 @@ class Timestamp(object):
             string = '0'
         return sign + string
 
+    def hms_str(self):
+        s = self.seconds
+        if s < 0.0:
+            sign = '-'
+            s = -s
+        else:
+            sign = ''
+        m = s // 60
+        s = s - m * 60
+        h = m // 60
+        m = m - h * 60
+        s = '%.0f' % (s,)
+        string = '%dh%02dm%s' % (h, m, s)
+        return string
+
     def __str__(self):
         return self.canonical_str()
 
@@ -415,6 +431,20 @@ class Timestamp(object):
             return self.seconds < other
         return NotImplemented
 
+    def __format__(self, format_spec):
+        if format_spec == '':
+            return str(self)
+        elif format_spec == 'canonical':
+            return self.canonical_str()
+        elif format_spec == 'friendly':
+            return self.friendly_str()
+        elif format_spec == 'ffmpeg':
+            from qip.ffmpeg import ffmpeg
+            return ffmpeg.Timestamp(self).canonical_str()
+        elif format_spec == 'hms':
+            return self.hms_str()
+        else:
+            raise NotImplementedError(f'Unsupported {self.__class__.__name__} format spec {format_spec!r}')
 
 class TypedKeyDict(abc.ABC):
 
@@ -758,5 +788,16 @@ def save_and_restore_tcattr(*, fd=None, when=termios.TCSADRAIN):
         yield
     finally:
         termios.tcsetattr(fd, when, old)
+
+def dict_from_swig_obj(obj):
+    return {
+        name: getattr(obj, name)
+        for name in dir(obj)
+        if (
+                not name.startswith('_')
+                and name not in ('this', 'thisown')
+                and not callable(getattr(obj, name))
+        )
+    }
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

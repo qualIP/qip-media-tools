@@ -333,6 +333,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [info] frame=  776 fps=119 q=-0.0 size=  129161kB time=00:00:25.86 bitrate=40915.9kbits/s speed=3.95x
             # [info] frame= 1052 fps=149 q=-1.0 size=N/A time=00:00:43.62 bitrate=N/A speed=6.18x
             # size=       0kB time=01:03:00.94 bitrate=   0.0kbits/s speed=2.17e+07x
+            # [info] size= 1408536kB time=00:20:52.03 bitrate=9216.0kbits/s speed=48.1x
             # frame= 2235 fps=221 q=-0.0 size= 1131482kB time=00:01:14.60 bitrate=124237.6kbits/s dup=447 drop=0 speed=7.37x
             (fr'^(?:\[info\]\s)?(?:frame= *(?P<frame>\d+) +fps= *(?P<fps>\S+) +q= *(?P<q>\S+) )?L?size= *(?:N/A|(?P<size>\S+)) +time= *(?P<time>\S+) +bitrate= *(?:N/A|(?P<bitrate>\S+))(?: +dup= *(?P<dup>\S+))?(?: +drop= *(?P<drop>\S+))? +speed= *(?P<speed>\S+) *{re_eol}', self.progress_line),
 
@@ -352,7 +353,8 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [info]     Stream #0:0: Video: mpeg2video (Main), 1 reference frame, yuv420p(tv, top first, left), 720x480 [SAR 8:9 DAR 4:3], 29.97 fps, 29.97 tbr, 1200k tbn, 59.94 tbc
             # [info]     Stream #0:0: Video: h264 (High), 1 reference frame, yuv420p(progressive, left), 1920x1080 (1920x1088) [SAR 1:1 DAR 16:9], 24.08 fps, 23.98 tbr, 1200k tbn, 47.95 tbc
             # [info]     Stream #0:0: Video: vc1 (Advanced), 1 reference frame (WVC1 / 0x31435657), yuv420p(bt709, progressive, left), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 23.98 tbn, 47.95 tbc
-            (fr'^(?:\[info\]\s)? *Stream #(?P<stream_no>\S+): (?P<stream_type>Video): (?P<format1>[^,]+)(?:, (?P<num_ref_frames>\d+) reference frame(?: \([^)]+\))?)?, (?P<format2>[^(,]+(?:\([^)]+\))?), (?P<width>\d+)x(?P<height>\d+) [^\r\n]*{re_eol}', self.start_stream_info_section),
+            # [info]     Stream #0:0: Video: ffv1, 1 reference frame (FFV1 / 0x31564646), yuv420p(left), 720x480, SAR 8:9 DAR 4:3, 23.98 fps, 23.98 tbr, 1k tbn, 1k tbc (default)'
+            (fr'^(?:\[info\]\s)? *Stream #(?P<stream_no>\S+): (?P<stream_type>Video): (?P<format1>[^,]+)(?:, (?P<num_ref_frames>\d+) reference frame(?: \([^)]+\))?)?, (?P<format2>[^(,]+(?:\([^)]+\))?), (?P<width>\d+)x(?P<height>\d+)[, ][^\r\n]*{re_eol}', self.start_stream_info_section),
 
             (fr'^(?:\[warning\]\s)?Overriding aspect ratio with stream copy may produce invalid files{re_eol}', self.generic_debug_line),
             (fr'^(?:\[warning\]\s)?Output file is empty, nothing was encoded \(check -ss / -t / -frames parameters if used\){re_eol}', functools.partial(self.generic_error, level=logging.WARNING, error_tag='output-file-empty-nothing-encoded')),
@@ -360,6 +362,13 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # File 'TheTruthAboutCatsAndDogs/title_t00.demux.mkv' already exists. Overwrite ? [y/N]
             (fr'^File \'(?P<file_name>.+?)\' already exists\. Overwrite ?\? \[y/N\] *$', self.prompt_file_overwrite),
 
+            # PTS 21474840773, next:1417490188 invalid dropping st:0
+            # DTS 21474840774, next:1417531896 st:0 invalid dropping
+            (fr'^(?:\[warning\]\s)?(?P<dts_or_pts>DTS|PTS) \d+, next:\d+ ?(invalid dropping st:0|st:0 invalid dropping){re_eol}', self.generic_debug_line),
+
+            # [h264 @ 0x55f98a7caa00] [error] sps_id 1 out of range
+            # [NULL @ 0x55f98a7c3b80] [error] sps_id 1 out of range
+            (fr'^\[\S+ @ 0x[0-9a-f]+\] (?:\[error\]\s)?sps_id 1 out of range{re_eol}', self.generic_debug_line),
 
             (fr'^\[info\]\s[^\r\n]*?{re_eol}', self.unknown_info_line),
             (fr'^\[verbose\]\s[^\r\n]*?{re_eol}', self.unknown_verbose_line),
@@ -633,7 +642,10 @@ class Ffmpeg(_Ffmpeg):
             pass
 
     def cropdetect(self, input_file,
-                   skip_frame_nokey=True, cropdetect_seek=None, cropdetect_duration=300,
+                   skip_frame_nokey=True,
+                   cropdetect_seek=None, cropdetect_duration=300,
+                   cropdetect_limit=24,  # default
+                   cropdetect_round=2,  # Handbrake? ffmpeg default = 0
                    video_filter_specs=None,
                    show_progress_bar=True,
                    progress_bar_title=None,
@@ -641,7 +653,7 @@ class Ffmpeg(_Ffmpeg):
                    dry_run=False):
         stream_crop = None
         ffmpeg_args = list(default_ffmpeg_args)
-        if cropdetect_seek is not None:
+        if cropdetect_seek:
             ffmpeg_args += [
                 '-ss', Timestamp(cropdetect_seek),
             ]
@@ -650,8 +662,7 @@ class Ffmpeg(_Ffmpeg):
                 '-skip_frame', 'nokey',
             ]
         video_filter_specs = list(video_filter_specs or [])
-        video_filter_specs.append('cropdetect=24:2:0:0')  # Handbrake?
-        #video_filter_specs.append('cropdetect=24:16:0:0')  # ffmpeg default
+        video_filter_specs.append(f'cropdetect={cropdetect_limit}:{cropdetect_round}:0:0')
         ffmpeg_args += [
             '-i', input_file,
             '-t', Timestamp(cropdetect_duration),
@@ -682,26 +693,43 @@ class Ffmpeg(_Ffmpeg):
                        loglevel=loglevel)
 
         if not dry_run:
+            retry = False
             if skip_frame_nokey and out.spawn.cropdetect_frames_count < 2:
-                log.warning('Crop detection failed; Trying again with non-key frames.')
-                return self.cropdetect(input_file,
-                                       skip_frame_nokey=False,
-                                       cropdetect_seek=cropdetect_seek,
-                                       cropdetect_duration=cropdetect_duration,
-                                       default_ffmpeg_args=default_ffmpeg_args,
-                                       dry_run=dry_run)
-            if not out.spawn.cropdetect_frames_count:
-                # Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)
-                # -> skip_frame_nokey=False
-                raise ValueError('Crop detection failed')
-            m = re.match(r'^(\d+):(\d+):(\d+):(\d+)$', out.spawn.cropdetect_result)
-            assert m, f'Unrecognized cropdetect result: {out.spawn.cropdetect_result!r}'
-            w, h, l, t = stream_crop = (
-                int(m.group(1)),
-                int(m.group(2)),
-                int(m.group(3)),
-                int(m.group(4)))
-            assert w > 0 and h > 0 and l >= 0 and t >= 0, (w, h, l, t)
+                log.warning(f'Crop detection failed due to only {out.spawn.cropdetect_frames_count} key frames detected; Trying again with non-key frames.')
+                skip_frame_nokey = False
+                retry = True
+            else:
+                if not out.spawn.cropdetect_frames_count:
+                    # Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)
+                    # -> skip_frame_nokey=False
+                    raise ValueError('Crop detection failed')
+                m = re.match(r'^(-?\d+):(-?\d+):(\d+):(\d+)$', out.spawn.cropdetect_result)
+                assert m, f'Unrecognized cropdetect result: {out.spawn.cropdetect_result!r}'
+                w, h, l, t = stream_crop = (
+                    int(m.group(1)),
+                    int(m.group(2)),
+                    int(m.group(3)),
+                    int(m.group(4)))
+                if w < 0 or h < 0:
+                    if skip_frame_nokey:
+                        log.warning(f'Crop detection failed due to no key frames detected; Trying again with non-key frames.')
+                        skip_frame_nokey = False
+                        retry = True
+                    else:
+                        raise ValueError(f'Crop detection failed: {out.spawn.cropdetect_result!r}')
+                if retry:
+                    return self.cropdetect(input_file=input_file,
+                                           skip_frame_nokey=skip_frame_nokey,
+                                           cropdetect_seek=cropdetect_seek,
+                                           cropdetect_duration=cropdetect_duration,
+                                           cropdetect_limit=cropdetect_limit,
+                                           cropdetect_round=cropdetect_round,
+                                           video_filter_specs=video_filter_specs,
+                                           show_progress_bar=show_progress_bar,
+                                           progress_bar_title=progress_bar_title,
+                                           default_ffmpeg_args=default_ffmpeg_args,
+                                           dry_run=dry_run)
+                assert w > 0 and h > 0 and l >= 0 and t >= 0, (w, h, l, t)
         return stream_crop
 
 ffmpeg = Ffmpeg()
@@ -1045,6 +1073,16 @@ class Ffprobe(_Ffmpeg):
                         pass
                     elif m.group('msg') == 'no frame!':
                         # [h264 @ 0x555cde19ca00] [error] no frame!
+                        pass
+                    elif m.group('msg').endswith(' invalid dropping st:0') \
+                        or m.group('msg').endswith(' st:0 invalid dropping'):
+                        # PTS 21474840773, next:1417490188 invalid dropping st:0
+                        # DTS 21474840774, next:1417531896 st:0 invalid dropping
+                        pass
+                    elif 'ac-tex damaged at' in m.group('msg') \
+                        or 'Warning MVs not available'in m.group('msg'):
+                        # [mpeg2video @ 0x55610c7ca940] [error] ac-tex damaged at 8 2
+                        # [mpeg2video @ 0x55610c7ca940] [error] Warning MVs not available
                         pass
                     else:
                         error_lines.append(line)
