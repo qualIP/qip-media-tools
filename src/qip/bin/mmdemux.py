@@ -76,6 +76,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import types
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
