@@ -76,7 +76,7 @@ def main():
     pgroup.add_argument('--apply-suggestions', dest='apply_suggestions', default=False, action='store_true', help='apply suggestions')
 
     pgroup.add_argument('--contenttype', help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
-    pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex'], help='App compatibility mode')
+    pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex', 'mmdemux'], help='App compatibility mode')
     pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files')
     pgroup.add_argument('--no-aux', dest='aux', default=argparse.SUPPRESS, action='store_false', help='Do not handle auxiliary files')
 
@@ -186,7 +186,7 @@ def main():
     else:
         raise ValueError('Invalid action \'%s\'' % (app.args.action,))
 
-supported_audio_exts = \
+supported_media_exts = \
         set(qip.mm.get_mp4v2_app_support().extensions_can_read) | \
         set(qip.mm.get_sox_app_support().extensions_can_read) | \
         set(('.ogg', '.mka', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v')) | \
@@ -260,7 +260,7 @@ def format_part_suffix(inputfile, which=all_part_names):
         part = None
     app.log.debug('disk=%r, track=%r, part=%r', disk, track, part)
 
-    if app.args.media_library_app == 'plex':
+    if app.args.media_library_app in ('plex', 'mmdemux'):
         # - [DISK]
         # - [PART]
         # - [TRACK]
@@ -443,6 +443,17 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     return dst_dir / dst_file_base
 
+def get_plex_format_hints_suffix(inputfile, dst_file_base):
+    suffix = ''
+    stereo_3d_mode = getattr(inputfile, 'stereo_3d_mode', None)
+    if stereo_3d_mode is not None:
+        # For Kodi compatibility, make sure '3D' is included
+        if '3D' not in dst_file_base.split('.'):
+            suffix += '.3D'
+        # Plex requires 3D mode ((H-?)?(SBS|TAB))
+        suffix += stereo_3d_mode.exts[0]
+    return suffix
+
 def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
     contenttype = inputfile.tags.contenttype or default
     try:
@@ -486,6 +497,8 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
     if inputfile.tags.comment:
         # - [comment]
         dst_file_base += ' - %s' % (inputfile.tags.comment[0],)
+
+    dst_file_base += get_plex_format_hints_suffix(inputfile, dst_file_base)
 
     # -video
     dst_file_base += get_plex_contenttype_suffix(
@@ -583,19 +596,20 @@ def organize_movie(inputfile, *, suggest_tags, orig_type):
             # ContentType
             dst_file_base = str(inputfile.tags.contenttype)
 
+    dst_file_base += get_plex_format_hints_suffix(inputfile, dst_file_base)
+
+    if inputfile.tags.contenttype in (None,
+                                      qip.mm.ContentType.feature_film,
+                                      qip.mm.ContentType.cartoon):
+        pass  # Ok
+    else:
         dst_file_base += get_plex_contenttype_suffix(inputfile,
                                                      dbtype='movie')
 
     dst_file_base += format_part_suffix(inputfile)
 
     dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
-    stereo_3d_mode = getattr(inputfile, 'stereo_3d_mode', None)
-    if stereo_3d_mode is not None:
-        # For Kodi compatibility, make sure '3D' is included
-        if '3D' not in dst_file_base.split('.'):
-            dst_file_base += '.3D'
-        # Plex requires 3D mode ((H-?)?(SBS|TAB))
-        dst_file_base += stereo_3d_mode.exts[0]
+
     dst_file_base += inputfile.file_name.suffix
 
     return dst_dir / dst_file_base
@@ -661,19 +675,38 @@ def organize_tvshow(inputfile, *, suggest_tags):
         # https://github.com/contrary-cat/LocalTVExtras.bundle
         if inputfile.tags.contenttype is None:
             raise MissingMediaTagError('contenttype', file=inputfile)
-        # COMMENT|TITLE
-        if inputfile.tags.comment:
-            # COMMENT
-            dst_file_base = '%s' % (inputfile.tags.comment[0],)
-        elif inputfile.tags.title:
-            # TITLE
-            dst_file_base = '%s' % (inputfile.tags.title,)
-        else:
-            # ContentType
-            dst_file_base = str(inputfile.tags.contenttype)
 
-        dst_file_base += get_plex_contenttype_suffix(inputfile,
-                                                     dbtype='tvshow')
+        if app.args.media_library_app == 'mmdemux':
+            # TVSHOW S01E00 ...
+            dst_file_base += inputfile.tags.tvshow
+            dst_file_base += ' S%02dE00' % (
+                inputfile.tags.season,
+                )
+            dst_file_base_SE = dst_file_base
+            if inputfile.tags.title and inputfile.tags.title != inputfile.tags.tvshow:
+                dst_file_base += ' %s' % (inputfile.tags.title,)
+            else:
+                pass  # Could be the episode name is not known.
+
+            # -- ContentType
+            if dst_file_base != dst_file_base_SE:
+                dst_file_base += ' --'
+            dst_file_base += f' {inputfile.tags.contenttype}'
+            if inputfile.tags.comment:
+                # COMMENT
+                dst_file_base += f': {inputfile.tags.comment[0]}'
+
+        else:
+            # COMMENT|TITLE
+            if inputfile.tags.comment:
+                # COMMENT
+                dst_file_base = '%s' % (inputfile.tags.comment[0],)
+            elif inputfile.tags.title:
+                # TITLE
+                dst_file_base = '%s' % (inputfile.tags.title,)
+            else:
+                # ContentType
+                dst_file_base = str(inputfile.tags.contenttype)
 
     else:
         if inputfile.tags.season is None:
@@ -689,6 +722,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
             dst_file_base += 'E%02d' % (episodes[0],)
             if len(episodes) > 1:
                 dst_file_base += '-E%02d' % (episodes[-1],)
+        dst_file_base_SE = dst_file_base
         if inputfile.tags.title and inputfile.tags.title != inputfile.tags.tvshow:
             dst_file_base += ' %s' % (inputfile.tags.title,)
         else:
@@ -700,23 +734,43 @@ def organize_tvshow(inputfile, *, suggest_tags):
             pass  # Ok
         else:
             # Episode extra
-            # https://github.com/contrary-cat/LocalTVExtras.bundle
-            # COMMENT
-            if inputfile.tags.comment:
-                # COMMENT
-                dst_file_base += '-%s' % (inputfile.tags.comment[0],)
+            if app.args.media_library_app == 'mmdemux':
+                # -- ContentType
+                if dst_file_base != dst_file_base_SE:
+                    dst_file_base += ' --'
+                dst_file_base += f' {inputfile.tags.contenttype}'
+                if inputfile.tags.comment:
+                    # COMMENT
+                    dst_file_base += f': {inputfile.tags.comment[0]}'
             else:
-                # ContentType
-                dst_file_base = str(inputfile.tags.contenttype)
+                # https://github.com/contrary-cat/LocalTVExtras.bundle
+                # COMMENT
+                if inputfile.tags.comment:
+                    # COMMENT
+                    dst_file_base += '-%s' % (inputfile.tags.comment[0],)
+                else:
+                    # ContentType
+                    dst_file_base = str(inputfile.tags.contenttype)
 
+    dst_file_base += get_plex_format_hints_suffix(inputfile, dst_file_base)
+
+    if inputfile.tags.contenttype in (
+            None,
+            qip.mm.ContentType.cartoon):
+        pass  # Ok
+    else:
+        if app.args.media_library_app == 'mmdemux':
+            pass  # Ok
+        else:
             dst_file_base += get_plex_contenttype_suffix(inputfile,
                                                          dbtype='tvshow')
 
-        # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
+    dst_file_base += format_part_suffix(inputfile)
 
-        dst_file_base += format_part_suffix(inputfile)
+    # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
-    dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
+    if app.args.media_library_app != 'mmdemux':
+        dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
     dst_file_base += inputfile.file_name.suffix
 
     return dst_dir / dst_file_base
@@ -728,17 +782,17 @@ def organize(inputfile):
     if isinstance(inputfile, Path) and inputfile.is_dir():
         inputdir = inputfile
         app.log.verbose('Recursing into %s...', inputdir)
-        for inputfile_path in sorted(inputdir.glob('**/*')):
+        for inputfile_path in sorted(set(inputdir.glob('**/*'))):
             inputext = inputfile_path.suffix
-            if inputext in supported_audio_exts and \
-                    inputfile_path.is_file():
+            if (inputext in supported_media_exts
+                    or inputfile_path.is_dir()):
                 organize(inputfile_path)
         return True
 
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
 
-    if not os.path.isfile(inputfile.file_name):
+    if not inputfile.file_name.is_file():
         raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
     app.log.info('Organizing %s...', inputfile)
     inputfile.extract_info(need_actual_duration=False)
@@ -786,7 +840,7 @@ def organize(inputfile):
             app.log.debug('emby: musicvideo -> music')
             opath = organize_music(inputfile, suggest_tags=suggest_tags,
                                   dbtype='musicvideo')
-        else:
+        elif True or app.args.media_library_app in ('plex', 'mmdemux'):
             app.log.debug('plex: musicvideo -> inline musicvideo')
             opath = organize_inline_musicvideo(inputfile, suggest_tags=suggest_tags)
     elif inputfile.tags.type == 'movie':
