@@ -704,6 +704,7 @@ def main():
     pgroup.add_argument('--stage', default=Auto, type=int, choices=range(1, 3 + 1), help='specify ripping stage')
     pgroup.add_bool_argument('--decrypt', default=True, help='create decrypted backup')
     pgroup.add_argument('--makemkv-profile', default='default', type=str, help='MakeMKV profile name (e.g.: default, flac, wdtv, aac-st)')
+    pgroup.add_argument('--rip-languages', default=[], nargs="+", type=isolang, help='List of audio/subtitle languages to rip')
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -1629,6 +1630,9 @@ def action_rip(rip_dir, device, in_tags):
         if not app.args.rip_menus and not app.args.rip_titles:
             raise ValueError('Nothing to do; Please enable --rip-menus or --rip-titles.')
 
+        if app.args.rip_titles and not app.args.rip_languages:
+            raise ValueError('No rip languages specified; Please provide --rip-languages. Example: --rip-languages eng fra und')
+
         if app.args.rip_menus:
             import qip.libdvdread as libdvdread
 
@@ -1695,8 +1699,19 @@ def action_rip(rip_dir, device, in_tags):
             eMkvSettings = profile_xml.find('mkvSettings')
             eMkvSettings.set('ignoreForcedSubtitlesFlag', 'false')
             eProfileSettings = profile_xml.find('profileSettings')
-            # eProfileSettings.set('app_DefaultSelectionString', '+sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,-sel:mvcvideo,=100:all,-10:favlang')
-            eProfileSettings.set('app_DefaultSelectionString', '+sel:all,-sel:(audio|subtitle),+sel:(nolang|eng|fra|fre),-sel:core,=100:all,-10:favlang')
+            makemkv_languages_s = []
+            for lang in app.args.rip_languages:
+                if lang.name == 'und':
+                    makemkv_languages_s.append('nolang')
+                else:
+                    makemkv_languages_s.append(lang.synonim_iso639_2)
+                    makemkv_languages_s.append(lang.code3)
+            makemkv_languages_s = [lang for lang in makemkv_languages_s if lang]
+            eProfileSettings.set('app_PreferredLanguage', makemkv_languages_s[0])
+            eProfileSettings.set('app_DefaultSelectionString',
+                                 '+sel:all,-sel:(audio|subtitle),+sel:({rip_languages}),-sel:core,=100:all,-10:favlang'.format(
+                                     rip_languages='|'.join(makemkv_languages_s),
+                                 ))
 
             settings_changed = False
             makemkvcon_settings = makemkvcon.read_settings_conf()
