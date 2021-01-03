@@ -11,6 +11,7 @@ import io
 import logging
 import os
 import re
+import shlex
 import shutil
 import sys
 import traceback
@@ -322,17 +323,32 @@ class App(XdgResource):
                     for k, v in options_config.items():
                         option_string = f'--{k}'
                         action = self.parser._option_string_actions[option_string]
-                        if True:
-                            if action.nargs == 0:
-                                assert v is None, f'{option_string} takes no argument'
+                        config_args.append(option_string)
+                        if action.nargs is None:
+                            if v is None:
+                                raise ValueError(f'{option_string} takes an argument')
                             else:
-                                assert v is not None, f'{option_string} takes an argument'
-                            config_args.append(option_string)
-                            if v is not None:
                                 config_args.append(v)
+                        elif action.nargs == 0:
+                            if v is None:
+                                pass
+                            else:
+                                raise ValueError(f'{option_string} takes no argument')
+                        elif action.nargs == argparse.OPTIONAL:
+                            if v is None:
+                                pass
+                            else:
+                                config_args.append(v)
+                        elif action.nargs == argparse.ZERO_OR_MORE:
+                            if v is None:
+                                pass
+                            else:
+                                config_args.extend(shlex.split(v, posix=True))
                         else:
-                            argument_values = [] if v is None else [v]
-                            action(self.parser, namespace, argument_values, option_string)
+                            if v is None:
+                                raise ValueError(f'{option_string} takes an argument')
+                            else:
+                                config_args.extend(shlex.split(v, posix=True))
                 if isinstance(namespace.config_file, io.IOBase):
                     namespace.config_file.close()
                     try:
