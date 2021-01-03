@@ -1797,8 +1797,8 @@ def action_rip(rip_dir, device, in_tags):
     if app.args.chain:
         with os.scandir(rip_dir) as it:
             for entry in it:
-                entry_path = rip_dir / entry_path
-                assert entry_path.suffix in ('.mkv', '.webm')
+                entry_path = rip_dir / entry.name
+                assert entry_path.suffix in ('.mkv', '.webm', '.m2p')
                 assert entry.is_file()
                 app.args.mux_files += (entry_path,)
 
@@ -1989,7 +1989,7 @@ def action_backup(backup_dir, device, in_tags):
         with os.scandir(backup_dir) as it:
             for entry in it:
                 entry_path = backup_dir / entry.name
-                assert entry_path.suffix in ('.mkv', '.webm')
+                assert entry_path.suffix in ('.mkv', '.webm', '.m2p')
                 assert entry.is_file()
                 app.args.mux_files += (entry_path,)
 
