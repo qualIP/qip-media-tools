@@ -733,7 +733,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', default=Auto, type=_resolved_Path, help='SubRip OCR matrix file')
-    pgroup.add_bool_argument('--external-subtitles', help='exporting unoptimized subtitles as external files')
+    pgroup.add_bool_argument('--external-subtitles', choices=('True', 'False', 'non-forced'), help='exporting unoptimized subtitles as external files')
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='output_file', default=Auto, type=Path, help='specify the output (demuxed) file name')
@@ -5116,7 +5116,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         # continue
 
                     if stream_file_ext in ('.sup', '.sub',):
-                        if app.args.external_subtitles and not stream_dict['disposition'].get('forced', None):
+                        if app.args.external_subtitles is True \
+                                or (app.args.external_subtitles == 'non-forced' and not stream_dict['disposition'].get('forced', None)):
                             app.log.verbose('Stream #%s %s (%s) [%s] -> EXTERNAL', stream_dict.pprint_index, stream_file_ext, stream_dict.get('subtitle_count', '?'), stream_dict.language)
                             return
 
