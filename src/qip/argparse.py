@@ -86,6 +86,36 @@ class Action(_argparse.Action, _AttributeHolder, metaclass=_ActionMeta):
 #class _SubParsersAction(Action): pass
 #class FileType(object): pass
 
+class _StoreBoolOrSuperAction(Action):
+
+    def __init__(self, *, choices, nargs=None, **kwargs):
+        super().__init__(**kwargs)
+        self.choices = choices
+        self.nargs = nargs
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if values is True:
+            return super().__call__(parser=parser,
+                                    namespace=namespace,
+                                    values=values,
+                                    option_string=option_string)
+        else:
+            values = {
+                'True': True,
+                'true': True,
+                'False': False,
+                'false': False,
+            }.get(values, values)
+            setattr(namespace, self.dest, values)
+
+class _StoreTrueOrSuperAction(_StoreBoolOrSuperAction, _argparse._StoreTrueAction):
+
+    pass
+
+class _StoreFalseOrSuperAction(_StoreBoolOrSuperAction, _argparse._StoreFalseAction):
+
+    pass
+
 class ConfigFileAction(Action):
     pass
 
@@ -106,6 +136,13 @@ class Namespace(_argparse.Namespace, _AttributeHolder, metaclass=_NamespaceMeta)
     #    return '<{}>'.format(self.__class__.__name__)
 
 class _ActionsContainer(_argparse._ActionsContainer):
+
+    def __init__(self, /, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # register actions
+        self.register('action', 'store_true_or_super', _StoreTrueOrSuperAction)
+        self.register('action', 'store_false_or_super', _StoreFalseOrSuperAction)
 
     def add_argument_group(self, *args, **kwargs):
         group = _ArgumentGroup(self, *args, **kwargs)
@@ -152,7 +189,18 @@ class _ActionsContainer(_argparse._ActionsContainer):
                 _('enable {help}').format(help=help),
                 _('disable {help}').format(help=help))
 
+        kwargs2 = {}
+        neg_kwargs2 = {}
+
         action = kwargs.pop('action', 'store_true')
+
+        choices = kwargs.pop('choices', None)
+        if choices:
+            if action in ('store_true', 'store_false'):
+                action += '_or_super'
+            kwargs2['choices'] = choices
+            kwargs2['nargs'] = '?'
+
         action_class = self._registry_get('action', action, action)
         try:
             neg_action = kwargs.pop('neg_action')
@@ -172,16 +220,19 @@ class _ActionsContainer(_argparse._ActionsContainer):
         if issubclass(neg_action_class, _argparse._StoreFalseAction) and default is False:
             default, neg_default = neg_default, default
 
+        kwargs2.update(kwargs)
+        neg_kwargs2.update(kwargs)
+
         self.add_argument(*option_strings,
                           default=default,
                           action=action,
                           help=help,
-                          **kwargs)
+                          **kwargs2)
         self.add_argument(*neg_option_strings,
                           default=neg_default,
                           action=neg_action,
                           help=neg_help,
-                          **kwargs)
+                          **neg_kwargs2)
 
 class _ArgumentGroup(_argparse._ArgumentGroup, _ActionsContainer):
 
