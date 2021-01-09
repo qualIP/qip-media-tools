@@ -17,6 +17,7 @@ Depends:
     python3-wheel,
     python3-bs4,
     python3-libdiscid,
+    swig,
     wine,
     progress,
     graphicsmagick,
