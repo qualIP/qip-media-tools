@@ -11,10 +11,6 @@ qip/libdvdread_swig_wrap.c qip/libdvdread_swig.py: qip/libdvdread_swig.i
 	swig -Wall -I/usr/include -python -py3 $<
 swig_targets += qip/libdvdread_swig_wrap.c qip/libdvdread_swig.py
 
-qip/cpointer_swig_wrap.c qip/cpointer_swig.py: qip/cpointer_swig.i
-	swig -Wall -I/usr/include -python -py3 $<
-swig_targets += qip/cpointer_swig_wrap.c qip/cpointer_swig.py
-
 .PHONY: install-read-only
 install-read-only: swig-targets
 	pip3 install . --user
