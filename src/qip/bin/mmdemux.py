@@ -5600,6 +5600,8 @@ def action_demux(inputdir, in_tags):
                     subparser = subparsers.add_parser('forced', help='Toggle forced disposition')
                 if stream_dict.codec_type in ('subtitle',):
                     subparser = subparsers.add_parser('hearing_impaired', help='Toggle hearing_impaired disposition')
+                if stream_dict.codec_type in ('audio',):
+                    subparser = subparsers.add_parser('visual_impaired', help='Toggle visual_impaired disposition')
                 if stream_dict.codec_type in ('audio', 'subtitle'):
                     subparser = subparsers.add_parser('comment', help='Toggle comment disposition')
                 if stream_dict.codec_type in ('audio', 'subtitle'):
@@ -5717,6 +5719,9 @@ def action_demux(inputdir, in_tags):
                     update_mux_conf = True
                 elif ns.action == 'hearing_impaired':
                     stream_dict['disposition']['hearing_impaired'] = not stream_dict['disposition'].get('hearing_impaired', None)
+                    update_mux_conf = True
+                elif ns.action == 'visual_impaired':
+                    stream_dict['disposition']['visual_impaired'] = not stream_dict['disposition'].get('visual_impaired', None)
                     update_mux_conf = True
                 elif ns.action == 'comment':
                     stream_dict['disposition']['comment'] = not stream_dict['disposition'].get('comment', None)
