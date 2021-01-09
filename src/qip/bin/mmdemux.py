@@ -2730,11 +2730,11 @@ def action_mux(inputfile, in_tags,
                             del stream['title']
 
                     try:
-                        stream['language'] = ffprobe_stream_dict['tags']['language']
+                        stream['language'] = str(isolang(ffprobe_stream_dict['tags']['language']))
                     except KeyError:
                         pass
                     else:
-                        if stream['language'] is isolang('und'):
+                        if stream['language'] == 'und':
                             del stream['language']
 
                     stream_file_format_ext = ''
@@ -3053,12 +3053,12 @@ def action_mux(inputfile, in_tags,
                             and File(outputdir / stream_file_name).getsize() == 2048:
                         app.log.warning('Detected empty single-frame subtitle stream #%s (%s); Skipping.',
                                         stream.pprint_index,
-                                        stream.get('language', 'und'))
+                                        stream.language)
                         stream['skip'] = True
                     elif not subtitle_count:
                         app.log.warning('Detected empty subtitle stream #%s (%s); Skipping.',
                                         stream.pprint_index,
-                                        stream.get('language', 'und'))
+                                        stream.language)
                         stream['skip'] = True
                     else:
                         stream['subtitle_count'] = subtitle_count
@@ -3072,7 +3072,7 @@ def action_mux(inputfile, in_tags,
                 if subtitle_count <= 0.10 * max_subtitle_size:
                     app.log.info('Detected subtitle stream #%s (%s) is forced',
                                  stream.pprint_index,
-                                 stream.get('language', 'und'))
+                                 stream.language)
                     stream['disposition']['forced'] = True
 
         if inputfile.ffprobe_dict['chapters']:
@@ -5594,8 +5594,11 @@ def action_demux(inputdir, in_tags):
                 subparser = subparsers.add_parser('skip', aliases=('s',), help='Skip this stream -- done')
                 subparser = subparsers.add_parser('print', aliases=('p',), help='Print streams summary')
                 subparser = subparsers.add_parser('default', help='Toggle default disposition')
+                subparser = subparsers.add_parser('language', help='Edit language')
+                subparser.add_argument('language', nargs='?')
                 if stream_dict.codec_type in ('subtitle',):
                     subparser = subparsers.add_parser('forced', help='Toggle forced disposition')
+                if stream_dict.codec_type in ('subtitle',):
                     subparser = subparsers.add_parser('hearing_impaired', help='Toggle hearing_impaired disposition')
                 if stream_dict.codec_type in ('audio', 'subtitle'):
                     subparser = subparsers.add_parser('comment', help='Toggle comment disposition')
@@ -5748,6 +5751,23 @@ def action_demux(inputdir, in_tags):
                         else:
                             stream_dict['title'] = stream_title
                         update_mux_conf = True
+                elif ns.action == 'language':
+                    stream_language = ns.language
+                    if stream_language is None:
+                        stream_language = app.input_dialog(
+                            title=str(stream_dict),
+                            text='Please input stream language:',
+                            initial_text=stream_dict.get('language', None) or '')
+                    if stream_language is None:
+                        print('Cancelled by user!')
+                    else:
+                        try:
+                            stream_language = isolang(stream_language or 'und')
+                        except ValueError as e:
+                            app.log.error(e)
+                        else:
+                            stream_dict['language'] = str(stream_language)
+                            update_mux_conf = True
                 elif ns.action == 'suffix':
                     external_stream_file_name_suffix = ns.suffix
                     if external_stream_file_name_suffix is None:
