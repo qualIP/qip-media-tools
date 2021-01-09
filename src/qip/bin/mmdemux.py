@@ -1261,7 +1261,10 @@ def estimate_stream_duration(inputfile=None, ffprobe_json=None):
             pass
         else:
             estimated_duration = ffmpeg.Timestamp(estimated_duration)
-            if estimated_duration >= 0.0:
+            if estimated_duration >= 4294967295 / 120:
+                # video stream duration_ts = 4294967295 (-1), assuming worst case 120fps
+                pass
+            elif estimated_duration >= 0.0:
                 return estimated_duration
 
     try:
@@ -1270,14 +1273,18 @@ def estimate_stream_duration(inputfile=None, ffprobe_json=None):
         pass
     else:
 
-        try:
-            estimated_duration = ffprobe_stream_json['duration']
-        except KeyError:
-            pass
-        else:
-            estimated_duration = AnyTimestamp(estimated_duration)
-            if estimated_duration >= 0.0:
-                return estimated_duration
+        if ffprobe_stream_json.get('duration_ts', None) != '4294967295':
+            try:
+                estimated_duration = ffprobe_stream_json['duration']
+            except KeyError:
+                pass
+            else:
+                estimated_duration = AnyTimestamp(estimated_duration)
+                if estimated_duration >= 4294967295 / 120:
+                    # video stream duration_ts = 4294967295 (-1), assuming worst case 120fps
+                    pass
+                elif estimated_duration >= 0.0:
+                    return estimated_duration
 
         try:
             estimated_duration = ffprobe_stream_json['tags']['NUMBER_OF_FRAMES']
