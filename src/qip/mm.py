@@ -693,19 +693,10 @@ class MediaFile(File):
     def _load_tags_mf_VCFLACDict(self, mf):
         # import mutagen
         tags = TrackTags(album_tags=AlbumTags())
+        from .flac import FlacFile
         for flac_tag, tag_value in mf.items():
             try:
-                mapped_tag = {
-                    'title': 'title',
-                    'composer': 'composer',
-                    'date': 'date',
-                    'albumartist': 'albumartist',
-                    'tracknumber': 'track',
-                    'artist': 'artist',
-                    'comment': 'comment',
-                    'album': 'album',
-                    'genre': 'genre',
-                }[flac_tag]
+                mapped_tag = FlacFile.tag_map[flac_tag]
             except KeyError:
                 raise NotImplementedError(f'{flac_tag} = {tag_value!r}')
             if isinstance(tag_value, list):
@@ -4751,6 +4742,7 @@ class AudioType(enum.Enum):
     ac3 = 'ac3'
     eac3 = 'eac3'
     dts = 'dts'
+    flac = 'flac'
 
     def __eq__(self, other):
         try:

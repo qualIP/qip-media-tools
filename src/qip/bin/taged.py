@@ -597,11 +597,49 @@ def taged_mf_MP4Tags(file_name, mf, tags):
         app.log.debug('New tags: %r', list(mf.tags.keys()))
     return True
 
+def taged_mf_VCFLACDict(file_name, mf, tags):
+    if app.log.isEnabledFor(logging.DEBUG):
+        app.log.debug('Old tags: %r', list(mf.tags.keys()))
+
+    tags_to_set = set(tags.keys())
+    app.log.debug('tags %r, tags_to_set: %r', type(tags), tags_to_set)
+    from qip.flac import FlacFile
+    rev_tag_map = {v: k for k, v in FlacFile.tag_map.items()}
+
+    for tag in tags_to_set:
+        tag = tag.name
+        value = tags[tag]
+
+        try:
+            flac_tag = rev_tag_map[tag]
+        except KeyError:
+            raise NotImplementedError(tag)
+        #print(f'XXXJST tag={tag}, flac_tag={flac_tag}, value={value!r}')
+
+        if value is None:
+            if mf.tags.pop(flac_tag, None) is not None:
+                app.log.verbose(' Removed %s (%s)', tag, flac_tag)
+        else:
+            flac_value = str(value)
+
+        try:
+            mf.tags[flac_tag] = flac_value
+        except:
+            app.log.debug('ERROR! mf.tags[%r] = %r', flac_tag, flac_value)
+            raise
+        app.log.verbose(' Set %s (%s): %r', tag, flac_tag, flac_value)
+
+    if app.log.isEnabledFor(logging.DEBUG):
+        app.log.debug('New tags: %r', list(mf.tags.keys()))
+    return True
+
 def taged_mf(file_name, mf, tags):
     if isinstance(mf.tags, mutagen.id3.ID3):
         return taged_mf_id3(file_name, mf, tags)
     if isinstance(mf.tags, mutagen.mp4.MP4Tags):
         return taged_mf_MP4Tags(file_name, mf, tags)
+    if isinstance(mf.tags, mutagen.flac.VCFLACDict):
+        return taged_mf_VCFLACDict(file_name, mf, tags)
     raise NotImplementedError(mf.tags.__class__.__name__)
 
 def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):

@@ -30,15 +30,25 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
-from qip.parser import *
 from qip.mm import *
-from qip.mp3 import *
-from qip.utils import byte_decode
 from qip.mm import MediaFile
+from qip.parser import *
+from qip.utils import byte_decode
 import qip.mm
 import qip.utils
-Auto = qip.utils.Constants.Auto
 
+#import qip.pgs
+#import qip.vob
+import qip.avi
+import qip.flac
+import qip.img
+import qip.matroska
+import qip.mp2
+import qip.mp3
+import qip.mp4
+import qip.wav
+
+Auto = qip.utils.Constants.Auto
 all_part_names = {'disk', 'track', 'part'}
 
 # replace_html_entities {{{
@@ -190,7 +200,7 @@ supported_media_exts = \
         set(qip.mm.get_mp4v2_app_support().extensions_can_read) | \
         set(qip.mm.get_sox_app_support().extensions_can_read) | \
         set(('.ogg', '.mka', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v')) | \
-        set(('.mp3', '.wav')) | \
+        set(('.mp3', '.wav', '.flac')) | \
         set(('.avi', '.mkv', '.webm'))
 
 def dir_empty(d):
