@@ -3026,7 +3026,7 @@ def action_mux(inputfile, in_tags,
                             return False
                         subtitle_count = sum(
                             is_pgs_valid_ods_segment(pgs_segment)
-                            for pgs_segment in stream.file.iter_pgs_segments)
+                            for pgs_segment in stream.file.iter_pgs_segments())
                     elif stream_file_ext in ('.sub', '.sup'):
                         try:
                             d = ffprobe(i=outputdir / stream_file_name, show_packets=True)
