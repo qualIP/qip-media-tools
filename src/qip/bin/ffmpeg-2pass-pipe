@@ -1,8 +1,8 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
-set -x
+#set -x
 
 prog=$(basename "$0")
 
@@ -58,13 +58,13 @@ if [ "$input_file" = "pipe:0" ] ; then
     ( set -o pipefail ; tee --output-error=exit "$tmp_input_file" | "$@" ) > /dev/null
     input_file="$tmp_input_file"
 else
-    "$@" > /dev/null
+    (set -x ; "$@" > /dev/null)
 fi
 
 log "PASS 2"
-ffmpeg $init_args -i "$input_file" \
+(set -x ; ffmpeg $init_args -i "$input_file" \
     -pass 2 -passlogfile "$passlogfile_file" \
     "${extra_args[@]}" \
-    -- "$output_file" < /dev/null
+    -- "$output_file" < /dev/null)
 
 kill $BADGER_PID
