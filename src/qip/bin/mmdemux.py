@@ -302,7 +302,7 @@ def analyze_field_order_and_framerate(
             field_order = 'progressive'
 
     if field_order is None:
-        with perfcontext('analyze field_order'):
+        with perfcontext('Analyze field order', log=True):
 
             mediainfo_scantype = mediainfo_track_dict.get('ScanType', None)
             mediainfo_scanorder = mediainfo_track_dict.get('ScanOrder', None)
@@ -327,7 +327,7 @@ def analyze_field_order_and_framerate(
                 # Sometimes mediainfo'd Duration is just the first frame duration
                 if False and mediainfo_duration >= 1.0:
                     video_analyze_duration = min(mediainfo_duration, video_analyze_duration)
-            with perfcontext('frames iteration'):
+            with perfcontext('Frames iteration'):
                 progress_bar = None
                 if ProgressBar is not None:
                     progress_bar = ProgressBar('iterate frames',
@@ -909,7 +909,7 @@ def main():
         if not did_something:
             raise ValueError('Nothing to do!')
         if global_stats.num_batch_skips:
-            raise Exception(f'BATCH MODE SKIP: {global_stats.num_batch_skips} actions skipped.')
+            raise Exception(f'BATCH MODE SKIP: {global_stats.num_batch_skips} task(s) skipped.')
 
 def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_stream_dict=None):
     if mediainfo_track_dict:
@@ -1597,7 +1597,7 @@ def action_rip_iso(rip_iso, device, in_tags):
     else:
         raise NotImplementedError(f'Unsupported ripping stage {stage}')
 
-    app.log.info(f'Extracting {iso_file}...')
+    app.log.info('Extracting %s... (stage %d)', iso_file, stage)
     ddrescue(*ddrescue_args)
 
 def action_rip(rip_dir, device, in_tags):
@@ -1722,7 +1722,7 @@ def action_rip(rip_dir, device, in_tags):
                     source = f'file:{os.fspath(device)}'
                 else:
                     if device.suffix not in iso_image_exts:
-                        raise ValueError(f'File is not a {"|".join(sorted(iso_image_exts))}: {device}')
+                        raise ValueError(f'File is not a device or {"|".join(sorted(iso_image_exts))}: {device}')
                     source = f'iso:{os.fspath(device)}'
 
             if not app.args.dry_run and settings_changed:
@@ -1766,7 +1766,7 @@ def action_rip(rip_dir, device, in_tags):
             except OSError:
                 pass
             else:
-                app.log.info('Removed %s.', rip_dir)
+                app.log.info('Ripping failed; Removed %s/.', rip_dir)
         raise
 
     if app.args.eject and device.is_block_device():
@@ -1920,7 +1920,7 @@ def action_backup(backup_dir, device, in_tags):
         else:
 
             if device.suffix not in iso_image_exts:
-                raise ValueError(f'File is not a {"|".join(sorted(iso_image_exts))}: {device}')
+                raise ValueError(f'File is not a device {"|".join(sorted(iso_image_exts))}: {device}')
 
             discatt_dat_file = device.with_suffix('.discatt.dat')
             if discatt_dat_file.exists():
@@ -1957,7 +1957,7 @@ def action_backup(backup_dir, device, in_tags):
             except OSError:
                 pass
             else:
-                app.log.info('Ripping failed; Removed %s.', backup_dir)
+                app.log.info('Ripping failed; Removed %s/.', backup_dir)
         raise
 
     if app.args.eject and device.is_block_device():
