@@ -18,6 +18,7 @@ Depends:
     python3-bs4,
     python3-libdiscid,
     swig,
+    libdvdread-dev,
     wine,
     progress,
     graphicsmagick,
