@@ -82,11 +82,12 @@ setup(
             'musicbrainzngs',
             'unidecode',
             'progress',
-            'prompt_toolkit >= 2, <3',
+            'prompt_toolkit >= 3, <4',
             'tmdbv3api',
             'tvdb_api',
             'coloredlogs',
             'tabulate',
+            'Send2Trash',
             ],
 
     # List additional groups of dependencies here (e.g. development
