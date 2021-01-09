@@ -266,7 +266,7 @@ def unmangle_search_string(initial_text):
         initial_text = re.sub(r'[^A-Za-z0-9\']+', r' ', initial_text)      # AB$_12 -> AB 12
         initial_text = initial_text.strip()                                #  ABC   -> ABC
         initial_text = re.sub(r'(?:DVD\|Blu[- ]?ray)$', r'', initial_text, flags=re.IGNORECASE)  # ABC Blu Ray -> ABC
-        initial_text = re.sub(r'(?: the)? \w+(?:\'s)? (?:edition|cut)$', r'', initial_text, flags=re.IGNORECASE)  # ABC special edition -> ABC
+        initial_text = re.sub(r'(?: the)? (?:\w+(?:\'s)?|\d+[a-z]+ anniversary) (?:edition|cut)$', r'', initial_text, flags=re.IGNORECASE)  # ABC special edition -> ABC
         initial_text = re.sub(r' dis[ck] [0-9]+$', r'', initial_text, flags=re.IGNORECASE)  # ABC disc 1 -> ABC
     return initial_text
 
@@ -1346,14 +1346,14 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None):
         # TVSHOW S01E02
         # TVSHOW S01E02-03
         re.match(r'^(?P<tvshow>.+) S(?P<season>\d+)E(?P<str_episodes>\d+(?:-?E\d+)*)(?: (?P<title>.+))?$', name_scan_str)
+        # TVSHOW SPECIAL 0x1 TITLE
+        or re.match(r'^(?P<tvshow>.+) (?:-- )?(?i:SPECIAL) (?P<season>0)x(?P<str_episodes>\d+(?:-?\d+)*)(?: (?P<title>.+))?$', name_scan_str)
         # TVSHOW 1x2 TITLE
         # TVSHOW 1x2-3 TITLE
         # TVSHOW -- 1x2 TITLE
         # TVSHOW 1x2
         # TVSHOW -- 1x2
         or re.match(r'^(?P<tvshow>.+) (?:-- )?(?P<season>\d+)x(?P<str_episodes>\d+(?:-?\d+)*)(?: (?P<title>.+))?$', name_scan_str)
-        # TVSHOW SPECIAL 0x1 TITLE
-        or re.match(r'^(?P<tvshow>.+) (?:-- )?(?i:SPECIAL) (?P<season>0)x(?P<str_episodes>\d+(?:-?\d+)*)(?: (?P<title>.+))?$', name_scan_str)
         # TVSHOW -- TITLE 1x2
         # TVSHOW -- TITLE 1x2-3
         or re.match(r'^(?P<tvshow>.+) -- (?P<title>.+) (?P<season>\d+)x(?P<str_episodes>\d+(?:-?\d+)*)$', name_scan_str)
