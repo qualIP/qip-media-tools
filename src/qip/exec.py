@@ -110,8 +110,7 @@ class _SpawnMixin(pexpect.spawnbase.SpawnBase):
         pass
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        if exc_type and not getattr(self, 'closed', True):
-            self.close(force=True)
+        self.close(force=True)
         try:
             if not self.terminated:
                 try:
@@ -120,8 +119,7 @@ class _SpawnMixin(pexpect.spawnbase.SpawnBase):
                     if err.value != 'Cannot wait for dead child process.':
                         raise
         finally:
-            if not getattr(self, 'closed', True):
-                self.close()
+            self.close()
 
 class spawn(_SpawnMixin, pexpect.spawn):
 
