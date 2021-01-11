@@ -3464,7 +3464,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
             stream_index = stream_dict.pprint_index
             if stream_dict.get('skip', False):
                 stream_index = f'(S){stream_index}'
-            if stream_dict is current_stream or stream_dict['index'] == current_stream_index:
+            if stream_dict is current_stream or stream_dict.index == current_stream_index:
                 stream_index = f'*{stream_index}'
             codec_type = stream_dict['codec_type']
             extension = '->'.join([e for e in [
@@ -3519,7 +3519,7 @@ def stream_dict_key(stream_dict):
         not bool(stream_dict.get('disposition', {}).get('default', False)),  # default then non-default
         bool(stream_dict.get('disposition', {}).get('forced', False)),       # non-forced, then forced
         bool(stream_dict.get('disposition', {}).get('comment', False)),      # non-comment, then comment
-        stream_dict['index'],
+        stream_dict.get('index', None),
     )
 
 def sorted_stream_dicts(stream_dicts):
@@ -3648,7 +3648,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
         orig_stream_file_name = self.get('original_file_name', self['file_name'])
         desc = '{codec_type} stream #{index}: title={title!r}, language={language}, disposition=({disposition}), ext={orig_ext}'.format(
             codec_type=self['codec_type'],
-            index=self['index'],
+            index=self.pprint_index,
             title=self.get('title', None),
             language=isolang(self.get('language', 'und')),
             disposition=', '.join(k for k, v in self.get('disposition', {}).items() if v),
@@ -3698,7 +3698,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
     @property
     def pprint_index(self):
-        s = str(self['index'])
+        s = str(self.index)
         if self.is_sub_stream:
             s = f'{self.parent.pprint_index}.{s}'
         return s
@@ -3708,7 +3708,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
         try:
             return int(self['index'])
         except KeyError:
-            raise AttributeError
+            return None
 
     @property
     def file_name(self):
@@ -5717,7 +5717,7 @@ def action_demux(inputdir, in_tags):
                         goto_index = int(goto_index)
                         forward = False
                         for i, d in enumerate(sorted_streams):
-                            if d['index'] == goto_index:
+                            if d.index == goto_index:
                                 break
                             if d is stream_dict:
                                 forward = True
@@ -5735,7 +5735,7 @@ def action_demux(inputdir, in_tags):
                             stream_dict = d
                             enumerated_sorted_streams.send(sorted_stream_index)
                             if stream_dict.get('skip', False):
-                                app.log.warning('Stream index %r skip cancelled', stream_dict['index'])
+                                app.log.warning('Stream #%s skip cancelled', stream_dict.pprint_index)
                                 del stream_dict['skip']
                                 update_mux_conf = True
                         parser = setup_parser(in_err)
