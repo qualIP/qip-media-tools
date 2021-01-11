@@ -3267,18 +3267,30 @@ def action_combine(inputdirs, in_tags):
 
         if i_inputdir:
             combined_mux_dict['streams'] += mux_dict['streams']
-            combined_mux_dict['chapters'].setdefault(
-                'file_name',
-                os.path.relpath(
-                    inputdir.resolve() / mux_dict['chapters']['file_name'],
-                    outputdir))
+            try:
+                combined_mux_dict['chapters'].setdefault(
+                    'file_name',
+                    os.path.relpath(
+                        inputdir.resolve() / mux_dict['chapters']['file_name'],
+                        outputdir))
+            except KeyError:
+                pass
         else:
             combined_mux_dict = mux_dict
 
     skip_duplicate_streams(combined_mux_dict['streams'])
 
+    combined_mux_dict.print_streams_summary()
+
     if not app.args.dry_run:
         combined_mux_dict.save()
+
+    for i_inputdir, inputdir in enumerate(inputdirs):
+        if i_inputdir:
+            mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
+            if not mux_dict.skip:
+                mux_dict['skip'] = True
+                mux_dict.save()
 
 def action_chop(inputfile, *, in_tags=None, chaps=None, chop_chaps=None):
 
@@ -3397,6 +3409,13 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
     def __json_encode__(self):
         return self.data
 
+    @property
+    def skip(self):
+        try:
+            return bool(self['skip'])
+        except KeyError:
+            return False
+
     def load(self, /, *, in_tags=None):
         with open(self.mux_file_name, 'r') as fp:
             self.data = json.load(fp)
@@ -3439,6 +3458,8 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
 
     def print_streams_summary(self, /, *, current_stream=None, current_stream_index=None):
         table = []
+        if self.skip:
+            print('NOTE: Globally set as skipped.')
         for stream_dict in sorted_stream_dicts(self['streams']):
             stream_index = stream_dict.pprint_index
             if stream_dict.get('skip', False):
@@ -5368,6 +5389,10 @@ def action_optimize(inputdir, in_tags):
 
     mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
 
+    if mux_dict.skip:
+        app.log.verbose('%s: SKIP', inputdir)
+        return
+
     stats = types.SimpleNamespace(
         this_num_batch_skips=0,
     )
@@ -5555,6 +5580,10 @@ def action_demux(inputdir, in_tags):
     outputdir = inputdir
 
     mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
+
+    if mux_dict.skip:
+        app.log.verbose('%s: SKIP', inputdir)
+        return
 
     # ffmpeg messes up timestamps, mkvmerge doesn't support WebVTT yet
     # https://trac.ffmpeg.org/ticket/7736#ticket
