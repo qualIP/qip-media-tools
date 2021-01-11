@@ -157,7 +157,11 @@ def bincuerip(cue_file):
         except MissingMediaTagError:
             type_ = 'audio'
 
-        app.log.info('Ripping %s (%s [%s])...', track_out_file, track_tags.cite(type_=type_), track.length)
+        summary = track_tags.cite(type_=type_)
+        if summary:
+            summary += ''
+        summary += f'[{track.length}]'
+        app.log.info('Ripping %s (%s)...', track_out_file, summary)
         track_out_file.rip_cue_track(track,
                                      bin_file=bin_file,
                                      tags=track_tags)
