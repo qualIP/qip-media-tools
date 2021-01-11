@@ -595,48 +595,82 @@ def mkm4b(inputfiles, default_tags):
             mapped_tag = qip.mm.sound_tag_info['map'][tag.name]
             mp4_tag = qip.mm.sound_tag_info['tags'][mapped_tag]['mp4v2_tag']
         except KeyError:
-            continue
+            if tag in (
+                    'performer',  # = composer
+                    'sortperformer',  # = sortcomposer
+            ):
+                pass
+            else:
+                continue
         # Force None values to actually exist
         if m4b.tags[tag] is None:
             m4b.tags[tag] = None
-    for tag in sorted(m4b.tags.keys(), key=functools.cmp_to_key(dictionarycmp)):
-        value = m4b.tags[tag]
+    for tag, value in m4b.tags.items():
         if isinstance(value, str):
             m4b.tags[tag] = value = replace_html_entities(m4b.tags[tag])
+    for tag in sorted(m4b.tags.keys(), key=functools.cmp_to_key(dictionarycmp)):
+        value = m4b.tags[tag]
         if value is not None:
             if type(value) not in (int, str):
                 value = str(value)
             print('    %-13s = %r' % (tag.value, value))
 
     if app.args.interactive:
-        while True:
+        with app.need_user_attention():
+            from prompt_toolkit.formatted_text import FormattedText
+            from prompt_toolkit.completion import WordCompleter
+
+            parser = argparse.NoExitArgumentParser(
+                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                description='Interactive Audiobook Setup',
+                add_help=False, usage=argparse.SUPPRESS,
+                )
+            subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
+            subparser = subparsers.add_parser('help', aliases=('h', '?'), help='Print this help')
+            subparser = subparsers.add_parser('tags', aliases=(), help='Edit tags')
+            subparser = subparsers.add_parser('chapters', aliases=(), help='Edit chapters')
+            subparser = subparsers.add_parser('picture', aliases=(), help='Change picture')
+            subparser = subparsers.add_parser('continue', aliases=('c',), help='Continue the audiobook creation -- done')
+            subparser = subparsers.add_parser('quit', aliases=('q',), help='Quit')
+
+            completer = WordCompleter([name for name in subparsers._name_parser_map.keys() if len(name) > 1])
+
             print('')
-            print('Interactive mode...')
-            print(' t - edit tags')
-            print(' c - edit chapters')
-            print(' p - change picture%s' % (' (%s)' % (src_picture,) if src_picture else ''))
-            print(' q - quit')
-            print(' y - yes, do it!')
-            c = app.prompt('Choice: ')
-            if c == 't':
+            while True:
+                print('Interactive Audiobook Setup')
+                while True:
+                    c = app.prompt(completer=completer, prompt_mode='setup')
+                    if c.strip():
+                        break
                 try:
-                    m4b.tags = edvar(m4b.tags)[1]
-                except ValueError as e:
-                    app.log.error(e)
-            elif c == 'c':
-                edfile(chapters_file)
-            elif c == 'p':
-                value = app.prompt('Cover file')
-                if value is None:
-                    print('Cancelled by user!')
+                    ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
+                except argparse.ArgumentError as e:
+                    app.log.error(e);
+                    print('')
                     continue
-                select_src_picture(Path(value).expanduser())
-            elif c == 'q':
-                return False
-            elif c == 'y':
-                break
-            else:
-                app.log.error('Invalid input')
+                if ns.action == 'help':
+                    print(parser.format_help())
+                elif ns.action == 'continue':
+                    break
+                elif ns.action == 'quit':
+                    return False
+                elif ns.action == 'tags':
+                    try:
+                        m4b.tags = edvar(m4b.tags)[1]
+                    except ValueError as e:
+                        app.log.error(e)
+                elif ns.action == 'chapters':
+                    edfile(chapters_file)
+                elif ns.action == 'picture':
+                    print(f'Current picture: {src_picture}')
+                    value = app.prompt('New picture: ')
+                    if not value:
+                        print('Cancelled by user!')
+                        print('')
+                        continue
+                    select_src_picture(Path(value).expanduser())
+                else:
+                    app.log.error('Invalid input: %r' % (ns.action,))
 
     m4b.encode(inputfiles=inputfiles,
                chapters_file=chapters_file if chapters_file.getsize() else None,
