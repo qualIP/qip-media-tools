@@ -80,6 +80,7 @@ import subprocess
 import sys
 import tempfile
 import types
+import unidecode
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
 
@@ -255,9 +256,10 @@ Stereo3DMode_or_None = parse_Enum_or_None(Stereo3DMode)
 BroadcastFormat_or_None = parse_Enum_or_None(BroadcastFormat)
 
 def unmangle_search_string(initial_text):
+    initial_text = unidecode.unidecode(initial_text)
     initial_text = initial_text.strip()                                #  ABC   -> ABC
-    initial_text = re.sub(r'(?=[A-Z][a-z])', r' ', initial_text)       # AbCDef ->  AbC Def
-    initial_text = re.sub(r'[a-z](?=[A-Z])', r'\g<0> ', initial_text)  # AbC Def -> Ab C Def
+    initial_text = re.sub(r'(?=[A-Z][a-z])(?<!Mc)(?<!Mac)', r' ', initial_text)       # AbCDef ->  AbC Def (not Mc Donald)
+    initial_text = re.sub(r'[a-z](?=[A-Z])(?<!Mc)(?<!Mac)', r'\g<0> ', initial_text)  # AbC Def -> Ab C Def (not Mc Donald)
     initial_text = re.sub(r'[A-Za-z](?=\d)', r'\g<0> ', initial_text)  # ABC123 -> ABC 123
     p = None
     while initial_text != p:
