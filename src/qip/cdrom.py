@@ -1059,3 +1059,11 @@ def cdrom_ready(device=None, timeout=0, progress_bar=None):
                 progress_bar.update()
 
     return True
+
+def read_dvd_title(dvd_file):
+    with open(dvd_file, 'rb') as fp:
+        fp.seek(32808)
+        s = fp.read(32)
+    s = s.decode()
+    s = s.strip()
+    return s
