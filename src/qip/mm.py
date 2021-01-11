@@ -644,7 +644,28 @@ class MediaFile(File):
     def _load_tags_mf_MP4Tags(self, mf):
         import mutagen
         tags = TrackTags(album_tags=AlbumTags())
-        for mp4_tag, tag_value in mf.items():
+        mfcopy = dict(mf.items())
+
+        try:
+            composer = mfcopy['composer']
+        except KeyError:
+            pass
+        else:
+            if any(composer.startswith(s)
+                   for s in (
+                           'Read by ',
+                           'Performed by ',
+                           'Lu par ',
+                   )):
+                if 'performer' not in mfcopy:
+                    app.log.debug('remapping composer -> performer: %r', composer)
+                    mfcopy['performer'] = mfcopy.pop('composer')
+                    try:
+                        mfcopy['sortperformer'] = mfcopy.pop('sortcomposer')
+                    except KeyError:
+                        pass
+
+        for mp4_tag, tag_value in mfcopy.items():
             if mp4_tag in (
                     '----:com.apple.iTunes:Encoding Params',  # TODO
                     '----:com.apple.iTunes:iTunNORM',  # TODO

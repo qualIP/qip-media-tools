@@ -467,6 +467,11 @@ def taged_mf_MP4Tags(file_name, mf, tags):
         else:
             value = tags[tag]
 
+        tag = {
+            'performer': 'composer',
+            'sortperformer': 'sortcomposer',
+        }.get(tag, tag)
+
         try:
             mapped_tag = qip.mm.sound_tag_info['map'][tag]
             mp4_tag = qip.mm.sound_tag_info['tags'][mapped_tag]['mp4v2_tag']

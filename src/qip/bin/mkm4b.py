@@ -8,7 +8,6 @@
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
 from pathlib import Path
-import argparse
 import concurrent.futures
 import contextlib
 import decimal
@@ -20,20 +19,22 @@ import os
 import pexpect
 import re
 import reprlib
+import shlex
 import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
 
+from qip import argparse
 from qip import json
 from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
+from qip.matroska import MkaFile
 from qip.mm import *
 from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps
-from qip.matroska import MkaFile
 from qip.parser import *
 from qip.utils import byte_decode, save_and_restore_tcattr
 import qip.mm
@@ -385,6 +386,7 @@ def mkm4b(inputfiles, default_tags):
             [MediaTagEnum.artist,      MediaTagEnum.albumartist],
             [MediaTagEnum.artist,      MediaTagEnum.artist],
             [MediaTagEnum.composer,    MediaTagEnum.composer],
+            [MediaTagEnum.performer,   MediaTagEnum.performer],
             [MediaTagEnum.genre,       MediaTagEnum.genre],
             [MediaTagEnum.grouping,    MediaTagEnum.grouping],
             [MediaTagEnum.date,        MediaTagEnum.date],
@@ -432,8 +434,8 @@ def mkm4b(inputfiles, default_tags):
         book_tags = goodreads_book_to_tags(book)
 
         # Force-populate
-        if not m4b.tags.composer:
-            m4b.tags.composer = None
+        if not m4b.tags.performer:
+            m4b.tags.performer = None
 
         # Reduce redundancy
         if m4b.tags.albumartist == m4b.tags.artist:
@@ -573,15 +575,19 @@ def mkm4b(inputfiles, default_tags):
     select_src_picture(src_picture)
 
     # Sort tags
-    # NOT: composer artist albumartist
-    if False:
+    # NOT: performer composer artist albumartist
+    if True:
         # XXXJST
-        for tag in (MediaTagEnum.title, MediaTagEnum.albumtitle, MediaTagEnum.show):
+        for tag in (MediaTagEnum.title, MediaTagEnum.albumtitle, MediaTagEnum.tvshow):
             sorttag = MediaTagEnum('sort' + tag.value)
-            if sorttag not in m4b.tags and tag in m4b.tags:
+            if not m4b.tags.contains(sorttag, strict=True) and m4b.tags.contains(tag, strict=True):
                 m = re.search(r'^(?P<a>.+) \((?P<b>.+) #(?P<n>\d+)\)$', m4b.tags[tag])
                 if m:
-                    m4b.tags[sorttag] = '{b} #{n!d:%02} - {a}'.format(m.groupdict())
+                    m4b.tags[sorttag] = '{b} #{n:02} - {a}'.format(
+                        a=m.group('a'),
+                        b=m.group('b'),
+                        n=int(m.group('n')),
+                    )
 
     print("Tags:")
     for tag in set(MediaTagEnum) - set(MediaTagEnum.iTunesInternalTags):
