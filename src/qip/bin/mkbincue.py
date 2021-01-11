@@ -143,6 +143,9 @@ def consecutive_ranges(numbers):
 
 def mkbincue(file_name_prefix, in_tags):
     file_name_prefix = in_tags.format(os.fspath(file_name_prefix))
+    root, ext = os.path.splitext(file_name_prefix)
+    if ext in ('.toc', '.cue', '.bin'):
+        file_name_prefix = root
 
     toc_file = CDTocFile(file_name_prefix + '.toc')
     cue_file = CDDACueSheetFile(file_name_prefix + '.cue')
