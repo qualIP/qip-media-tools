@@ -358,11 +358,11 @@ class File(object):
         }
         for sub_cls in cls.__subclasses__():
             sub_cls._build_extension_to_class_map()
-        cls._update_extension_to_class_map()
+        cls._update_extension_to_class_map(force=True)
 
     @classmethod
-    def _update_extension_to_class_map(cls):
-        old_len = len(cls._extension_to_class_map)
+    def _update_extension_to_class_map(cls, force=False):
+        old_len = 0 if force else len(cls._extension_to_class_map)
         for sub_cls in cls.__subclasses__():
             cls._extension_to_class_map.update(sub_cls._extension_to_class_map)
         if old_len != len(cls._extension_to_class_map):
