@@ -805,7 +805,7 @@ def main():
     pgroup.add_argument('--tag-episodes', dest='tag_episodes_files', nargs='+', default=(), type=Path, help='files to tag based on tvshow episodes')
     pgroup.add_argument('--identify', dest='identify_files', nargs='+', default=(), type=Path, help='identify files')
     pgroup.add_argument('--pick-title-streams', dest='pick_title_streams_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to pick title streams from')
-    pgroup.add_argument('--status', '--print', dest='status_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to print the status of')
+    pgroup.add_argument('--status', '--print', dest='status_args', nargs='+', default=(), type=Path, help='files or mux directories to print the status of')
 
     app.parse_args()
 
@@ -905,8 +905,8 @@ def main():
         if getattr(app.args, 'identify_files', ()):
             action_identify_files(app.args.identify_files, in_tags=in_tags)
             did_something = True
-        for inputdir in getattr(app.args, 'status_dirs', ()):
-            action_status(inputdir)
+        for inputfile in getattr(app.args, 'status_args', ()):
+            action_status(inputfile)
             did_something = True
         if not did_something:
             raise ValueError('Nothing to do!')
@@ -2350,186 +2350,40 @@ def action_hb(inputfile, in_tags):
     else:
         raise ValueError('Unsupported extension %r' % (inputfile_ext,))
 
-def action_mux(inputfile, in_tags,
-               mux_attached_pic=True,
-               mux_subtitles=True):
-    app.log.info('Muxing %s...', inputfile)
+def mux_dict_from_file(inputfile, outputdir):
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
-    inputfile_base, inputfile_ext = my_splitext(inputfile)
-    outputdir = Path(inputfile_base if app.args.project is Auto
-                     else app.args.project)
-    if app.args.chain:
-        app.args.optimize_dirs += (outputdir,)
+        app.log.debug('inputfile=%r', inputfile)
 
-    remux = False
-    if outputdir.is_dir():
-        if app.args.remux:
-            app.log.warning('Directory exists: %s; Just remuxing', outputdir)
-            remux = True
-        else:
-            if app.args.chain:
-                app.log.warning('Directory exists: %s; Just chaining', outputdir)
-                return True
-            elif app.args._continue:
-                app.log.warning('Directory exists: %s; Ignoring', outputdir)
-                return True
-            else:
-                raise OSError(errno.EEXIST, outputdir)
+    inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
 
-    mux_dict = MmdemuxTask(outputdir / 'mux.json', load=False)
+    mux_dict = MmdemuxTask(outputdir / 'mux.json' if outputdir is not None else None,
+                           load=False)
 
-    if inputfile_ext in (
+    first_pts_time_per_stream = {}
+
+    if inputfile_ext in {
             '.ffv1.mkv',
-    ) \
-            + Mp4File._common_extensions \
-            + MkvFile._common_extensions \
-            + WebmFile._common_extensions \
+    } \
+            | Mp4File.get_common_extensions() \
+            | MatroskaFile.get_common_extensions() \
+            | WebmFile.get_common_extensions() \
             :
+        # NOT | Mpeg2MovieFile.get_common_extensions()
         try:
             mux_dict['estimated_duration'] = str(ffmpeg.Timestamp(inputfile.ffprobe_dict['format']['duration']))
         except KeyError:
             pass
 
-    init_inputfile_tags(inputfile,
-                        in_tags=in_tags)
-    mux_dict['tags'] = inputfile.tags
-
-    if app.args.interactive and not remux and not (app.args.rip_dir and outputdir in app.args.rip_dir):
-        with app.need_user_attention():
-            from prompt_toolkit.formatted_text import FormattedText
-            from prompt_toolkit.completion import WordCompleter
-
-            parser = argparse.NoExitArgumentParser(
-                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                description='Initial tags setup',
-                add_help=False, usage=argparse.SUPPRESS,
-                )
-            subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
-            subparser = subparsers.add_parser('help', aliases=('h', '?'), help='Print this help')
-            subparser = subparsers.add_parser('edit', help='Edit tags')
-            subparser = subparsers.add_parser('search', help='Search The Movie DB')
-            subparser = subparsers.add_parser('continue', aliases=('c',), help='Continue the muxing action -- done')
-            subparser = subparsers.add_parser('quit', aliases=('q',), help='Quit')
-
-            completer = WordCompleter([name for name in subparsers._name_parser_map.keys() if len(name) > 1])
-
-            print('')
-            while True:
-                print('Initial tags setup')
-                print(mux_dict['tags'].cite())
-                while True:
-                    c = app.prompt(completer=completer, prompt_mode='init')
-                    if c.strip():
-                        break
-                try:
-                    ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
-                except argparse.ArgumentError as e:
-                    app.log.error(e);
-                    print('')
-                    continue
-                if ns.action == 'help':
-                    print(parser.format_help())
-                elif ns.action == 'continue':
-                    break
-                elif ns.action == 'quit':
-                    exit(1)
-                elif ns.action == 'edit':
-                    mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
-                elif ns.action == 'search':
-                    initial_text = mux_dict['tags'].title or inputfile.file_name.parent.name
-                    initial_text = unmangle_search_string(initial_text)
-                    if in_tags.language:
-                        initial_text += f' [{in_tags.language}]'
-                    search_query = app.input_dialog(
-                        title=str(inputfile),
-                        text='Please input search query:',
-                        initial_text=initial_text)
-                    if search_query is None:
-                        print('Cancelled by user!')
-                        continue
-                    language = in_tags.language
-                    m = re.match(r'^(?P<search_query>.+) \[(?P<language>\w+)\]', search_query)
-                    if m:
-                        try:
-                            language = isolang(m.group('language'))
-                        except ValueError:
-                            pass
-                        else:
-                            search_query = m.group('search_query').strip()
-                    if search_query:
-                        global tmdb
-                        global qip
-                        import qip.tmdb
-                        if tmdb is None:
-                            tmdb = qip.tmdb.TMDb(
-                                apikey='3f8dc1c8cf6cb292c267b3c10179ae84',  # mmdemux
-                                interactive=app.args.interactive,
-                                debug=app.log.isEnabledFor(logging.DEBUG),
-                            )
-                        tmdb.language = language
-                        movie_api = qip.tmdb.Movie()
-                        l_movies = movie_api.search(search_query)
-                        i = 0
-                        app.log.debug('l_movies=(%r)%r', type(l_movies), l_movies)
-                        if not l_movies:
-                            app.log.error('No movies found matching %r!', search_query)
-                            continue
-                        for o_movie in l_movies:
-                            o_movie.__dict__.setdefault('release_date', None)
-                        if (True or len(l_movies) > 1) and app.args.interactive:
-                            def help_handler(radio_list):
-                                i = radio_list._selected_index
-                                app.message_dialog(title='Details',
-                                                   text=f'i={i}')
-                            movie_tags = tmdb.movie_to_tags(o_movie)
-                            i = app.radiolist_dialog(
-                                title='Please select a movie',
-                                values=[(i, '{cite} (#{id}) -- {overview}'.format(
-                                             cite=tmdb.cite_movie(o_movie),
-                                             id=o_movie.id,
-                                             overview=o_movie.overview,
-                                         ))
-                                         for i, o_movie in enumerate(l_movies)],
-                                help_handler=help_handler)
-                            if i is None:
-                                print('Cancelled by user!')
-                                continue
-                        o_movie = l_movies[i]
-
-                        mux_dict['tags'].title = o_movie.title
-                        mux_dict['tags'].date = o_movie.release_date
-                        app.log.info('%s: %s', inputfile, mux_dict['tags'].cite())
-
-                else:
-                    app.log.error('Invalid input: %r' % (ns.action,))
-
-    if not remux:
-        if app.args.dry_run:
-            app.log.verbose('CMD (dry-run): %s', list2cmdline(['mkdir', outputdir]))
-        else:
-            os.mkdir(outputdir)
-
-    num_extract_errors = 0
-
-    if inputfile_ext in (
+    if inputfile_ext in {
             '.ffv1.mkv',
-    ) \
-            + Mpeg2MovieFile._common_extensions \
-            + Mp4File._common_extensions \
-            + MkvFile._common_extensions \
-            + WebmFile._common_extensions \
+    } \
+            | Mpeg2MovieFile.get_common_extensions() \
+            | Mp4File.get_common_extensions() \
+            | MatroskaFile.get_common_extensions() \
+            | WebmFile.get_common_extensions() \
             :
 
-        has_forced_subtitle = False
-        subtitle_counts = []
-
-        first_pts_time_per_stream = {}
-
-        mkvextract_tracks_args = []
-        mkvextract_attachments_args = []
-
-        stream_dict_cache = []
         attachment_index = 0  # First attachment is index 1
         iter_mediainfo_track_dicts = iter(mediainfo_track_dict
                                           for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
@@ -2713,7 +2567,7 @@ def action_mux(inputfile, in_tags,
                     else:
                         stream['start_time'] = None if stream_start_time is None else str(stream_start_time)
 
-                    stream_disposition_dict = stream['disposition'] = ffprobe_stream_dict['disposition']
+                    stream['disposition'] = ffprobe_stream_dict['disposition']
 
                     try:
                         stream['3d-plane'] = int(ffprobe_stream_dict['tags']['3d-plane'])
@@ -2759,7 +2613,7 @@ def action_mux(inputfile, in_tags,
                         stream_file_format_ext += '.3D.MVC'
 
                     stream_file_name_language_suffix = '.%s' % (stream.language,) if stream.language is not isolang('und') else ''
-                    if stream_disposition_dict['attached_pic']:
+                    if stream['disposition']['attached_pic']:
                         attachment_index += 1
                         output_track_file_name = 'attachment-%02d-%s%s%s%s' % (
                                 attachment_index,
@@ -2778,87 +2632,6 @@ def action_mux(inputfile, in_tags,
                                 )
                     stream['file_name'] = output_track_file_name
 
-                    if (
-                            (not mux_attached_pic and stream_disposition_dict['attached_pic']) or
-                            (not mux_subtitles and stream.codec_type == 'subtitle')):
-                        app.log.warning('Not muxing %s stream #%s...', stream.codec_type, stream.pprint_index)
-                    else:
-
-                        if stream_disposition_dict['attached_pic']:
-                            app.log.info('Will extract %s stream #%s w/ mkvextract: %s', stream.codec_type, stream.pprint_index, output_track_file_name)
-                            mkvextract_attachments_args += [
-                                '%d:%s' % (
-                                    attachment_index,
-                                    outputdir / output_track_file_name,
-                                )]
-                        elif (
-                                app.args.track_extract_tool == 'ffmpeg'
-                                or not isinstance(inputfile, MatroskaFile)
-                                # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
-                                # (mkvextract expects S_TEXT/WEBVTT)
-                                or stream_file_ext == '.vtt'
-                                # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
-                                # https://www.makemkv.com/forum/viewtopic.php?t=2530
-                                or stream_codec_name in ('pcm_s16le', 'pcm_s24le')
-                                # Avoid mkvextract error: Track 0 with the CodecID 'V_MS/VFW/FOURCC' is missing the "default duration" element and cannot be extracted.
-                                or stream_file_ext in still_image_exts
-                                or (app.args.track_extract_tool is Auto
-                                    # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
-                                    and stream_codec_name in (
-                                        'vp8',
-                                        'vp9',
-                                        ))):
-                            app.log.info('Extract %s stream #%s: %s', stream.codec_type, stream.pprint_index, output_track_file_name)
-                            with perfcontext('Extract track #%s w/ ffmpeg' % (stream.pprint_index,), log=True):
-                                force_format = None
-                                try:
-                                    force_format = ext_to_container(stream_file_ext)
-                                except ValueError:
-                                    pass
-                                ffmpeg_args = [] + default_ffmpeg_args
-                                if app.args.seek_video:
-                                    ffmpeg_args += [
-                                        '-ss', ffmpeg.Timestamp(app.args.seek_video),
-                                        ]
-                                ffmpeg_args += [
-                                    '-i', inputfile,
-                                    '-map_metadata', '-1',
-                                    '-map_chapters', '-1',
-                                    '-map', '0:%d' % (stream.index,),
-                                    ]
-                                if stream_file_ext in still_image_exts:
-                                    ffmpeg_args += [
-                                        '-frames:v', 1,
-                                        ]
-                                else:
-                                    ffmpeg_args += [
-                                        '-codec', 'copy',
-                                        ]
-                                ffmpeg_args += [
-                                    '-start_at_zero',
-                                    ]
-                                if force_format:
-                                    ffmpeg_args += [
-                                        '-f', force_format,
-                                        ]
-                                ffmpeg_args += [
-                                    outputdir / output_track_file_name,
-                                    ]
-                                ffmpeg(*ffmpeg_args,
-                                       progress_bar_max=estimate_stream_duration(inputfile=inputfile),
-                                       progress_bar_title=f'Extract {stream.codec_type} track {stream.pprint_index} w/ ffmpeg',
-                                       dry_run=app.args.dry_run,
-                                       y=app.args.yes)
-                        elif app.args.track_extract_tool in ('mkvextract', Auto):
-                            app.log.info('Will extract %s stream #%s w/ mkvextract: %s', stream.codec_type, stream.pprint_index, output_track_file_name)
-                            mkvextract_tracks_args += [
-                                '%d:%s' % (
-                                    stream.index,
-                                    outputdir / output_track_file_name,
-                                )]
-                            # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
-                        else:
-                            raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
 
                 elif stream.codec_type == 'data':
                     if stream_codec_name == 'dvd_nav_packet':
@@ -2928,166 +2701,430 @@ def action_mux(inputfile, in_tags,
                 if original_source_description:
                     stream['original_source_description'] = ', '.join(original_source_description)
 
-                stream_dict_cache.append({
-                    'ffprobe_stream_dict': stream,
-                    'file': File.new_by_file_name(outputdir / output_track_file_name),
-                })
                 mux_dict['streams'].append(stream)
 
-        if mkvextract_tracks_args:
-            with perfcontext('Extract tracks w/ mkvextract', log=True):
-                cmd = [
-                    'mkvextract', 'tracks', inputfile,
-                    ] + mkvextract_tracks_args
-                do_spawn_cmd(cmd)
-        if mkvextract_attachments_args:
-            with perfcontext('Extract attachments w/ mkvextract', log=True):
-                cmd = [
-                    'mkvextract', 'attachments', inputfile,
-                    ] + mkvextract_attachments_args
-                do_spawn_cmd(cmd)
-
-        # Detect duplicates
-        if not app.args.dry_run:
-            skip_duplicate_streams(mux_dict['streams'],
-                                   mux_subtitles=mux_subtitles)
-
-        # Pre-stream post-processing
-        if not app.args.dry_run:
-
-            iter_mediainfo_track_dicts = iter(mediainfo_track_dict
-                                              for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
-                                              if 'ID' in mediainfo_track_dict)
-            for stream in sorted_stream_dicts(mux_dict['streams']):
-
-                if stream.codec_type == 'video':
-                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-                    assert mediainfo_track_dict['@type'] == 'Video'
-                elif stream.codec_type == 'audio':
-                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-                    assert mediainfo_track_dict['@type'] == 'Audio'
-                elif stream.codec_type == 'subtitle':
-                    mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-                    assert mediainfo_track_dict['@type'] == 'Text'
-                elif stream.codec_type == 'image':
-                    mediainfo_track_dict = None  # Not its own track
-                elif stream.codec_type == 'data':
-                    mediainfo_track_dict = None  # Not its own track
-                    assert stream.get('skip', False)
-                else:
-                    raise NotImplementedError(stream.codec_type)
-
-                if stream.get('skip', False):
-                    continue
-
-                stream_file_name = stream['file_name']
-                stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-                stream_disposition_dict = stream['disposition']
-
-                if stream.codec_type == 'video':
-
-                    def try_int(v):
-                        try:
-                            return int(v)
-                        except ValueError:
-                            return v
-
-                    try:
-                        mediainfo_stream_id = stream['original_id'] & 0xff
-                    except KeyError:
-                        mediainfo_stream_id = stream.index + 1
-                    mediainfo_track_dict, = (mediainfo_track_dict
-                            for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
-                            if mediainfo_stream_id == mediainfo_track_dict.get('ID', 0))
-                    assert mediainfo_track_dict['@type'] == 'Video'
-                    storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
-                    display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
-                    pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio
-                    stream['display_aspect_ratio'] = str(display_aspect_ratio)
-                    stream['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
-
-                if mux_subtitles and stream.codec_type == 'subtitle':
-                    stream_forced = stream_disposition_dict.get('forced', None)
-                    if stream_forced:
-                        has_forced_subtitle = True
-                    # TODO Detect closed_caption
-                    if isinstance(stream.file, PgsFile):
-                        palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment=None)
-                        def is_pgs_valid_ods_segment(pgs_segment):
-                            nonlocal palette
-                            if pgs_segment.segment_type is PgsFile.SegmentType.ODS:
-                                object_data = qip.pgs.rle_decode(pgs_segment.object_data,
-                                                                 pgs_segment.width,
-                                                                 pgs_segment.height,
-                                                                 palette=palette)
-                                object_data = list(object_data)
-                                if not object_data or all(e == object_data[0] for e in object_data):
-                                    return False  # Empty
-                                return True
-                            elif pgs_segment.segment_type is PgsFile.SegmentType.PDS:
-                                palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment)
-                            return False
-                        subtitle_count = sum(
-                            is_pgs_valid_ods_segment(pgs_segment)
-                            for pgs_segment in stream.file.iter_pgs_segments())
-                    elif stream_file_ext in ('.sub', '.sup'):
-                        try:
-                            d = ffprobe(i=outputdir / stream_file_name, show_packets=True)
-                        except subprocess.CalledProcessError as e:
-                            app.log.error(e)
-                            num_extract_errors += 1
-                            subtitle_count = 0
-                        else:
-                            out = d.out
-                            subtitle_count = out.count(
-                                b'[PACKET]' if type(out) is bytes else '[PACKET]')
-                            if stream_file_ext in ('.sup',):
-                                # TODO count only those frames with num_rect != 0
-                                subtitle_count = subtitle_count // 2
-                    elif stream_file_ext in ('.idx',):
-                        out = open(outputdir / stream_file_name, 'rb').read()
-                        subtitle_count = out.count(b'timestamp:')
-                    elif stream_file_ext in ('.srt', '.vtt'):
-                        out = open(outputdir / stream_file_name, 'rb').read()
-                        subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
-                    else:
-                        raise NotImplementedError(stream_file_ext)
-                    if subtitle_count == 1 \
-                            and File(outputdir / stream_file_name).getsize() == 2048:
-                        app.log.warning('Detected empty single-frame subtitle stream #%s (%s); Skipping.',
-                                        stream.pprint_index,
-                                        stream.language)
-                        stream['skip'] = True
-                    elif not subtitle_count:
-                        app.log.warning('Detected empty subtitle stream #%s (%s); Skipping.',
-                                        stream.pprint_index,
-                                        stream.language)
-                        stream['skip'] = True
-                    else:
-                        stream['subtitle_count'] = subtitle_count
-                        subtitle_counts.append(
-                            (stream, subtitle_count))
-
-        if mux_subtitles and not has_forced_subtitle and subtitle_counts:
-            max_subtitle_size = max(subtitle_count
-                                    for stream, subtitle_count in subtitle_counts)
-            for stream, subtitle_count in subtitle_counts:
-                if subtitle_count <= 0.10 * max_subtitle_size:
-                    app.log.info('Detected subtitle stream #%s (%s) is forced',
-                                 stream.pprint_index,
-                                 stream.language)
-                    stream['disposition']['forced'] = True
-
-        if inputfile.ffprobe_dict['chapters']:
-            output_chapters_file_name = outputdir / 'chapters.xml'
-            if not remux:
-                chapters_out = inputfile.load_chapters(return_raw_xml=True)
-                if not app.args.dry_run:
-                    safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
-            mux_dict['chapters']['file_name'] = os.fspath(output_chapters_file_name.relative_to(outputdir))
-
     else:
-        raise ValueError('Unsupported extension %r' % (inputfile_ext,))
+        raise ValueError(f'Unsupported extension: {inputfile_ext}')
+
+    return mux_dict
+
+def action_mux(inputfile, in_tags,
+               mux_attached_pic=True,
+               mux_subtitles=True):
+    app.log.info('Muxing %s...', inputfile)
+    if not isinstance(inputfile, MediaFile):
+        inputfile = MediaFile.new_by_file_name(inputfile)
+        app.log.debug('inputfile=%r', inputfile)
+    inputfile_base, inputfile_ext = my_splitext(inputfile)
+    outputdir = Path(inputfile_base if app.args.project is Auto
+                     else app.args.project)
+    if app.args.chain:
+        app.args.optimize_dirs += (outputdir,)
+
+    remux = False
+    if outputdir.is_dir():
+        if app.args.remux:
+            app.log.warning('Directory exists: %s; Just remuxing', outputdir)
+            remux = True
+        else:
+            if app.args.chain:
+                app.log.warning('Directory exists: %s; Just chaining', outputdir)
+                return True
+            elif app.args._continue:
+                app.log.warning('Directory exists: %s; Ignoring', outputdir)
+                return True
+            else:
+                raise OSError(errno.EEXIST, outputdir)
+
+    init_inputfile_tags(inputfile, in_tags=in_tags)
+
+    mux_dict = mux_dict_from_file(inputfile, outputdir)
+    mux_dict['tags'] = inputfile.tags
+
+    if app.args.interactive and not remux and not (app.args.rip_dir and outputdir in app.args.rip_dir):
+        with app.need_user_attention():
+            from prompt_toolkit.formatted_text import FormattedText
+            from prompt_toolkit.completion import WordCompleter
+
+            parser = argparse.NoExitArgumentParser(
+                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                description='Initial tags setup',
+                add_help=False, usage=argparse.SUPPRESS,
+                )
+            subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
+            subparser = subparsers.add_parser('help', aliases=('h', '?'), help='Print this help')
+            subparser = subparsers.add_parser('edit', help='Edit tags')
+            subparser = subparsers.add_parser('search', help='Search The Movie DB')
+            subparser = subparsers.add_parser('continue', aliases=('c',), help='Continue the muxing action -- done')
+            subparser = subparsers.add_parser('quit', aliases=('q',), help='Quit')
+
+            completer = WordCompleter([name for name in subparsers._name_parser_map.keys() if len(name) > 1])
+
+            print('')
+            while True:
+                print('Initial tags setup')
+                print(mux_dict['tags'].cite())
+                while True:
+                    c = app.prompt(completer=completer, prompt_mode='init')
+                    if c.strip():
+                        break
+                try:
+                    ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
+                except argparse.ArgumentError as e:
+                    app.log.error(e);
+                    print('')
+                    continue
+                if ns.action == 'help':
+                    print(parser.format_help())
+                elif ns.action == 'continue':
+                    break
+                elif ns.action == 'quit':
+                    exit(1)
+                elif ns.action == 'edit':
+                    mux_dict['tags'] = do_edit_tags(mux_dict['tags'])
+                elif ns.action == 'search':
+                    initial_text = mux_dict['tags'].title or inputfile.file_name.parent.name
+                    initial_text = unmangle_search_string(initial_text)
+                    if in_tags.language:
+                        initial_text += f' [{in_tags.language}]'
+                    search_query = app.input_dialog(
+                        title=str(inputfile),
+                        text='Please input search query:',
+                        initial_text=initial_text)
+                    if search_query is None:
+                        print('Cancelled by user!')
+                        continue
+                    language = in_tags.language
+                    m = re.match(r'^(?P<search_query>.+) \[(?P<language>\w+)\]', search_query)
+                    if m:
+                        try:
+                            language = isolang(m.group('language'))
+                        except ValueError:
+                            pass
+                        else:
+                            search_query = m.group('search_query').strip()
+                    if search_query:
+                        global tmdb
+                        global qip
+                        import qip.tmdb
+                        if tmdb is None:
+                            tmdb = qip.tmdb.TMDb(
+                                apikey='3f8dc1c8cf6cb292c267b3c10179ae84',  # mmdemux
+                                interactive=app.args.interactive,
+                                debug=app.log.isEnabledFor(logging.DEBUG),
+                            )
+                        tmdb.language = language
+                        movie_api = qip.tmdb.Movie()
+                        l_movies = movie_api.search(search_query)
+                        i = 0
+                        app.log.debug('l_movies=(%r)%r', type(l_movies), l_movies)
+                        if not l_movies:
+                            app.log.error('No movies found matching %r!', search_query)
+                            continue
+                        for o_movie in l_movies:
+                            o_movie.__dict__.setdefault('release_date', None)
+                        if (True or len(l_movies) > 1) and app.args.interactive:
+                            def help_handler(radio_list):
+                                i = radio_list._selected_index
+                                app.message_dialog(title='Details',
+                                                   text=f'i={i}')
+                            movie_tags = tmdb.movie_to_tags(o_movie)
+                            i = app.radiolist_dialog(
+                                title='Please select a movie',
+                                values=[(i, '{cite} (#{id}) -- {overview}'.format(
+                                             cite=tmdb.cite_movie(o_movie),
+                                             id=o_movie.id,
+                                             overview=o_movie.overview,
+                                         ))
+                                         for i, o_movie in enumerate(l_movies)],
+                                help_handler=help_handler)
+                            if i is None:
+                                print('Cancelled by user!')
+                                continue
+                        o_movie = l_movies[i]
+
+                        mux_dict['tags'].title = o_movie.title
+                        mux_dict['tags'].date = o_movie.release_date
+                        #if mux_dict['tags'].language is None:
+                        #    mux_dict['tags'].language = language
+                        app.log.info('%s: %s', inputfile, mux_dict['tags'].cite())
+
+                else:
+                    app.log.error('Invalid input: %r' % (ns.action,))
+
+    if not remux:
+        if app.args.dry_run:
+            app.log.verbose('CMD (dry-run): %s', list2cmdline(['mkdir', outputdir]))
+        else:
+            os.mkdir(outputdir)
+
+    num_extract_errors = 0
+
+    has_forced_subtitle = False
+
+    mkvextract_tracks_args = []
+    mkvextract_attachments_args = []
+
+    for stream in mux_dict['streams']:
+
+        stream_file_name = stream['file_name']
+        stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+
+        if stream.codec_type == 'video':
+            pass
+
+        elif stream.codec_type == 'audio':
+            pass
+
+        elif stream.codec_type == 'subtitle':
+
+            if stream['disposition'].get('forced', None):
+                has_forced_subtitle = True
+
+        elif stream.codec_type == 'image':
+            pass
+
+        elif stream.codec_type == 'data':
+            pass
+
+        else:
+            raise NotImplementedError(stream.codec_type)
+
+        if stream.codec_type in ('video', 'audio', 'subtitle', 'image'):
+
+            if (
+                    (not mux_attached_pic and stream['disposition']['attached_pic']) or
+                    (not mux_subtitles and stream.codec_type == 'subtitle')):
+                app.log.warning('Not muxing %s stream #%s...', stream.codec_type, stream.pprint_index)
+            else:
+
+                if stream['disposition']['attached_pic']:
+                    app.log.info('Will extract %s stream #%s w/ mkvextract: %s', stream.codec_type, stream.pprint_index, stream_file_name)
+                    mkvextract_attachments_args += [
+                        '%d:%s' % (
+                            attachment_index,
+                            outputdir / stream_file_name,
+                        )]
+                elif (
+                        app.args.track_extract_tool == 'ffmpeg'
+                        or not isinstance(inputfile, MatroskaFile)
+                        # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
+                        # (mkvextract expects S_TEXT/WEBVTT)
+                        or stream_file_ext == '.vtt'
+                        # Avoid mkvextract error: Extraction of track ID 1 with the CodecID 'A_MS/ACM' is not supported.
+                        # https://www.makemkv.com/forum/viewtopic.php?t=2530
+                        or stream_file_ext == '.wav'  # stream_codec_name in ('pcm_s16le', 'pcm_s24le')
+                        # Avoid mkvextract error: Track 0 with the CodecID 'V_MS/VFW/FOURCC' is missing the "default duration" element and cannot be extracted.
+                        or stream_file_ext in still_image_exts
+                        or (app.args.track_extract_tool is Auto
+                            # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
+                            and stream_file_ext in (  # stream_codec_name in ('vp8', 'vp9')
+                                '.vp8.ivf',
+                                '.vp9.ivf',
+                                ))):
+                    app.log.info('Extract %s stream #%s: %s', stream.codec_type, stream.pprint_index, stream_file_name)
+                    with perfcontext('Extract track #%s w/ ffmpeg' % (stream.pprint_index,), log=True):
+                        force_format = None
+                        try:
+                            force_format = ext_to_container(stream_file_ext)
+                        except ValueError:
+                            pass
+                        ffmpeg_args = [] + default_ffmpeg_args
+                        if app.args.seek_video:
+                            ffmpeg_args += [
+                                '-ss', ffmpeg.Timestamp(app.args.seek_video),
+                                ]
+                        ffmpeg_args += [
+                            '-i', inputfile,
+                            '-map_metadata', '-1',
+                            '-map_chapters', '-1',
+                            '-map', '0:%d' % (stream.index,),
+                            ]
+                        if stream_file_ext in still_image_exts:
+                            ffmpeg_args += [
+                                '-frames:v', 1,
+                                ]
+                        else:
+                            ffmpeg_args += [
+                                '-codec', 'copy',
+                                ]
+                        ffmpeg_args += [
+                            '-start_at_zero',
+                            ]
+                        if force_format:
+                            ffmpeg_args += [
+                                '-f', force_format,
+                                ]
+                        ffmpeg_args += [
+                            outputdir / stream_file_name,
+                            ]
+                        ffmpeg(*ffmpeg_args,
+                               progress_bar_max=estimate_stream_duration(inputfile=inputfile),
+                               progress_bar_title=f'Extract {stream.codec_type} track {stream.pprint_index} w/ ffmpeg',
+                               dry_run=app.args.dry_run,
+                               y=app.args.yes)
+                elif app.args.track_extract_tool in ('mkvextract', Auto):
+                    app.log.info('Will extract %s stream #%s w/ mkvextract: %s', stream.codec_type, stream.pprint_index, stream_file_name)
+                    mkvextract_tracks_args += [
+                        '%d:%s' % (
+                            stream.index,
+                            outputdir / stream_file_name,
+                        )]
+                    # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
+                else:
+                    raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
+
+    if mkvextract_tracks_args:
+        with perfcontext('Extract tracks w/ mkvextract', log=True):
+            cmd = [
+                'mkvextract', 'tracks', inputfile,
+                ] + mkvextract_tracks_args
+            do_spawn_cmd(cmd)
+    if mkvextract_attachments_args:
+        with perfcontext('Extract attachments w/ mkvextract', log=True):
+            cmd = [
+                'mkvextract', 'attachments', inputfile,
+                ] + mkvextract_attachments_args
+            do_spawn_cmd(cmd)
+
+    # Detect duplicates
+    if not app.args.dry_run:
+        skip_duplicate_streams(mux_dict['streams'],
+                               mux_subtitles=mux_subtitles)
+
+    # Pre-stream post-processing
+
+    subtitle_counts = []
+
+    if not app.args.dry_run:
+
+        iter_mediainfo_track_dicts = iter(mediainfo_track_dict
+                                          for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
+                                          if 'ID' in mediainfo_track_dict)
+        for stream in sorted_stream_dicts(mux_dict['streams']):
+
+            if stream.codec_type == 'video':
+                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                assert mediainfo_track_dict['@type'] == 'Video'
+            elif stream.codec_type == 'audio':
+                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                assert mediainfo_track_dict['@type'] == 'Audio'
+            elif stream.codec_type == 'subtitle':
+                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                assert mediainfo_track_dict['@type'] == 'Text'
+            elif stream.codec_type == 'image':
+                mediainfo_track_dict = None  # Not its own track
+            elif stream.codec_type == 'data':
+                mediainfo_track_dict = None  # Not its own track
+                assert stream.get('skip', False)
+            else:
+                raise NotImplementedError(stream.codec_type)
+
+            if stream.get('skip', False):
+                continue
+
+            stream_file_name = stream['file_name']
+            stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+
+            if stream.codec_type == 'video':
+
+                def try_int(v):
+                    try:
+                        return int(v)
+                    except ValueError:
+                        return v
+
+                try:
+                    mediainfo_stream_id = stream['original_id'] & 0xff
+                except KeyError:
+                    mediainfo_stream_id = stream.index + 1
+                mediainfo_track_dict, = (mediainfo_track_dict
+                        for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
+                        if mediainfo_stream_id == mediainfo_track_dict.get('ID', 0))
+                assert mediainfo_track_dict['@type'] == 'Video'
+                storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
+                display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
+                pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio
+                stream['display_aspect_ratio'] = str(display_aspect_ratio)
+                stream['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
+
+            if mux_subtitles and stream.codec_type == 'subtitle':
+                stream_forced = stream['disposition'].get('forced', None)
+                # TODO Detect closed_caption
+                if isinstance(stream.file, PgsFile):
+                    palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment=None)
+                    def is_pgs_valid_ods_segment(pgs_segment):
+                        nonlocal palette
+                        if pgs_segment.segment_type is PgsFile.SegmentType.ODS:
+                            object_data = qip.pgs.rle_decode(pgs_segment.object_data,
+                                                             pgs_segment.width,
+                                                             pgs_segment.height,
+                                                             palette=palette)
+                            object_data = list(object_data)
+                            if not object_data or all(e == object_data[0] for e in object_data):
+                                return False  # Empty
+                            return True
+                        elif pgs_segment.segment_type is PgsFile.SegmentType.PDS:
+                            palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment)
+                        return False
+                    subtitle_count = sum(
+                        is_pgs_valid_ods_segment(pgs_segment)
+                        for pgs_segment in stream.file.iter_pgs_segments())
+                elif stream_file_ext in ('.sub', '.sup'):
+                    try:
+                        d = ffprobe(i=outputdir / stream_file_name, show_packets=True)
+                    except subprocess.CalledProcessError as e:
+                        app.log.error(e)
+                        num_extract_errors += 1
+                        subtitle_count = 0
+                    else:
+                        out = d.out
+                        subtitle_count = out.count(
+                            b'[PACKET]' if type(out) is bytes else '[PACKET]')
+                        if stream_file_ext in ('.sup',):
+                            # TODO count only those frames with num_rect != 0
+                            subtitle_count = subtitle_count // 2
+                elif stream_file_ext in ('.idx',):
+                    out = open(outputdir / stream_file_name, 'rb').read()
+                    subtitle_count = out.count(b'timestamp:')
+                elif stream_file_ext in ('.srt', '.vtt'):
+                    out = open(outputdir / stream_file_name, 'rb').read()
+                    subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
+                else:
+                    raise NotImplementedError(stream_file_ext)
+                if subtitle_count == 1 \
+                        and File(outputdir / stream_file_name).getsize() == 2048:
+                    app.log.warning('Detected empty single-frame subtitle stream #%s (%s); Skipping.',
+                                    stream.pprint_index,
+                                    stream.language)
+                    stream['skip'] = True
+                elif not subtitle_count:
+                    app.log.warning('Detected empty subtitle stream #%s (%s); Skipping.',
+                                    stream.pprint_index,
+                                    stream.language)
+                    stream['skip'] = True
+                else:
+                    stream['subtitle_count'] = subtitle_count
+                    subtitle_counts.append(
+                        (stream, subtitle_count))
+
+    if mux_subtitles and not has_forced_subtitle and subtitle_counts:
+        max_subtitle_size = max(subtitle_count
+                                for stream, subtitle_count in subtitle_counts)
+        for stream, subtitle_count in subtitle_counts:
+            if subtitle_count <= 0.10 * max_subtitle_size:
+                app.log.info('Detected subtitle stream #%s (%s) is forced',
+                             stream.pprint_index,
+                             stream.language)
+                stream['disposition']['forced'] = True
+
+    if inputfile.ffprobe_dict['chapters']:
+        output_chapters_file_name = outputdir / 'chapters.xml'
+        if not remux:
+            chapters_out = inputfile.load_chapters(return_raw_xml=True)
+            if not app.args.dry_run:
+                safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
+        mux_dict['chapters']['file_name'] = os.fspath(output_chapters_file_name.relative_to(outputdir))
 
     if not app.args.dry_run:
         mux_dict.save(mux_file_name=outputdir / ('mux%s.json' % ('.remux' if remux else '',)))
@@ -3218,10 +3255,18 @@ def action_verify(inputfile, in_tags):
 
     return True
 
-def action_status(inputdir):
-    app.log.info('Status of %s...', inputdir)
+def action_status(inputfile):
+    app.log.info('Status of %s...', inputfile)
 
-    mux_dict = MmdemuxTask(inputdir / 'mux.json')
+    if inputfile.is_file():
+        mux_dict = mux_dict_from_file(inputfile, outputdir=None)
+
+    elif inputfile.is_dir():
+        inputdir = inputfile
+        mux_dict = MmdemuxTask(inputdir / 'mux.json')
+
+    else:
+        raise ValueError(f'Not a file or directory: {inputfile}')
 
     mux_dict.print_streams_summary()
 
@@ -3393,8 +3438,12 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
 
     def __init__(self, /, mux_file_name, *, in_tags=None, load=True):
         self.mux_file_lock = threading.RLock()
-        self.mux_file_name = Path(mux_file_name)
-        self.inputdir = mux_file_name.parent
+        if mux_file_name is None:
+            self.mux_file_name = None
+            self.inputdir = Path('.')
+        else:
+            self.mux_file_name = Path(mux_file_name) if mux_file_name is not None else None
+            self.inputdir = mux_file_name.parent
 
         if load:
             super().__init__()
@@ -3725,13 +3774,6 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
     def codec_type(self):
         try:
             return self['codec_type']
-        except KeyError:
-            raise AttributeError
-
-    @property
-    def codec_name(self):
-        try:
-            return self['codec_name']
         except KeyError:
             raise AttributeError
 
