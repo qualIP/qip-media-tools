@@ -981,6 +981,7 @@ def codec_name_to_ext(codec_name):
             'mpeg4': '.mp4',
             'vc1': '.vc1.avi',
             'h264': '.h264',
+            'hevc': '.h265',
             'h265': '.h265',
             'vp8': '.vp8.ivf',
             'vp9': '.vp9.ivf',
@@ -1021,7 +1022,7 @@ def ext_to_container(ext):
             '.mp2v': 'mpeg2video',
             '.mpegts': 'mpegts',
             '.h264': 'h264',  # raw H.264 video
-            #'.h265': 'h265',
+            '.h265': 'hevc',  # raw HEVC/H.265 video
             '.vp8': 'ivf',
             '.vp9': 'ivf',
             '.ivf': 'ivf',
@@ -1053,6 +1054,8 @@ def ext_to_codec(ext, lossless=False):
             '.ffv1': 'ffv1',
             '.h264': ('h264_nvenc' if app.args.cuda and lossless
                       else 'libx264'),  # better quality
+            '.h265': ('hevc_nvenc' if app.args.cuda and lossless
+                      else 'libx265'),  # better quality
             '.vp9': 'libvpx-vp9',
             '.y4m': 'yuv4',
             '.mpeg2': 'mpeg2video',
@@ -1076,20 +1079,53 @@ def ext_to_codec_args(ext, lossless=False):
             codec_args += [
                 '-surfaces', 8,  # https://github.com/keylase/nvidia-patch -- Avoid CreateBitstreamBuffer failed: out of memory (10)
             ]
-    if codec in ('h264_nvenc', 'libx264'):
+    if codec in (
+            'h264_nvenc', 'libx264',
+            'hevc_nvenc', 'libx265',
+    ):
         if lossless:
             codec_args += [
                 '-preset', 'lossless',
             ]
+    if ext in (
+            '.h265',
+    ):
+        codec_args += [
+            '-tag:v', 'hvc1',  # QuickTime compatibility
+        ]
     return codec_args
 
 def codec_to_input_args(codec):
     codec_args = []
-    if codec in ('h264_nvenc',):
+    if codec in (
+            'h264_nvenc',
+            'hevc_nvenc',
+    ):
         codec_args += [
             '-hwaccel', 'nvdec',
         ]
     return codec_args
+
+def pick_lossless_codec_ext(stream):
+    stream_file_base, stream_file_ext = my_splitext(stream.file_name)
+    # copy
+    try:
+        return {
+            '.mpeg2': '.mpegts',
+            '.mpeg2.mp2v': '.mpegts',
+        }[stream_file_ext]
+    except KeyError:
+        pass
+    # encode -- GPU
+    if app.args.cuda:
+        assert len(stream.file.mediainfo_dict['media']['track']) == 2
+        mediainfo_track_dict = stream.file.mediainfo_dict['media']['track'][1]
+        if True:
+            return '.h265'  # Fast lossless (4K @ 50fps)
+        if mediainfo_track_dict['BitDepth'] <= 8:
+            return '.h264'  # Fast lossless (4K @ 20fps)
+    # encode -- CPU
+    return '.ffv1.mkv'  # Slow lossless
 
 def ext_to_mencoder_libavcodec_format(ext):
     ext = (Path('x' + ext) if isinstance(ext, str) else toPath(ext)).suffix
@@ -2123,7 +2159,10 @@ def chop_chapters(chaps,
     if (
             (chapter_file_ext == inputfile_ext
              or ext_to_codec(chapter_file_ext) == ext_to_codec(inputfile_ext))
-            and not (chapter_lossless and inputfile_ext in ('.h264',))):  # h264 copy just spits out a single empty chapter
+            and not (chapter_lossless and inputfile_ext in (
+                '.h264', # h264 copy just spits out a single empty chapter
+                '.h265', # hevc/h265 copy just spits out a single empty chapter
+            ))):
         codec = 'copy'
     else:
         codec = ext_to_codec(chapter_file_ext, lossless=chapter_lossless)
@@ -2647,6 +2686,14 @@ def mux_dict_from_file(inputfile, outputdir):
                 if stream.codec_type == 'video':
                     try:
                         original_source_description.append(ffprobe_stream_dict['profile'])
+                    except KeyError:
+                        pass
+                    try:
+                        original_source_description.append(f'%dbits' % (mediainfo_track_dict['BitDepth'],))
+                    except KeyError:
+                        pass
+                    try:
+                        original_source_description.append(mediainfo_track_dict['HDR_Format'])
                     except KeyError:
                         pass
                     original_source_description.append('%sx%s' % (ffprobe_stream_dict['width'], ffprobe_stream_dict['height']))
@@ -3406,6 +3453,7 @@ def my_splitext(file_name, strip_container=False):
         if ext2 in {
                 '.ffv1',
                 '.h264',
+                '.h265',
                 '.mpeg2',
                 '.opus',
                 '.vc1',
@@ -4057,9 +4105,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         frimdecode_fmt = 'i420'
                         ffmpeg_pix_fmt = 'yuv420p'
 
-                        new_stream_file_ext = (
-                            '.h264' if app.args.cuda  # Fast lossless
-                            else '.ffv1.mkv')  # Slow lossless
+                        new_stream_file_ext = pick_lossless_codec_ext(stream_dict)
                         lossless = True
                         new_stream_file_name_base = stream_file_base[0:-4]  # remove .MVC
                         if '3D' not in new_stream_file_name_base.upper().split('.'):
@@ -4731,6 +4777,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 '.ffv1.mkv',
                                 # '.vc1.avi',  # Stupidly slow (vc1 -> ffv1 @ 0.9x)
                                 '.h264',
+                                '.h265',
                             )):
                         #if app.args.force_constant_framerate:
                         #    raise NotImplementedError('--parallel-chapters and --force-constant-framerate')
@@ -4739,12 +4786,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         concat_list_file = ffmpeg.ConcatScriptFile(new_stream.inputdir / f'{new_stream.file_name}.concat.txt')
                         ffmpeg_concat_args = []
                         with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
-                            chapter_stream_file_ext = {
-                                    '.mpeg2': '.mpegts',
-                                    '.mpeg2.mp2v': '.mpegts',
-                                }.get(stream_file_ext,
-                                      ('.h264' if app.args.cuda  # Fast lossless
-                                       else '.ffv1.mkv'))        # Slow lossless
+                            chapter_stream_file_ext = pick_lossless_codec_ext(stream_dict)
                             stream_chapter_file_name_pat = '%s-chap%%02d%s' % (stream_file_base.replace('%', '%%'),
                                                                                chapter_stream_file_ext.replace('%', '%%'))
                             new_stream_chapter_file_name_pat = '%s-chap%%02d%s' % (new_stream_file_name_base.replace('%', '%%'),
@@ -4805,7 +4847,10 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                     '-r', force_input_framerate,
                                                     ]
                                             codec = ('copy' if (ext_to_codec(chapter_stream_file_ext) == ext_to_codec(stream_file_ext)
-                                                                and not (chapter_lossless and stream_file_ext in ('.h264',)))  # h264 copy just spits out a single empty chapter
+                                                                and not (chapter_lossless and stream_file_ext in (
+                                                                    '.h264', # h264 copy just spits out a single empty chapter
+                                                                    '.h265', # hevc/h265 copy just spits out a single empty chapter
+                                                                )))
                                                      else ext_to_codec(chapter_stream_file_ext, lStereo3DMode_or_Noneossless=chapter_lossless))
                                             ffmpeg_args += codec_to_input_args(codec) + [
                                                 '-i', stream_dict.path,
