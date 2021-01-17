@@ -2290,7 +2290,7 @@ def skip_duplicate_streams(streams, mux_subtitles=True):
                 continue
             if stream2.file.getsize() != stream1.file.getsize():
                 continue
-            app.log.info('Bit-comparing %s to %s; Please wait...', stream1.file, stream2.file)
+            app.log.info('Hash-comparing %s to %s; Please wait...', stream1.file, stream2.file)
             if stream2.file.md5.hexdigest() != stream1.file.md5.hexdigest():
                 continue
             app.log.warning('%s identical to %s; Marking as skip',
