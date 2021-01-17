@@ -403,6 +403,10 @@ def organize_audiobook(inputfile, *, suggest_tags):
     if not inputfile.tags.title:
         raise MissingMediaTagError(MediaTagEnum.title, file=inputfile)
 
+    # ALBUMTITLE
+    if not inputfile.tags.albumtitle and inputfile.tags.title:
+        suggest_tags.albumtitle = inputfile.tags.albumtitle = inputfile.tags.title
+
     if not inputfile.tags.sorttitle:
         v = make_sort_tag(inputfile.tags.title)
         if v:
