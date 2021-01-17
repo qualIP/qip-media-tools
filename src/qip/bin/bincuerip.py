@@ -28,6 +28,10 @@ from qip.utils import byte_decode
 from qip import json
 import qip.cdda as cdda
 
+import qip.wav
+import qip.mp4
+import qip.flac
+
 @app.main_wrapper
 def main():
 
@@ -50,7 +54,7 @@ def main():
     pgroup.add_argument('--format',
                         #default="wav",
                         required=True,
-                        help='output format', choices=["m4a", "wav"])
+                        help='output format', choices=['wav', 'm4a', 'flac'])
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
@@ -138,18 +142,11 @@ def bincuerip(cue_file):
     for track_no, track in enumerate(cue_file.tracks, start=1):
         bin_file = BinaryFile(cue_file.file_name.with_name(track.file.name))
 
-        if app.args.format == 'wav':
-            from qip.wav import WaveFile
-            track_out_file = WaveFile('{base}-{track_no:02d}.wav'.format(
+        track_out_file = SoundFile.new_by_file_name(
+            '{base}-{track_no:02d}.{format}'.format(
                 base=os.path.splitext(os.fspath(bin_file.file_name))[0],
-                track_no=track_no))
-        elif app.args.format == 'm4a':
-            from qip.mp4 import M4aFile
-            track_out_file = M4aFile('{base}-{track_no:02d}.m4a'.format(
-                base=os.path.splitext(os.fspath(bin_file.file_name))[0],
-                track_no=track_no))
-        else:
-            raise ValueError(app.args.format)
+                track_no=track_no,
+                format=app.args.format))
 
         track_tags = album_tags.tracks_tags[track_no]
         try:
