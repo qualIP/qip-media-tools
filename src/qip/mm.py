@@ -38,6 +38,7 @@ import functools
 import inspect
 import io
 import logging
+import mutagen
 import operator
 import os
 import re
@@ -1500,6 +1501,8 @@ class MediaTagDate(object):
                     self.year, self.month, self.day = d.year, d.month, d.day
             else:
                 self.year, self.month, self.day = d.year, d.month, d.day
+        elif isinstance(value, mutagen.id3.ID3TimeStamp):
+                self.year, self.month, self.day = value.year, value.month, value.day
         else:
             raise TypeError('Not a compatible date type')
 
