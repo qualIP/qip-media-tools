@@ -677,6 +677,9 @@ class MediaFile(File):
             try:
                 mapped_tag = sound_tag_info['map'][mp4_tag]
             except:
+                if mp4_tag.startswith('----:com.apple.iTunes:UFID'):
+                    # '----:com.apple.iTunes:UFIDhttp://www.cddb.com/id3/taginfo1.html'
+                    continue
                 app.log.debug('mp4_tag=%r, tag_value=%r', mp4_tag, tag_value)
                 raise
             if mapped_tag in ('picture',):
