@@ -2908,6 +2908,7 @@ def action_mux(inputfile, in_tags,
     num_extract_errors = 0
 
     has_forced_subtitle = False
+    attachment_index = 0  # First attachment is index 1
 
     mkvextract_tracks_args = []
     mkvextract_attachments_args = []
@@ -2946,6 +2947,7 @@ def action_mux(inputfile, in_tags,
             else:
 
                 if stream['disposition']['attached_pic']:
+                    attachment_index += 1  # TODO inherit from mux_dict_from_file
                     app.log.info('Will extract %s stream #%s w/ mkvextract: %s', stream.codec_type, stream.pprint_index, stream_file_name)
                     mkvextract_attachments_args += [
                         '%d:%s' % (
