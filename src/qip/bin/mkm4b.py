@@ -41,6 +41,10 @@ import qip.mm
 import qip.utils
 Auto = qip.utils.Constants.Auto
 
+import qip.wav
+import qip.mp3
+import qip.mp4
+
 # https://www.ffmpeg.org/ffmpeg.html
 
 # times_1000 {{{
@@ -324,11 +328,20 @@ def mkm4b(inputfiles, default_tags):
         max_workers=None if app.args.jobs is Auto else app.args.jobs)
     exit_stack.enter_context(thread_executor)
 
+    inputfiles = [
+            inputfile if isinstance(inputfile, SoundFile) else SoundFile.new_by_file_name(file_name=inputfile)
+            for inputfile in inputfiles]
+
     if app.args.format is Auto:
         if 'outputfile' in app.args:
             m4b = SoundFile.new_by_file_name(app.args.outputfile)
-        else:
+        elif isinstance(inputfiles[0], (
+                qip.mp4.M4aFile,
+                qip.wav.WaveFile,
+                qip.mp3.Mp3File)):
             m4b = M4bFile(file_name=None)
+        else:
+            m4b = MkaFile(file_name=None)
     else:
         if app.args.format == 'm4b':
             m4b = M4bFile(file_name=None)
@@ -338,9 +351,6 @@ def mkm4b(inputfiles, default_tags):
             raise NotImplementedError(app.args.format)
     m4b.tags.update(default_tags)
 
-    inputfiles = [
-            inputfile if isinstance(inputfile, SoundFile) else SoundFile.new_by_file_name(file_name=inputfile)
-            for inputfile in inputfiles]
     def task_extract_info(inputfile):
         if not inputfile.file_name.is_file():
             raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
