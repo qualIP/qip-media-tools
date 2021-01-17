@@ -3011,7 +3011,7 @@ def action_mux(inputfile, in_tags,
                                progress_bar_max=estimate_stream_duration(inputfile=inputfile),
                                progress_bar_title=f'Extract {stream.codec_type} track {stream.pprint_index} w/ ffmpeg',
                                dry_run=app.args.dry_run,
-                               y=app.args.yes)
+                               y=app.args.yes or app.args.remux)
                 elif app.args.track_extract_tool in ('mkvextract', Auto):
                     app.log.info('Will extract %s stream #%s w/ mkvextract: %s', stream.codec_type, stream.pprint_index, stream_file_name)
                     mkvextract_tracks_args += [
