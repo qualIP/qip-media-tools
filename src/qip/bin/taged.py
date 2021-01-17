@@ -478,7 +478,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             mp4v2_data_type = qip.mm.sound_tag_info['tags'][mapped_tag]['mp4v2_data_type']
         except KeyError:
             raise NotImplementedError(tag)
-        if mp4_tag in 'xid':
+        if mp4_tag in ('xid',):
             value = tags.xids or None
         if value is None:
             if mf.tags.pop(mp4_tag, None) is not None:
@@ -505,6 +505,15 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                 if mp4_tag == 'sfID':
                     # raise ValueError('value %r = %r -> %s' % (type(value), value, value))
                     mp4_value = [qip.mm.mp4_country_map[value]]
+                elif mp4_tag == 'rtng':
+                    # raise ValueError('value %r = %r -> %s' % (type(value), value, value))
+                    mp4_value = int(qip.mm.MediaTagRating(value))
+                elif mp4_tag in ('atID', 'cmID', 'plID', 'geID'):
+                    # raise ValueError('value %r = %r -> %s' % (type(value), value, value))
+                    mp4_value = value
+                    if isinstance(mp4_value, int):
+                        mp4_value = [mp4_value]
+                    mp4_value = tuple(int(e) for e in mp4_value)
                 elif isinstance(value, tuple):
                     mp4_value = tuple(int(e) for e in value)
                 else:
