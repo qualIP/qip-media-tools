@@ -1634,6 +1634,7 @@ class MediaTagEnum(enum.Enum):
 
     contentrating = 'contentrating'  # None|MediaTagRating  Set the Rating(none, clean, explicit)
 
+    itunescddbid = 'itunescddbid'
     itunescountryid = 'itunescountryid'
     itunesartistid = 'itunesartistid'  # NUM  Set the artist ID
     itunescomposerid = 'itunescomposerid'  # NUM  Set the composer ID
@@ -4527,6 +4528,7 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     # The reason why AAC files have encoder delay is explained here (http://www.hydrogenaudio.org/forums/index.php?showtopic=85135&view=findpost&p=820727)
     # The reason for the AAC End Padding is because AAC frame size is 1024 samples, so all AAC encoders add padding to fill up the last AAC frame until the total sample count is divisable by 1024. That is why all AAC files are supposed to have sample count divisable by 1024.
     ["iTunes Gapless Info",    "----:com.apple.iTunes:iTunSMPB", "binary",             "iTunesGaplessInfo",        None,                       None,             ['iTunSMPB']],
+    ["iTunes CDDB ID",    "----:com.apple.iTunes:iTunes_CDDB_IDs", "binary",           "iTunesCDDBID",             None,                       None,             []],
     ["iTunes Purchase Account", "apID",                    "utf-8",                    "iTunesAccount",            None,                       None,             ['account_id']],
     ["iTunes Account Type",    "akID",                     "int8",                     "iTunesAccountType",        None,                       None,             []],
     ["iTunes Catalog ID",      "cnID",                     "int32",                    "iTunesCatalogID",          None,                       None,             ['contentid']],
