@@ -598,8 +598,13 @@ def taged_mf_VCFLACDict(file_name, mf, tags):
         #print(f'XXXJST tag={tag}, flac_tag={flac_tag}, value={value!r}')
 
         if value is None:
-            if mf.tags.pop(flac_tag, None) is not None:
+            try:
+                del mf.tags[flac_tag]
+            except KeyError:
+                pass
+            else:
                 app.log.verbose(' Removed %s (%s)', tag, flac_tag)
+            continue
         else:
             flac_value = str(value)
 
