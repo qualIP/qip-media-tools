@@ -2911,38 +2911,61 @@ def action_mux(inputfile, in_tags,
     mkvextract_tracks_args = []
     mkvextract_attachments_args = []
 
-    for stream in mux_dict['streams']:
+    with perfcontext('Extract tracks', log=True):
 
-        stream_file_name = stream['file_name']
-        stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+        for stream in mux_dict['streams']:
 
-        if stream.codec_type == 'video':
-            pass
+            stream_file_name = stream['file_name']
+            stream_file_base, stream_file_ext = my_splitext(stream_file_name)
 
-        elif stream.codec_type == 'audio':
-            pass
+            if stream.codec_type == 'video':
+                pass
 
-        elif stream.codec_type == 'subtitle':
+            elif stream.codec_type == 'audio':
+                pass
 
-            if stream['disposition'].get('forced', None):
-                has_forced_subtitle = True
+            elif stream.codec_type == 'subtitle':
 
-        elif stream.codec_type == 'image':
-            pass
+                if stream['disposition'].get('forced', None):
+                    has_forced_subtitle = True
 
-        elif stream.codec_type == 'data':
-            pass
+            elif stream.codec_type == 'image':
+                pass
 
-        else:
-            raise NotImplementedError(stream.codec_type)
+            elif stream.codec_type == 'data':
+                pass
 
-        if stream.codec_type in ('video', 'audio', 'subtitle', 'image'):
-
-            if (
-                    (not mux_attached_pic and stream['disposition']['attached_pic']) or
-                    (not mux_subtitles and stream.codec_type == 'subtitle')):
-                app.log.warning('Not muxing %s stream #%s...', stream.codec_type, stream.pprint_index)
             else:
+                raise NotImplementedError(stream.codec_type)
+
+            if stream.codec_type in ('video', 'audio', 'subtitle', 'image'):
+
+                if (
+                        (not mux_attached_pic and stream['disposition']['attached_pic']) or
+                        (not mux_subtitles and stream.codec_type == 'subtitle')):
+                    app.log.warning('Not muxing %s stream #%s...', stream.codec_type, stream.pprint_index)
+                    continue
+
+                if stream.codec_type == 'subtitle' \
+                        and stream_file_ext in (
+                            '.sub',
+                        ) and not isinstance(inputfile, MatroskaFile):
+                    with perfcontext('Extract %s stream #%s w/ mencoder' % (stream.codec_type, stream.pprint_index,), log=True):
+                        mencoder_args = []
+                        mencoder_args += [
+                            inputfile,
+                        ]
+                        assert stream_file_name.endswith('.sub')
+                        mencoder_args += [
+                            '-nosound',
+                            '-ovc', 'frameno',
+                            '-o', '/dev/null',
+                            '-vobsuboutindex', 0,
+                            '-sid', stream['original_id'],
+                            '-vobsubout', outputdir / stream_file_name[:-4],  # strip '.sub'
+                        ]
+                        mencoder(*mencoder_args)
+                    continue
 
                 if stream['disposition']['attached_pic']:
                     attachment_index += 1  # TODO inherit from mux_dict_from_file
@@ -2952,7 +2975,9 @@ def action_mux(inputfile, in_tags,
                             attachment_index,
                             outputdir / stream_file_name,
                         )]
-                elif (
+                    continue
+
+                if (
                         app.args.track_extract_tool == 'ffmpeg'
                         or not isinstance(inputfile, MatroskaFile)
                         # Avoid mkvextract error: Extraction of track ID 3 with the CodecID 'D_WEBVTT/SUBTITLES' is not supported.
@@ -2969,8 +2994,7 @@ def action_mux(inputfile, in_tags,
                                 '.vp8.ivf',
                                 '.vp9.ivf',
                                 ))):
-                    app.log.info('Extract %s stream #%s: %s', stream.codec_type, stream.pprint_index, stream_file_name)
-                    with perfcontext('Extract track #%s w/ ffmpeg' % (stream.pprint_index,), log=True):
+                    with perfcontext('Extract %s stream #%s w/ ffmpeg' % (stream.codec_type, stream.pprint_index,), log=True):
                         force_format = None
                         try:
                             force_format = ext_to_container(stream_file_ext)
@@ -3006,11 +3030,13 @@ def action_mux(inputfile, in_tags,
                             outputdir / stream_file_name,
                             ]
                         ffmpeg(*ffmpeg_args,
-                               progress_bar_max=estimate_stream_duration(inputfile=inputfile),
-                               progress_bar_title=f'Extract {stream.codec_type} track {stream.pprint_index} w/ ffmpeg',
-                               dry_run=app.args.dry_run,
-                               y=app.args.yes or app.args.remux)
-                elif app.args.track_extract_tool in ('mkvextract', Auto):
+                            progress_bar_max=estimate_stream_duration(inputfile=inputfile),
+                            progress_bar_title=f'Extract {stream.codec_type} track {stream.pprint_index} w/ ffmpeg',
+                            dry_run=app.args.dry_run,
+                            y=app.args.yes or app.args.remux)
+                    continue
+
+                if app.args.track_extract_tool in ('mkvextract', Auto):
                     app.log.info('Will extract %s stream #%s w/ mkvextract: %s', stream.codec_type, stream.pprint_index, stream_file_name)
                     mkvextract_tracks_args += [
                         '%d:%s' % (
@@ -3018,21 +3044,22 @@ def action_mux(inputfile, in_tags,
                             outputdir / stream_file_name,
                         )]
                     # raise NotImplementedError('extracted tracks from mkvextract must be reset to start at 0 PTS')
-                else:
-                    raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
+                    continue
 
-    if mkvextract_tracks_args:
-        with perfcontext('Extract tracks w/ mkvextract', log=True):
-            cmd = [
-                'mkvextract', 'tracks', inputfile,
+                raise NotImplementedError('unsupported track extract tool: %r' % (app.args.track_extract_tool,))
+
+        if mkvextract_tracks_args:
+            with perfcontext('Extract tracks w/ mkvextract', log=True):
+                cmd = [
+                    'mkvextract', 'tracks', inputfile,
                 ] + mkvextract_tracks_args
-            do_spawn_cmd(cmd)
-    if mkvextract_attachments_args:
-        with perfcontext('Extract attachments w/ mkvextract', log=True):
-            cmd = [
-                'mkvextract', 'attachments', inputfile,
+                do_spawn_cmd(cmd)
+        if mkvextract_attachments_args:
+            with perfcontext('Extract attachments w/ mkvextract', log=True):
+                cmd = [
+                    'mkvextract', 'attachments', inputfile,
                 ] + mkvextract_attachments_args
-            do_spawn_cmd(cmd)
+                do_spawn_cmd(cmd)
 
     # Detect duplicates
     if not app.args.dry_run:
