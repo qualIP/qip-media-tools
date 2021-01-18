@@ -168,6 +168,12 @@ class StreamCharacteristicsSeenError(ValueError):
         self.stream_characteristics = stream_characteristics
         super().__init__(f'Stream #{stream.pprint_index} characteristics already seen: {stream_characteristics!r}')
 
+class StreamLanguageUnknownError(ValueError):
+
+    def __init__(self, stream):
+        self.stream = stream
+        super().__init__(f'Stream #{stream.pprint_index} language is unknown')
+
 class StreamExternalSubtitleAlreadyCreated(ValueError):
 
     def __init__(self, stream, external_stream_file_name):
@@ -5961,6 +5967,7 @@ def action_demux(inputdir, in_tags):
                 stream_characteristics=None,
                 post_process_subtitle=False,
                 out_index=-1,
+                unknown_language_warned=False,
             )
 
         sorted_streams = sorted_stream_dicts(mux_dict['streams'])
@@ -5969,6 +5976,16 @@ def action_demux(inputdir, in_tags):
             if stream_dict.get('skip', False):
                 continue
             stream_title = stream_dict.get('title', None)
+
+            if stream_dict.codec_type != 'video' \
+                and stream_dict.language is isolang('und'):
+                if not stream_dict['_temp'].unknown_language_warned:
+                    stream_dict['_temp'].unknown_language_warned = True
+                    try:
+                        raise StreamLanguageUnknownError(stream=stream_dict)
+                    except StreamLanguageUnknownError as e:
+                        handle_StreamCharacteristicsSeenError(e)
+                        continue
 
             stream_characteristics = (stream_dict.codec_type, stream_dict.language)
             if stream_dict.codec_type == 'video':
@@ -6176,6 +6193,7 @@ def action_demux(inputdir, in_tags):
                 stream_characteristics=None,
                 out_index=-1,
                 external=False,
+                unknown_language_warned=False,
             )
 
         sorted_streams = sorted_stream_dicts(mux_dict['streams'])
@@ -6185,6 +6203,16 @@ def action_demux(inputdir, in_tags):
                 continue
             stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
             stream_title = stream_dict.get('title', None)
+
+            if stream_dict.codec_type != 'video' \
+                and stream_dict.language is isolang('und'):
+                if not stream_dict['_temp'].unknown_language_warned:
+                    stream_dict['_temp'].unknown_language_warned = True
+                    try:
+                        raise StreamLanguageUnknownError(stream=stream_dict)
+                    except StreamLanguageUnknownError as e:
+                        handle_StreamCharacteristicsSeenError(e)
+                        continue
 
             stream_characteristics = (stream_dict.codec_type, stream_dict.language)
             if stream_dict.codec_type == 'video':
