@@ -2404,11 +2404,10 @@ def mux_dict_from_file(inputfile, outputdir):
     if inputfile_ext in {
             '.ffv1.mkv',
     } \
-            | Mp4File.get_common_extensions() \
+            | Mpeg4ContainerFile.get_common_extensions() \
             | MatroskaFile.get_common_extensions() \
-            | WebmFile.get_common_extensions() \
             :
-        # NOT | Mpeg2MovieFile.get_common_extensions()
+        # NOT | Mpeg2ContainerFile.get_common_extensions()
         try:
             mux_dict['estimated_duration'] = str(ffmpeg.Timestamp(inputfile.ffprobe_dict['format']['duration']))
         except KeyError:
@@ -2417,10 +2416,9 @@ def mux_dict_from_file(inputfile, outputdir):
     if inputfile_ext in {
             '.ffv1.mkv',
     } \
-            | Mpeg2MovieFile.get_common_extensions() \
-            | Mp4File.get_common_extensions() \
+            | Mpeg2ContainerFile.get_common_extensions() \
+            | Mpeg4ContainerFile.get_common_extensions() \
             | MatroskaFile.get_common_extensions() \
-            | WebmFile.get_common_extensions() \
             :
 
         attachment_index = 0  # First attachment is index 1
