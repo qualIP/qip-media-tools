@@ -136,6 +136,7 @@ setup(
             'mkbincue = qip.bin.mkbincue:main',
             'mkm4b = qip.bin.mkm4b:main',
             'mmdemux = qip.bin.mmdemux:main',
+            'mmrename = qip.bin.mmrename:main',
             'organize-media = qip.bin.organize_media:main',
             'taged = qip.bin.taged:main',
             'cdrom-ready = qip.bin.cdrom_ready:main',
