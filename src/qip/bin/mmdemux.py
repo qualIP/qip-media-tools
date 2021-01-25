@@ -926,7 +926,7 @@ def main():
         if global_stats.num_batch_skips:
             raise Exception(f'BATCH MODE SKIP: {global_stats.num_batch_skips} task(s) skipped.')
 
-def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_stream_dict=None):
+def get_codec_encoding_delay(file, *, mediainfo_track_dict=None, ffprobe_stream_dict=None):
     if mediainfo_track_dict:
         if mediainfo_track_dict['Format'] == 'Opus':
             # default encoding delay of 312 samples
@@ -937,7 +937,7 @@ def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_st
             # default encoding delay of 312 samples
             return qip.utils.Timestamp(Fraction(1, int(ffprobe_stream_dict['sample_rate'])) * 312)
         return 0
-    file_ext = my_splitext(file_name)[1]
+    file_ext = my_splitext(file)[1]
     if file_ext in (
             '.y4m',
             '.yuv',
@@ -968,10 +968,12 @@ def get_codec_encoding_delay(file_name, *, mediainfo_track_dict=None, ffprobe_st
             '.vtt',
     ):
         return 0
-    media_file = MediaFile.new_by_file_name(file_name)
-    assert len(media_file.mediainfo_dict['media']['track']) == 2
-    mediainfo_track_dict = media_file.mediainfo_dict['media']['track'][1]
-    return get_codec_encoding_delay(file_name, mediainfo_track_dict=mediainfo_track_dict)
+    if not isinstance(MediaFile, file):
+        file = MediaFile.new_by_file_name(file)
+    # Try again with mediainfo_track_dict
+    assert len(file.mediainfo_dict['media']['track']) == 2
+    mediainfo_track_dict = file.mediainfo_dict['media']['track'][1]
+    return get_codec_encoding_delay(file, mediainfo_track_dict=mediainfo_track_dict)
 
 still_image_exts = {
     '.png',
@@ -6444,7 +6446,7 @@ def action_demux(inputdir, in_tags):
 
             stream_start_time = AnyTimestamp(stream_dict.get('start_time', None) or 0)
             if stream_start_time:
-                codec_encoding_delay = get_codec_encoding_delay(stream_dict.path)
+                codec_encoding_delay = get_codec_encoding_delay(stream_dict.file)
                 stream_start_time += codec_encoding_delay
             elif has_opus_streams and stream_file_ext in ('.opus', '.opus.ogg'):
                 # Note that this is not needed if the audio track is wrapped in a mkv container
