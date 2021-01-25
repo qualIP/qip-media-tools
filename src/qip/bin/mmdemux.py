@@ -4150,9 +4150,11 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         new_stream['file_name'] = stream_file_base + new_stream_file_ext
                         app.log.verbose('Stream #%s concat -> %s', stream_dict.pprint_index, new_stream.file_name)
 
+                        safe_concat = False
                         concat_list_file = ffmpeg.ConcatScriptFile(new_stream.inputdir / f'{new_stream.file_name}.concat.txt')
                         concat_list_file.files += [
-                            concat_list_file.File(sub_stream_dict['file_name'])  # relative
+                            concat_list_file.File(
+                                sub_stream_dict['file_name'] if safe_concat else (new_stream.inputdir / sub_stream_dict['file_name']).resolve())
                             for sub_stream_dict in stream_dict['concat_streams']]
                         if not app.args.dry_run:
                             concat_list_file.create()
@@ -4194,7 +4196,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             except KeyError:
                                 pass
                             ffmpeg_args += [
-                                '-f', 'concat', '-safe', '0',
+                                '-f', 'concat', '-safe', 1 if safe_concat else 0,
                                 '-i', concat_list_file.file_name.relative_to(cwd),
                                 '-codec', 'copy',
                                 ] + ffmpeg_concat_args + [
@@ -4969,6 +4971,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                            ffprobe_stream_json=ffprobe_stream_json,
                                                            mediainfo_track_dict=mediainfo_track_dict)
 
+                    safe_concat = False
                     if (parallel_chapters
                             and stream_file_ext in (
                                 '.mpeg2', '.mpeg2.mp2v',  # Chopping using segment muxer is reliable (tested with mpeg2)
@@ -5132,7 +5135,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             if stream_dict.is_hdr():
                                 raise NotImplementedError('HDR support not implemented')
                             ffmpeg_args = default_ffmpeg_args + [
-                                '-f', 'concat', '-safe', '0',
+                                '-f', 'concat', '-safe', 1 if safe_concat else 0,
                                 '-r', force_input_framerate or input_framerate or framerate,
                                 '-i', concat_list_file.file_name.relative_to(cwd),
                                 '-codec', 'copy',
@@ -6837,6 +6840,7 @@ def action_concat(concat_files, in_tags):
     chapters_xml_file.close()
 
     concat_list_temp_file = TempFile.mkstemp(suffix='.concat.lst', open=True, text=True)
+    safe_concat = False
     concat_list_file = ffmpeg.ConcatScriptFile(concat_list_temp_file)
     concat_list_file.files += [
         concat_list_file.File(inputfile.file_name.resolve())  # absolute
@@ -6845,7 +6849,7 @@ def action_concat(concat_files, in_tags):
 
     ffmpeg_concat_args = []
     ffmpeg_args = default_ffmpeg_args + [
-        '-f', 'concat', '-safe', '0',
+        '-f', 'concat', '-safe', 1 if safe_concat else 0,
         # TODO -r
         '-i', concat_list_file,
         '-codec', 'copy',
