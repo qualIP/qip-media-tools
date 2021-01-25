@@ -4,12 +4,12 @@
 # PYTHON_ARGCOMPLETE_OK
 
 # DVD info lister
-# 
+#
 # Copyright (C) 2020 Jean-Sebastien Trottier
 #
 # Based on the original lsdvd:
 #     lsdvd 0.18 - GPL Copyright (c) 2002-2005, 2014 "Written" by Chris Phillips <acid_kewpie@users.sf.net>
-# 
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 2 as
 # published by the Free Software Foundation;
@@ -247,6 +247,7 @@ def lsdvd(device,
             continue
 
         dvd_info.titles[j] = dvd_title = types.SimpleNamespace()
+        dvd_title.title_no = j + 1
 
         # GENERAL
         vtsi_mat   = ifo.vtsi_mat
@@ -704,101 +705,102 @@ def ocode_print(syntax, dvd_info):
         # This should probably be "tracks":
         with f.ARRAY("track"):
 
-            for j in range(dvd_info.title_count):
-                if app.args.target_title is None or app.args.target_title == j + 1:
-                    dvd_title = dvd_info.titles[j]
-                    if not dvd_title:
-                        continue
+            for dvd_title in dvd_info.titles:
+                if dvd_title is None:
+                    continue
+                if app.args.target_title is not None \
+                        and app.args.target_title != dvd_title.title_no:
+                    continue
 
-                    with f.HASH(None):
-                        # GENERAL 
-                        f.DEF("ix", "%d", j + 1)
-                        f.DEF("length", "%.3f", dvd_title.general.playback_time)
-                        f.DEF("vts_id", "'%s'", dvd_title.general.vts_id)
+                with f.HASH(None):
+                    # GENERAL
+                    f.DEF("ix", "%d", dvd_title.title_no)
+                    f.DEF("length", "%.3f", dvd_title.general.playback_time)
+                    f.DEF("vts_id", "'%s'", dvd_title.general.vts_id)
 
-                        # VIDEO
-                        if app.args.show_video:
-                            f.DEF("vts", "%d", dvd_title.parameter.vts)
-                            f.DEF("ttn", "%d", dvd_title.parameter.ttn)
-                            f.DEF("fps", "%.2f", dvd_title.parameter.fps)
-                            f.DEF("mpeg_version", "'%s'", dvd_title.parameter.mpeg_version)
-                            f.DEF("format", "'%s'", dvd_title.parameter.format)
-                            f.DEF("aspect", "'%s'", dvd_title.parameter.aspect)
-                            if dvd_title.parameter.format == 'NTSC':
-                                f.DEF("line21_cc_1", "%d", dvd_title.parameter.line21_cc_1)
-                                f.DEF("line21_cc_2", "%d", dvd_title.parameter.line21_cc_2)
-                            f.DEF("width", "%s", dvd_title.parameter.width)
-                            f.DEF("height", "%s", dvd_title.parameter.height)
-                            f.DEF("df", "'%s'", ', '.join(sorted(dvd_title.parameter.df)))
-                            if dvd_title.parameter.format == 'PAL':
-                                f.DEF("film_mode", "'%s'", dvd_title.parameter.film_mode)
+                    # VIDEO
+                    if app.args.show_video:
+                        f.DEF("vts", "%d", dvd_title.parameter.vts)
+                        f.DEF("ttn", "%d", dvd_title.parameter.ttn)
+                        f.DEF("fps", "%.2f", dvd_title.parameter.fps)
+                        f.DEF("mpeg_version", "'%s'", dvd_title.parameter.mpeg_version)
+                        f.DEF("format", "'%s'", dvd_title.parameter.format)
+                        f.DEF("aspect", "'%s'", dvd_title.parameter.aspect)
+                        if dvd_title.parameter.format == 'NTSC':
+                            f.DEF("line21_cc_1", "%d", dvd_title.parameter.line21_cc_1)
+                            f.DEF("line21_cc_2", "%d", dvd_title.parameter.line21_cc_2)
+                        f.DEF("width", "%s", dvd_title.parameter.width)
+                        f.DEF("height", "%s", dvd_title.parameter.height)
+                        f.DEF("df", "'%s'", ', '.join(sorted(dvd_title.parameter.df)))
+                        if dvd_title.parameter.format == 'PAL':
+                            f.DEF("film_mode", "'%s'", dvd_title.parameter.film_mode)
 
-                        # PALETTE
-                        if app.args.show_palette:
-                            with f.ARRAY("palette"):
-                                for dvd_palette in dvd_title.palette:
-                                    f.ADEF("'%06x'",  dvd_palette)
+                    # PALETTE
+                    if app.args.show_palette:
+                        with f.ARRAY("palette"):
+                            for dvd_palette in dvd_title.palette:
+                                f.ADEF("'%06x'",  dvd_palette)
 
-                        # ANGLES
-                        if app.args.show_angles:
-                            if dvd_title.angle_count:  # poor check, but there's no other info anyway.
-                                f.DEF("angles", "%d", dvd_title.angle_count)
+                    # ANGLES
+                    if app.args.show_angles:
+                        if dvd_title.angle_count:  # poor check, but there's no other info anyway.
+                            f.DEF("angles", "%d", dvd_title.angle_count)
 
-                        # AUDIO
-                        if app.args.show_audio:
-                            with f.ARRAY("audio"):
-                                for i, dvd_audiostream in enumerate(dvd_title.audiostreams):
-                                    if dvd_audiostream is None:
-                                        continue
-                                    with f.HASH(None):
-                                        f.DEF("ix", "%d", i + 1)
-                                        f.DEF("langcode", "'%s'", dvd_audiostream.langcode)
-                                        f.DEF("language", "'%s'", dvd_audiostream.language and dvd_audiostream.language.name)
-                                        f.DEF("format", "'%s'", dvd_audiostream.format)
-                                        f.DEF("frequency", "%s", dvd_audiostream.frequency)
-                                        f.DEF("quantization", "'%s'", dvd_audiostream.quantization)
-                                        f.DEF("channels", "%d", dvd_audiostream.channels)
-                                        f.DEF("ap_mode", "%d", dvd_audiostream.ap_mode)
-                                        f.DEF("content", "'%s'", dvd_audiostream.content)
-                                        f.DEF("streamid", "0x%x", dvd_audiostream.streamid)
-                                        f.DEF("multichannel_extension", "%s", dvd_audiostream.multichannel_extension)  # lsdvd 1.0
-                                        f.DEF("unknown1", "%d", dvd_audiostream.unknown1)  # lsdvd 1.0
-                                        f.DEF("lang_extension", "%d", dvd_audiostream.lang_extension)  # lsdvd 1.0
-                                        f.DEF("unknown3", "%d", dvd_audiostream.unknown3)  # lsdvd 1.0
+                    # AUDIO
+                    if app.args.show_audio:
+                        with f.ARRAY("audio"):
+                            for i, dvd_audiostream in enumerate(dvd_title.audiostreams):
+                                if dvd_audiostream is None:
+                                    continue
+                                with f.HASH(None):
+                                    f.DEF("ix", "%d", i + 1)
+                                    f.DEF("langcode", "'%s'", dvd_audiostream.langcode)
+                                    f.DEF("language", "'%s'", dvd_audiostream.language and dvd_audiostream.language.name)
+                                    f.DEF("format", "'%s'", dvd_audiostream.format)
+                                    f.DEF("frequency", "%s", dvd_audiostream.frequency)
+                                    f.DEF("quantization", "'%s'", dvd_audiostream.quantization)
+                                    f.DEF("channels", "%d", dvd_audiostream.channels)
+                                    f.DEF("ap_mode", "%d", dvd_audiostream.ap_mode)
+                                    f.DEF("content", "'%s'", dvd_audiostream.content)
+                                    f.DEF("streamid", "0x%x", dvd_audiostream.streamid)
+                                    f.DEF("multichannel_extension", "%s", dvd_audiostream.multichannel_extension)  # lsdvd 1.0
+                                    f.DEF("unknown1", "%d", dvd_audiostream.unknown1)  # lsdvd 1.0
+                                    f.DEF("lang_extension", "%d", dvd_audiostream.lang_extension)  # lsdvd 1.0
+                                    f.DEF("unknown3", "%d", dvd_audiostream.unknown3)  # lsdvd 1.0
 
-                        # CHAPTERS
-                        if app.args.show_chapters:
-                            # This should probably be "chapters":
-                            with f.ARRAY("chapter"):
-                                for i, dvd_chapter in enumerate(dvd_title.chapters):
-                                    with f.HASH(None):
-                                        f.DEF("ix", "%d", i + 1)
-                                        f.DEF("length", "%.3f", dvd_chapter.playback_time)
-                                        f.DEF("startcell", "%d", dvd_chapter.startcell)
+                    # CHAPTERS
+                    if app.args.show_chapters:
+                        # This should probably be "chapters":
+                        with f.ARRAY("chapter"):
+                            for i, dvd_chapter in enumerate(dvd_title.chapters):
+                                with f.HASH(None):
+                                    f.DEF("ix", "%d", i + 1)
+                                    f.DEF("length", "%.3f", dvd_chapter.playback_time)
+                                    f.DEF("startcell", "%d", dvd_chapter.startcell)
 
-                        # CELLS
-                        if app.args.show_cells:
-                            with f.ARRAY("cell"):
-                                for i, dvd_cell in enumerate(dvd_title.cells):
-                                    with f.HASH(None):
-                                        f.DEF("ix", "%d", i + 1)
-                                        f.DEF("length", "%.3f", dvd_cell.playback_time)
-                                        # added to get the size information
-                                        f.DEF("first_sector", "%d", dvd_cell.first_sector)
-                                        f.DEF("last_sector", "%d", dvd_cell.last_sector)
+                    # CELLS
+                    if app.args.show_cells:
+                        with f.ARRAY("cell"):
+                            for i, dvd_cell in enumerate(dvd_title.cells):
+                                with f.HASH(None):
+                                    f.DEF("ix", "%d", i + 1)
+                                    f.DEF("length", "%.3f", dvd_cell.playback_time)
+                                    # added to get the size information
+                                    f.DEF("first_sector", "%d", dvd_cell.first_sector)
+                                    f.DEF("last_sector", "%d", dvd_cell.last_sector)
 
-                        # SUBTITLES
-                        if app.args.show_subpictures:
-                            with f.ARRAY("subp"):
-                                for i, dvd_subtitle in enumerate(dvd_title.subtitles):
-                                    if dvd_subtitle is None:
-                                        continue
-                                    with f.HASH(None):
-                                        f.DEF("ix", "%d", i + 1)
-                                        f.DEF("langcode", "'%s'", dvd_subtitle.langcode)
-                                        f.DEF("language", "'%s'", dvd_subtitle.language and dvd_subtitle.language.name)
-                                        f.DEF("content", "'%s'", dvd_subtitle.content)
-                                        f.DEF("streamid", "0x%x", dvd_subtitle.streamid)
+                    # SUBTITLES
+                    if app.args.show_subpictures:
+                        with f.ARRAY("subp"):
+                            for i, dvd_subtitle in enumerate(dvd_title.subtitles):
+                                if dvd_subtitle is None:
+                                    continue
+                                with f.HASH(None):
+                                    f.DEF("ix", "%d", i + 1)
+                                    f.DEF("langcode", "'%s'", dvd_subtitle.langcode)
+                                    f.DEF("language", "'%s'", dvd_subtitle.language and dvd_subtitle.language.name)
+                                    f.DEF("content", "'%s'", dvd_subtitle.content)
+                                    f.DEF("streamid", "0x%x", dvd_subtitle.streamid)
 
         if app.args.target_title is None:
             f.DEF("longest_track", "%d", dvd_info.longest_track)
