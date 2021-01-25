@@ -110,6 +110,7 @@ from qip.isolang import isolang
 from qip.matroska import *
 from qip.mediainfo import *
 from qip.mencoder import mencoder
+from qip.mplayer import mplayer
 from qip.mm import *
 from qip.mm import MediaFile, MovieFile, Chapter, Chapters, FrameRate
 from qip.mp2 import *
@@ -712,6 +713,7 @@ def main():
     pgroup.add_argument('--jobs', '-j', type=int, nargs='?', default=1, const=Auto, help='Specifies the number of jobs (threads) to run simultaneously')
 
     pgroup = app.parser.add_argument_group('Tools Control')
+    pgroup.add_argument('--rip-tool', default=Auto, choices=('makemkv', 'mplayer'), help='tool to rip tracks')
     pgroup.add_argument('--track-extract-tool', default=Auto, choices=('ffmpeg', 'mkvextract'), help='tool to extract tracks')
     pgroup.add_argument('--pullup-tool', default=Auto, choices=('yuvkineco', 'ffmpeg', 'mencoder'), help='tool to pullup any 23pulldown video tracks')
     pgroup.add_argument('--ionice', default=None, type=int, help='ionice process level')
@@ -722,12 +724,12 @@ def main():
     pgroup = app.parser.add_argument_group('Ripping Control')
     pgroup.add_argument('--device', default=Path(os.environ.get('CDROM', '/dev/cdrom')), type=_resolved_Path, help='specify alternate cdrom device')
     pgroup.add_argument('--minlength', default=Auto, type=AnyTimestamp, help='minimum title length for ripping (default: ' + default_minlength_movie.friendly_str() + ' (movie), ' + default_minlength_tvshow.friendly_str() + ' (tvshow))')
-    pgroup.add_argument('--sp-remove-method', default='auto', choices=('auto', 'CellWalk', 'CellTrim'), help='DVD structure protection removal method')
     pgroup.add_bool_argument('--check-start-time', default=Auto, help='check start time of tracks')
     pgroup.add_argument('--stage', default=Auto, type=int, choices=range(1, 3 + 1), help='specify ripping stage')
     pgroup.add_bool_argument('--decrypt', default=True, help='create decrypted backup')
-    pgroup.add_argument('--makemkv-profile', default='default', type=str, help='MakeMKV profile name (e.g.: default, flac, wdtv, aac-st)')
     pgroup.add_argument('--rip-languages', default=[], nargs="+", type=isolang, help='List of audio/subtitle languages to rip')
+    pgroup.add_argument('--makemkv-sp-remove-method', default='auto', choices=('auto', 'CellWalk', 'CellTrim'), help='MakeMKV DVD structure protection removal method')
+    pgroup.add_argument('--makemkv-profile', default='default', type=str, help='MakeMKV profile name (e.g.: default, flac, wdtv, aac-st)')
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -787,6 +789,7 @@ def main():
     pgroup.add_argument('--chop-chapters', dest='chop_chaps', nargs='+', default=argparse.SUPPRESS, type=int, help='List of chapters to chop at')
     pgroup.add_bool_argument('--rip-menus', default=False, help='rip menus from device')
     pgroup.add_bool_argument('--rip-titles', default=True, help='rip titles from device')
+    pgroup.add_argument('--rip-titles-list', nargs="+", default=(), help='list of titles to rip (from lsdvd output)')
 
     pgroup = app.parser.add_argument_group('Music extraction')
     pgroup.add_argument('--skip-chapters', dest='num_skip_chapters', type=int, default=0, help='number of chapters to skip')
@@ -1719,7 +1722,6 @@ def action_rip(rip_dir, device, in_tags):
                                          ivts, ilu, isrp, pgci_srp.pgc.nr_of_cells, total_sector_count, cell_playback_time)
 
         if app.args.rip_titles:
-            from qip.makemkv import makemkvcon
 
             minlength = app.args.minlength
             if minlength is Auto:
@@ -1728,85 +1730,132 @@ def action_rip(rip_dir, device, in_tags):
                 else:
                     minlength = default_minlength_movie
 
-            # See ~/.MakeMKV/settings.conf
-            profile_xml = makemkvcon.get_profile_xml(f'{app.args.makemkv_profile}.mmcp.xml')
-            eMkvSettings = profile_xml.find('mkvSettings')
-            eMkvSettings.set('ignoreForcedSubtitlesFlag', 'false')
-            eProfileSettings = profile_xml.find('profileSettings')
-            makemkv_languages_s = []
-            for lang in app.args.rip_languages:
-                if lang.name == 'und':
-                    makemkv_languages_s.append('nolang')
+            rip_titles_done = False
+
+            if not rip_titles_done \
+                    and app.args.rip_tool in ('makemkv', Auto) \
+                    and not app.args.rip_titles_list:
+                from qip.makemkv import makemkvcon
+
+                # See ~/.MakeMKV/settings.conf
+                profile_xml = makemkvcon.get_profile_xml(f'{app.args.makemkv_profile}.mmcp.xml')
+                eMkvSettings = profile_xml.find('mkvSettings')
+                eMkvSettings.set('ignoreForcedSubtitlesFlag', 'false')
+                eProfileSettings = profile_xml.find('profileSettings')
+                makemkv_languages_s = []
+                for lang in app.args.rip_languages:
+                    if lang.name == 'und':
+                        makemkv_languages_s.append('nolang')
+                    else:
+                        makemkv_languages_s.append(lang.synonim_iso639_2)
+                        makemkv_languages_s.append(lang.code3)
+                makemkv_languages_s = [lang for lang in makemkv_languages_s if lang]
+                eProfileSettings.set('app_PreferredLanguage', makemkv_languages_s[0])
+                eProfileSettings.set('app_DefaultSelectionString',
+                                     '+sel:all,-sel:(audio|subtitle),+sel:({rip_languages}),-sel:core,=100:all,-10:favlang'.format(
+                                         rip_languages='|'.join(makemkv_languages_s),
+                                     ))
+
+                settings_changed = False
+                makemkvcon_settings = makemkvcon.read_settings_conf()
+                orig_makemkvcon_settings = makemkvcon.read_settings_conf()
+
+                dvd_SPRemoveMethod = {
+                    'auto': (None, '0'),
+                    'CellWalk': ('1',),
+                    'CellTrim': ('2',),
+                }[app.args.makemkv_sp_remove_method]
+                if makemkvcon_settings.get('dvd_SPRemoveMethod', None) not in dvd_SPRemoveMethod:
+                    if dvd_SPRemoveMethod[0] is None:
+                        del makemkvcon_settings['dvd_SPRemoveMethod']
+                    else:
+                        makemkvcon_settings['dvd_SPRemoveMethod'] = dvd_SPRemoveMethod[0]
+                    settings_changed = True
+
+                if device.is_block_device():
+                    if app.args.check_cdrom_ready:
+                        if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
+                            raise Exception("CDROM not ready")
+                    source = f'dev:{device.resolve()}'  # makemkv is picky
                 else:
-                    makemkv_languages_s.append(lang.synonim_iso639_2)
-                    makemkv_languages_s.append(lang.code3)
-            makemkv_languages_s = [lang for lang in makemkv_languages_s if lang]
-            eProfileSettings.set('app_PreferredLanguage', makemkv_languages_s[0])
-            eProfileSettings.set('app_DefaultSelectionString',
-                                 '+sel:all,-sel:(audio|subtitle),+sel:({rip_languages}),-sel:core,=100:all,-10:favlang'.format(
-                                     rip_languages='|'.join(makemkv_languages_s),
-                                 ))
+                    if device.is_dir():
+                        source = f'file:{os.fspath(device)}'
+                    else:
+                        if device.suffix not in iso_image_exts:
+                            raise ValueError(f'File is not a device or {"|".join(sorted(iso_image_exts))}: {device}')
+                        source = f'iso:{os.fspath(device)}'
 
-            settings_changed = False
-            makemkvcon_settings = makemkvcon.read_settings_conf()
-            orig_makemkvcon_settings = makemkvcon.read_settings_conf()
-
-            dvd_SPRemoveMethod = {
-                'auto': (None, '0'),
-                'CellWalk': ('1',),
-                'CellTrim': ('2',),
-            }[app.args.sp_remove_method]
-            if makemkvcon_settings.get('dvd_SPRemoveMethod', None) not in dvd_SPRemoveMethod:
-                if dvd_SPRemoveMethod[0] is None:
-                    del makemkvcon_settings['dvd_SPRemoveMethod']
-                else:
-                    makemkvcon_settings['dvd_SPRemoveMethod'] = dvd_SPRemoveMethod[0]
-                settings_changed = True
-
-            if device.is_block_device():
-                if app.args.check_cdrom_ready:
-                    if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
-                        raise Exception("CDROM not ready")
-                source = f'dev:{device.resolve()}'  # makemkv is picky
-            else:
-                if device.is_dir():
-                    source = f'file:{os.fspath(device)}'
-                else:
-                    if device.suffix not in iso_image_exts:
-                        raise ValueError(f'File is not a device or {"|".join(sorted(iso_image_exts))}: {device}')
-                    source = f'iso:{os.fspath(device)}'
-
-            if not app.args.dry_run and settings_changed:
-                app.log.warning('Changing makemkv settings!')
-                makemkvcon.write_settings_conf(makemkvcon_settings)
-            try:
-
-                with TempFile.mkstemp(text=True, suffix='.profile.xml') as tmp_profile_xml_file:
-                    profile_xml.write(tmp_profile_xml_file.file_name,
-                        #encoding='unicode',
-                        xml_declaration=True,
-                        )
-
-                    rip_info = makemkvcon.mkv(
-                        source=source,
-                        dest_dir=rip_dir,
-                        minlength=int(minlength),
-                        profile=tmp_profile_xml_file,
-                        #retry_no_cd=device.is_block_device(),
-                        noscan=True,
-                        robot=True,
-                    )
-
-            finally:
                 if not app.args.dry_run and settings_changed:
-                    app.log.warning('Restoring makemkv settings!')
-                    makemkvcon.write_settings_conf(orig_makemkvcon_settings)
+                    app.log.warning('Changing makemkv settings!')
+                    makemkvcon.write_settings_conf(makemkvcon_settings)
+                try:
 
-            # TODO
-            if not app.args.dry_run:
-                for title_no, angle_no in rip_info.spawn.angles:
-                    pass
-                app.log.debug('rip_info.spawn.angles=%r', rip_info.spawn.angles)
+                    with TempFile.mkstemp(text=True, suffix='.profile.xml') as tmp_profile_xml_file:
+                        profile_xml.write(tmp_profile_xml_file.file_name,
+                            #encoding='unicode',
+                            xml_declaration=True,
+                            )
+
+                        with perfcontext('Ripping w/ makemkvcon', log=True):
+                            rip_info = makemkvcon.mkv(
+                                source=source,
+                                dest_dir=rip_dir,
+                                minlength=int(minlength),
+                                profile=tmp_profile_xml_file,
+                                #retry_no_cd=device.is_block_device(),
+                                noscan=True,
+                                robot=True,
+                            )
+
+                finally:
+                    if not app.args.dry_run and settings_changed:
+                        app.log.warning('Restoring makemkv settings!')
+                        makemkvcon.write_settings_conf(orig_makemkvcon_settings)
+
+                # TODO
+                if not app.args.dry_run:
+                    for title_no, angle_no in rip_info.spawn.angles:
+                        pass
+                    app.log.debug('rip_info.spawn.angles=%r', rip_info.spawn.angles)
+
+                rip_titles_done = True
+
+            if not rip_titles_done and app.args.rip_tool in ('mplayer', Auto):
+                from qip.mplayer import mplayer
+                from qip.bin.lsdvd import lsdvd
+
+                dvd_info = lsdvd(device=app.args.device)
+                rip_titles = filter(None, dvd_info.titles)
+                if app.args.rip_titles is True:
+                    if minlength:
+                        rip_titles = (dvd_title
+                                      for dvd_title in rip_titles
+                                      if dvd_title.general.playback_time >= minlength)
+                else:
+                    rip_titles = (dvd_title
+                                  for dvd_title in rip_titles
+                                  if dvd_title.title_no in app.args.rip_titles)
+                rip_titles = list(rip_titles)
+                if app.args.rip_titles_list:
+                    rip_titles = [dvd_title
+                                  for dvd_title in rip_titles
+                                  if dvd_title.title_no in app.args.rip_titles_list]
+
+                for dvd_title in rip_titles:
+                    outputfile = VobFile(rip_dir / 'title_t{:02d}.vob'.format(dvd_title.title_no))
+                    with perfcontext(f'Ripping title #{dvd_title.title_no} w/ mplayer: {outputfile}', log=True):
+                        mplayer_args = []
+                        mplayer_args += [
+                            f'dvd://{dvd_title.title_no}/{device}',
+                            '-dumpstream',
+                            '-dumpfile', outputfile,
+                        ]
+                        mplayer(*mplayer_args)
+
+                rip_titles_done = True
+
+            if not rip_titles_done:
+                raise NotImplementedError('unsupported rip tool: %r' % (app.args.mplayer,))
 
     except:
         if app.args.dry_run:
