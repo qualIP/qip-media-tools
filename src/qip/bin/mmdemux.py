@@ -4992,138 +4992,41 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                                                chapter_stream_file_ext.replace('%', '%%'))
                             new_stream_chapter_file_name_pat = '%s-chap%%02d%s' % (new_stream_file_name_base.replace('%', '%%'),
                                                                                    new_stream_file_ext.replace('%', '%%'))
-
                             threads = []
 
-                            def encode_chap():
-                                app.log.verbose('Chapter %s', chap)
-                                stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
-                                new_stream_chapter_file_name = new_stream_chapter_file_name_pat % (chap.no,)
-                                # https://ffmpeg.org/ffmpeg-all.html#concat-1
-                                concat_list_file.files.append(concat_list_file.File(new_stream_chapter_file_name))  # relative
-
-                                ffmpeg_args = default_ffmpeg_args + [
-                                    '-i', new_stream.inputdir / stream_chapter_file_name,
-                                    ] + ffmpeg_conv_args + [
-                                    '-f', ext_to_container(new_stream_file_ext), new_stream.inputdir / new_stream_chapter_file_name,
-                                    ]
-                                future = slurm_executor.submit(
-                                        ffmpeg.run2pass,
-                                        *ffmpeg_args,
-                                        **{
-                                            'slurm': app.args.slurm,
-                                            'progress_bar_max': chap.end - chap.start,
-                                            'progress_bar_title': f'Encode {stream_dict.codec_type} stream {stream_dict.pprint_index} chapter {chap} w/ ffmpeg',
-                                            'dry_run': app.args.dry_run,
-                                            'y': app.args.yes,
-                                            })
-                                threads.append(future)
-
                             chapter_lossless = True
+                            app.log.verbose('All chapters...')
 
-                            # Chop
-                            if False and stream_file_ext in ('.h264',):
-                                # "ffmpeg cannot always read correct timestamps from H264 streams"
-                                # So split manually instead of using the segment muxer
-                                raise NotImplementedError  # This is not an accurate split!!
-                                ffmpeg_concat_args += [
-                                    '-vsync', 'drop',
-                                    ]
-                                for chap in chaps:
-                                    app.log.verbose('Chapter %s', chap)
-                                    stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
-                                    if False and app.args._continue \
-                                            and (stream_dict.inputdir / stream_chapter_file_name).exists() \
-                                            and (stream_dict.inputdir / stream_chapter_file_name).stat().st_size:
-                                        app.log.warning('%s exists: continue...')
-                                    else:
-                                        with perfcontext('Chop w/ ffmpeg'):
-                                            ffmpeg_args = default_ffmpeg_args + [
-                                                '-fflags', '+genpts',
-                                                '-start_at_zero', '-copyts',
-                                            ]
-                                            force_input_framerate = getattr(app.args, 'force_input_framerate', None)
-                                            if force_input_framerate:
-                                                ffmpeg_args += [
-                                                    '-r', force_input_framerate,
-                                                    ]
-                                            codec = ('copy' if (ext_to_codec(chapter_stream_file_ext) == ext_to_codec(stream_file_ext)
-                                                                and not (chapter_lossless and stream_file_ext in (
-                                                                    '.h264', # h264 copy just spits out a single empty chapter
-                                                                    '.h265', # hevc/h265 copy just spits out a single empty chapter
-                                                                )))
-                                                     else ext_to_codec(chapter_stream_file_ext, lStereo3DMode_or_Noneossless=chapter_lossless))
-                                            ffmpeg_args += codec_to_input_args(codec) + [
-                                                '-i', stream_dict.path,
-                                                '-codec', codec,
-                                                '-ss', ffmpeg.Timestamp(chap.start),
-                                                '-to', ffmpeg.Timestamp(chap.end),
-                                                ]
-                                            if stream_dict.is_hdr():
-                                                raise NotImplementedError('HDR support not implemented')
-                                            force_format = None
-                                            try:
-                                                force_format = ext_to_container(stream_file_ext)
-                                            except ValueError:
-                                                pass
-                                            if force_format:
-                                                ffmpeg_args += [
-                                                    '-f', force_format,
-                                                    ]
-                                            ffmpeg_args += [
-                                                stream_dict.inputdir / stream_chapter_file_name,
-                                                ]
-                                            ffmpeg(*ffmpeg_args,
-                                                   progress_bar_max=chap.end - chap.start,
-                                                   progress_bar_title=f'Chop {stream_dict.codec_type} stream {stream_dict.pprint_index} chapter {chap} w/ ffmpeg',
-                                                   dry_run=app.args.dry_run,
-                                                   y=app.args.yes)
-                                    encode_chap()
-                                    temp_files.append(stream_dict.inputdir / stream_chapter_file_name)
-                            else:
-                                app.log.verbose('All chapters...')
+                            assert 'concat_streams' not in new_stream
+                            new_stream['file_name'] = stream_dict['file_name']  # Restore!
+                            new_stream['concat_streams'] = []
 
-                                assert 'concat_streams' not in new_stream
-                                new_stream['file_name'] = stream_dict['file_name']  # Restore!
-                                new_stream['concat_streams'] = []
+                            stream_chapter_file_name_pat = \
+                                chop_chapters(chaps=chaps,
+                                              inputfile=stream_dict.file,
+                                              chapter_file_ext=chapter_stream_file_ext,
+                                              chapter_lossless=chapter_lossless)
+                            stream_chapter_file_name_pat = os.fspath(
+                                Path(stream_chapter_file_name_pat).relative_to(
+                                    os.fspath(stream_dict.inputdir).replace('%', '%%')))
 
-                                stream_chapter_file_name_pat = \
-                                    chop_chapters(chaps=chaps,
-                                                  inputfile=stream_dict.file,
-                                                  chapter_file_ext=chapter_stream_file_ext,
-                                                  chapter_lossless=chapter_lossless)
-                                stream_chapter_file_name_pat = os.fspath(
-                                    Path(stream_chapter_file_name_pat).relative_to(
-                                        os.fspath(stream_dict.inputdir).replace('%', '%%')))
+                            # Sometimes the last chapter is past the end
+                            if len(chaps) > 1:
+                                chap = chaps[-1]
+                                stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
+                                if not (stream_dict.inputdir / stream_chapter_file_name).exists():
+                                    stream_chapter_file_name2 = stream_chapter_file_name_pat % (chaps[-2].no,)
+                                    assert (stream_dict.inputdir / stream_chapter_file_name2).exists()
+                                    app.log.warning('Stream #%s chapter %s not outputted!', stream_dict.pprint_index, chap)
+                                    chaps.pop(-1)
 
-                                # Sometimes the last chapter is past the end
-                                if len(chaps) > 1:
-                                    chap = chaps[-1]
-                                    stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
-                                    if not (stream_dict.inputdir / stream_chapter_file_name).exists():
-                                        stream_chapter_file_name2 = stream_chapter_file_name_pat % (chaps[-2].no,)
-                                        assert (stream_dict.inputdir / stream_chapter_file_name2).exists()
-                                        app.log.warning('Stream #%s chapter %s not outputted!', stream_dict.pprint_index, chap)
-                                        chaps.pop(-1)
-
-                                for chap in chaps:
-                                    sub_stream = new_stream.new_sub_stream(chap.no,
-                                                                            stream_chapter_file_name_pat % (chap.no,))
-                                    sub_stream['estimated_duration'] = str(chap.duration)
-                                    new_stream['concat_streams'].append(sub_stream)
-                                done_optimize_iter(new_stream=new_stream)
-                                continue
-
-                            # Join
-                            concat_list_file.create()
-                            exc = None
-                            for future in concurrent.futures.as_completed(threads):
-                                try:
-                                    future.result()
-                                except BaseException as e:
-                                    exc = e
-                            if exc:
-                                raise exc
+                            for chap in chaps:
+                                sub_stream = new_stream.new_sub_stream(chap.no,
+                                                                        stream_chapter_file_name_pat % (chap.no,))
+                                sub_stream['estimated_duration'] = str(chap.duration)
+                                new_stream['concat_streams'].append(sub_stream)
+                            done_optimize_iter(new_stream=new_stream)
+                            continue
 
                         force_input_framerate = getattr(app.args, 'force_input_framerate', None)
                         assert force_input_framerate or input_framerate or framerate
