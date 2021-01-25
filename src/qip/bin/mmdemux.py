@@ -543,7 +543,7 @@ def analyze_field_order_and_framerate(
                             field_order = 'auto-interlaced'
                             app.log.warning('Detected field order is mix of top and bottom field first (%s) at %s (%.3f) fps',
                                             field_order, framerate, framerate)
-                    # v_pick_framerate = pick_framerate(stream_file.file_name, stream_file.ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
+                    # v_pick_framerate = pick_framerate(stream_file.file_name, stream_file.ffprobe_dict, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
                     # assert framerate == v_pick_framerate, f'constant framerate ({framerate}) does not match picked framerate ({v_pick_framerate})'
                 else:
                     field_order_diags.append('Variable fps found.')
@@ -616,7 +616,7 @@ def analyze_field_order_and_framerate(
                 #    print('pkt_duration_time=%r, interlaced_frame=%r' % (video_frames[i].pkt_duration_time, video_frames[i].interlaced_frame))
                 # pkt_duration_time=0.033000|interlaced_frame=1|top_field_first=1 = tt @ 30000/1001 ?
                 # pkt_duration_time=0.041000|interlaced_frame=0|top_field_first=0 = progressive @ 24000/1001 ?
-                field_order = pick_field_order(stream_file.file_name, stream_file.ffprobe_json, ffprobe_stream_json, mediainfo_track_dict)
+                field_order = pick_field_order(stream_file.file_name, stream_file.ffprobe_dict, ffprobe_stream_json, mediainfo_track_dict)
 
     if field_order is None:
         raise NotImplementedError('field_order unknown' \
@@ -624,7 +624,7 @@ def analyze_field_order_and_framerate(
                                      if field_order_diags else ''))
 
     if framerate is None:
-        framerate = pick_framerate(stream_file.file_name, stream_file.ffprobe_json, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
+        framerate = pick_framerate(stream_file.file_name, stream_file.ffprobe_dict, ffprobe_stream_json, mediainfo_track_dict, field_order=field_order)
 
     return field_order, input_framerate, framerate
 
@@ -2821,8 +2821,8 @@ def action_mux(inputfile, in_tags,
                         break
                 try:
                     ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
-                except argparse.ArgumentError as e:
-                    app.log.error(e);
+                except (argparse.ArgumentError, ValueError) as e:
+                    app.log.error(e)
                     print('')
                     continue
                 if ns.action == 'help':
@@ -3937,7 +3937,6 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                 nonlocal stream_dict
                 nonlocal stream_file_base
                 nonlocal stream_file_ext
-
 
                 if do_skip:
                     stream_dict['skip'] = True
@@ -5384,13 +5383,13 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                         break
                                                 try:
                                                     ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
-                                                except argparse.ArgumentError as e:
-                                                    app.log.error(e);
+                                                except (argparse.ArgumentError, ValueError) as e:
+                                                    app.log.error(e)
                                                     print('')
                                                     continue
                                                 except argparse.ParserExitException as e:
                                                     if e.status:
-                                                        app.log.error(e);
+                                                        app.log.error(e)
                                                         print('')
                                                     continue
                                                 if ns.action == 'help':
@@ -5794,7 +5793,7 @@ def action_demux(inputdir, in_tags):
                         break
                 try:
                     ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
-                except argparse.ArgumentError as e:
+                except (argparse.ArgumentError, ValueError) as e:
                     app.log.error(e)
                     print('')
                     continue
