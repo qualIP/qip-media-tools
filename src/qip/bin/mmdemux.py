@@ -725,7 +725,11 @@ def main():
     pgroup.add_argument('--device', default=Path(os.environ.get('CDROM', '/dev/cdrom')), type=_resolved_Path, help='specify alternate cdrom device')
     pgroup.add_argument('--minlength', default=Auto, type=AnyTimestamp, help='minimum title length for ripping (default: ' + default_minlength_movie.friendly_str() + ' (movie), ' + default_minlength_tvshow.friendly_str() + ' (tvshow))')
     pgroup.add_bool_argument('--check-start-time', default=Auto, help='check start time of tracks')
-    pgroup.add_argument('--stage', default=Auto, type=int, choices=range(1, 3 + 1), help='specify ripping stage')
+    pgroup.add_argument('--stage', default=Auto, type=int, choices=range(1, 3 + 1), help='specify ripping stage (--rip-iso)')
+    # For argument compatibility with safecopy
+    pgroup.add_argument('--stage1', dest='stage', default=argparse.SUPPRESS, action='store_const', const=1, help=argparse.SUPPRESS)
+    pgroup.add_argument('--stage2', dest='stage', default=argparse.SUPPRESS, action='store_const', const=2, help=argparse.SUPPRESS)
+    pgroup.add_argument('--stage3', dest='stage', default=argparse.SUPPRESS, action='store_const', const=3, help=argparse.SUPPRESS)
     pgroup.add_bool_argument('--decrypt', default=True, help='create decrypted backup')
     pgroup.add_argument('--rip-languages', default=[], nargs="+", type=isolang, help='List of audio/subtitle languages to rip')
     pgroup.add_argument('--makemkv-sp-remove-method', default='auto', choices=('auto', 'CellWalk', 'CellTrim'), help='MakeMKV DVD structure protection removal method')
