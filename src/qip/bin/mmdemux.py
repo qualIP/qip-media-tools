@@ -1110,6 +1110,88 @@ def ext_to_codec_args(ext, lossless=False):
         ]
     return codec_args
 
+hdr_color_transfer_stems = {
+    # Perceptual Quantizers (PQ)
+    'smpte2084',  # HDR10 & DolbyVision
+    'smpte2094',  # HDR10+
+}
+# 'smpte2085',  # ??
+# 'smpte2086',  # Metadata format, used in HDR10 & DolbyVision
+
+def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_track_dict=None):
+    ffmpeg_hdr_args = []
+    assert codec
+    if ffprobe_stream_json is None:
+        ffprobe_stream_json, = inputfile.ffprobe_dict['streams']
+    if mediainfo_track_dict is None:
+        assert len(inputfile.mediainfo_dict['media']['track']) == 2
+        mediainfo_track_dict = inputfile.mediainfo_dict['media']['track'][1]
+    # NOTE: mediainfo does not distinguish between SMPTE ST 2087 and SMPTE ST 2084; It always displays 'SMPTE ST 2086'.
+    color_transfer = ffprobe_stream_json.get('color_transfer', '')
+    if any(v in color_transfer
+           for v in hdr_color_transfer_stems):
+        # HDR-10, HDR-10+ and Dolby Vision should all have some flavour of smpte2084, smpte2086, smpte2094
+
+        if codec in (
+                'libvpx-vp9',
+        ):
+            # https://developers.google.com/media/vp9/hdr-encoding
+            need_2pass = True
+            assert mediainfo_track_dict['BitDepth'] == 10 # avc @ profile High, hevc @ profile Main 10, ??
+            assert ffprobe_stream_json['pix_fmt'] == 'yuv420p10le'
+            ffmpeg_hdr_args += [
+                '-pix_fmt', 'yuv420p10le',
+            ]
+            ffmpeg_hdr_args += [
+                '-color_primaries', {
+                    'bt2020': 9,  # BT.2020
+                }[ffprobe_stream_json['color_primaries']],
+            ]
+            ffmpeg_hdr_args += [
+                '-color_trc', {
+                    'smpte2084': 16,
+                    'smpte2086': 18,
+                }[ffprobe_stream_json['color_transfer']],
+            ]
+            ffmpeg_hdr_args += [
+                '-colorspace', {
+                    'bt2020nc': 9,    # BT.2020 NCL
+                    'bt2020_ncl': 9,  # BT.2020 NCL
+                    'bt2020c': 10,    # BT.2020 CL
+                    'bt2020_cl': 10,  # BT.2020 CL
+                }[ffprobe_stream_json['color_space']],
+            ]
+            ffmpeg_hdr_args += [
+                '-color_range', {
+                    'unknown': 0,      # Unspecified
+                    'unspecified': 0,  # Unspecified
+                    'tv': 1,           # MPEG (219*2^(n-8))
+                    'mpeg': 1,         # MPEG (219*2^(n-8))
+                    'pc': 2,           # JPEG (2^n-1)
+                    'jpeg': 2,         # JPEG (2^n-1)
+                }[ffprobe_stream_json['color_range']]
+            ]
+            # https://www.webmproject.org/vp9/profiles/
+            if 'yuv420' in ffprobe_stream_json['pix_fmt']:
+                ffmpeg_hdr_args += [
+                    '-profile', 2,  # 10 or 12 bit, 4:2:0
+                ]
+            elif 'yuv422' in ffprobe_stream_json['pix_fmt']:
+                ffmpeg_hdr_args += [
+                    '-profile', 3,  # 10 or 12 bit, 4:2:2 or 4:4:4
+                ]
+            elif 'yuv420' in ffprobe_stream_json['pix_fmt']:
+                ffmpeg_hdr_args += [
+                    '-profile', 3,  # 10 or 12 bit, 4:2:2 or 4:4:4
+                ]
+            else:
+                raise NotImplementedError('VP9 HDR {color_range} profile for {pix_fmt}'.format_map(ffprobe_stream_json))
+        else:
+            raise NotImplementedError(f'HDR support not implemented (HDR {color_transfer} using {codec})')
+    else:
+        pass  # Not SMPTE color transfer; Assume not HDR
+    return ffmpeg_hdr_args
+
 def codec_to_input_args(codec):
     codec_args = []
     if codec in (
@@ -2233,6 +2315,8 @@ def chop_chapters(chaps,
     ]
     if codec != 'copy':
         codec_args += ext_to_codec_args(chapter_file_ext, lossless=chapter_lossless)
+    codec_args += get_hdr_codec_args(inputfile=inputfile,
+                                     codec=codec)
 
     chaps_list_copy = copy.deepcopy(chaps_list)
     chaps_list_copy[-1].chapters[-1].end = ffmpeg.Timestamp.MAX  # Make sure whole movie is captured
@@ -3815,6 +3899,16 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
             with self.mux_dict.mux_file_lock:
                 self._data_backup = _data_backup
 
+    def is_hdr(self):
+        if self.codec_type != 'video':
+            return False
+        ffprobe_stream_json, = self.file.ffprobe_dict['streams']
+        color_transfer = ffprobe_stream_json.get('color_transfer', '')
+        if any(v in color_transfer
+               for v in hdr_color_transfer_stems):
+            return True
+        return False
+
     file = propex(
         name='file',
         type=propex.test_isinstance(File))
@@ -4190,6 +4284,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                         assert ffprobe_stream_json['pix_fmt'] == 'yuv420p'
                         frimdecode_fmt = 'i420'
+                        if stream_dict.is_hdr():
+                            raise NotImplementedError('HDR support not implemented')
                         ffmpeg_pix_fmt = 'yuv420p'
 
                         new_stream_file_ext = pick_lossless_codec_ext(stream_dict)
@@ -4359,6 +4455,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                     ffmpeg_dec_args += [
                                         '-vf', ','.join(ffmpeg_video_filter_args),
                                         ]
+                                if stream_dict.is_hdr():
+                                    raise NotImplementedError('HDR support not implemented')
                                 ffmpeg_dec_args += [
                                     '-pix_fmt', 'yuv420p',
                                     '-nostats',  # will expect progress on output
@@ -4396,6 +4494,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 yuvkineco_cmd += ['-i', '-1']  # Disable deinterlacing
                             yuvkineco_cmd += ['-C', stream_dict.inputdir / (new_stream_file_name_base + '.23c')]  # pull down cycle list file
 
+                            if stream_dict.is_hdr():
+                                raise NotImplementedError('HDR support not implemented')
                             ffmpeg_enc_args = [
                                 '-i', 'pipe:0',
                                 '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
@@ -4458,6 +4558,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             decimate_using_ffmpeg = True
                             decimate_using_ffmpeg = False
 
+                            if stream_dict.is_hdr():
+                                raise NotImplementedError('HDR support not implemented')
                             new_stream_file_ext = '.ffv1.mkv'
                             lossless = True
                             new_stream['file_name'] = '.'.join(e for e in stream_file_base.split('.')
@@ -4519,6 +4621,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 + '.mencoder-pullup' + new_stream_file_ext
                             app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
 
+                            if stream_dict.is_hdr():
+                                raise NotImplementedError('HDR support not implemented')
                             mencoder_args = [
                                 '-aspect', display_aspect_ratio,
                                 stream_dict.path,
@@ -4773,9 +4877,11 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             else:
                                 extra_args += ['-vsync', 'drop']
 
+                    need_2pass = False
                     ffmpeg_conv_args = []
+                    codec = ext_to_codec(new_stream_file_ext, lossless=lossless)
                     ffmpeg_conv_args += [
-                        '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
+                        '-codec:v', codec,
                     ]
 
                     if new_stream_file_ext == '.vp9.ivf':
@@ -4857,6 +4963,11 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         ffmpeg_conv_args += ext_to_codec_args(new_stream_file_ext, lossless=lossless)
 
                     ffmpeg_conv_args += extra_args
+
+                    ffmpeg_conv_args += get_hdr_codec_args(inputfile=stream_dict.file,
+                                                           codec=codec,
+                                                           ffprobe_stream_json=ffprobe_stream_json,
+                                                           mediainfo_track_dict=mediainfo_track_dict)
 
                     if (parallel_chapters
                             and stream_file_ext in (
@@ -4945,6 +5056,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                 '-ss', ffmpeg.Timestamp(chap.start),
                                                 '-to', ffmpeg.Timestamp(chap.end),
                                                 ]
+                                            if stream_dict.is_hdr():
+                                                raise NotImplementedError('HDR support not implemented')
                                             force_format = None
                                             try:
                                                 force_format = ext_to_container(stream_file_ext)
@@ -5016,6 +5129,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         ffmpeg_concat_args = []
                         with perfcontext('Concat %s w/ ffmpeg' % (new_stream.file_name,), log=True):
                             cwd = concat_list_file.file_name.parent  # Certain characters (like '?') confuse the concat protocol
+                            if stream_dict.is_hdr():
+                                raise NotImplementedError('HDR support not implemented')
                             ffmpeg_args = default_ffmpeg_args + [
                                 '-f', 'concat', '-safe', '0',
                                 '-r', force_input_framerate or input_framerate or framerate,
@@ -5052,7 +5167,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         ffmpeg_args += [
                             '-f', ext_to_container(new_stream_file_ext), new_stream.path,
                             ]
-                        if new_stream_file_ext in (
+                        if need_2pass or new_stream_file_ext in (
                                 '.vp8.ivf',
                                 '.vp9.ivf',
                                 '.av1.ivf',
