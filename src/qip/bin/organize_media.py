@@ -481,7 +481,8 @@ def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
             qip.mm.ContentType.deleted: '-deleted',
             qip.mm.ContentType.documentary: (
                 # https://github.com/contrary-cat/LocalTVExtras.bundle
-                '-extra' if dbtype in ('tvshow',)
+                # '-extra' if dbtype in ('tvshow',)  # Plex Media Scanner says "Got nothing for ... Extra"
+                '-other' if dbtype in ('tvshow',)    # <- Revert to other
                 else '-other'),  # TODO documentary support in Local TV Extras
             #qip.mm.ContentType.feature_film: '-TODO',
             qip.mm.ContentType.featurette: '-featurette',
