@@ -91,6 +91,7 @@ def main():
     pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex', 'mmdemux'], help='App compatibility mode')
     pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files')
     pgroup.add_argument('--no-aux', dest='aux', default=argparse.SUPPRESS, action='store_false', help='Do not handle auxiliary files')
+    pgroup.add_bool_argument('--overwrite', default=False, help='overwrite files')
 
     pgroup = app.parser.add_argument_group('Library Mode')
     pgroup.add_argument('--music', '--normal', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='normal', help='Normal (Music) mode')
@@ -888,8 +889,11 @@ def organize(inputfile):
                 skip = True
                 break
             else:
-                app.log.debug('  Collision with %s.', dst_file_name)
-                continue
+                if app.args.overwrite:
+                    app.log.debug('  Collision with %s. (overwriting)', dst_file_name)
+                else:
+                    app.log.debug('  Collision with %s.', dst_file_name)
+                    continue
         if not dst_dir.exists():
             if app.args.dry_run:
                 app.log.info('  Create %s. (dry-run)', dst_dir)
@@ -912,7 +916,10 @@ def organize(inputfile):
                 dst_aux_file_tail = dst_file_base + aux_file_suffix
                 dst_aux_file_name = os.fspath(dst_dir / dst_aux_file_tail)
                 if os.path.exists(dst_aux_file_name):
-                    raise OSError(errno.EEXIST, dst_aux_file_name)
+                    if app.args.overwrite:
+                        app.log.debug('  Collision with %s. (overwriting)', dst_aux_file_name)
+                    else:
+                        raise OSError(errno.EEXIST, dst_aux_file_name)
                 aux_moves.append((aux_file_name, dst_aux_file_name))
         if app.args.dry_run:
             app.log.info('  Rename to %s. (dry-run)', dst_file_name)
