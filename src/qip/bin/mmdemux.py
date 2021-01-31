@@ -111,6 +111,7 @@ from qip.matroska import *
 from qip.mediainfo import *
 from qip.mencoder import mencoder
 from qip.mplayer import mplayer
+from qip.mkvmerge import mkvmerge
 from qip.mm import *
 from qip.mm import MediaFile, MovieFile, Chapter, Chapters, FrameRate
 from qip.mp2 import *
@@ -6022,14 +6023,12 @@ def action_demux(inputdir, in_tags):
             mux_dict.save()
 
     if use_mkvmerge:
-        cmd = [
-            'mkvmerge',
-            ]
+        mkvmerge_args = []
         if webm:
-            cmd += [
+            mkvmerge_args += [
                 '--webm',
             ]
-        cmd += [
+        mkvmerge_args += [
             '-o', output_file,
             '--no-track-tags',
             '--no-global-tags',
@@ -6146,7 +6145,7 @@ def action_demux(inputdir, in_tags):
                                     follow_symlinks=True)
                     continue
                 else:
-                    cmd += [
+                    mkvmerge_args += [
                         # '--attachment-description', <desc>
                         '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', stream_dict.path])).strip(),
                         '--attachment-name', '%s%s' % (attachment_type, my_splitext(stream_dict.file_name)[1]),
@@ -6156,25 +6155,25 @@ def action_demux(inputdir, in_tags):
                 if stream_dict.codec_type == 'video':
                     display_aspect_ratio = Ratio(stream_dict.get('display_aspect_ratio', None))
                     if display_aspect_ratio:
-                        cmd += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
+                        mkvmerge_args += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
                 stream_default = stream_dict['disposition'].get('default', None)
-                cmd += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
+                mkvmerge_args += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
                 if stream_dict.language is not isolang('und'):
-                    cmd += ['--language', '0:%s' % (stream_dict.language.code3,)]
+                    mkvmerge_args += ['--language', '0:%s' % (stream_dict.language.code3,)]
                 stream_forced = stream_dict['disposition'].get('forced', None)
-                cmd += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
+                mkvmerge_args += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
                 if stream_title is not None:
-                    cmd += ['--track-name', '%d:%s' % (0, stream_title)]
+                    mkvmerge_args += ['--track-name', '%d:%s' % (0, stream_title)]
                 # TODO --tags
                 if stream_dict.codec_type == 'subtitle' and my_splitext(stream_dict.file_name)[1] == '.sub':
-                    cmd += [inputdir / '%s.idx' % (my_splitext(stream_dict.file_name)[0],)]
-                cmd += [stream_dict.path]
+                    mkvmerge_args += [inputdir / '%s.idx' % (my_splitext(stream_dict.file_name)[0],)]
+                mkvmerge_args += [stream_dict.path]
         if mux_dict.get('chapters', None):
-            cmd += ['--chapters', inputdir / mux_dict['chapters']['file_name']]
+            mkvmerge_args += ['--chapters', inputdir / mux_dict['chapters']['file_name']]
         else:
-            cmd += ['--no-chapters']
+            mkvmerge_args += ['--no-chapters']
         with perfcontext('Merge w/ mkvmerge', log=True):
-            do_spawn_cmd(cmd)
+            mkvmerge(*mkvmerge_args)
 
         if any(stream_dict['_temp'].post_process_subtitle
                for stream_dict in sorted_streams):
@@ -6434,13 +6433,12 @@ def action_demux(inputdir, in_tags):
                 if my_splitext(stream_dict['file_name'])[1] == '.sub':
                     # ffmpeg doesn't read the .idx file?? Embed .sub/.idx into a .mkv first
                     tmp_stream_file_name = os.fspath(stream_dict.file_name) + '.mkv'
-                    mkvmerge_cmd = [
-                        'mkvmerge',
+                    mkvmerge_args = [
                         '-o', inputdir / tmp_stream_file_name,
                         stream_dict.path,
                         '%s.idx' % (my_splitext(stream_dict.file_name)[0],),
                     ]
-                    do_spawn_cmd(mkvmerge_cmd)
+                    mkvmerge(*mkvmerge_args)
                     stream_dict = copy.copy(stream_dict)
                     stream_dict['file_name'] = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
