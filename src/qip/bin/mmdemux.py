@@ -2187,8 +2187,9 @@ def action_backup(backup_dir, device, in_tags):
             do_exec_cmd(['chmod', '-R', 'u+w', backup_dir])
 
             if discatt_dat_file is not None:
-                app.log.info('Copying %s...', backup_dir / 'discatt.dat')
-                shutil.copyfile(src=discatt_dat_file, dst=backup_dir / 'discatt.dat')
+                app.log.info('Copying %s...%s', backup_dir / 'discatt.dat', ' (dry-run)' if app.args.dry_run else '')
+                if not app.args.dry_run:
+                    shutil.copyfile(src=discatt_dat_file, dst=backup_dir / 'discatt.dat')
 
     except:
         if app.args.dry_run:
@@ -3444,7 +3445,7 @@ def action_mux(inputfile, in_tags,
                 safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
         mux_dict['chapters']['file_name'] = os.fspath(output_chapters_file_name.relative_to(outputdir))
 
-    if not app.args.dry_run:
+    if not app.args.dry_run or remux:
         mux_dict.save(mux_file_name=outputdir / ('mux%s.json' % ('.remux' if remux else '',)))
 
         if remux and app.args.interactive:
@@ -6202,13 +6203,14 @@ def action_demux(inputdir, in_tags):
                             output_file=output_file,
                             stream_file_name=stream_file_name,
                             stream_dict=stream_dict)
-                        app.log.warning('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_name, external_stream_file_name)
+                        app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
                         if external_stream_file_name in external_stream_file_names_seen:
                             raise ValueError(f'Stream {stream_dict.pprint_index} External subtitle file already created: {external_stream_file_name}')
                         external_stream_file_names_seen.add(external_stream_file_name)
-                        shutil.copyfile(inputdir / stream_file_name,
-                                        external_stream_file_name,
-                                        follow_symlinks=True)
+                        if not app.args.dry_run:
+                            shutil.copyfile(inputdir / stream_file_name,
+                                            external_stream_file_name,
+                                            follow_symlinks=True)
                     continue
                 if webm:
                     # mkvmerge does not yet support subtitles of webm files due to standard not being finalized
@@ -6238,10 +6240,11 @@ def action_demux(inputdir, in_tags):
                         num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
                         ext=my_splitext(stream_dict.file_name)[1],
                     )
-                    app.log.warning('Stream #%s %s -> %s', stream_dict.pprint_index, stream_dict.file_name, external_stream_file_name)
-                    shutil.copyfile(stream_dict.path,
-                                    external_stream_file_name,
-                                    follow_symlinks=True)
+                    app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_dict.file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
+                    if not app.args.dry_run:
+                        shutil.copyfile(stream_dict.path,
+                                        external_stream_file_name,
+                                        follow_symlinks=True)
                     continue
                 else:
                     mkvmerge_args += [
@@ -6470,14 +6473,15 @@ def action_demux(inputdir, in_tags):
                                 output_file=output_file,
                                 stream_file_name=stream_file_name,
                                 stream_dict=stream_dict)
-                            app.log.warning('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_name, external_stream_file_name)
+                            app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
                             if external_stream_file_name in external_stream_file_names_seen:
                                 raise StreamExternalSubtitleAlreadyCreated(stream=stream_dict,
                                                                            external_stream_file_name=external_stream_file_name)
                             external_stream_file_names_seen.add(external_stream_file_name)
-                            shutil.copyfile(inputdir / stream_file_name,
-                                            external_stream_file_name,
-                                            follow_symlinks=True)
+                            if not app.args.dry_run:
+                                shutil.copyfile(inputdir / stream_file_name,
+                                                external_stream_file_name,
+                                                follow_symlinks=True)
                     except StreamExternalSubtitleAlreadyCreated as e:
                         handle_StreamCharacteristicsSeenError(e)
                         continue
@@ -6517,10 +6521,11 @@ def action_demux(inputdir, in_tags):
                         num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
                         ext=my_splitext(stream_dict.file_name)[1],
                     )
-                    app.log.warning('Stream #%s %s -> %s', stream_dict.pprint_index, stream_dict.file_name, external_stream_file_name)
-                    shutil.copyfile(stream_dict.path,
-                                    external_stream_file_name,
-                                    follow_symlinks=True)
+                    app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_dict.file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
+                    if not app.args.dry_run:
+                        shutil.copyfile(stream_dict.path,
+                                        external_stream_file_name,
+                                        follow_symlinks=True)
                     continue
 
             stream_dict['_temp'].out_index = max(
