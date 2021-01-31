@@ -4825,6 +4825,10 @@ AudioType.__new__ = AudioType._AudioType__new
 
 class SoundFile(BinaryMediaFile):
 
+    _common_extensions = (
+        '.ogg',
+    )
+
     @property
     def audio_type(self):
         audio_type = getattr(self, '_audio_type', None)
