@@ -1113,6 +1113,80 @@ def ext_to_codec_args(ext, lossless=False):
         ]
     return codec_args
 
+class ColorSpaceParams(collections.namedtuple(
+        'ColorSpaceParams',
+        (
+        'xR', 'yR', 'xG', 'yG', 'xB', 'yB',  # Primary colors
+        'xW', 'yW',                          # White point
+        'K',                                 # CCT
+        ),
+)):
+    __slots__ = ()
+
+    # Unit of 0.00002
+
+    @property
+    def uxW(self):
+        return int(self.xW / 0.00002)
+
+    @property
+    def uyW(self):
+        return int(self.yW / 0.00002)
+
+    @property
+    def uxR(self):
+        return int(self.xR / 0.00002)
+
+    @property
+    def uyR(self):
+        return int(self.yR / 0.00002)
+
+    @property
+    def uxG(self):
+        return int(self.xG / 0.00002)
+
+    @property
+    def uyG(self):
+        return int(self.yG / 0.00002)
+
+    @property
+    def uxB(self):
+        return int(self.xB / 0.00002)
+
+    @property
+    def uyB(self):
+        return int(self.yB / 0.00002)
+
+    def master_display_str(self):
+        return f'G({self.uxG},{self.uyG})B({self.uxB},{self.uyB})R({self.uxR},{self.uyR})WP({self.uxW},{self.uyW})'
+
+def parse_master_display_str(master_display):
+    m = re.match(r'^G\((?P<uxG>\d+),(?P<uyG>\d+)\)B\((?P<uxB>\d+),(?P<uyB>\d+)\)R\((?P<uxR>\d+),(?P<uyR>\d+)\)WP\((?P<uxW>\d+),(?P<uyW>\d+)\)L\((?P<uminL>\d+),(?P<umaxL>\d+)\)$', master_display)
+    if m:
+        return types.SimpleNamespace(
+            uxG=int(m.group('uxG')),
+            uyG=int(m.group('uyG')),
+            uxB=int(m.group('uxB')),
+            uyB=int(m.group('uyB')),
+            uxR=int(m.group('uxR')),
+            uyR=int(m.group('uyR')),
+            uxW=int(m.group('uxW')),
+            uyW=int(m.group('uyW')),
+            uminL=int(m.group('uminL')),
+            umaxL=int(m.group('umaxL')),
+        )
+    raise ValueError(f'Invalid master_display: {master_display!r}')
+
+color_space_params = {
+    # https://en.wikipedia.org/wiki/DCI-P3
+    'P3-D65 (Display)':     ColorSpaceParams(0.680, 0.320, 0.265, 0.690, 0.150, 0.060, 0.3127, 0.3290, 6504),
+    'P3-DCI (Theater)':     ColorSpaceParams(0.680, 0.320, 0.265, 0.690, 0.150, 0.060, 0.314, 0.351, 6300),
+    'P3-D60 (ACES Cinema)': ColorSpaceParams(0.680, 0.320, 0.265, 0.690, 0.150, 0.060, 0.32168, 0.33767, 6000),
+    'BT.2020':              ColorSpaceParams(0.708, 0.292, 0.170, 0.797, 0.131, 0.046, 0.3127, 0.3290, None),  # TODO Verify -- Rec. ITU-R BT.2020-2
+}
+color_space_params['Display P3'] = color_space_params['P3-D65 (Display)']
+color_space_params['DCI-P3'] = color_space_params['P3-DCI (Theater)']
+
 hdr_color_transfer_stems = {
     # Perceptual Quantizers (PQ)
     'smpte2084',  # HDR10 & DolbyVision
@@ -1146,33 +1220,10 @@ def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_
                 '-pix_fmt', 'yuv420p10le',
             ]
             ffmpeg_hdr_args += [
-                '-color_primaries', {
-                    'bt2020': 9,  # BT.2020
-                }[ffprobe_stream_json['color_primaries']],
-            ]
-            ffmpeg_hdr_args += [
-                '-color_trc', {
-                    'smpte2084': 16,
-                    'smpte2086': 18,
-                }[ffprobe_stream_json['color_transfer']],
-            ]
-            ffmpeg_hdr_args += [
-                '-colorspace', {
-                    'bt2020nc': 9,    # BT.2020 NCL
-                    'bt2020_ncl': 9,  # BT.2020 NCL
-                    'bt2020c': 10,    # BT.2020 CL
-                    'bt2020_cl': 10,  # BT.2020 CL
-                }[ffprobe_stream_json['color_space']],
-            ]
-            ffmpeg_hdr_args += [
-                '-color_range', {
-                    'unknown': 0,      # Unspecified
-                    'unspecified': 0,  # Unspecified
-                    'tv': 1,           # MPEG (219*2^(n-8))
-                    'mpeg': 1,         # MPEG (219*2^(n-8))
-                    'pc': 2,           # JPEG (2^n-1)
-                    'jpeg': 2,         # JPEG (2^n-1)
-                }[ffprobe_stream_json['color_range']]
+                '-color_primaries', ffmpeg.get_option_value('color_primaries', ffprobe_stream_json['color_primaries']),
+                '-color_trc', ffmpeg.get_option_value('color_trc', ffprobe_stream_json['color_transfer']),
+                '-colorspace', ffmpeg.get_option_value('colorspace', ffprobe_stream_json['color_space']),
+                '-color_range', ffmpeg.get_option_value('color_range', ffprobe_stream_json['color_range']),
             ]
             # https://www.webmproject.org/vp9/profiles/
             if 'yuv420' in ffprobe_stream_json['pix_fmt']:
@@ -2778,6 +2829,51 @@ def mux_dict_from_file(inputfile, outputdir):
                     else:
                         if stream['language'] == 'und':
                             del stream['language']
+
+                    master_display = ''  # SMPTE 2086 mastering data
+                    if stream.codec_type == 'video':
+                        color_primaries = mediainfo_track_dict.get('MasteringDisplay_ColorPrimaries', None)
+                        if color_primaries:
+                            try:
+                                # Display P3
+                                color_primaries = color_space_params[color_primaries]
+                            except KeyError:
+                                # R: x=0.680000 y=0.320000, G: x=0.265000 y=0.690000, B: x=0.150000 y=0.060000, White point: x=0.312700 y=0.329000
+                                m = re.match(r'^R: x=(?P<xR>\d+\.\d+) y=(?P<yR>\d+\.\d+), G: x=(?P<xG>\d+\.\d+) y=(?P<yG>\d+\.\d+), B: x=(?P<xB>\d+\.\d+) y=(?P<yB>\d+\.\d+), White point: x=(?P<xW>\d+\.\d+) y=(?P<yW>\d+\.\d+)$', color_primaries)
+                                if m:
+                                    color_primaries = ColorSpaceParams(**m.groupdict())
+                                else:
+                                    raise ValueError(f'Unrecognized mediainfo MasteringDisplay_ColorPrimaries: {color_primaries!r}')
+                            master_display += color_primaries.master_display_str()
+                            luminance = mediainfo_track_dict['MasteringDisplay_Luminance']
+                            # min: 0.0200 cd/m2, max: 1200.0000 cd/m2
+                            m = re.match(r'^min: (?P<min>\d+(?:\.\d+)?) cd/m2, max: (?P<max>\d+(?:\.\d+)?) cd/m2$', luminance)
+                            if m:
+                                luminance = (float(m.group('min')), float(m.group('max')))
+                            else:
+                                raise ValueError(f'Unrecognized mediainfo MasteringDisplay_Luminance: {luminance!r}')
+                            master_display += 'L({min},{max})'.format(
+                                min=int(luminance[0] / 0.0001), # Units of 0.0001 cd/m2
+                                max=int(luminance[1] / 0.0001), # Units of 0.0001 cd/m2
+                            )
+                        if master_display:
+                            stream['master_display'] = master_display
+                        try:
+                            stream['max_cll'] = int(mediainfo_track_dict['MaxCLL'])
+                        except KeyError:
+                            pass
+                        try:
+                            stream['max_fall'] = int(mediainfo_track_dict['MaxFALL'])
+                        except KeyError:
+                            pass
+                        try:
+                            stream['color_transfer'] = ffprobe_stream_dict['color_transfer']
+                        except KeyError:
+                            pass
+                        try:
+                            stream['color_primaries'] = ffprobe_stream_dict['color_primaries']
+                        except KeyError:
+                            pass
 
                     stream_file_format_ext = ''
                     if stream.codec_type == 'video' \
@@ -6495,22 +6591,107 @@ def action_demux(inputdir, in_tags):
                     #   ffmpeg does not generate packet durations from ivf -> mkv, causing some hickups at play time. But it does from .mkv -> .mkv, so create an intermediate
                     estimated_duration = estimated_duration or stream_dict.estimated_duration
                     tmp_stream_file_name = os.fspath(stream_dict.file_name) + '.mkv'
-                    ffmpeg_args = default_ffmpeg_args + [
+                    master_display = stream_dict.get('master_display', None)
+                    max_cll = stream_dict.get('max_cll', None)
+                    max_fall = stream_dict.get('max_fall', None)
+                    color_transfer = stream_dict.get('color_transfer', None)
+                    color_primaries = stream_dict.get('color_primaries', None)
+
+                    if master_display or max_cll or max_fall or color_transfer or color_primaries:
+                        assert master_display and max_cll and max_fall and color_transfer and color_primaries, f'Incomplete color information: master_display={master_display!r}, max_cll={max_cll!r}, max_fall={max_fall!r}, color_transfer={color_transfer!r}, color_primaries={color_primaries!r}'
+                        master_display = parse_master_display_str(master_display)
+
+                        ffprobe_stream_json = stream_dict.file.ffprobe_dict['streams'][0]
+
+                        mkvmerge_args = []
+                        mkvmerge_args= [
+                            # HDR
+                            '--colour-matrix', '0:{}'.format(
+                                ffmpeg.get_option_value_int('colorspace', ffprobe_stream_json['color_space']),
+                            ),
+                            '--colour-range', '0:{}'.format(
+                                ffmpeg.get_option_value_int('color_range', ffprobe_stream_json['color_range']),
+                            ),
+                            '--colour-transfer-characteristics', '0:{}'.format(
+                                ffmpeg.get_option_value_int('color_trc', color_transfer),
+                            ),
+                            '--colour-primaries', '0:{}'.format(
+                                ffmpeg.get_option_value_int('color_primaries', color_primaries),
+                            ),
+                            '--max-content-light', f'0:{max_cll}',
+                            '--max-frame-light', f'0:{max_fall}',
+                            '--chromaticity-coordinates', '0:{xR:.3f},{yR:.3f},{xG:.3f},{yG:.3f},{xB:.3f},{yB:.3f}'.format(
+                                xR=master_display.uxR * 0.00002,
+                                yR=master_display.uyR * 0.00002,
+                                xG=master_display.uxG * 0.00002,
+                                yG=master_display.uyG * 0.00002,
+                                xB=master_display.uxB * 0.00002,
+                                yB=master_display.uyB * 0.00002,
+                            ),
+                            '--white-colour-coordinates', '0:{xW:.5f},{yW:.5f}'.format(
+                                xW=master_display.uxW * 0.0001,
+                                yW=master_display.uyW * 0.0001,
+                            ),
+                            '--min-luminance', '0:{minL}'.format(
+                                minL=master_display.uminL * 0.0001,
+                            ),
+                            '--max-luminance', '0:{maxL}'.format(
+                                maxL=master_display.umaxL * 0.0001,
+                            ),
+                            '-o', inputdir / tmp_stream_file_name,
+                            stream_dict.path,
+                        ]
+                        mkvmerge(*mkvmerge_args)
+                        stream_dict = copy.copy(stream_dict)
+                        stream_dict['file_name'] = tmp_stream_file_name
+                        stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
+
+                    else:
+
+                        ffprobe_stream_json = stream_dict.file.ffprobe_dict['streams'][0]
+
+                        ffmpeg_args = default_ffmpeg_args + [
                             '-i', stream_dict.path,
                             '-codec', 'copy',
-                            inputdir / tmp_stream_file_name,
                         ]
-                    assert estimated_duration is None or float(estimated_duration) > 0.0
-                    ffmpeg(
-                        *ffmpeg_args,
-                        progress_bar_max=estimated_duration,
-                        progress_bar_title=f'Encap {stream_dict.codec_type} stream {stream_dict.pprint_index} w/ ffmpeg',
-                        dry_run=app.args.dry_run,
-                        y=True,  # TODO temp file
-                    )
-                    stream_dict = copy.copy(stream_dict)
-                    stream_dict['file_name'] = tmp_stream_file_name
-                    stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
+                        try:
+                            ffmpeg_args += [
+                                '-color_primaries', ffmpeg.get_option_value('color_primaries', ffprobe_stream_json['color_primaries']),
+                            ]
+                        except KeyError:
+                            pass
+                        try:
+                            ffmpeg_args += [
+                                '-color_trc', ffmpeg.get_option_value('color_trc', ffprobe_stream_json['color_transfer']),
+                            ]
+                        except KeyError:
+                            pass
+                        try:
+                            ffmpeg_args += [
+                                '-colorspace', ffmpeg.get_option_value('colorspace', ffprobe_stream_json['color_space']),
+                            ]
+                        except KeyError:
+                            pass
+                        try:
+                            ffmpeg_args += [
+                                '-color_range', ffmpeg.get_option_value('color_range', ffprobe_stream_json['color_range']),
+                            ]
+                        except KeyError:
+                            pass
+                        ffmpeg_args += [
+                                inputdir / tmp_stream_file_name,
+                            ]
+                        assert estimated_duration is None or float(estimated_duration) > 0.0
+                        ffmpeg(
+                            *ffmpeg_args,
+                            progress_bar_max=estimated_duration,
+                            progress_bar_title=f'Encap {stream_dict.codec_type} stream {stream_dict.pprint_index} w/ ffmpeg',
+                            dry_run=app.args.dry_run,
+                            y=True,  # TODO temp file
+                        )
+                        stream_dict = copy.copy(stream_dict)
+                        stream_dict['file_name'] = tmp_stream_file_name
+                        stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
 
                 elif stream_file_ext in {
                         '.h264',
