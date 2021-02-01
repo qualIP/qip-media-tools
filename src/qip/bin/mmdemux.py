@@ -794,7 +794,7 @@ def main():
     pgroup.add_argument('--chop-chapters', dest='chop_chaps', nargs='+', default=argparse.SUPPRESS, type=int, help='List of chapters to chop at')
     pgroup.add_bool_argument('--rip-menus', default=False, help='rip menus from device')
     pgroup.add_bool_argument('--rip-titles', default=True, help='rip titles from device')
-    pgroup.add_argument('--rip-titles-list', nargs="+", default=(), help='list of titles to rip (from lsdvd output)')
+    pgroup.add_argument('--rip-titles-list', type=int, nargs="+", default=(), help='list of titles to rip (from lsdvd output)')
 
     pgroup = app.parser.add_argument_group('Music extraction')
     pgroup.add_argument('--skip-chapters', dest='num_skip_chapters', type=int, default=0, help='number of chapters to skip')
@@ -1966,33 +1966,66 @@ def action_rip(rip_dir, device, in_tags):
                 from qip.mplayer import mplayer
                 from qip.bin.lsdvd import lsdvd
 
-                dvd_info = lsdvd(device=app.args.device)
+                dvd_info = lsdvd(device=app.args.device,
+                                 show_chapters=True)
                 rip_titles = filter(None, dvd_info.titles)
+                rip_titles = list(rip_titles) ; app.log.debug('1:rip_titles=%r', rip_titles)
                 if app.args.rip_titles is True:
                     if minlength:
                         rip_titles = (dvd_title
                                       for dvd_title in rip_titles
                                       if dvd_title.general.playback_time >= minlength)
+                    rip_titles = list(rip_titles) ; app.log.debug('2:rip_titles=%r', rip_titles)
                 else:
                     rip_titles = (dvd_title
                                   for dvd_title in rip_titles
                                   if dvd_title.title_no in app.args.rip_titles)
+                    rip_titles = list(rip_titles) ; app.log.debug('3:rip_titles=%r', rip_titles)
                 rip_titles = list(rip_titles)
-                if app.args.rip_titles_list:
+                app.log.debug('4:rip_titles=%r', rip_titles)
+                app.log.debug('4:rip_titles no=%r', [dvd_title.title_no for dvd_title in rip_titles])
+                if isinstance(app.args.rip_titles_list, collections.Sequence):
+                    app.log.debug('4:rip_titles_list=%r', app.args.rip_titles_list)
                     rip_titles = [dvd_title
                                   for dvd_title in rip_titles
                                   if dvd_title.title_no in app.args.rip_titles_list]
+                rip_titles = list(rip_titles) ; app.log.debug('5:rip_titles=%r', rip_titles)
+
+                if not rip_titles:
+                    raise ValueError('Rip titles list empty!')
 
                 for dvd_title in rip_titles:
-                    outputfile = VobFile(rip_dir / 'title_t{:02d}.vob'.format(dvd_title.title_no))
-                    with perfcontext(f'Ripping title #{dvd_title.title_no} w/ mplayer: {outputfile}', log=True):
+                    output_file = VobFile(rip_dir / 'title_t{:02d}.vob'.format(dvd_title.title_no))
+                    with perfcontext(f'Ripping title #{dvd_title.title_no} w/ mplayer: {output_file}', log=True):
                         mplayer_args = []
                         mplayer_args += [
                             f'dvd://{dvd_title.title_no}/{device}',
                             '-dumpstream',
-                            '-dumpfile', outputfile,
+                            '-dumpfile', output_file,
                         ]
                         mplayer(*mplayer_args)
+                        if not output_file.exists():
+                            raise Exception(f'Output file does not exist: {output_file}')
+
+                    if dvd_title.chapters:
+                        chapters_xml_file = XmlFile(rip_dir / 'title_t{:02d}.chapters.xml'.format(dvd_title.title_no))
+                        with perfcontext(f'Extracting chapters from title #{dvd_title.title_no}: {chapters_xml_file}', log=True):
+                            chaps = Chapters()
+                            for chap_idx, dvd_chapter in enumerate(dvd_title.chapters):
+                                start = chaps[chap_idx - 1].end if chap_idx else qip.utils.Timestamp(0)
+                                chap = Chapter(
+                                    start=start,
+                                    end=start + dvd_chapter.playback_time,
+                                    title='Chapter {:02d}'.format(chap_idx + 1),  # Same format as MakeMKV
+                                )
+                                chaps.append(chap)
+                            chapters_xml = chaps.to_mkv_xml()
+                            sXml = qip.utils.prettyxml(chapters_xml,  # TODO: !DOCTYPE is lost!
+                                                       preserve_whitespace_tags=Chapters.MKV_XML_VALUE_TAGS)
+                            with chapters_xml_file.open('w') as chapters_xml_file.fp:
+                                chapters_xml_file.fp.write(sXml)
+                    else:
+                        app.log.info('No chapters for title #{dvd_title.title_no}')
 
                 rip_titles_done = True
 
@@ -3437,6 +3470,15 @@ def action_mux(inputfile, in_tags,
                              stream.language)
                 stream['disposition']['forced'] = True
 
+    chapters_aux_file = XmlFile(inputfile.file_name.with_suffix('.chapters.xml'))
+    if chapters_aux_file.exists():
+        output_chapters_file_name = outputdir / 'chapters.xml'
+        if not remux:
+            if not app.args.dry_run:
+                shutil.copyfile(chapters_aux_file,
+                                output_chapters_file_name,
+                                follow_symlinks=True)
+        mux_dict['chapters']['file_name'] = os.fspath(output_chapters_file_name.relative_to(outputdir))
     if inputfile.ffprobe_dict['chapters']:
         output_chapters_file_name = outputdir / 'chapters.xml'
         if not remux:

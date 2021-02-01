@@ -249,7 +249,8 @@ class Chapter(object):
     def from_mkv_xml_ChapterAtom(cls, eChapterAtom, **kwargs):
         # <ChapterAtom>
         #   <ChapterUID>6524138974649683444</ChapterUID>
-        uid = eChapterAtom.find('ChapterUID').text
+        uid = eChapterAtom.find('ChapterUID')
+        uid = uid and uid.text
         #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>
         start = eChapterAtom.find('ChapterTimeStart').text
         #   <ChapterFlagHidden>0</ChapterFlagHidden>
@@ -266,7 +267,8 @@ class Chapter(object):
         #     <ChapterString>Chapter 01</ChapterString>
         title = eChapterDisplay.find('ChapterString').text
         #     <ChapterLanguage>eng</ChapterLanguage>
-        lang = eChapterDisplay.find('ChapterLanguage').text
+        lang = eChapterDisplay.find('ChapterLanguage')
+        lang = lang and lang.text
         #   </ChapterDisplay>
         # </ChapterAtom>
         return cls(start=start, end=end,
