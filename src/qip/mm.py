@@ -4778,6 +4778,7 @@ class AudioType(enum.Enum):
     mp2 = 'mp2'
     mp3 = 'mp3'
     vorbis = 'vorbis'
+    opus = 'opus'
     wav = 'wav'
     ac3 = 'ac3'
     eac3 = 'eac3'
