@@ -233,10 +233,10 @@ class App(XdgResource):
                               if e not in parser_suppress_option_strings)
             if option_strings:
                 self.config_parser.add_argument(*option_strings, metavar="FILE",
-                                              dest='config_file',
-                                              default=argparse.DefaultWrapper(self.default_config_file()),
-                                              type=argparse.FileType('r'),
-                                              help="Specify config file")
+                                                dest='config_file',
+                                                default=argparse.DefaultWrapper(self.default_config_file()),
+                                                type=argparse.FileType('r'),
+                                                help="Specify config file")
             option_strings = (e
                               for e in (
                                       '--no-config',
@@ -244,9 +244,10 @@ class App(XdgResource):
                               if e not in parser_suppress_option_strings)
             if option_strings:
                 self.config_parser.add_argument(*option_strings,
-                                              default=argparse.SUPPRESS,
-                                              action='store_false',
-                                              help="Disable config file")
+                                                dest='config_file',
+                                                default=argparse.SUPPRESS,
+                                                action='store_false',
+                                                help="Disable config file")
             parser_parents.append(self.config_parser)
 
         self.parser = argparse.ArgumentParser(
