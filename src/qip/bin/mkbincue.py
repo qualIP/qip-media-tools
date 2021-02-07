@@ -428,14 +428,14 @@ def mkbincue(file_name_prefix, in_tags):
                             track_file_name_prefix = 'track%02d.%s' % (track_no, try_file_name_prefix)
                             track_bin_file = BinaryFile(track_file_name_prefix + '.bin')
                             if track_bin_file.exists():
-                                app.log.warning('%r: Possibly incomplete; Removing...', track_bin_file)
+                                app.log.warning('%s: Possibly incomplete; Removing...', track_bin_file)
                                 try:
                                     track_bin_file.unlink()
                                 except Exception as e:
-                                    app.log.error('%r: %s', track_bin_file)
+                                    app.log.error('%s: %s', track_bin_file)
                                 break
                             else:
-                                app.log.debug('%r: does not exist...', track_bin_file)
+                                app.log.debug('%s: does not exist...', track_bin_file)
                         raise
                     dt.elapsed_time = t1 - t0
                     with open('cdparanoia.out', 'a') as f:
@@ -450,13 +450,13 @@ def mkbincue(file_name_prefix, in_tags):
                 for track_no, this_track_files in sorted(todo_track_files.items()):
                     track_file_name_prefix = 'track%02d.%s' % (track_no, try_file_name_prefix)
                     track_bin_file = BinaryFile(track_file_name_prefix + '.bin')
-                    app.log.verbose('%r: MD5 = %s', track_bin_file, track_bin_file.md5.hexdigest())
+                    app.log.verbose('%s: MD5 = %s', track_bin_file, track_bin_file.md5.hexdigest())
                     if this_track_files:
                         for track_file2 in this_track_files:
                             if (
                                     track_file2 is not track_bin_file and
                                     track_file2.md5.hexdigest() == track_bin_file.md5.hexdigest()):
-                                app.log.verbose('%r: same as %r. DONE', track_bin_file, track_file2)
+                                app.log.verbose('%s: same as %s. DONE', track_bin_file, track_file2)
                                 assert track_file2.read() == track_bin_file.read()
                                 done_track_files[track_no] = track_bin_file
                                 if not app.args.save_temps:
@@ -466,7 +466,7 @@ def mkbincue(file_name_prefix, in_tags):
                                 del todo_track_files[track_no]
                                 break
                         else:
-                            app.log.warning('%r: all other track files differ; Will retry.', track_bin_file)
+                            app.log.warning('%s: all other track files differ; Will retry.', track_bin_file)
                             this_track_files.append(track_bin_file)
                     else:
                         this_track_files.append(track_bin_file)
@@ -549,7 +549,7 @@ def mkbincue(file_name_prefix, in_tags):
                                 else '%d' % (start_track_no,)
                         for start_track_no, end_track_no
                         in consecutive_ranges(sorted(todo_track_files.keys()))),))
-            app.log.info('%r: Combining tracks...', bin_file)
+            app.log.info('%s: Combining tracks...', bin_file)
             bin_file.combine_from([
                 track_bin_file
                 for n, track_bin_file in sorted(done_track_files.items())])
@@ -609,32 +609,32 @@ def mkbincue(file_name_prefix, in_tags):
 
 # strottie@vb-strottie-wp:~$ cdparanoia -vQ
 # cdparanoia III release 10.2 (September 11, 2008)
-# 
+#
 # Using cdda library version: 10.2
 # Using paranoia library version: 10.2
 # Checking /dev/cdrom for cdrom...
 #     Testing /dev/cdrom for SCSI/MMC interface
-# 	SG_IO device: /dev/sr1
-# 
-# CDROM model sensed sensed: ASUS BW-12B1ST   a 1.00 
-#  
-# 
+#   SG_IO device: /dev/sr1
+#
+# CDROM model sensed sensed: ASUS BW-12B1ST   a 1.00
+#
+#
 # Checking for SCSI emulation...
 #     Drive is ATAPI (using SG_IO host adaptor emulation)
-# 
+#
 # Checking for MMC style command set...
 #     Drive is MMC style
 #     DMA scatter/gather table entries: 1
 #     table entry size: 122880 bytes
 #     maximum theoretical transfer: 52 sectors
 #     Setting default read size to 27 sectors (63504 bytes).
-# 
+#
 # Verifying CDDA command set...
 #     Expected command set reads OK.
-# 
-# Attempting to set cdrom to full speed... 
+#
+# Attempting to set cdrom to full speed...
 #     drive returned OK.
-# 
+#
 # Table of contents (audio tracks only):
 # track        length               begin        copy pre ch
 # ===========================================================
@@ -659,8 +659,8 @@ def mkbincue(file_name_prefix, in_tags):
 
 # strottie@vb-strottie-wp:~$ cdparanoia -d /dev/sr1 -Q
 # cdparanoia III release 10.2 (September 11, 2008)
-# 
-# 
+#
+#
 # Table of contents (audio tracks only):
 # track        length               begin        copy pre ch
 # ===========================================================
@@ -686,59 +686,59 @@ def mkbincue(file_name_prefix, in_tags):
 
 # strottie@vb-strottie-wp:~$ cdparanoia -d /dev/sr1 -A
 # cdparanoia III release 10.2 (September 11, 2008)
-# 
+#
 # Using cdda library version: 10.2
 # Using paranoia library version: 10.2
 # Checking /dev/sr1 for cdrom...
 #     Testing /dev/sr1 for SCSI/MMC interface
-# 	SG_IO device: /dev/sr1
-# 
-# CDROM model sensed sensed: ASUS BW-12B1ST   a 1.00 
-# 
+#   SG_IO device: /dev/sr1
+#
+# CDROM model sensed sensed: ASUS BW-12B1ST   a 1.00
+#
 # Checking for SCSI emulation...
 #     Drive is ATAPI (using SG_IO host adaptor emulation)
-# 
+#
 # Checking for MMC style command set...
 #     Drive is MMC style
 #     DMA scatter/gather table entries: 1
 #     table entry size: 122880 bytes
 #     maximum theoretical transfer: 52 sectors
 #     Setting default read size to 27 sectors (63504 bytes).
-# 
+#
 # Verifying CDDA command set...
 #     Expected command set reads OK.
-# 
-# Attempting to set cdrom to full speed... 
+#
+# Attempting to set cdrom to full speed...
 #     drive returned OK.
-# 
+#
 # =================== Checking drive cache/timing behavior ===================
-# 
+#
 # Seek/read timing:
-#     [72:29.56]:   38ms seek, 0.74ms/sec read [18.0x]                 
-#     [70:00.00]:   41ms seek, 1.63ms/sec read [8.2x]                 
-#     [60:00.00]:   49ms seek, 1.52ms/sec read [8.8x]                 
-#     [50:00.00]:   32ms seek, 1.63ms/sec read [8.2x]                 
-#     [40:00.00]:   49ms seek, 1.78ms/sec read [7.5x]                 
-#     [30:00.00]:   58ms seek, 1.96ms/sec read [6.8x]                 
-#     [20:00.00]:   63ms seek, 2.22ms/sec read [6.0x]                 
-#     [10:00.00]:   90ms seek, 2.59ms/sec read [5.1x]                 
-#     [00:00.00]:   99ms seek, 3.29ms/sec read [4.1x]                 
-# 
+#     [72:29.56]:   38ms seek, 0.74ms/sec read [18.0x]
+#     [70:00.00]:   41ms seek, 1.63ms/sec read [8.2x]
+#     [60:00.00]:   49ms seek, 1.52ms/sec read [8.8x]
+#     [50:00.00]:   32ms seek, 1.63ms/sec read [8.2x]
+#     [40:00.00]:   49ms seek, 1.78ms/sec read [7.5x]
+#     [30:00.00]:   58ms seek, 1.96ms/sec read [6.8x]
+#     [20:00.00]:   63ms seek, 2.22ms/sec read [6.0x]
+#     [10:00.00]:   90ms seek, 2.59ms/sec read [5.1x]
+#     [00:00.00]:   99ms seek, 3.29ms/sec read [4.1x]
+#
 # Analyzing cache behavior...
-#     Approximate random access cache size: 27 sector(s)               
-#     Drive cache tests as contiguous                           
-#     Drive readahead past read cursor: 1231 sector(s)                
-#     Cache tail cursor tied to read cursor                      
-#     Cache tail granularity: 27 sector(s)                      
+#     Approximate random access cache size: 27 sector(s)
+#     Drive cache tests as contiguous
+#     Drive readahead past read cursor: 1231 sector(s)
+#     Cache tail cursor tied to read cursor
+#     Cache tail granularity: 27 sector(s)
 #             Cache read speed: 0.19ms/sector [69x]
 #             Access speed after backseek: 0.94ms/sector [14x]
 #     WARNING: Read timing after backseek faster than expected!
 #              It's possible/likely that this drive is not
 #              flushing the readahead cache on backward seeks!
-# 
-# 
+#
+#
 # WARNING! PARANOIA MAY NOT BE TRUSTWORTHY WITH THIS DRIVE!
-# 
+#
 # The Paranoia library may not model this CDROM drive's cache
 # correctly according to this analysis run. Analysis is not
 # always accurate (it can be fooled by machine load or random
