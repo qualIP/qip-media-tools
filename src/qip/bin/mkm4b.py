@@ -336,7 +336,7 @@ def mkm4b(inputfiles, default_tags):
         if 'outputfile' in app.args:
             m4b = SoundFile.new_by_file_name(app.args.outputfile)
         elif isinstance(inputfiles[0], (
-                qip.mp4.M4aFile,
+                qip.mp4.Mpeg4ContainerFile,
                 qip.wav.WaveFile,
                 qip.mp3.Mp3File)):
             m4b = M4bFile(file_name=None)
