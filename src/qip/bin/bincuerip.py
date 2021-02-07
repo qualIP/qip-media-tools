@@ -53,7 +53,7 @@ def main():
     pgroup.add_argument('--no-save-temps', dest='save_temps', default=argparse.SUPPRESS, action='store_false', help='delete intermediate files (default)')
     pgroup.add_argument('--format',
                         #default="wav",
-                        required=True,
+                        #required=True,  # TODO Fix required with value from config file
                         help='output format', choices=['wav', 'm4a', 'flac'])
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
@@ -97,7 +97,9 @@ def main():
             for cue_file in app.args.cue_files:
                 prep_bincuetags(cue_file)
         for cue_file in app.args.cue_files:
-            bincuerip(cue_file)
+            if not app.args.format:
+                app.parser.error('the following argument is required: --format')
+            bincuerip(cue_file, format=app.args.format)
     else:
         raise ValueError('Invalid action \'%s\'' % (app.args.action,))
 
@@ -110,7 +112,7 @@ def prep_bincuetags(cue_file):
         import qip.bin.bincuetags
         qip.bin.bincuetags.bincuetags(cue_file)
 
-def bincuerip(cue_file):
+def bincuerip(cue_file, *, format):
     if not isinstance(cue_file, CDDACueSheetFile):
         cue_file = CDDACueSheetFile(cue_file)
 
@@ -146,7 +148,7 @@ def bincuerip(cue_file):
             '{base}-{track_no:02d}.{format}'.format(
                 base=os.path.splitext(os.fspath(bin_file.file_name))[0],
                 track_no=track_no,
-                format=app.args.format))
+                format=format))
 
         track_tags = album_tags.tracks_tags[track_no]
         try:
