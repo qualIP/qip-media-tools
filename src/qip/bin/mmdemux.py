@@ -968,6 +968,7 @@ def get_codec_encoding_delay(file, *, mediainfo_track_dict=None, ffprobe_stream_
             '.sub',
             '.sup',
             '.srt',
+            '.ass',
             '.vtt',
     ):
         return 0
@@ -1022,6 +1023,7 @@ def codec_name_to_ext(codec_name):
             'dvd_subtitle': '.sub',  # and .idx
             'hdmv_pgs_subtitle': '.sup',
             'subrip': '.srt',
+            'ass': '.ass',
             'webvtt': '.vtt',
         }[codec_name]
     except KeyError as err:
@@ -3441,7 +3443,7 @@ def action_mux(inputfile, in_tags,
                 elif stream_file_ext in ('.idx',):
                     out = open(outputdir / stream_file_name, 'rb').read()
                     subtitle_count = out.count(b'timestamp:')
-                elif stream_file_ext in ('.srt', '.vtt'):
+                elif stream_file_ext in ('.srt', '.ass', '.vtt'):
                     out = open(outputdir / stream_file_name, 'rb').read()
                     subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
                 else:
@@ -5650,7 +5652,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                     # NOTE:
                     #  WebVTT format exported by SubtitleEdit is same as ffmpeg .srt->.vtt except ffmpeg's timestamps have more 0-padding
-                    if stream_file_ext in ('.srt',):
+                    if stream_file_ext in ('.srt', '.ass'):
                         new_stream_file_ext = '.vtt'
                         new_stream['file_name'] = stream_file_base + new_stream_file_ext
                         app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)

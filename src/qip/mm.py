@@ -5057,6 +5057,7 @@ class TextSubtitleFile(SubtitleFile, TextMediaFile):
 
     _common_extensions = (
         '.srt',
+        '.ass',
         '.vtt',
     )
 
