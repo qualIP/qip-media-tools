@@ -2001,6 +2001,11 @@ def action_rip(rip_dir, device, in_tags):
                 if not rip_titles:
                     raise ValueError('Rip titles list empty!')
 
+                if device.is_block_device():
+                    pass
+                else:
+                    if not re.match('^[A-Za-z0-9_.]+$', device.name):
+                        app.log.warning('If mplayer doesn\'t like the device name, try using only letters, number underscores `_`, and dots `.`')
                 for dvd_title in rip_titles:
                     output_file = VobFile(rip_dir / 'title_t{:02d}.vob'.format(dvd_title.title_no))
                     with perfcontext(f'Ripping title #{dvd_title.title_no} w/ mplayer: {output_file}', log=True):
