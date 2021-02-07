@@ -1974,25 +1974,28 @@ def action_rip(rip_dir, device, in_tags):
                                  show_chapters=True)
                 rip_titles = filter(None, dvd_info.titles)
                 rip_titles = list(rip_titles) ; app.log.debug('1:rip_titles=%r', rip_titles)
-                if app.args.rip_titles is True:
-                    if minlength:
-                        rip_titles = (dvd_title
-                                      for dvd_title in rip_titles
-                                      if dvd_title.general.playback_time >= minlength)
-                    rip_titles = list(rip_titles) ; app.log.debug('2:rip_titles=%r', rip_titles)
+                if isinstance(app.args.rip_titles_list, collections.Sequence):
+                    app.log.debug('4:rip_titles_list=%r', app.args.rip_titles_list)
+                    def _filter(dvd_title):
+                        if dvd_title.title_no in app.args.rip_titles_list:
+                            return True
+                        else:
+                            app.log.verbose('Dropping Title: %d, Length: %s, Not in --rip-titles-list.', dvd_title.title_no, dvd_title.general.playback_time)
+                            return False
+                    rip_titles = filter(_filter, rip_titles)
                 else:
-                    rip_titles = (dvd_title
-                                  for dvd_title in rip_titles
-                                  if dvd_title.title_no in app.args.rip_titles)
-                    rip_titles = list(rip_titles) ; app.log.debug('3:rip_titles=%r', rip_titles)
+                    if minlength:
+                        def _filter(dvd_title):
+                            if dvd_title.general.playback_time >= minlength:
+                                return True
+                            else:
+                                app.log.info('Dropping Title: %d, Length: %s, Too short.', dvd_title.title_no, dvd_title.general.playback_time)
+                                return False
+                        rip_titles = filter(_filter, rip_titles)
+                    rip_titles = list(rip_titles) ; app.log.debug('2:rip_titles=%r', rip_titles)
                 rip_titles = list(rip_titles)
                 app.log.debug('4:rip_titles=%r', rip_titles)
                 app.log.debug('4:rip_titles no=%r', [dvd_title.title_no for dvd_title in rip_titles])
-                if isinstance(app.args.rip_titles_list, collections.Sequence):
-                    app.log.debug('4:rip_titles_list=%r', app.args.rip_titles_list)
-                    rip_titles = [dvd_title
-                                  for dvd_title in rip_titles
-                                  if dvd_title.title_no in app.args.rip_titles_list]
                 rip_titles = list(rip_titles) ; app.log.debug('5:rip_titles=%r', rip_titles)
 
                 if not rip_titles:
