@@ -643,6 +643,8 @@ def _mux_dir_Path(path):
     if mux_file.exists():
         return path
     if path.is_file():
+        if path.name == 'mux.json':
+            return path.parent
         inputfile_base, inputfile_ext = my_splitext(path)
         path2 = Path(inputfile_base)
         mux_file2 = path2 / 'mux.json'
