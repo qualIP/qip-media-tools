@@ -2337,7 +2337,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     @xids.setter
     def xids(self, value):
-        if isinstance(value, str):
+        if isinstance(value, str) or not isinstance(value, collections.Sequence):
             value = (value,)
         for xid in value:
             xid = ITunesXid(xid)
@@ -2355,6 +2355,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                     (MediaTagEnum.isrc, 'Universal', ITunesXid.Scheme.isrc),
                     (MediaTagEnum.isrc, 'Isolation', ITunesXid.Scheme.isrc),
                     (MediaTagEnum.isrc, 'Warner', ITunesXid.Scheme.isrc),
+                    (MediaTagEnum.isrc, 'Orchard', ITunesXid.Scheme.isrc),
             ):
                 if xid.scheme is not scheme:
                     continue
@@ -5225,6 +5226,8 @@ def argparse_add_tags_arguments(parser, tags, exclude=()):
         parser.add_argument('--sort-tvshow', dest='sorttvshow', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     if 'xid' not in exclude:
         parser.add_argument('--xid', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'isbn' not in exclude:
+        parser.add_argument('--isbn', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
 
 def date_to_year(date):
     m = re.match('^(\d{4})(?:\d\d?-\d\d?)?$', date)
