@@ -250,7 +250,7 @@ class Chapter(object):
         # <ChapterAtom>
         #   <ChapterUID>6524138974649683444</ChapterUID>
         uid = eChapterAtom.find('ChapterUID')
-        uid = uid and uid.text
+        uid = uid.text if uid is not None else None
         #   <ChapterTimeStart>00:00:00.000000000</ChapterTimeStart>
         start = eChapterAtom.find('ChapterTimeStart').text
         #   <ChapterFlagHidden>0</ChapterFlagHidden>
@@ -268,7 +268,7 @@ class Chapter(object):
         title = eChapterDisplay.find('ChapterString').text
         #     <ChapterLanguage>eng</ChapterLanguage>
         lang = eChapterDisplay.find('ChapterLanguage')
-        lang = lang and lang.text
+        lang = lang.text if lang is not None else None
         #   </ChapterDisplay>
         # </ChapterAtom>
         return cls(start=start, end=end,
