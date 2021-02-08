@@ -437,6 +437,20 @@ def taged_mf_MP4Tags(file_name, mf, tags):
     if MediaTagEnum.contenttype in tags_to_set:
         tags_to_set.discard(MediaTagEnum.contenttype)
         tags_to_set.add(MediaTagEnum.type)
+
+    overwrite_map = {
+        'performer': 'composer',
+        'sortperformer': 'sortcomposer',
+    }
+    for tag1, tag2 in overwrite_map.items():
+        tag1 = MediaTagEnum[tag1]
+        tag2 = MediaTagEnum[tag2]
+        if (tag1 in tags_to_set
+            and tag2 in tags_to_set
+            and tags[tag2] is None):
+            app.log.debug('Drop %s is None: overwritting with %r', tag2, tag1)
+            tags_to_set.remove(tag2)
+
     for tag in (
             MediaTagEnum.barcode,
             MediaTagEnum.isrc,
@@ -467,10 +481,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
         else:
             value = tags[tag]
 
-        tag = {
-            'performer': 'composer',
-            'sortperformer': 'sortcomposer',
-        }.get(tag, tag)
+        tag = overwrite_map.get(tag, tag)
 
         try:
             mapped_tag = qip.mm.sound_tag_info['map'][tag]
