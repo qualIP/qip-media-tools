@@ -107,6 +107,10 @@ setup(
                   sources=['qip/libdvdread_swig_wrap.c',],
                   libraries=['dvdread',],
                   ),
+        Extension('qip._libudfread_swig',
+                  sources=['qip/libudfread_swig_wrap.c',],
+                  libraries=['udfread',],
+                  ),
     ],
 
     # If there are data files included in your packages that need to be
