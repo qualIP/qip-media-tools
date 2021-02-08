@@ -2550,7 +2550,7 @@ def skip_duplicate_streams(streams, mux_subtitles=True):
                             stream2.file_name,
                             stream1.file_name,
                             )
-            stream2['skip'] = True
+            stream2['skip'] = f"Identical to stream #{stream1.pprint_index}"
 
 def action_hb(inputfile, in_tags):
     app.log.info('HandBrake %s...', inputfile)
@@ -2970,8 +2970,8 @@ def mux_dict_from_file(inputfile, outputdir):
 
                 elif stream.codec_type == 'data':
                     if stream_codec_name == 'dvd_nav_packet':
-                        stream['skip'] = True
                         app.log.warning('Skipping %s/%s stream.', stream.codec_type, stream_codec_name)
+                        stream['skip'] = f'Skipping {stream_codec_name}'
                     else:
                         raise NotImplementedError(f'{stream.codec_type}/{stream_codec_name}')
                 else:
@@ -3388,11 +3388,11 @@ def action_mux(inputfile, in_tags,
                 mediainfo_track_dict = None  # Not its own track
             elif stream.codec_type == 'data':
                 mediainfo_track_dict = None  # Not its own track
-                assert stream.get('skip', False)
+                assert stream.skip
             else:
                 raise NotImplementedError(stream.codec_type)
 
-            if stream.get('skip', False):
+            if stream.skip:
                 continue
 
             stream_file_name = stream['file_name']
@@ -3469,12 +3469,12 @@ def action_mux(inputfile, in_tags,
                     app.log.warning('Detected empty single-frame subtitle stream #%s (%s); Skipping.',
                                     stream.pprint_index,
                                     stream.language)
-                    stream['skip'] = True
+                    stream['skip'] = f'Empty single-frame subtitle stream'
                 elif not subtitle_count:
                     app.log.warning('Detected empty subtitle stream #%s (%s); Skipping.',
                                     stream.pprint_index,
                                     stream.language)
-                    stream['skip'] = True
+                    stream['skip'] = 'Empty subtitle stream'
                 else:
                     stream['subtitle_count'] = subtitle_count
                     subtitle_counts.append(
@@ -3554,7 +3554,7 @@ def action_verify(inputfile, in_tags):
 
     stream_duration_table = []
     for stream_dict in sorted_stream_dicts(mux_dict['streams']):
-        if stream_dict.get('skip', False):
+        if stream_dict.skip:
             continue
         stream_file_name = stream_dict['file_name']
         stream_file_base, stream_file_ext = my_splitext(stream_file_name)
@@ -3715,7 +3715,7 @@ def action_combine(inputdirs, in_tags):
         if i_inputdir:
             mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
             if not mux_dict.skip:
-                mux_dict['skip'] = True
+                mux_dict['skip'] = f'Combined into {outputdir}'
                 mux_dict.save()
 
 def action_chop(inputfile, *, in_tags=None, chaps=None, chop_chaps=None):
@@ -3730,7 +3730,7 @@ def action_chop(inputfile, *, in_tags=None, chaps=None, chop_chaps=None):
             chaps = Chapters.from_mkv_xml(inputdir / mux_dict['chapters']['file_name'], add_pre_gap=True)
 
             for stream_dict in sorted_stream_dicts(mux_dict['streams']):
-                if stream_dict.get('skip', False):
+                if stream_dict.skip:
                     continue
                 stream_file_name = stream_dict['file_name']
                 inputfile = inputdir / stream_file_name
@@ -3844,9 +3844,11 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
     @property
     def skip(self):
         try:
-            return bool(self['skip'])
+            skip = self['skip']
         except KeyError:
             return False
+        return skip or False
+
 
     def load(self, /, *, in_tags=None):
         with open(self.mux_file_name, 'r') as fp:
@@ -3894,7 +3896,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
             print('NOTE: Globally set as skipped.')
         for stream_dict in sorted_stream_dicts(self['streams']):
             stream_index = stream_dict.pprint_index
-            if stream_dict.get('skip', False):
+            if stream_dict.skip:
                 stream_index = f'(S){stream_index}'
             if stream_dict is current_stream or stream_dict.index == current_stream_index:
                 stream_index = f'*{stream_index}'
@@ -4134,9 +4136,10 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
     @property
     def skip(self):
         try:
-            return bool(self['skip'])
+            skip = self['skip']
         except KeyError:
             return False
+        return skip or False
 
     @property
     def pprint_index(self):
@@ -4251,7 +4254,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                 nonlocal stream_file_ext
 
                 if do_skip:
-                    stream_dict['skip'] = True
+                    stream_dict['skip'] = do_skip
                     app.log.info('Stream #%s %s: setting to be skipped', stream_dict.pprint_index, stream_dict.file_name)
                 elif 'concat_streams' in new_stream:
                     # this iteration was to split into sub streams
@@ -5634,7 +5637,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                 if ns.action == 'help':
                                                     print(parser.format_help())
                                                 elif ns.action == 'skip':
-                                                    do_skip = True
+                                                    do_skip = ns.comment or True
                                                     break
                                                 elif ns.action == 'continue':
                                                     do_retry = True
@@ -5748,7 +5751,7 @@ def action_optimize(inputdir, in_tags):
     mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
 
     if mux_dict.skip:
-        app.log.verbose('%s: SKIP', inputdir)
+        app.log.info('%s: SKIP', inputdir)
         return
 
     stats = types.SimpleNamespace(
@@ -5795,7 +5798,7 @@ def action_extract_music(inputdir, in_tags):
         picture = None
 
         for stream_dict in sorted_stream_dicts(mux_dict['streams']):
-            if stream_dict.get('skip', False):
+            if stream_dict.skip:
                 continue
             if 'original_file_name' in stream_dict:
                 stream_dict = copy.copy(stream_dict)
@@ -5940,7 +5943,7 @@ def action_demux(inputdir, in_tags):
     mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
 
     if mux_dict.skip:
-        app.log.verbose('%s: SKIP', inputdir)
+        app.log.info('%s: SKIP', inputdir)
         return
 
     # ffmpeg messes up timestamps, mkvmerge doesn't support WebVTT yet
@@ -6209,7 +6212,7 @@ def action_demux(inputdir, in_tags):
         sorted_streams = sorted_stream_dicts(mux_dict['streams'])
         enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
         for sorted_stream_index, stream_dict in enumerated_sorted_streams:
-            if stream_dict.get('skip', False):
+            if stream_dict.skip:
                 continue
             stream_title = stream_dict.get('title', None)
 
@@ -6246,7 +6249,7 @@ def action_demux(inputdir, in_tags):
             if stream_characteristics in (
                     stream_dict2['_temp'].stream_characteristics
                     for stream_dict2 in sorted_streams[:sorted_stream_index]
-                    if not stream_dict2.get('skip', False)):
+                    if not stream_dict2.skip):
                 try:
                     raise StreamCharacteristicsSeenError(stream=stream_dict,
                                                          stream_characteristics=stream_characteristics)
@@ -6282,7 +6285,7 @@ def action_demux(inputdir, in_tags):
         sorted_streams = sorted_stream_dicts(mux_dict['streams'])
         enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
         for sorted_stream_index, stream_dict in enumerated_sorted_streams:
-            if stream_dict.get('skip', False):
+            if stream_dict.skip:
                 continue
             stream_title = stream_dict.get('title', None)
 
@@ -6355,7 +6358,7 @@ def action_demux(inputdir, in_tags):
             for stream_dict in sorted_streams:
                 if not stream_dict['_temp'].post_process_subtitle:
                     continue
-                if stream_dict.get('skip', False):
+                if stream_dict.skip:
                     continue
                 stream_title = stream_dict.get('title', None)
 
@@ -6437,7 +6440,7 @@ def action_demux(inputdir, in_tags):
         sorted_streams = sorted_stream_dicts(mux_dict['streams'])
         enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
         for sorted_stream_index, stream_dict in enumerated_sorted_streams:
-            if stream_dict.get('skip', False):
+            if stream_dict.skip:
                 continue
             stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
             stream_title = stream_dict.get('title', None)
@@ -6553,7 +6556,7 @@ def action_demux(inputdir, in_tags):
             if stream_characteristics in (
                     stream_dict2['_temp'].stream_characteristics
                     for stream_dict2 in sorted_streams[:sorted_stream_index]
-                    if not stream_dict2.get('skip', False)):
+                    if not stream_dict2.skip):
                 try:
                     raise StreamCharacteristicsSeenError(stream=stream_dict,
                                                          stream_characteristics=stream_characteristics)
@@ -6565,7 +6568,7 @@ def action_demux(inputdir, in_tags):
         sorted_streams = sorted_stream_dicts(mux_dict['streams'])
         enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
         for sorted_stream_index, stream_dict in enumerated_sorted_streams:
-            if stream_dict.get('skip', False):
+            if stream_dict.skip:
                 continue
             if stream_dict['_temp'].external:
                 # Already processed
