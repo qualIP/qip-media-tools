@@ -3262,7 +3262,9 @@ def action_mux(inputfile, in_tags,
                             '-sid', stream['original_id'],
                             '-vobsubout', outputdir / stream_file_name[:-4],  # strip '.sub'
                         ]
-                        mencoder(*mencoder_args)
+                        mencoder(*mencoder_args,
+                                 dry_run=app.args.dry_run)
+                                 # TODO y=app.args.yes or app.args.remux)
                     continue
 
                 if stream['disposition']['attached_pic']:
@@ -3368,117 +3370,118 @@ def action_mux(inputfile, in_tags,
 
     subtitle_counts = []
 
-    if not app.args.dry_run:
+    iter_mediainfo_track_dicts = iter(mediainfo_track_dict
+                                      for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
+                                      if 'ID' in mediainfo_track_dict)
+    for stream in sorted_stream_dicts(mux_dict['streams']):
+        if app.args.dry_run and not stream.file.exists():
+            app.log.warning('Stream #%s file does not exist: %s (ignoring due to dry-run but information may be incomplete)', stream.pprint_index, stream.file)
+            continue
 
-        iter_mediainfo_track_dicts = iter(mediainfo_track_dict
-                                          for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
-                                          if 'ID' in mediainfo_track_dict)
-        for stream in sorted_stream_dicts(mux_dict['streams']):
+        if stream.codec_type == 'video':
+            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+            assert mediainfo_track_dict['@type'] == 'Video'
+        elif stream.codec_type == 'audio':
+            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+            assert mediainfo_track_dict['@type'] == 'Audio'
+        elif stream.codec_type == 'subtitle':
+            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+            assert mediainfo_track_dict['@type'] == 'Text'
+        elif stream.codec_type == 'image':
+            mediainfo_track_dict = None  # Not its own track
+        elif stream.codec_type == 'data':
+            mediainfo_track_dict = None  # Not its own track
+            assert stream.skip
+        else:
+            raise NotImplementedError(stream.codec_type)
 
-            if stream.codec_type == 'video':
-                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-                assert mediainfo_track_dict['@type'] == 'Video'
-            elif stream.codec_type == 'audio':
-                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-                assert mediainfo_track_dict['@type'] == 'Audio'
-            elif stream.codec_type == 'subtitle':
-                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-                assert mediainfo_track_dict['@type'] == 'Text'
-            elif stream.codec_type == 'image':
-                mediainfo_track_dict = None  # Not its own track
-            elif stream.codec_type == 'data':
-                mediainfo_track_dict = None  # Not its own track
-                assert stream.skip
-            else:
-                raise NotImplementedError(stream.codec_type)
+        if stream.skip:
+            continue
 
-            if stream.skip:
-                continue
+        stream_file_name = stream['file_name']
+        stream_file_base, stream_file_ext = my_splitext(stream_file_name)
 
-            stream_file_name = stream['file_name']
-            stream_file_base, stream_file_ext = my_splitext(stream_file_name)
+        if stream.codec_type == 'video':
 
-            if stream.codec_type == 'video':
-
-                def try_int(v):
-                    try:
-                        return int(v)
-                    except ValueError:
-                        return v
-
+            def try_int(v):
                 try:
-                    mediainfo_stream_id = stream['original_id'] & 0xff
-                except KeyError:
-                    mediainfo_stream_id = stream.index + 1
-                mediainfo_track_dict, = (mediainfo_track_dict
-                        for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
-                        if mediainfo_stream_id == mediainfo_track_dict.get('ID', 0))
-                assert mediainfo_track_dict['@type'] == 'Video'
-                storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
-                display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
-                pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio
-                stream['display_aspect_ratio'] = str(display_aspect_ratio)
-                stream['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
+                    return int(v)
+                except ValueError:
+                    return v
 
-            if mux_subtitles and stream.codec_type == 'subtitle':
-                stream_forced = stream['disposition'].get('forced', None)
-                # TODO Detect closed_caption
-                if isinstance(stream.file, PgsFile):
-                    palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment=None)
-                    def is_pgs_valid_ods_segment(pgs_segment):
-                        nonlocal palette
-                        if pgs_segment.segment_type is PgsFile.SegmentType.ODS:
-                            object_data = qip.pgs.rle_decode(pgs_segment.object_data,
-                                                             pgs_segment.width,
-                                                             pgs_segment.height,
-                                                             palette=palette)
-                            object_data = list(object_data)
-                            if not object_data or all(e == object_data[0] for e in object_data):
-                                return False  # Empty
-                            return True
-                        elif pgs_segment.segment_type is PgsFile.SegmentType.PDS:
-                            palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment)
-                        return False
-                    subtitle_count = sum(
-                        is_pgs_valid_ods_segment(pgs_segment)
-                        for pgs_segment in stream.file.iter_pgs_segments())
-                elif stream_file_ext in ('.sub', '.sup'):
-                    try:
-                        d = ffprobe(i=outputdir / stream_file_name, show_packets=True)
-                    except subprocess.CalledProcessError as e:
-                        app.log.error(e)
-                        num_extract_errors += 1
-                        subtitle_count = 0
-                    else:
-                        out = d.out
-                        subtitle_count = out.count(
-                            b'[PACKET]' if type(out) is bytes else '[PACKET]')
-                        if stream_file_ext in ('.sup',):
-                            # TODO count only those frames with num_rect != 0
-                            subtitle_count = subtitle_count // 2
-                elif stream_file_ext in ('.idx',):
-                    out = open(outputdir / stream_file_name, 'rb').read()
-                    subtitle_count = out.count(b'timestamp:')
-                elif stream_file_ext in ('.srt', '.ass', '.vtt'):
-                    out = open(outputdir / stream_file_name, 'rb').read()
-                    subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
+            try:
+                mediainfo_stream_id = stream['original_id'] & 0xff
+            except KeyError:
+                mediainfo_stream_id = stream.index + 1
+            mediainfo_track_dict, = (mediainfo_track_dict
+                    for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
+                    if mediainfo_stream_id == mediainfo_track_dict.get('ID', 0))
+            assert mediainfo_track_dict['@type'] == 'Video'
+            storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
+            display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
+            pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio
+            stream['display_aspect_ratio'] = str(display_aspect_ratio)
+            stream['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
+
+        if mux_subtitles and stream.codec_type == 'subtitle':
+            stream_forced = stream['disposition'].get('forced', None)
+            # TODO Detect closed_caption
+            if isinstance(stream.file, PgsFile):
+                palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment=None)
+                def is_pgs_valid_ods_segment(pgs_segment):
+                    nonlocal palette
+                    if pgs_segment.segment_type is PgsFile.SegmentType.ODS:
+                        object_data = qip.pgs.rle_decode(pgs_segment.object_data,
+                                                         pgs_segment.width,
+                                                         pgs_segment.height,
+                                                         palette=palette)
+                        object_data = list(object_data)
+                        if not object_data or all(e == object_data[0] for e in object_data):
+                            return False  # Empty
+                        return True
+                    elif pgs_segment.segment_type is PgsFile.SegmentType.PDS:
+                        palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment)
+                    return False
+                subtitle_count = sum(
+                    is_pgs_valid_ods_segment(pgs_segment)
+                    for pgs_segment in stream.file.iter_pgs_segments())
+            elif stream_file_ext in ('.sub', '.sup'):
+                try:
+                    d = ffprobe(i=outputdir / stream_file_name, show_packets=True)
+                except subprocess.CalledProcessError as e:
+                    app.log.error(e)
+                    num_extract_errors += 1
+                    subtitle_count = 0
                 else:
-                    raise NotImplementedError(stream_file_ext)
-                if subtitle_count == 1 \
-                        and File(outputdir / stream_file_name).getsize() == 2048:
-                    app.log.warning('Detected empty single-frame subtitle stream #%s (%s); Skipping.',
-                                    stream.pprint_index,
-                                    stream.language)
-                    stream['skip'] = f'Empty single-frame subtitle stream'
-                elif not subtitle_count:
-                    app.log.warning('Detected empty subtitle stream #%s (%s); Skipping.',
-                                    stream.pprint_index,
-                                    stream.language)
-                    stream['skip'] = 'Empty subtitle stream'
-                else:
-                    stream['subtitle_count'] = subtitle_count
-                    subtitle_counts.append(
-                        (stream, subtitle_count))
+                    out = d.out
+                    subtitle_count = out.count(
+                        b'[PACKET]' if type(out) is bytes else '[PACKET]')
+                    if stream_file_ext in ('.sup',):
+                        # TODO count only those frames with num_rect != 0
+                        subtitle_count = subtitle_count // 2
+            elif stream_file_ext in ('.idx',):
+                out = open(outputdir / stream_file_name, 'rb').read()
+                subtitle_count = out.count(b'timestamp:')
+            elif stream_file_ext in ('.srt', '.ass', '.vtt'):
+                out = open(outputdir / stream_file_name, 'rb').read()
+                subtitle_count = out.count(b'\n\n') + out.count(b'\n\r\n')
+            else:
+                raise NotImplementedError(stream_file_ext)
+            if subtitle_count == 1 \
+                    and File(outputdir / stream_file_name).getsize() == 2048:
+                app.log.warning('Detected empty single-frame subtitle stream #%s (%s); Skipping.',
+                                stream.pprint_index,
+                                stream.language)
+                stream['skip'] = f'Empty single-frame subtitle stream'
+            elif not subtitle_count:
+                app.log.warning('Detected empty subtitle stream #%s (%s); Skipping.',
+                                stream.pprint_index,
+                                stream.language)
+                stream['skip'] = 'Empty subtitle stream'
+            else:
+                stream['subtitle_count'] = subtitle_count
+                subtitle_counts.append(
+                    (stream, subtitle_count))
 
     if mux_subtitles and not has_forced_subtitle and subtitle_counts:
         max_subtitle_size = max(subtitle_count
