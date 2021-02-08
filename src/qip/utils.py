@@ -47,9 +47,13 @@ log = logging.getLogger(__name__)
 def beep():
     print('\a', end='')
 
-# https://eklitzke.org/efficient-file-copying-on-linux
-# http://git.savannah.gnu.org/cgit/coreutils.git/tree/src/ioblksize.h
-IO_BUFSIZE = 128 * 1024
+try:
+    # Python 3.9
+    COPY_BUFSIZE = shutil.COPY_BUFSIZE
+except:
+    # https://eklitzke.org/efficient-file-copying-on-linux
+    # http://git.savannah.gnu.org/cgit/coreutils.git/tree/src/ioblksize.h
+    COPY_BUFSIZE = 128 * 1024
 
 HAVE_PROGRESS_BAR = False
 try:
@@ -70,12 +74,25 @@ def progress_copy2(src, dst, *, follow_symlinks=True):
     If follow_symlinks is false, symlinks won't be followed. This
     resembles GNU's "cp -P src dst".
 
-    NOTE: Same as Python 3.7ś shutil.copy2 but with progress bar support
+    NOTE: Same as Python 3.9's shutil.copy2 but with progress bar support
     """
     if os.path.isdir(dst):
         dst = os.path.join(dst, os.path.basename(src))
     progress_copyfile(src, dst, follow_symlinks=follow_symlinks)
     shutil.copystat(src, dst, follow_symlinks=follow_symlinks)
+    return dst
+
+def progress_copy2_link(src, dst, *, follow_symlinks=True):
+    """Create a hard link pointing to src named dst. If a hard link is not possible, copy the file using progress_copy2.
+    """
+    try:
+        os.link(src, dst, follow_symlinks=follow_symlinks)
+    except OSError as e:
+        if e.errno == errno.EXDEV:
+            # [Errno 18] Invalid cross-device link: 'src' -> 'dst'
+            progress_copy2(src, dst, follow_symlinks=follow_symlinks)
+        else:
+            raise
     return dst
 
 def progress_copyfile(src, dst, *, follow_symlinks=True):
@@ -84,7 +101,8 @@ def progress_copyfile(src, dst, *, follow_symlinks=True):
     If follow_symlinks is not set and src is a symbolic link, a new
     symlink will be created instead of copying the file it points to.
 
-    NOTE: Same as Python 3.7ś shutil.copyfile but with progress bar support
+    NOTE: Same as Python 3.9's shutil.copyfile but with progress bar support
+    (No OS-Specific optimizations)
     """
     if shutil._samefile(src, dst):
         raise SameFileError("{!r} and {!r} are the same file".format(src, dst))
@@ -98,47 +116,70 @@ def progress_copyfile(src, dst, *, follow_symlinks=True):
         else:
             # XXX What about other special files? (sockets, devices...)
             if stat.S_ISFIFO(st.st_mode):
+                fn = fn.path if isinstance(fn, os.DirEntry) else fn
                 raise SpecialFileError("`%s` is a named pipe" % fn)
 
     if not follow_symlinks and os.path.islink(src):
         os.symlink(os.readlink(src), dst)
     else:
-        with open(src, 'rb') as fsrc:
-            with open(dst, 'wb') as fdst:
-                progress_copyfileobj(fsrc, fdst)
+        with open(src, 'rb') as fsrc, open(dst, 'wb') as fdst:
+            progress_copyfileobj(fsrc, fdst)
     return dst
 
-def progress_copyfileobj(fsrc, fdst, length=IO_BUFSIZE):
+def progress_copyfileobj(fsrc, fdst, length=0):
     """copy data from file-like object fsrc to file-like object fdst
 
-    NOTE: Same as Python 3.7's shutil.copyfileobj but with progress bar support
+    NOTE: Same as Python 3.9's shutil.copyfileobj but with progress bar support
     """
+    if not length:
+        length = COPY_BUFSIZE
+    fsrc_read = fsrc.read
+    fdst_write = fdst.write
     if HAVE_PROGRESS_BAR and fsrc.seekable():
         # With progress bar
-        pos = fsrc.tell()
-        fsrc.seek(0, 2)
-        siz = fsrc.tell()
-        fsrc.seek(pos, 0)
-        bar = BytesBar('Copying', max=siz)
+        flush = True
+        fsrc_tell = fsrc.tell
+        fsrc_seek = fsrc.seek
+        pos = fsrc_tell()
+        fsrc_seek(0, 2)
+        siz = fsrc_tell()
+        fsrc_seek(pos, 0)
+        name = getattr(fsrc, 'name')
+        bar = BytesBar(
+            f'Copying {name}' if name else 'Copying',
+            max=siz)
+        bar_goto = bar.goto
         try:
             while 1:
-                buf = fsrc.read(length)
+                buf = fsrc_read(length)
                 if not buf:
                     break
-                fdst.write(buf)
+                fdst_write(buf)
                 #if int(time.monotonic()) != int(bar._ts):
-                bar.goto(fsrc.tell())
+                bar_goto(fsrc_tell())
+            if flush:
+                fdst.flush()
+                bar_goto(fsrc_tell())
         finally:
             bar.finish()
     else:
         # Without progress bar
+        flush = False
         while 1:
-            buf = fsrc.read(length)
+            buf = fsrc_read(length)
             if not buf:
                 break
-            fdst.write(buf)
-            if flush:
-                fdst.flush()
+            fdst_write(buf)
+        if flush:
+            fdst.flush()
+
+def progress_move(src, dst, copy_function=progress_copy2):
+    """Recursively move a file or directory (src) to another location (dst) and return the destination.
+
+    NOTE: Same as shutil.move but with progress bar support
+    """
+    return shutil.move(src, dst,
+                       copy_function=copy_function)
 
 if HAVE_PROGRESS_BAR:
 
