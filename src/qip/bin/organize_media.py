@@ -92,6 +92,8 @@ def main():
     pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files')
     pgroup.add_argument('--no-aux', dest='aux', default=argparse.SUPPRESS, action='store_false', help='Do not handle auxiliary files')
     pgroup.add_bool_argument('--overwrite', default=False, help='overwrite files')
+    pgroup.add_bool_argument('--copy', default=False, help='hard link files instead of copying')
+    pgroup.add_bool_argument('--link', '-l', default=False, help='hard link files copying')
 
     pgroup = app.parser.add_argument_group('Library Mode')
     pgroup.add_argument('--music', '--normal', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='normal', help='Normal (Music) mode')
@@ -922,27 +924,37 @@ def organize(inputfile):
                     else:
                         raise OSError(errno.EEXIST, dst_aux_file_name)
                 aux_moves.append((aux_file_name, dst_aux_file_name))
-        if app.args.dry_run:
-            app.log.info('  Rename to %s. (dry-run)', dst_file_name)
-            for aux_file_name, dst_aux_file_name in aux_moves:
-                app.log.info('  Rename aux %s. (dry-run)', dst_aux_file_name)
-        else:
-            app.log.info('  Rename to %s.', dst_file_name)
-            shutil.move(inputfile.file_name, dst_file_name,
-                        copy_function=qip.utils.progress_copy2)
-            for aux_file_name, dst_aux_file_name in aux_moves:
-                app.log.info('  Rename aux %s.', dst_aux_file_name)
-                shutil.move(aux_file_name, dst_aux_file_name,
-                            copy_function=qip.utils.progress_copy2)
+
+        def do_file_op(src, dst, *, is_aux=False):
+            s_dry_run = " (dry-run)" if app.args.dry_run else ""
+            s_to_aux = "aux" if is_aux else "to"
+            if app.args.copy or app.args.link:
+                app.log.info('  Copy %s %s.%s', s_to_aux, dst, s_dry_run)
+                if not app.args.dry_run:
+                    if app.args.link:
+                        qip.utils.progress_copy2_link(src, dst)
+                    else:
+                        qip.utils.progress_copy2(src, dst)
+            else:
+                app.log.info('  Rename %s %s.%s', s_to_aux, dst, s_dry_run)
+                if not app.args.dry_run:
+                    qip.utils.progress_move(src, dst)
+
+        do_file_op(inputfile.file_name, dst_file_name)
+        for aux_file_name, dst_aux_file_name in aux_moves:
+            do_file_op(aux_file_name, dst_aux_file_name)
+        if not (app.args.copy or app.args.link):
             inputdir = os.path.dirname(inputfile.file_name)
             if inputdir not in ('.', '') and dir_empty(inputdir):
                 app.log.info('Remove %s.', inputdir)
-                os.rmdir(inputdir)
+                if not app.args.dry_run:
+                    os.rmdir(inputdir)
         break
     else:
         raise ValueError('Ran out of options / Too many collisions!')
 
     return True
+
 
 if __name__ == "__main__":
     main()
