@@ -2218,18 +2218,26 @@ def action_backup(backup_dir, device, in_tags):
                 discatt_dat_file = None
                 # decrypt = False
 
-            app.log.info('Mounting %s.', device)
-            from qip.lodev import LoopDevice
-            #with LoopDevice.context_from_file(device) as lodev:
-            with udisksctl.loop_context(file=device) as lodev:
-                with udisksctl.mount_context(block_device=lodev) as mountpoint:
-
-                    app.log.info('Copying %s to %s...', mountpoint, backup_dir)
-                    shutil.copytree(src=mountpoint, dst=backup_dir,
-                                    dirs_exist_ok=False)
-
-            app.log.info('Setting write permissions...')
-            do_exec_cmd(['chmod', '-R', 'u+w', backup_dir])
+            app.log.info('Copying %s.', device)
+            from qip.libudfread import udf_reader
+            with udf_reader(device) as udf:
+                def cp_dir(dsrc):
+                    path_dst = Path(os.fspath(backup_dir) + '/' + os.fspath(dsrc.path))
+                    if not app.args.dry_run:
+                        path_dst.mkdir(exist_ok=True)
+                    for dirent in dsrc.readdir():
+                        if dirent.name in ('.', '..'):
+                            continue
+                        if dirent.is_dir():
+                            with dsrc.opendir_at(dirent.name) as child_d:
+                                cp_dir(child_d)
+                        else:
+                            with dsrc.open_at(dirent.name) as fsrc:
+                                if not app.args.dry_run:
+                                    with open(path_dst / dirent.name, 'wb') as fdst:
+                                        qip.utils.progress_copyfileobj(fsrc=fsrc, fdst=fdst)
+                with udf.opendir('/') as root:
+                    cp_dir(root)
 
             if discatt_dat_file is not None:
                 app.log.info('Copying %s...%s', backup_dir / 'discatt.dat', ' (dry-run)' if app.args.dry_run else '')
