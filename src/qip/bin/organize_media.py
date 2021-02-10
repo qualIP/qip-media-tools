@@ -942,7 +942,7 @@ def organize(inputfile):
 
         do_file_op(inputfile.file_name, dst_file_name)
         for aux_file_name, dst_aux_file_name in aux_moves:
-            do_file_op(aux_file_name, dst_aux_file_name)
+            do_file_op(aux_file_name, dst_aux_file_name, is_aux=True)
         if not (app.args.copy or app.args.link):
             inputdir = os.path.dirname(inputfile.file_name)
             if inputdir not in ('.', '') and dir_empty(inputdir):
