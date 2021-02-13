@@ -162,6 +162,19 @@ class Mediainfo(Executable):
                     # 1 080 pixels
                     k = 'Height'
                     v = str(scan_mediainfo_pixels(v))
+                elif k == 'Color space':
+                    k = 'ColorSpace'
+                elif k == 'Color range':
+                    k = 'colour_range'
+                elif k == 'Chroma subsampling':
+                    k = 'ChromaSubsampling'
+					# 4:2:0 (Type 2)
+                    m = re.match(r'^(?P<cs>.+) \((?P<pos>Type \d+)\)$', v)
+                    if m:
+                        # <ChromaSubsampling>4:2:0</ChromaSubsampling>
+                        # <ChromaSubsampling_Position>Type 2</ChromaSubsampling_Position>
+                        v = m.group('cs')
+                        track_dict['ChromaSubsampling_Position'] = m.group('pos')
                 elif k == 'Sampling rate':
                     k = 'SamplingRate'
                     # 48.0 kHz
@@ -170,6 +183,33 @@ class Mediainfo(Executable):
                         v = int(float(m.group('float')) * 1000)
                     else:
                         raise ValueError((k, v))
+                elif k == 'Bit depth':
+                    k = 'BitDepth'
+                    # 10 bits
+                    m = re.match(r'^(?P<bits>\d+) bits$', v)
+                    if m:
+                        v = int(m.group('bits'))
+                    else:
+                        raise ValueError((k, v))
+                elif k == 'HDR format':
+                    k = 'HDR_Format'
+                    # SMPTE ST 2086, HDR10 compatible
+                    m = re.match(r'^(?P<fmt>.+), (?P<compat>[^,]+)$', v)
+                    if m:
+                        # <HDR_Format>SMPTE ST 2086</HDR_Format>
+                        # <HDR_Format_Compatibility>HDR10</HDR_Format_Compatibility>
+                        v = m.group('fmt')
+                        track_dict['HDR_Format_Compatibility'] = m.group('compat')
+                    elif v in (
+                        'SMPTE ST 2086',
+                    ):
+                        pass
+                    else:
+                        raise ValueError((k, v))
+                elif k == 'Color primaries':
+                    k = 'colour_primaries'
+                elif k == 'Matrix coefficients':
+                    k = 'matrix_coefficients'
                 elif k == 'Writing application':
                     k = 'Encoded_Application'
                 elif k == 'Format profile':
@@ -178,6 +218,40 @@ class Mediainfo(Executable):
                     k = 'MultiView_Count'
                 elif k == 'MultiView_Layout':
                     k = 'MultiView_Layout'
+                elif k == 'Mastering display color primaries':
+                    k = 'MasteringDisplay_ColorPrimaries'
+                    # Mastering display color primaries        : Display P3
+                    #   -> master-display="G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)"
+                    # Mastering display color primaries        : R: x=0.680000 y=0.320000, G: x=0.265000 y=0.690000, B: x=0.150000 y=0.060000, White point: x=0.312700 y=0.329000
+                    #   -> master-display="G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)"
+                elif k == 'Mastering display luminance':
+                    k = 'MasteringDisplay_Luminance'
+                    # Mastering display luminance              : min: 0.0200 cd/m2, max: 1200.0000 cd/m2
+                    #   -> master-display="L(12000000,200)"
+                elif k.startswith('Mastering display'):
+                    raise NotImplementedError(k)
+                elif k == 'Maximum Content Light Level':
+                    k = 'MaxCLL'
+                    # 4390
+                    # 4390 cd/m2
+                    m = re.match(r'^(?P<int>\d+) cd/m2$', v)
+                    if m:
+                        v = m.group('int')
+                    try:
+                        v = int(v)
+                    except ValueError:
+                        pass
+                elif k == 'Maximum Frame-Average Light Level':
+                    k = 'MaxFALL'
+                    # 1327
+                    # 1327 cd/m2
+                    m = re.match(r'^(?P<int>\d+) cd/m2$', v)
+                    if m:
+                        v = m.group('int')
+                    try:
+                        v = int(v)
+                    except ValueError:
+                        pass
                 else:
                     continue  # skip
                 track_dict[k] = v
