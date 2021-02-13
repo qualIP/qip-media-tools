@@ -507,6 +507,102 @@ class Ffmpeg(_Ffmpeg):
         'TERM': 'dummy',
     }
 
+    color_primaries_option_map = collections.OrderedDict((  # <int>        ED.V...... color primaries (from 1 to INT_MAX) (default unknown)
+        ('bt709', 1),               # ED.V...... BT.709
+        ('unknown', 2),             # ED.V...... Unspecified
+        ('bt470m', 4),              # ED.V...... BT.470 M
+        ('bt470bg', 5),             # ED.V...... BT.470 BG
+        ('smpte170m', 6),           # ED.V...... SMPTE 170 M
+        ('smpte240m', 7),           # ED.V...... SMPTE 240 M
+        ('film', 8),                # ED.V...... Film
+        ('bt2020', 9),              # ED.V...... BT.2020
+        ('smpte428', 10),           # ED.V...... SMPTE 428-1
+        ('smpte428_1', 10),         # ED.V...... SMPTE 428-1
+        ('smpte431', 11),           # ED.V...... SMPTE 431-2
+        ('smpte432', 12),           # ED.V...... SMPTE 422-1
+        ('jedec-p22', 22),          # ED.V...... JEDEC P22
+        ('ebu3213', 22),            # ED.V...... EBU 3213-E
+        ('unspecified', 2),         # ED.V...... Unspecified
+    ))
+
+    color_trc_option_map = collections.OrderedDict((  # <int>        ED.V...... color transfer characteristics (from 1 to INT_MAX) (default unknown)
+        ('bt709', 1),               # ED.V...... BT.709
+        ('unknown', 2),             # ED.V...... Unspecified
+        ('gamma22', 4),             # ED.V...... BT.470 M
+        ('gamma28', 5),             # ED.V...... BT.470 BG
+        ('smpte170m', 6),           # ED.V...... SMPTE 170 M
+        ('smpte240m', 7),           # ED.V...... SMPTE 240 M
+        ('linear', 8),              # ED.V...... Linear
+        ('log100', 9),              # ED.V...... Log
+        ('log316', 10),             # ED.V...... Log square root
+        ('iec61966-2-4', 11),       # ED.V...... IEC 61966-2-4
+        ('bt1361e', 12),            # ED.V...... BT.1361
+        ('iec61966-2-1', 13),       # ED.V...... IEC 61966-2-1
+        ('bt2020-10', 14),          # ED.V...... BT.2020 - 10 bit
+        ('bt2020-12', 15),          # ED.V...... BT.2020 - 12 bit
+        ('smpte2084', 16),          # ED.V...... SMPTE 2084
+        ('smpte428', 17),           # ED.V...... SMPTE 428-1
+        ('arib-std-b67', 18),       # ED.V...... ARIB STD-B67
+        ('unspecified', 2),         # ED.V...... Unspecified
+        ('log', 9),                 # ED.V...... Log
+        ('log_sqrt', 10),           # ED.V...... Log square root
+        ('iec61966_2_4', 11),       # ED.V...... IEC 61966-2-4
+        ('bt1361', 12),             # ED.V...... BT.1361
+        ('iec61966_2_1', 13),       # ED.V...... IEC 61966-2-1
+        ('bt2020_10bit', 14),       # ED.V...... BT.2020 - 10 bit
+        ('bt2020_12bit', 15),       # ED.V...... BT.2020 - 12 bit
+        ('smpte428_1', 17),         # ED.V...... SMPTE 428-1
+    ))
+
+    colorspace_option_map = collections.OrderedDict((  # <int>        ED.V...... color space (from 0 to INT_MAX) (default unknown)
+        ('rgb', 0),                 # ED.V...... RGB
+        ('bt709', 1),               # ED.V...... BT.709
+        ('unknown', 2),             # ED.V...... Unspecified
+        ('fcc', 4),                 # ED.V...... FCC
+        ('bt470bg', 5),             # ED.V...... BT.470 BG
+        ('smpte170m', 6),           # ED.V...... SMPTE 170 M
+        ('smpte240m', 7),           # ED.V...... SMPTE 240 M
+        ('ycgco', 8),               # ED.V...... YCGCO
+        ('bt2020nc', 9),            # ED.V...... BT.2020 NCL
+        ('bt2020c', 10),            # ED.V...... BT.2020 CL
+        ('smpte2085', 11),          # ED.V...... SMPTE 2085
+        ('unspecified', 2),         # ED.V...... Unspecified
+        ('ycocg', 8),               # ED.V...... YCGCO
+        ('bt2020_ncl', 9),          # ED.V...... BT.2020 NCL
+        ('bt2020_cl', 10),          # ED.V...... BT.2020 CL
+    ))
+
+    color_range_option_map = collections.OrderedDict((  # <int>        ED.V...... color range (from 0 to INT_MAX) (default unknown)
+        ('unknown', 0),             # ED.V...... Unspecified
+        ('tv', 1),                  # ED.V...... MPEG (219*2^(n-8))
+        ('pc', 2),                  # ED.V...... JPEG (2^n-1)
+        ('unspecified', 0),         # ED.V...... Unspecified
+        ('mpeg', 1),                # ED.V...... MPEG (219*2^(n-8))
+        ('jpeg', 2),                # ED.V...... JPEG (2^n-1)
+    ))
+
+    def get_option_value(cls, option, value):
+        option_map = getattr(cls, f'{option}_option_map')
+        if isinstance(value, int):
+            for s, v in option_map.items():
+                if v == value:
+                    return s
+        elif isinstance(value, str):
+            if value in option_map:
+                return value
+        raise ValueError(f'Invalid {option} value: {value!r}')
+
+    def get_option_value_int(cls, option, value):
+        option_map = getattr(cls, f'{option}_option_map')
+        if isinstance(value, int):
+            for s, v in option_map.items():
+                if v == value:
+                    return v
+        elif isinstance(value, str):
+            if value in option_map:
+                return option_map[value]
+        raise ValueError(f'Invalid {option} value: {value!r}')
+
     def _run(self, *args, run_func=None, dry_run=False,
              slurm=False, slurm_cpus_per_task=None,
              progress_bar_max=None,
