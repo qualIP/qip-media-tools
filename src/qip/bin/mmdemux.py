@@ -6673,7 +6673,7 @@ def action_demux(inputdir, in_tags):
                     color_transfer = stream_dict.get('color_transfer', None)
                     color_primaries = stream_dict.get('color_primaries', None)
 
-                    if master_display or max_cll or max_fall or color_transfer or color_primaries:
+                    if master_display or max_cll or max_fall:  # or color_transfer or color_primaries:
                         assert master_display and max_cll and max_fall and color_transfer and color_primaries, f'Incomplete color information: master_display={master_display!r}, max_cll={max_cll!r}, max_fall={max_fall!r}, color_transfer={color_transfer!r}, color_primaries={color_primaries!r}'
                         master_display = parse_master_display_str(master_display)
 
