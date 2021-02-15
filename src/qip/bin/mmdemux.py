@@ -6770,7 +6770,8 @@ def action_demux(inputdir, in_tags):
                         stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
 
                 elif stream_file_ext in {
-                        '.h264',
+                    '.h264',
+                    '.mp2v',
                 }:
                     # h264:
                     #   [matroska @ 0x5637c1c58a40] Timestamps are unset in a packet for stream 0. This is deprecated and will stop working in the future. Fix your code to set the timestamps properly
