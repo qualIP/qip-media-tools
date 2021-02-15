@@ -1,0 +1,27 @@
+#!/bin/bash
+
+set -euo pipefail
+
+cd $(dirname "$0")
+CURDIR=$(pwd)
+
+make build-deps
+
+PACKAGE_NAME=$(sed -n -E -e 's/^PACKAGE_NAME *= *(.+)/\1/p' GNUmakefile)
+PACKAGE_VER=$(sed -n -E -e 's/^PACKAGE_VER *= *(.+)/\1/p' GNUmakefile)
+
+QAAC_VER=$(sed -n -E -e 's/^QAAC_VER *= *(.+)/\1/p' GNUmakefile)
+QAAC_VER_SHORT=$(sed -n -E -e 's/^QAAC_VER_SHORT *= *(.+)/\1/p' GNUmakefile)
+
+FILE_QAAC_ZIP=qaac_${QAAC_VER_SHORT}.zip
+FILE_ITUNES64_SETUP=$(sed -n -E -e 's/^FILE_ITUNES64_SETUP *= *(.+)/\1/p' GNUmakefile)
+
+docker build \
+    --build-arg "QAAC_VER=${QAAC_VER}" \
+    --build-arg "QAAC_VER_SHORT=${QAAC_VER_SHORT}" \
+    --build-arg "FILE_QAAC_ZIP=${FILE_QAAC_ZIP}" \
+    --build-arg "FILE_ITUNES64_SETUP=${FILE_ITUNES64_SETUP}" \
+    -t test/${PACKAGE_NAME}:${PACKAGE_VER} \
+    .
+
+docker image prune --force

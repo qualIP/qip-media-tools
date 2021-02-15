@@ -1,0 +1,19 @@
+#!/bin/bash
+
+set -euo pipefail
+
+$HOME/volumes-init
+
+while [[ "$#@" > 1 ]] ; do
+    case "$1" in
+        --)
+            shift
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+wine64 "/home/developer/qaac/x64/qaac64.exe" "$@"

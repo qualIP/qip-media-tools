@@ -1,0 +1,53 @@
+
+ARG WINE_VER=3.0.3
+
+FROM test/wine64:${WINE_VER}
+ARG WINEPREFIX="/home/developer/.wine"
+LABEL maintainer="j.sebastien.trottier@gmail.com"
+
+ARG QAAC_VER
+ARG QAAC_VER_SHORT
+
+USER root
+RUN apt-get update && \\
+    DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes \\
+        file binutils \\
+        unzip \\
+        p7zip-full \\
+    && \\
+    rm -Rf /var/lib/apt /var/cache/apt /var/log/apt
+
+// #include <Dockerfile.add-developer-user.in>
+USER developer
+
+ARG FILE_QAAC_ZIP
+COPY --chown=developer:developer ${FILE_QAAC_ZIP} .
+RUN unzip ${FILE_QAAC_ZIP} && \\
+    mv qaac_${QAAC_VER_SHORT} qaac
+
+#if 0
+
+/* Using qaac's own makeportable2 script requires running the iTunes installer
+ * in admin mode which is not supported in Wine
+ */
+
+#include <Dockerfile.wine-PATHEXT-dot.in>
+ARG FILE_ITUNES64_SETUP
+ARG FILE_QAAC_MAKEPORTABLE2_ZIP
+COPY --chown=developer:developer ${FILE_ITUNES64_SETUP} ${FILE_QAAC_MAKEPORTABLE2_ZIP} ./
+RUN unzip {FILE_QAAC_MAKEPORTABLE2_ZIP} && sed -i -e '/^@echo off/ d' -e 's@7z@cmd /c /usr/bin/7z@g' makeportable2.cmd
+RUN wine64 cmd /c makeportable2.cmd
+
+#endif
+
+#if 1
+
+ARG FILE_ITUNES64_SETUP
+COPY --chown=developer:developer ${FILE_ITUNES64_SETUP} makeportable2.sh ./
+RUN ./makeportable2.sh && mv QTfiles64/ qaac/x64/
+
+#endif
+
+COPY --chown=developer:developer volumes-init entrypoint /home/developer/
+
+ENTRYPOINT ["/home/developer/entrypoint"]
