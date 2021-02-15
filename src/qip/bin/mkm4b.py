@@ -694,7 +694,7 @@ def mkm4b(inputfiles, default_tags):
                channels=getattr(app.args, 'channels', None),
                picture=picture,
                expected_duration=expected_duration,
-               )
+               show_progress_bar=True)
 
     app.log.info('DONE!')
 

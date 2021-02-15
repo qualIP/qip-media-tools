@@ -830,13 +830,18 @@ class MatroskaFile(BinaryMediaFile):
                use_qaac=True,
                channels=None,
                picture=None,
-               expected_duration=None):
+               expected_duration=None,
+               show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
         from .exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
         from .parser import lines_parser
         from .qaac import qaac
         from .ffmpeg import ffmpeg
         from .file import TempFile, safe_write_file_eval, safe_read_file
         output_file = self
+
+        if show_progress_bar:
+            if progress_bar_max is None:
+                progress_bar_max = expected_duration
 
         log.info('Writing %s...', output_file)
 
@@ -857,8 +862,8 @@ class MatroskaFile(BinaryMediaFile):
             concat_file.files = inputfiles
             log.info('Writing %s...', concat_file)
             concat_file.create(absolute=True)
-            log.info('Files:\n' +
-                         re.sub(r'^', '    ', safe_read_file(concat_file), flags=re.MULTILINE))
+            log.debug('Files:\n' +
+                      re.sub(r'^', '    ', safe_read_file(concat_file), flags=re.MULTILINE))
             ffmpeg_input_cmd += [
                 '-f', 'concat', '-safe', '0', '-i', concat_file,
             ]
@@ -891,7 +896,11 @@ class MatroskaFile(BinaryMediaFile):
             output_file.file_name,
         ]
 
-        out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd))
+        out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd),
+                     show_progress_bar=show_progress_bar,
+                     progress_bar_max=progress_bar_max,
+                     progress_bar_title=progress_bar_title or 'Encode {self} w/ ffmpeg',
+                     )
         out = out.out
         out_time = None
         # {{{

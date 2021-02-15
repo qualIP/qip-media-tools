@@ -116,13 +116,18 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                use_qaac=True,
                channels=None,
                picture=None,
-               expected_duration=None):
+               expected_duration=None,
+               show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
         from .exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
         from .parser import lines_parser
         from .qaac import qaac
         from .ffmpeg import ffmpeg
         from .file import TempFile, safe_write_file_eval, safe_read_file
         m4b = self
+
+        if show_progress_bar:
+            if progress_bar_max is None:
+                progress_bar_max = expected_duration
 
         log.info('Writing %s...', m4b)
         use_qaac_cmd = False
@@ -244,8 +249,8 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             concat_file.files = inputfiles
             log.info('Writing %s...', concat_file)
             concat_file.create(absolute=True)
-            log.info('Files:\n' +
-                         re.sub(r'^', '    ', safe_read_file(concat_file), flags=re.MULTILINE))
+            log.debug('Files:\n' +
+                      re.sub(r'^', '    ', safe_read_file(concat_file), flags=re.MULTILINE))
             ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', concat_file]
         else:
             ffmpeg_input_cmd += ['-i', inputfiles_names[0]]
@@ -290,7 +295,11 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             if use_qaac_cmd:
                 out = do_spawn_cmd(qaac_cmd)
             else:
-                out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd))
+                out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd),
+                             show_progress_bar=show_progress_bar,
+                             progress_bar_max=progress_bar_max,
+                             progress_bar_title=progress_bar_title or 'Encode {self} w/ ffmpeg',
+                             )
                 out = out.out
             out_time = None
             # {{{
