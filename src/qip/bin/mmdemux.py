@@ -1923,13 +1923,16 @@ def action_rip(rip_dir, device, in_tags):
                         if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
                             raise Exception("CDROM not ready")
                     source = f'dev:{device.resolve()}'  # makemkv is picky
+                elif device.is_dir():
+                    source = f'file:{os.fspath(device)}'
+                elif device.suffix in iso_image_exts:
+                    source = f'iso:{os.fspath(device)}'
+                    discatt_dat_file = device.with_suffix('.discatt.dat')
+                    print(f'discatt_dat_file={discatt_dat_file!r}')
+                    if discatt_dat_file.exists():
+                        app.log.warning('%s exists. Perhaps you meant to create a decrypted backup using --backup and then --rip the backup?', discatt_dat_file)
                 else:
-                    if device.is_dir():
-                        source = f'file:{os.fspath(device)}'
-                    else:
-                        if device.suffix not in iso_image_exts:
-                            raise ValueError(f'File is not a device or {"|".join(sorted(iso_image_exts))}: {device}')
-                        source = f'iso:{os.fspath(device)}'
+                    raise ValueError(f'File is not a device or {"|".join(sorted(iso_image_exts))}: {device}')
 
                 if not app.args.dry_run and settings_changed:
                     app.log.warning('Changing makemkv settings!')
