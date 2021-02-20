@@ -6222,7 +6222,7 @@ def action_demux(inputdir, in_tags):
                 continue
             stream_title = stream_dict.get('title', None)
 
-            if stream_dict.codec_type != 'video' \
+            if stream_dict.codec_type not in ('video', 'image', 'data') \
                 and stream_dict.language is isolang('und'):
                 if not stream_dict['_temp'].unknown_language_warned:
                     stream_dict['_temp'].unknown_language_warned = True
@@ -6451,7 +6451,7 @@ def action_demux(inputdir, in_tags):
             stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
             stream_title = stream_dict.get('title', None)
 
-            if stream_dict.codec_type != 'video' \
+            if stream_dict.codec_type not in ('video', 'image', 'data') \
                 and stream_dict.language is isolang('und'):
                 if not stream_dict['_temp'].unknown_language_warned:
                     stream_dict['_temp'].unknown_language_warned = True
