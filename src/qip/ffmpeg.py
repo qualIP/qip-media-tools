@@ -115,6 +115,8 @@ class _FfmpegSpawnMixin(_SpawnMixin):
     invocation_purpose = None
     show_progress_bar = None
     progress_bar = None
+    progress_start_pts_time = None
+    progress_start_frame = None
     progress_bar_max = None
     progress_bar_title = None
     on_progress_bar_line = False
@@ -134,6 +136,8 @@ class _FfmpegSpawnMixin(_SpawnMixin):
         self.show_progress_bar = show_progress_bar
         self.progress_bar_max = progress_bar_max
         self.progress_bar_title = progress_bar_title
+        self.progress_start_pts_time = Timestamp(0)
+        self.progress_start_frame = 0
         self.errors_seen = OrderedSet()
         self.streams_info = {
             'input': {},
@@ -206,16 +210,22 @@ class _FfmpegSpawnMixin(_SpawnMixin):
         print('', end='', flush=True)
         return True
 
+    def start_segment_file(self, str):
+        self.progress_start_pts_time += Timestamp(self.match.group('pts_time'))
+        self.progress_start_frame += int(self.match.group('frame'))
+        self.log_line(str)
+        return True
+
     def progress_line(self, str):
         if self.progress_bar is not None:
             if self.progress_bar_max:
                 if isinstance(self.progress_bar_max, _BaseTimestamp):
                     if Timestamp(byte_decode(self.match.group('time'))).seconds >= 0.0:
-                        v = Timestamp(byte_decode(self.match.group('time'))).seconds
+                        v = Timestamp(byte_decode(self.match.group('time'))).seconds + self.progress_start_pts_time.seconds
                         self.progress_bar.goto(v)
                 else:
                     if int(self.match.group('frame')) >= 0:
-                        self.progress_bar.goto(int(self.match.group('frame')))
+                        self.progress_bar.goto(int(self.match.group('frame')) + self.progress_start_frame)
                 fps = self.match.group('fps')
                 if fps:
                     if Decimal(byte_decode(fps)) >= 0:
@@ -374,6 +384,9 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [h264 @ 0x55f98a7caa00] [error] sps_id 1 out of range
             # [NULL @ 0x55f98a7c3b80] [error] sps_id 1 out of range
             (fr'^\[\S+ @ 0x[0-9a-f]+\] (?:\[error\]\s)?sps_id 1 out of range{re_eol}', self.generic_debug_line),
+
+            # [stream_segment,ssegment @ 0x55842aa56b40] [verbose] segment:'Labyrinth4K/Labyrinth (1986)/track-00-video-chap02.h265' starts with packet stream:0 pts:6000 pts_time:250.25 frame:6000
+            (fr'^(?:\[\S+ @ \w+\]\s)?(?:\[verbose\]\s)? *segment:\'(?P<segment_file>.+)\' starts with packet stream:(?P<stream>\S+) pts:(?P<pts>\S+) pts_time:(?P<pts_time>\S+) frame:(?P<frame>\S+){re_eol}', self.start_segment_file),
 
             (fr'^\[info\]\s[^\r\n]*?{re_eol}', self.unknown_info_line),
             (fr'^\[verbose\]\s[^\r\n]*?{re_eol}', self.unknown_verbose_line),
@@ -836,18 +849,6 @@ class Ffmpeg(_Ffmpeg):
 ffmpeg = Ffmpeg()
 
 class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
-
-    ## TODO -- fix popen_func support above
-    run_func = None
-    def run(self, *args, **kwargs):
-        for k in self.run_func_options:
-            kwargs.pop(k, None)
-        return super().run(*args, **kwargs)
-    __call__ = run
-    def popen(self, *args, **kwargs):
-        for k in self.run_func_options:
-            kwargs.pop(k, None)
-        return super().popen(*args, **kwargs)
 
     name = Path(__file__).parent / 'bin' / 'ffmpeg-2pass-pipe'
 
