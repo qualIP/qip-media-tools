@@ -14,6 +14,7 @@ import copy
 import errno
 import functools
 import logging
+import math
 import os
 import pexpect
 import re
@@ -686,7 +687,7 @@ class Ffmpeg(_Ffmpeg):
                     else:
                         threads = args[idx + 1]
                 if threads:
-                    slurm_cpus_per_task = max(round(int(threads) * 0.75), 1)
+                    slurm_cpus_per_task = max(math.ceil(int(threads)/2), 1)
             if slurm_cpus_per_task is not None:
                 run_kwargs['slurm_cpus_per_task'] = slurm_cpus_per_task
             run_kwargs['slurm_mem'] = '500M'
@@ -914,7 +915,7 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
                     else:
                         threads = args[idx + 1]
                 if threads:
-                    run_kwargs['slurm_cpus_per_task'] = max(round(int(threads) * 0.75), 1)
+                    run_kwargs['slurm_cpus_per_task'] = max(math.ceil(int(threads)/2), 1)
                 run_kwargs['slurm_mem'] = '500M'
                 if not dry_run:
                     run_kwargs['slurm_tmp'] = stdin_file.stat().st_size * 1.5
