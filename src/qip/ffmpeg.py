@@ -84,6 +84,8 @@ class ConcatScriptFile(TextFile):
 
         def __init__(self, name, duration=None):
             self.name = toPath(name)
+            if '..' in os.fspath(self.name):
+                raise ValueError(f'ffmpeg does not properly handle paths containing \'..\': {self.name}')
             self.duration = None if duration is None else Timestamp(duration)
 
         def __fspath__(self):
