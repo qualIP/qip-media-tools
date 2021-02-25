@@ -5,12 +5,13 @@ __all__ = (
     'FlacFile',
 )
 
-import struct
 import logging
+import struct
+import tempfile
 log = logging.getLogger(__name__)
 
-from .mm import SoundFile
 from . import mm
+from .mm import SoundFile
 
 class FlacFile(SoundFile):
 
@@ -56,7 +57,27 @@ class FlacFile(SoundFile):
         'comment': 'comment',
         'discnumber': 'disk',
         'disctotal': 'disks',
+        'totaldiscs': 'disks',  # HDtracks
         'tracktotal': 'tracks',
+        'totaltracks': 'tracks',  # HDtracks
+        'publisher': 'publisher',  # HDtracks
+        'upc': 'barcode',  # HDtracks
     }
+
+    def rip_cue_track(self, cue_track, bin_file=None, tags=None):
+        from .ffmpeg import ffmpeg
+        #with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_dir = None
+        with tempfile.NamedTemporaryFile(suffix='.wav') as tmp_fp:
+            from qip.wav import WaveFile
+            wav_file = WaveFile(file_name=tmp_fp.name)
+            wav_file.rip_cue_track(cue_track=cue_track, bin_file=bin_file, tags=None, fp=tmp_fp)
+            ffmpeg(
+                '-i', wav_file,
+                '-f', 'flac',
+                self,
+            )
+        if tags is not None:
+            self.write_tags(tags=tags)
 
 FlacFile._build_extension_to_class_map()

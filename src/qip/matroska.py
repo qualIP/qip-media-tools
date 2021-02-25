@@ -22,7 +22,7 @@ import logging
 import re
 log = logging.getLogger(__name__)
 
-from .mm import MediaTagEnum, BinaryMediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters
+from .mm import MediaTagEnum, BinaryMediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters, parse_time_duration
 from .utils import KwVarsObject, byte_decode
 from .exec import Executable
 
@@ -911,7 +911,7 @@ class MatroskaFile(BinaryMediaFile):
             if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
                 # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
                 # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
-                out_time = mm.parse_time_duration(parser.match.group('out_time'))
+                out_time = parse_time_duration(parser.match.group('out_time'))
             elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
                 log.warning('TODO: %s', parser.line)
                 pass
