@@ -27,6 +27,12 @@ cd ..
 SubtitleEdit
 ============
 
+https://www.nikse.dk/subtitleedit
+
+http://www.sub-talk.net/topic/2751-subtitle-edit-for-ubuntu-troubleshoting-tips-and-tricks/
+
+https://github.com/SubtitleEdit/subtitleedit/releases
+
 ~~~~~~~~~~{.sh}
 sudo apt-get tesseract-ocr-eng tesseract-ocr-fra libtesseract-dev
 winetricks vcrun2010
