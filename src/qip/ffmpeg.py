@@ -385,6 +385,15 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [NULL @ 0x55f98a7c3b80] [error] sps_id 1 out of range
             (fr'^\[\S+ @ 0x[0-9a-f]+\] (?:\[error\]\s)?sps_id 1 out of range{re_eol}', self.generic_debug_line),
 
+            # [mp4 @ 0x55ce3d6c48c0] [warning] pts has no value
+            (fr'^\[\S+ @ 0x[0-9a-f]+\] (?:\[warning\]\s)?pts has no value{re_eol}', self.generic_debug_line),
+
+            #     Last message repeated 1604 times
+            (fr'^\s*Last message repeated (?P<count>\d+) times{re_eol}', self.generic_debug_line),
+
+            # [stream_segment,ssegment @ 0x55d20668d080] [warning] Non-monotonous DTS in output stream 0:0; previous: 75717, current: 75717; changing to 75718. This may result in incorrect timestamps in the output file.
+            # [ipod @ 0x564125e0a940] Non-monotonous DTS in output stream 0:0; previous: 1554006132, current: 1554005644; changing to 1554006133. This may result in incorrect timestamps in the output file.
+            (fr'^(?:\[\S+ @ \w+\]\s)?(?:\[warning\]\s)? *Non-monotonous DTS in output stream (?P<stream>\S+); previous: (?P<previous_dts>\d+), current: (?P<current_dts>\d+); changing to (?P<changing_dts>\d+)\. This may result in incorrect timestamps in the output file\.{re_eol}', self.generic_debug_line),
             # [stream_segment,ssegment @ 0x55842aa56b40] [verbose] segment:'Labyrinth4K/Labyrinth (1986)/track-00-video-chap02.h265' starts with packet stream:0 pts:6000 pts_time:250.25 frame:6000
             (fr'^(?:\[\S+ @ \w+\]\s)?(?:\[verbose\]\s)? *segment:\'(?P<segment_file>.+)\' starts with packet stream:(?P<stream>\S+) pts:(?P<pts>\S+) pts_time:(?P<pts_time>\S+) frame:(?P<frame>\S+){re_eol}', self.start_segment_file),
 
