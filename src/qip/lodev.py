@@ -14,7 +14,7 @@ import re
 log = logging.getLogger(__name__)
 
 from .file import BinaryFile
-from .exec import Executable, byte_decode
+from .exec import SystemExecutable, Executable, byte_decode
 
 class LoopDevice(BinaryFile):
 
@@ -42,16 +42,11 @@ class LoopDevice(BinaryFile):
             lodev.detach()
 
 
-class Losetup(Executable):
+class Losetup(SystemExecutable):
 
     name = 'losetup'
 
     kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt_dash
-
-    def which(self, mode=os.F_OK | os.X_OK, path=None, assert_found=True):
-        if path is None:
-            path = '/sbin'
-        return super().which(mode=mode, path=path, assert_found=assert_found)
 
     def setup(self, *,
               loopdev=None, file,

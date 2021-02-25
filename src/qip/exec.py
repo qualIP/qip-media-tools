@@ -14,6 +14,7 @@ __all__ = [
         'do_spawn_cmd',
         'clean_cmd_output',
         'Executable',
+        'SystemExecutable',
         'PipedExecutable',
         'PipedScript',
         'PipedPortableScript',
@@ -929,6 +930,13 @@ class Executable(metaclass=abc.ABCMeta):
             bufsize=bufsize,
             **popen_func_kwargs,
             )
+
+class SystemExecutable(Executable):
+
+    def which(self, *, mode=os.F_OK | os.X_OK, path=None, assert_found=True):
+        if path is None:
+            path = '/sbin'
+        return super().which(mode=mode, path=path, assert_found=assert_found)
 
 class PipedExecutable(Executable):
     pass
