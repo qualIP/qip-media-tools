@@ -38,12 +38,20 @@ reprlib.aRepr.maxdict = 100
 
 from qip.app import app
 from qip.cdrom import cdrom_ready, read_dvd_title
+from qip.ffmpeg import ffmpeg
 from qip.isolang import isolang, IsoLang
 from qip.mm import FrameRate
-from qip.utils import Ratio, Timestamp
 from qip.ocode import perl_syntax, python_syntax, ruby_syntax
+from qip.utils import Ratio, Timestamp
 import qip.libdvdread as libdvdread
+import qip.utils
 
+
+def AnyTimestamp(value):
+    try:
+        return qip.utils.Timestamp(value)
+    except ValueError:
+        return qip.utils.Timestamp(ffmpeg.Timestamp(value))
 
 def _resolved_Path(path):
     return Path(path).resolve()
@@ -81,7 +89,9 @@ def main():
     pgroup.add_argument('--cdrom-ready-timeout', default=24, type=int, help='CDROM readiness timeout')
     pgroup.add_argument('--device', default=Path(os.environ.get('CDROM', '/dev/cdrom')), type=_resolved_Path, help='specify alternate cdrom device')
 
+    pgroup = app.parser.add_argument_group('Filtering')
     pgroup.add_argument('--target-title', '-t', default=None, type=int, help='Target title')
+    pgroup.add_argument('--minlength', default=None, type=AnyTimestamp, help='minimum title length to show')
 
     pgroup = app.parser.add_argument_group('Extra information')
     pgroup.add_bool_argument('--show-audio', '-a', default=False, help='Show audio streams')
@@ -137,6 +147,7 @@ def main():
                      show_palette=app.args.show_palette,
                      show_video=app.args.show_video,
                      target_title=app.args.target_title,
+                     minlength=app.args.minlength,
                      )
 
     if app.args.format == 'human':
@@ -188,6 +199,7 @@ def lsdvd(device,
           show_all=True,
           show_audio=False, show_cells=False, show_angles=False, show_chapters=False, show_subpictures=False, show_palette=False, show_video=False,
           target_title=None,
+          minlength=None,
           ):
 
     if show_all:
@@ -284,6 +296,10 @@ def lsdvd(device,
             if dvd_title.general.playback_time > max_length:
                 max_length = dvd_title.general.playback_time
                 longest_track = j + 1
+
+        if minlength is not None and minlength > dvd_title.general.playback_time:
+            dvd_info.titles[j] = None
+            continue
 
         # VIDEO
         if show_video:
