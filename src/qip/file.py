@@ -164,7 +164,7 @@ class File(object):
     def __init__(self, file_name, open_mode=None):
         self.file_name = file_name
         if open_mode is not None:
-            self.open_mode = open_mode
+            self.open_mode = open_mode or ''
         super().__init__()
 
     def __fspath__(self):
@@ -317,7 +317,7 @@ class File(object):
         return p.stdout
 
     def open(self, mode='r', encoding=None, **kwargs):
-        assert self.fp is None
+        assert self.fp is None, f'File is already opened: {self}'
         self.assert_file_name_defined()
         if 't' not in mode and 'b' not in mode:
             mode += self.open_mode
