@@ -712,6 +712,10 @@ class MatroskaFile(BinaryMediaFile):
                         '_STATISTICS_WRITING_APP',  # TODO
                         '_STATISTICS_WRITING_DATE_UTC',  # TODO
                         '_STATISTICS_TAGS',  # TODO
+                        'MAJOR_BRAND',  # TODO -- "isom"
+                        'MINOR_VERSION',  # TODO -- "512"
+                        'COMPATIBLE_BRANDS',  # TODO -- "isomiso2mp41"
+                        'HANDLER_NAME',  # TODO -- "VideoHandler"
                         ):
                     continue
                 raise NotImplementedError(f'Matroska tag not supported: {d_tag.Name}')
