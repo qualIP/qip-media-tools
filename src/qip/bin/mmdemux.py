@@ -1715,39 +1715,40 @@ def action_rip_iso(rip_iso, device, in_tags):
     if media_type is MediaType.BD:
         discatt_dat_file = BinaryFile(iso_file.file_name.with_suffix('.discatt.dat'))
 
+        # TODO dry_run?
         if decrypt:
             if discatt_dat_file.exists():
                 app.log.info('Decryption key already exists: %s', discatt_dat_file)
             else:
-                app.log.info('Extracting decryption keys from %s: %s', device, discatt_dat_file)
+                with perfcontext('Extracting decryption keys from {device}: {discatt_dat_file}', log=True):
 
-                from qip.makemkv import makemkvcon
+                    from qip.makemkv import makemkvcon
 
-                try:
-                    drive_info = makemkvcon.device_to_drive_info(device)
-                except ValueError:
-                    if not app.args.dry_run:
-                        raise
-                    drive_info = types.SimpleNamespace(index=0)
-                source = f'disc:{drive_info.index}'
-
-                with tempfile.TemporaryDirectory(prefix=f'mmdemux-{iso_file.file_name.stem}', suffix='temp-backup') as temp_backup_dir:
-                    temp_backup_dir = Path(temp_backup_dir)
-                    temp_discattd_dat_file = temp_backup_dir / 'MAKEMKV/discattd.dat'  # Not a typo!
                     try:
-                        makemkvcon.backup(
-                            source=source,
-                            dest_dir=temp_backup_dir,
-                            decrypt=True,
-                            #retry_no_cd=False,
-                            noscan=True,
-                            robot=True,
-                            stop_before_copying_files=True,
-                        )
-                    except SpawnedProcessError:
-                        if not temp_discattd_dat_file.exists():
+                        drive_info = makemkvcon.device_to_drive_info(device)
+                    except ValueError:
+                        if not app.args.dry_run:
                             raise
-                    shutil.copyfile(src=temp_discattd_dat_file, dst=discatt_dat_file)
+                        drive_info = types.SimpleNamespace(index=0)
+                    source = f'disc:{drive_info.index}'
+
+                    with tempfile.TemporaryDirectory(prefix=f'mmdemux-{iso_file.file_name.stem}', suffix='temp-backup') as temp_backup_dir:
+                        temp_backup_dir = Path(temp_backup_dir)
+                        temp_discattd_dat_file = temp_backup_dir / 'MAKEMKV/discattd.dat'  # Not a typo!
+                        try:
+                            makemkvcon.backup(
+                                source=source,
+                                dest_dir=temp_backup_dir,
+                                decrypt=True,
+                                #retry_no_cd=False,
+                                noscan=True,
+                                robot=True,
+                                stop_before_copying_files=True,
+                            )
+                        except SpawnedProcessError:
+                            if not temp_discattd_dat_file.exists():
+                                raise
+                        shutil.copyfile(src=temp_discattd_dat_file, dst=discatt_dat_file)
 
     stage = app.args.stage
     if stage is Auto:
@@ -1797,8 +1798,8 @@ def action_rip_iso(rip_iso, device, in_tags):
     else:
         raise NotImplementedError(f'Unsupported ripping stage {stage}')
 
-    app.log.info('Extracting %s... (stage %d)', iso_file, stage)
-    ddrescue(*ddrescue_args)
+    with perfcontext('Extracting {iso_file}... (stage {stage})', log=True):
+        ddrescue(*ddrescue_args)
 
 def action_rip(rip_dir, device, in_tags):
     app.log.info('Ripping %s from %s...', rip_dir, device)
@@ -3205,16 +3206,18 @@ def action_mux(inputfile, in_tags,
             os.mkdir(outputdir)
 
     num_extract_errors = 0
-
     has_forced_subtitle = False
     attachment_index = 0  # First attachment is index 1
 
-    mkvextract_tracks_args = []
-    mkvextract_attachments_args = []
+    def extract_streams(inputfile, streams):
+        nonlocal num_extract_errors
+        nonlocal has_forced_subtitle
+        nonlocal attachment_index
 
-    with perfcontext('Extract tracks', log=True):
+        mkvextract_tracks_args = []
+        mkvextract_attachments_args = []
 
-        for stream in mux_dict['streams']:
+        for stream in streams:
 
             stream_file_name = stream['file_name']
             stream_file_base, stream_file_ext = my_splitext(stream_file_name)
@@ -3363,6 +3366,9 @@ def action_mux(inputfile, in_tags,
                     'mkvextract', 'attachments', inputfile,
                 ] + mkvextract_attachments_args
                 do_spawn_cmd(cmd)
+
+    with perfcontext('Extract tracks', log=True):
+        extract_streams(inputfile=inputfile, streams=mux_dict['streams'])
 
     # Detect duplicates
     if not app.args.dry_run:
