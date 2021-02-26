@@ -121,6 +121,7 @@ default_tag_map = (
     TagInfo(None, None, 'TITLE', 'title'),  # CONFLICT, also a property
     TagInfo(None, None, 'SUBTITLE', 'subtitle'),
     TagInfo(None, None, 'COMPOSER', 'composer'),
+    TagInfo(None, None, 'PERFORMER', 'performer'),
     TagInfo(None, None, 'PUBLISHER', 'publisher'),
     TagInfo(None, None, 'ORIGINAL/ARTIST', 'originalartist'),
     TagInfo(None, None, 'DATE_RELEASED', 'date'),
@@ -243,7 +244,7 @@ class MatroskaFile(BinaryMediaFile):
             ]
         if file_type in ('audiobook',):
             tag_map += [
-                TagInfo(30, None, 'ACTOR', 'composer'),
+                TagInfo(30, None, 'ACTOR', 'performer'),
             ]
         if file_type in ('musicvideo',):
             default_TargetTypes.update({
@@ -308,6 +309,7 @@ class MatroskaFile(BinaryMediaFile):
                     'subtitle',
                     'partitle',
                     'composer',
+                    'performer',
                     'tvshow',
             ):
                 sort_tag_info = tag_info._replace(
