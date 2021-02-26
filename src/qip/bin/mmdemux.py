@@ -2436,7 +2436,7 @@ def chop_chapters(chaps,
     chaps_list_copy[-1].chapters[-1].end = ffmpeg.Timestamp.MAX  # Make sure whole movie is captured
     ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args + [
         '-fflags', '+genpts',
-        '-i', inputfile,
+    ] + ffmpeg.input_args(inputfile) + [
         '-segment_times', ','.join(str(ffmpeg.Timestamp(sub_chaps.chapters[-1].end))
                                    for sub_chaps in chaps_list_copy),
         '-segment_start_number', chaps_list_copy[0].chapters[0].no,
@@ -2509,7 +2509,7 @@ def chop_chapters(chaps,
             with perfcontext('Chop w/ ffmpeg', log=True):
                 ffmpeg_args = default_ffmpeg_args + [
                     '-start_at_zero', '-copyts',
-                    '-i', inputdir / stream_file_name,
+                ] + ffmpeg.input_args(inputdir / stream_file_name) + [
                     '-codec', 'copy',
                     '-ss', ffmpeg.Timestamp(chap.start),
                     '-to', ffmpeg.Timestamp(chap.end),
@@ -3418,8 +3418,8 @@ def action_mux(inputfile, in_tags,
                             ffmpeg_args += [
                                 '-ss', ffmpeg.Timestamp(app.args.seek_video),
                                 ]
+                        ffmpeg_args += ffmpeg.input_args(inputfile)
                         ffmpeg_args += [
-                            '-i', inputfile,
                             '-map_metadata', '-1',
                             '-map_chapters', '-1',
                             '-map', '0:%d' % (stream.index,),
@@ -4487,7 +4487,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 pass
                             ffmpeg_args += [
                                 '-f', 'concat', '-safe', 1 if safe_concat else 0,
-                                '-i', concat_list_file.file_name.relative_to(cwd),
+                            ] + ffmpeg.input_args(concat_list_file.file_name.relative_to(cwd)) + [
                                 '-codec', 'copy',
                                 ] + ffmpeg_concat_args + [
                                 '-start_at_zero',
@@ -4733,9 +4733,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                         ffmpeg_dec_args += [
                                             '-r', force_input_framerate,
                                             ]
-                                ffmpeg_dec_args += [
-                                    '-i', stream_dict.path,
-                                    ]
+                                ffmpeg_dec_args += ffmpeg.input_args(stream_dict.file)
                                 ffmpeg_video_filter_args = []
                                 if fieldmatch_using_ffmpeg:
                                     ffmpeg_video_filter_args += [
@@ -4874,8 +4872,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 ffmpeg_args += [
                                     '-r', force_input_framerate,
                                     ]
+                            ffmpeg_args += ffmpeg.input_args(stream_dict.file)
                             ffmpeg_args += [
-                                '-i', stream_dict.path,
                                 '-vf', f'fieldmatch,yadif,decimate' if decimate_using_ffmpeg else f'pullup,fps={framerate}',
                                 '-r', framerate,
                                 '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
@@ -5332,7 +5330,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             ffmpeg_args = default_ffmpeg_args + [
                                 '-f', 'concat', '-safe', 1 if safe_concat else 0,
                                 '-r', force_input_framerate or input_framerate or framerate,
-                                '-i', concat_list_file.file_name.relative_to(cwd),
+                            ] + ffmpeg.input_args(concat_list_file.file_name.relative_to(cwd)) + [
                                 '-codec', 'copy',
                                 ] + ffmpeg_concat_args + [
                                 '-start_at_zero',
@@ -5354,9 +5352,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             ffmpeg_args += [
                                 '-r', force_input_framerate,
                                 ]
-                        ffmpeg_args += [
-                            '-i', stream_dict.path,
-                            ] + ffmpeg_conv_args
+                        ffmpeg_args += ffmpeg.input_args(stream_dict.file)
+                        ffmpeg_args += ffmpeg_conv_args
                         if app.args.force_constant_framerate \
                                 or stream_file_ext in still_image_exts:
                             ffmpeg_args += [
@@ -5424,7 +5421,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                         with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg_args = default_ffmpeg_args + [
-                                '-i', stream_dict.path,
+                            ] + ffmpeg.input_args(stream_dict.file) + [
                                 # '-channel_layout', channel_layout,
                                 ]
                             ffmpeg_args += [
@@ -5539,7 +5536,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                         with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg_args = default_ffmpeg_args + [
-                                '-i', stream_dict.path,
+                            ] + ffmpeg.input_args(stream_dict.file) + [
                                 '-c:a', 'opus',
                                 '-strict', 'experimental',  # for libopus
                                 '-b:a', '%dk' % (audio_bitrate,),
@@ -5580,7 +5577,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         if False:
                             with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                                 ffmpeg_args = default_ffmpeg_args + [
-                                    '-i', stream_dict.path,
+                                ] + ffmpeg.input_args(stream_dict.file) + [
                                     '-scodec', 'dvdsub',
                                     '-map', '0',
                                     ]
@@ -5804,7 +5801,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                         with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg_args = default_ffmpeg_args + [
-                                '-i', stream_dict.path,
+                            ] + ffmpeg.input_args(stream_dict.file) + [
                                 '-f', 'webvtt', new_stream.path,
                                 ]
                             ffmpeg(*ffmpeg_args,
@@ -5839,7 +5836,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                         with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg_args = default_ffmpeg_args + [
-                                '-i', stream_dict.path,
+                            ] + ffmpeg.input_args(stream_dict.file) + [
                                 ]
                             ffmpeg_args += [
                                 '-f', 'png', new_stream.path,
@@ -5958,7 +5955,7 @@ def action_extract_music(inputdir, in_tags):
                     with perfcontext('Chop w/ ffmpeg', log=True):
                         ffmpeg_args = default_ffmpeg_args + [
                             '-start_at_zero', '-copyts',
-                            '-i', stream_dict.path,
+                        ] + ffmpeg.input_args(stream_dict.file) + [
                             '-codec', 'copy',
                             '-ss', ffmpeg.Timestamp(chap.start),
                             '-to', ffmpeg.Timestamp(chap.end),
@@ -6476,7 +6473,7 @@ def action_demux(inputdir, in_tags):
                 shutil.move(output_file.file_name, noss_file_name)
             num_inputs += 1
             ffmpeg_args = default_ffmpeg_args + [
-                '-i', noss_file_name,
+            ] + ffmpeg.input_args(noss_file_name) + [
                 ]
             option_args = [
                 '-map', str(num_inputs-1),
@@ -6494,9 +6491,7 @@ def action_demux(inputdir, in_tags):
                     default=-1) + 1
 
                 num_inputs += 1
-                ffmpeg_args += [
-                    '-i', stream_dict.path,
-                    ]
+                ffmpeg_args += ffmpeg.input_args(stream_dict.file)
                 option_args += [
                     '-map', str(num_inputs-1),
                     ]
@@ -6847,7 +6842,7 @@ def action_demux(inputdir, in_tags):
                         ffprobe_stream_json = stream_dict.file.ffprobe_dict['streams'][0]
 
                         ffmpeg_args = default_ffmpeg_args + [
-                            '-i', stream_dict.path,
+                        ] + ffmpeg.input_args(stream_dict.file) + [
                             '-codec', 'copy',
                         ]
                         try:
@@ -6901,7 +6896,7 @@ def action_demux(inputdir, in_tags):
 
                     tmp_stream_file_name = os.fspath(stream_dict.file_name) + '.mp4'
                     ffmpeg_args = default_ffmpeg_args + [
-                            '-i', stream_dict.path,
+                    ] + ffmpeg.input_args(stream_dict.file) + [
                             '-codec', 'copy',
                             inputdir / tmp_stream_file_name,
                         ]
@@ -6919,7 +6914,7 @@ def action_demux(inputdir, in_tags):
 
                     tmp_stream_file_name = os.fspath(stream_dict.file_name) + '.mkv'
                     ffmpeg_args = default_ffmpeg_args + [
-                            '-i', inputdir / stream_dict.file_name,
+                    ] + ffmpeg.input_args(inputdir / stream_dict.file_name) + [
                             '-codec', 'copy',
                             inputdir / tmp_stream_file_name,
                         ]
@@ -6946,10 +6941,7 @@ def action_demux(inputdir, in_tags):
                 if '3d-plane' in stream_dict:
                     ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), '3d-plane=%d' % (stream_dict['3d-plane'],)]
 
-            ffmpeg_input_args += [
-                '-i',
-                stream_dict.path,
-            ]
+            ffmpeg_input_args += ffmpeg.input_args(stream_dict.file)
             # Include all streams from this input file:
             ffmpeg_output_args += [
                 '-map', stream_dict['_temp'].out_index,
@@ -7133,7 +7125,7 @@ def action_concat(concat_files, in_tags):
     ffmpeg_args = default_ffmpeg_args + [
         '-f', 'concat', '-safe', 1 if safe_concat else 0,
         # TODO -r
-        '-i', concat_list_file,
+    ] + ffmpeg.input_args(concat_list_file) + [
         '-codec', 'copy',
     ] + ffmpeg_concat_args + [
         '-start_at_zero',

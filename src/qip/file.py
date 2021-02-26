@@ -379,6 +379,9 @@ class File(object):
             common_extensions |= sub_cls.get_common_extensions()
         return common_extensions
 
+    def decode_ffmpeg_args(self, **kwargs):
+        return kwargs
+
 class TextFile(File):
 
     _common_extensions = (

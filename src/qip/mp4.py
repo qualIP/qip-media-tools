@@ -23,19 +23,17 @@ import struct
 import tempfile
 log = logging.getLogger(__name__)
 
-from .mm import BinaryMediaFile
-from .mm import SoundFile
-from .mm import RingtoneFile
-from .mm import MovieFile
-from .mm import AudiobookFile
-from .mm import Chapter, Chapters
-from .file import cache_url
-import qip.mm as mm
-import qip.wav as wav
-import qip.cdda as cdda
-from .img import ImageFile
-from .utils import byte_decode, Timestamp as _BaseTimestamp
+from . import mm
 from .exec import Executable
+from .file import cache_url
+from .img import ImageFile
+from .mm import AudiobookFile
+from .mm import BinaryMediaFile
+from .mm import Chapter, Chapters
+from .mm import MovieFile
+from .mm import RingtoneFile
+from .mm import SoundFile
+from .utils import byte_decode, Timestamp as _BaseTimestamp
 
 class Mpeg4ContainerFile(BinaryMediaFile):
 
