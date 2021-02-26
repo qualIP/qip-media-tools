@@ -524,6 +524,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^(?P<exec>{re_dot}+): (?P<lib>{re_dot}+): no version information available \(required by (?P<req_by>{re_dot}+)\){re_eol}', self.generic_warning),
             (fr'^It appears that you are opening the disc processed by DvdFab/MacTheRipper which is known to produce damaged VOB files\. Errors may follow - please use original disc instead\.{re_eol}', self.generic_warning),
             (fr'^AACS directory not present, assuming unencrypted disc{re_eol}', self.generic_warning),
+            (fr'^Automatic (?P<type>HK|SDF|HK/SDF) downloading is disabled or failed\.{re_eol}', self.generic_warning),
             (fr'^The new version (?P<version>\S+) is available for download at (?P<url>\S+){re_eol}', self.new_version_warning),
             (fr'^Debug logging enabled, log will be saved as (?P<debug_log_uri>.*?){re_eol}', self.generic_info),
             (fr'^Opening files on harddrive at (?P<dir_in>[^\r\n]+){re_eol}', True),
