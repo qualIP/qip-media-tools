@@ -3793,11 +3793,6 @@ def action_combine(inputdirs, in_tags):
         mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
 
         mux_dict['streams'] = sorted_stream_dicts(mux_dict['streams'])
-        for stream in mux_dict['streams']:
-            try:
-                del stream['index']
-            except KeyError:
-                pass
 
         if i_inputdir:
             def set_streams_relative_file_name(streams):
@@ -3827,6 +3822,9 @@ def action_combine(inputdirs, in_tags):
                 pass
         else:
             combined_mux_dict = mux_dict
+
+    for i, stream in enumerate(combined_mux_dict['streams']):
+        stream['index'] = i
 
     skip_duplicate_streams(combined_mux_dict['streams'])
 
