@@ -894,6 +894,7 @@ class MatroskaFile(BinaryMediaFile):
         ]
 
         ffmpeg_output_cmd += [
+            '-map_metadata', -1,
             '-map_chapters', -1,
         ]
 
