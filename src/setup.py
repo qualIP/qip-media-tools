@@ -91,6 +91,7 @@ setup(
             'coloredlogs',
             'tabulate',
             'Send2Trash',
+            'bs4',
             ],
 
     # List additional groups of dependencies here (e.g. development

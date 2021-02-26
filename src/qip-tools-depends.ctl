@@ -15,7 +15,6 @@ Depends:
     python3-setuptools,
     python3-pip | python3-pip3,
     python3-wheel,
-    python3-bs4,
     python3-libdiscid,
     swig,
     libdvdread-dev,
@@ -48,6 +47,7 @@ Recommends:
     icoutils,
     fuseiso,
     mp4v2-utils,
+    python3-bs4,
 # NOTE: mp4v2-utils: https://www.deb-multimedia.org
 # NOTE: libdvdcss2: https://download.videolan.org/pub/debian/stable/
 # Suggests: <comma-separated list of packages>
