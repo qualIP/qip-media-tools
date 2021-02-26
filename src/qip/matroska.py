@@ -906,7 +906,7 @@ class MatroskaFile(BinaryMediaFile):
         out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd),
                      show_progress_bar=show_progress_bar,
                      progress_bar_max=progress_bar_max,
-                     progress_bar_title=progress_bar_title or 'Encode {self} w/ ffmpeg',
+                     progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
                      )
         out = out.out
         out_time = None
