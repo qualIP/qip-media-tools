@@ -1,0 +1,100 @@
+#!/usr/bin/env python3.7
+
+import argparse
+import os
+import shutil
+import tempfile
+import xml.etree.ElementTree as ET
+
+SUBTITLEEDIT_SETTINGS_XML_FILE = os.path.expanduser('~/.config/Subtitle Edit/Settings.xml')
+MONO_MWF_CONFIG_FILE = os.path.expanduser('~/.mono/mwf_config')
+
+parser = argparse.ArgumentParser(
+    description="Settings editor for Subtitle Edit",
+)
+parser.add_argument("--language", default=None, help="Set OCR language")
+parser.add_argument("--seed-file-name", default=None, help="Seed the default mono file dialog's file name")
+pgroup = parser.add_argument_group('Advanced')
+pgroup.add_argument("--subtitleedit-settings-file", default=SUBTITLEEDIT_SETTINGS_XML_FILE, help="Specify Subtitle Edit's Settings.xml file")
+pgroup.add_argument("--mono-mwf-config-file", default=MONO_MWF_CONFIG_FILE, help="Specify Mono's mwf_config file")
+namespace = parser.parse_args()
+
+if namespace.language:
+
+    try:
+        settings_xml = ET.parse(namespace.subtitleedit_settings_file)
+    except FileNotFoundError:
+        settings_xml = ET.ElementTree(ET.fromstring('<Settings />'))
+
+    bDidSomething = False
+    settings_root = settings_xml.getroot()
+    if namespace.language:
+        eVobSubOcr = settings_root.find('VobSubOcr')
+        if eVobSubOcr is None:
+            eVobSubOcr = ET.SubElement(settings_root, 'VobSubOcr')
+        eTesseractLastLanguage = eVobSubOcr.find('TesseractLastLanguage')
+        if eTesseractLastLanguage is None:
+            eTesseractLastLanguage = ET.SubElement(eVobSubOcr, 'TesseractLastLanguage')
+        if eTesseractLastLanguage.text != namespace.language:
+            eTesseractLastLanguage.text = namespace.language
+            bDidSomething = True
+    if bDidSomething:
+        fd, temp_file_name = tempfile.mkstemp(text=True)
+        temp_file = os.fdopen(fd, "wt", encoding='utf-8')
+        settings_xml.write(temp_file,
+                             #xml_declaration=True,
+                             encoding='unicode')
+        temp_file.close()
+        os.mkdir(os.path.dirname(namespace.subtitleedit_settings_file))
+        shutil.move(
+            src=temp_file_name,
+            dst=namespace.subtitleedit_settings_file)
+
+if namespace.seed_file_name:
+
+    try:
+        mwf_config_xml = ET.parse(namespace.mono_mwf_config_file)
+    except FileNotFoundError:
+        mwf_config_xml = ET.ElementTree(ET.fromstring('<MWFConfig />'))
+
+    bDidSomething = False
+    mwf_config_root = mwf_config_xml.getroot()
+    if namespace.seed_file_name:
+        namespace.seed_file_name = os.path.abspath(namespace.seed_file_name)
+        seed_dir = os.path.dirname(namespace.seed_file_name)
+        eFileDialog = mwf_config_root.find('FileDialog')
+        if eFileDialog is None:
+            eFileDialog = ET.SubElement(mwf_config_root, 'FileDialog')
+        eFileNames = eFileDialog.find('value[@name="FileNames"]')
+        if eFileNames is None:
+            eFileNames = ET.SubElement(eFileDialog, 'value', attrib={
+                'name': 'FileNames',
+                'type': 'string-array',
+            })
+        l_FileNames = [e.text for e in eFileNames.findall('string')]
+        if l_FileNames != [namespace.seed_file_name]:
+            for e in eFileNames:
+                eFileNames.remove(e)
+            eString = ET.SubElement(eFileNames, 'string')
+            eString.text = namespace.seed_file_name
+            bDidSomething = True
+        eLastFolder = eFileDialog.find('value[@name="LastFolder"]')
+        if eLastFolder is None:
+            eLastFolder = ET.SubElement(eFileDialog, 'value', attrib={
+                'name': 'LastFolder',
+                'type': 'string',
+            })
+        if eLastFolder.text != seed_dir:
+            eLastFolder.text = seed_dir
+            bDidSomething = True
+    if bDidSomething:
+        fd, temp_file_name = tempfile.mkstemp(text=True)
+        temp_file = os.fdopen(fd, "wt", encoding='utf-8')
+        mwf_config_xml.write(temp_file,
+                             #xml_declaration=True,
+                             encoding='unicode')
+        temp_file.close()
+        os.mkdir(os.path.dirname(namespace.mono_mwf_config_file))
+        shutil.move(
+            src=temp_file_name,
+            dst=namespace.mono_mwf_config_file)

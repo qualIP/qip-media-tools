@@ -1,0 +1,66 @@
+FROM mono:6.8
+
+/* contrib is required by ttf-mscorefonts-installer */
+RUN sed -i -E -e 's/ main$/ main contrib/' /etc/apt/sources.list
+RUN apt-get update
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes unzip
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes ttf-mscorefonts-installer
+
+// For color schemes
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libgtk2.0-0
+
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libcanberra-gtk-module
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes tesseract-ocr
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes tesseract-ocr-eng
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes tesseract-ocr-fra
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libhunspell-dev
+// RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libhunspell-1.7-0
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libmpv-dev
+// RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libmpv1
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libvlc-dev
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes ffmpeg
+
+#ifdef SUBTITLEEDIT_USE_WRAPPER
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes python3.7-minimal libpython3.7-stdlib
+#endif
+
+RUN groupadd -g 1000 developer && useradd -d /home/developer -s /bin/bash -m developer -u 1000 -g 1000
+USER developer
+ENV HOME /home/developer
+WORKDIR /home/developer
+
+ARG FILE_SUBTITLEEDIT_PORTABLE_ZIP
+COPY --chown=developer:developer ${FILE_SUBTITLEEDIT_PORTABLE_ZIP} .
+RUN mkdir SubtitleEdit && unzip ${FILE_SUBTITLEEDIT_PORTABLE_ZIP} -d SubtitleEdit
+RUN ln -s /usr/lib/x86_64-linux-gnu/libhunspell-1.7.so.0 SubtitleEdit/libhunspell.so
+RUN ln -s /usr/lib/x86_64-linux-gnu/libvlc.so SubtitleEdit/libvlc.so
+RUN ln -s /usr/lib/x86_64-linux-gnu/libmpv.so SubtitleEdit/libmpv.so
+RUN ln -s /lib/x86_64-linux-gnu/libdl.so.2 SubtitleEdit/libdl.so.2
+
+RUN mkdir -p ".config/Subtitle Edit" && \\
+    mkdir ".config/Subtitle Edit/Plugins" && \\
+    cp -t ".config/Subtitle Edit" -R "SubtitleEdit/Dictionaries"
+
+VOLUME ["/home/developer/.config/Subtitle Edit"]
+
+/* Limit tesseract to use only 1 thread since SubtitleEdit will run multiple at a time */
+// ENV OMP_THREAD_LIMIT 1
+
+#ifdef SUBTITLEEDIT_USE_WRAPPER
+COPY --chown=developer:developer SubtitleEdit-edit-Settings .
+COPY --chown=developer:developer volumes-init entrypoint .
+#else
+COPY --chown=developer:developer volumes-init .
+#endif
+
+#ifdef SUBTITLEEDIT_USE_WRAPPER
+ENTRYPOINT ["/home/developer/entrypoint"]
+#else
+ENTRYPOINT ["mono", "/home/developer/SubtitleEdit/SubtitleEdit.exe"]
+#endif
+
+#ifdef SUBTITLEEDIT_DEBUG
+USER root
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes mono-dbg gdb
+USER developer
+#endif

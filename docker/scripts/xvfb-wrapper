@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -x
+
+export DISPLAY=:99
+Xvfb :99 -screen 0 1000x1000x16 &
+XVFB_PID=$!
+
+#xrandr --query
+
+"$@"
+
+kill $XVFB_PID
+wait $XVFB_PID

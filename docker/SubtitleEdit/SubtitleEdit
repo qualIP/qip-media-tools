@@ -1,0 +1,73 @@
+#!/bin/bash
+
+set -euo pipefail
+
+d=$(pwd)
+d2=
+
+OPT_RM=true
+OPT_X=false
+OPT_SHELL=false
+declare -a docker_args=()
+declare -a app_args=()
+
+SUBTITLEEDIT_CONF=${SUBTITLEEDIT_CONF:-"$HOME/.config/Subtitle Edit"}
+
+eval set -- "$(POSIXLY_CORRECT=1 getopt --long "rm,no-rm,shell,conf:,language:,seed-file-name:" --options "xit" --name "$0" -- "$@")"
+
+while true ; do
+    case "$1" in
+        --rm)    OPT_RM=true ; shift ;;
+        --no-rm) OPT_RM=false ; shift ;;
+        -x)      OPT_X=true ; shift ;;
+        --shell) OPT_SHELL=true ; shift ;;
+        -i|-t)
+            docker_args=("${docker_args[@]}" "$1")
+            shift
+            ;;
+        --conf)  SUBTITLEEDIT_CONF=$2 ; shift 2 ;;
+        --language|--seed-file-name)
+            app_args=("${app_args[@]}" "$1" "$2")
+            shift 2
+            ;;
+        --)      shift ; break ;;
+        *)       echo "Internal error!" >&2 ; exit 255 ;;
+    esac
+done
+
+# Scan next arguments
+case "x${1:-}" in
+    x|x-*) true ;;
+    x*) d2=$(cd "$(dirname "$1")" && pwd)
+        if [ "$d2" = "." ] || [ "$d2" = "$d" ] ; then
+            d2=
+        fi
+        ;;
+esac
+
+$OPT_X && set -x
+
+app_args=("${app_args[@]}" "$@")
+
+$OPT_SHELL && docker_args=("${docker_args[@]}" -i -t)
+
+set -- docker container run
+set -- "$@" $($OPT_RM && echo --rm || echo --name SubtitleEdit)
+set -- "$@" -v /tmp/.X11-unix:/tmp/.X11-unix
+set -- "$@" -v "$HOME/.Xauthority":"/home/developer/.Xauthority"
+set -- "$@" -v "$SUBTITLEEDIT_CONF":"/home/developer/.config/Subtitle Edit"
+set -- "$@" --mount "type=bind,\"source=${d//\"/\"\"}\",\"destination=/home/developer/pwd\""
+set -- "$@" --mount "type=bind,\"source=${d//\"/\"\"}\",\"destination=${d//\"/\"\"}\""
+set -- "$@" -w "$d"
+if [ -n "$d2" ] ; then
+    set -- "$@" --mount "type=bind,\"source=${d2//\"/\"\"}\",\"destination=${d2//\"/\"\"}\""
+    set -- "$@" --mount "type=bind,\"source=${d2//\"/\"\"}\",\"destination=/home/developer/src\""
+fi
+set -- "$@" ${DISPLAY:+-e DISPLAY="$DISPLAY"}
+set -- "$@" "${docker_args[@]}"
+$OPT_SHELL && set -- "$@" --entrypoint /bin/bash
+
+set -- "$@" test/subtitleedit
+set -- "$@" $($OPT_X && echo -x)
+set -- "$@" "${app_args[@]}"
+"$@"

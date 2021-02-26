@@ -1,0 +1,52 @@
+#!/bin/bash
+
+set -euo pipefail
+
+$HOME/volumes-init
+
+OPT_X=false
+declare -a edit_args=()
+
+eval set -- "$(POSIXLY_CORRECT=1 getopt --long "language:,seed-file-name:" --options "x" --name "$0" -- "$@")"
+
+while true ; do
+    case "$1" in
+        -x)      OPT_X=true ; shift ;;
+        --language|--seed-file-name)
+            edit_args=("${edit_args[@]}" "$1" "$2")
+            shift 2
+            ;;
+        --)      shift ; break ;;
+        *)       echo "Internal error!" >&2 ; exit 255 ;;
+    esac
+done
+
+$OPT_X && set -x
+
+# Limit tesseract to use only 1 thread since SubtitleEdit will run multiple at a time
+# export OMP_THREAD_LIMIT=1
+
+# No need to limit number of thread per CPU further... Default is 20 + MONO_THREADS_PER_CPU * NUM_CPUS
+#export MONO_THREADS_PER_CPU=0
+
+# Workaround a bug in mono with some old terminfo databases
+export TERM=xterm
+
+if [ "${#edit_args[@]}" != 0 ] ; then
+    ~/SubtitleEdit-edit-Settings \
+        "${edit_args[@]}"
+fi
+
+mono ~/SubtitleEdit/SubtitleEdit.exe "$@" &
+SUBTITLEEDIT_PID=$!
+
+while true ; do
+    status=`cat /proc/$SUBTITLEEDIT_PID/status || true`
+    if [ -z "$status" ] ; then
+        break
+    elif echo "$status" | grep -q "^Status: Z" ; then
+        kill -9 $SUBTITLEEDIT_PID || true
+        break
+    fi
+    sleep 1
+done

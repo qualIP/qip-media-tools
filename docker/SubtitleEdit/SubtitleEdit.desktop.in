@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=SubtitleEdit
+Comment=Subtitle Edit is a free (open source) editor for video subtitles - a subtitle editor :)
+TryExec=PREFIX/bin/SubtitleEdit
+Exec=PREFIX/bin/SubtitleEdit
+Icon=SubtitleEdit
+X-Desktop-File-Install-Version=0.26
+Actions=Shell;
+
+[Desktop Action Shell]
+Exec=x-terminal-emulator -e PREFIX/bin/SubtitleEdit --shell
+Name=Open a shell within the SubtitleEdit container
+/* Doesn't work ??
+Terminal=true
+*/

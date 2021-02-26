@@ -1,0 +1,22 @@
+#!/bin/bash
+
+set -euo pipefail
+
+cd $(dirname "$0")
+
+make build-deps
+
+PACKAGE_NAME=$(sed -n -E -e 's/^PACKAGE_NAME *= *(.+)/\1/p' GNUmakefile)
+PACKAGE_VER=$(sed -n -E -e 's/^PACKAGE_VER *= *(.+)/\1/p' GNUmakefile)
+
+SUBTITLEEDIT_VER=$(sed -n -E -e 's/^SUBTITLEEDIT_VER *= *(.+)/\1/p' GNUmakefile)
+
+SUBTITLEEDIT_VER_SHORT=${SUBTITLEEDIT_VER//./}
+FILE_SUBTITLEEDIT_PORTABLE_ZIP=SE${SUBTITLEEDIT_VER_SHORT}.zip
+
+docker build \
+    --build-arg "FILE_SUBTITLEEDIT_PORTABLE_ZIP=${FILE_SUBTITLEEDIT_PORTABLE_ZIP}" \
+    -t test/${PACKAGE_NAME}:${PACKAGE_VER} \
+    .
+
+docker image prune --force
