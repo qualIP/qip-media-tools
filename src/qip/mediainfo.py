@@ -87,6 +87,7 @@ class Mediainfo(Executable):
                     re.match(r'^(?P<k>\d\d:\d\d:\d\d.\d\d\d) *:(?: |$)(?P<v>.*)$', line)  # (Menu) 00:00:00.000  : en:Chapter 01
                 )
                 assert m, line
+                parent_keys = ()
                 k, v = m.group('k').strip(), m.group('v').strip()
                 if k in ('ID', 'ID in the original source medium'):
                     k = {
@@ -97,11 +98,14 @@ class Mediainfo(Executable):
                     # 224 (0xE0)
                     # 189 (0xBD)-128 (0x80)
                     # 189 (0xBD)32 (0x20)
-                    m = re.match(r'^((?P<int>-?\d{1,3}) \(0x(?P<hex>[0-9A-Fa-f]{2})\))*$', v)
+                    # 224 (0xE0)-CC3
+                    m = re.match(r'^(?P<bytes>(?:(?P<int>-?\d{1,3}) \(0x(?P<hex>[0-9A-Fa-f]{2})\))*)(?:-(?P<cc>CC[1-4]))?$', v)
                     if m:
                         v = int(
-                            ''.join(tup[1] for tup in re.findall(r'(?P<int>-?\d{1,3}) \(0x(?P<hex>[0-9A-Fa-f]{2})\)', v)),
+                            ''.join(tup[1] for tup in re.findall(r'(?P<int>-?\d{1,3}) \(0x(?P<hex>[0-9A-Fa-f]{2})\)', m.group('bytes'))),
                             16)
+                        if m.group('cc'):
+                            v = f'{v}-{m.group("cc")}'
                     else:
                         try:
                             v = int(v)
@@ -252,9 +256,22 @@ class Mediainfo(Executable):
                         v = int(v)
                     except ValueError:
                         pass
+                elif k == 'CaptionServiceName':
+                    parent_keys = ('extra',)
+                    k = 'CaptionServiceName'
+                elif k == 'Muxing mode, more info':
+                    k = 'MuxingMode_MoreInfo'
                 else:
+                    log.debug(f'Unknown mediainfo data: %r = %r', k, v)
                     continue  # skip
-                track_dict[k] = v
+                d = track_dict
+                for parent_key in parent_keys:
+                    try:
+                        d = d[parent_key]
+                    except KeyError:
+                        d[parent_key] = {}
+                        d = d[parent_key]
+                d[k] = v
             try:
                 Width = track_dict['Width']
                 Height = track_dict['Height']
