@@ -1,0 +1,38 @@
+#!/bin/bash
+
+set -euo pipefail
+
+$HOME/volumes-init
+
+tool=
+
+while [[ "$#@" > 1 ]] ; do
+    case "$1" in
+        FRIMDecode)
+            tool=FRIMDecode64
+            shift
+            ;;
+        FRIMEncode)
+            tool=FRIMEncode64
+            shift
+            ;;
+        FRIMTranscode)
+            tool=FRIMTranscode64
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [ -z "$tool" ] ; then
+    echo "Please specify tool to use: FRIMDecode, FRIMEncode, or FRIMTranscode" >&2
+    exit 1
+fi
+
+wine64 "/home/developer/FRIM/x64/$tool.exe" "$@"

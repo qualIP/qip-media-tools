@@ -1,0 +1,99 @@
+#!/bin/bash
+
+set -euo pipefail
+
+d=$(pwd)
+
+OPT_RM=true
+OPT_X=false
+OPT_SHELL=false
+arg_log_driver=none
+declare -a docker_args=()
+declare -a app_args=()
+
+tool=$(basename "$0")
+case "$tool" in
+    FRIMDecode*) tool=FRIMDecode ;;
+    FRIMEncode*) tool=FRIMEncode ;;
+    FRIMTranscode*) tool=FRIMTranscode ;;
+esac
+
+#eval set -- "$(POSIXLY_CORRECT=1 getopt --long "rm,no-rm,shell" --options "xit" --name "$0" -- "$@")"
+
+set -- -i "$@"
+
+while [[ "$#" > 0 ]] ; do
+    case "$1" in
+        --rm)    OPT_RM=true ; shift ;;
+        --no-rm) OPT_RM=false ; shift ;;
+        -x)      OPT_X=true ; shift ;;
+        --shell) OPT_SHELL=true ; shift ;;
+        -i|-t)
+            docker_args=("${docker_args[@]}" "$1")
+            shift
+            ;;
+        --log-driver=)
+            arg_log_driver=${1:13}
+            shift 1
+            ;;
+        --log-driver)
+            arg_log_driver=$2
+            shift 2
+            ;;
+        --TODO)
+            app_args=("${app_args[@]}" "$1" "$2")
+            shift 2
+            ;;
+        --)      shift ; break ;;
+        *)       break ;;
+    esac
+done
+
+$OPT_X && set -x
+
+# TODO
+# libGL error: No matching fbConfigs or visuals found
+# libGL error: failed to load driver: swrast
+# X Error of failed request:  GLXBadContext
+#   Major opcode of failed request:  151 (GLX)
+#   Minor opcode of failed request:  6 (X_GLXIsDirect)
+#   Serial number of failed request:  164
+#   Current serial number in output stream:  163
+DISPLAY=
+
+app_args=("${app_args[@]}" "$@")
+
+$OPT_SHELL && docker_args=("${docker_args[@]}" -i -t)
+
+export XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
+#mkdir -pv "$XDG_DATA_HOME/FRIM"
+
+set -- docker container run
+set -- "$@" $($OPT_RM && echo --rm || echo --name FRIM)
+if [ -n "${DISPLAY:-}" ] ; then
+    set -- "$@" -v /tmp/.X11-unix:/tmp/.X11-unix
+    set -- "$@" -v "$HOME/.Xauthority":"/home/developer/.Xauthority"
+    set -- "$@" ${DISPLAY:+-e DISPLAY="$DISPLAY"}
+fi
+set -- "$@" -v "$HOME/Downloads":"/home/developer/Downloads"
+set -- "$@" -v "$d":"/home/developer/pwd"
+set -- "$@" -v "$d":"$d" -w "$d"
+set -- "$@" --log-driver="$arg_log_driver"
+#set -- "$@" --mount type=bind,source="$XDG_DATA_HOME/FRIM",target="/home/developer/FRIM"
+#set -- "$@" -t --stop-signal SIGKILL
+set -- "$@" "${docker_args[@]}"
+
+#X Error of failed request:  BadValue (integer parameter out of range for operation)
+#  Major opcode of failed request:  130 (MIT-SHM)
+#  Minor opcode of failed request:  3 (X_ShmPutImage)
+#  Value in failed request:  0x1c0
+#  Serial number of failed request:  2343
+#  Current serial number in output stream:  2356
+set -- "$@" --ipc=host
+
+$OPT_SHELL && set -- "$@" --entrypoint /bin/bash
+
+set -- "$@" test/frim
+$OPT_SHELL || set -- "$@" $tool
+set -- "$@" "${app_args[@]}"
+"$@"

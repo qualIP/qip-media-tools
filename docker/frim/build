@@ -1,0 +1,23 @@
+#!/bin/bash
+
+set -euo pipefail
+
+cd $(dirname "$0")
+CURDIR=$(pwd)
+
+make build-deps
+
+PACKAGE_NAME=$(sed -n -E -e 's/^PACKAGE_NAME *= *(.+)/\1/p' GNUmakefile)
+PACKAGE_VER=$(sed -n -E -e 's/^PACKAGE_VER *= *(.+)/\1/p' GNUmakefile)
+
+FRIM_VER=$(sed -n -E -e 's/^FRIM_VER *= *(.+)/\1/p' GNUmakefile)
+
+FILE_FRIM_ZIP=FRIM_x64_version_${FRIM_VER}.zip
+
+docker build \
+    --build-arg "FRIM_VER=${FRIM_VER}" \
+    --build-arg "FILE_FRIM_ZIP=${FILE_FRIM_ZIP}" \
+    -t test/${PACKAGE_NAME}:${PACKAGE_VER} \
+    .
+
+docker image prune --force
