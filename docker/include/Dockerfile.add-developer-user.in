@@ -1,0 +1,11 @@
+#ifndef DOCKERFILE_ADD_DEVELOPER_USER
+#define DOCKERFILE_ADD_DEVELOPER_USER
+
+USER root
+RUN groupadd -g 1000 developer && useradd -d /home/developer -s /bin/bash -m developer -u 1000 -g 1000
+USER developer
+ENV HOME=/home/developer
+WORKDIR /home/developer
+
+#endif
+// vim: ft=dockerfile

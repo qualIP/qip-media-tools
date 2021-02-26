@@ -1,0 +1,8 @@
+#ifndef DOCKERFILE_GIT_SETUP
+#define DOCKERFILE_GIT_SETUP
+
+RUN git config --global user.email "developer@example.com" && \\
+    git config --global user.name "Unnamed Developer"
+
+#endif
+// vim: ft=dockerfile

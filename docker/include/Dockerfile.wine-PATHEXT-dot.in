@@ -1,0 +1,17 @@
+#ifndef DOCKERFILE_WINE_PATHEXT_DOT
+#define DOCKERFILE_WINE_PATHEXT_DOT
+
+/*
+ * From https://stackoverflow.com/questions/6004070/execute-shell-commands-from-program-running-in-wine
+*/
+
+/* Add "." to Window's PATHEXT to allow calling executables without extensions
+ */
+RUN k='HKLM\System\CurrentControlSet\Control\Session Manager\Environment' && \\
+    pathext_orig=`wine64 reg query "$k" /v PATHEXT | tr -d '\r' | awk '/^  /{ print $3 }'` && \\
+    wine64 reg add "$k" /v PATHEXT /f /d "${pathext_orig};." && \\
+    wine64 reg query "$k" /v PATHEXT && \\
+    wineserver -w
+
+#endif
+// vim: ft=dockerfile

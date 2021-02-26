@@ -1,0 +1,11 @@
+#ifndef DOCKERFILE_SUDO
+#define DOCKERFILE_SUDO
+
+USER root
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes \\
+    sudo
+RUN echo "developer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+USER developer
+
+#endif
+// vim: ft=dockerfile
