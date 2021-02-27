@@ -25,10 +25,12 @@ build-deps:
 install-deps:
 	@# null
 
-PREFIX = /usr/local
+PREFIX ?= /usr/local
 DEFINES =
 DEFINES += -DPREFIX=$(PREFIX)
 #DEFINES += -DDOCKERFILE_DEBUG
+
+PREFIX_SUDO := $(shell [ -w "$(PREFIX)" ] || echo sudo)
 
 FILES_PREPROC =
 % : %.in
@@ -77,15 +79,16 @@ XDG_DATA_DIRS0 = $(PREFIX)/share
 
 .PHONY: install
 install: install-deps
-	install -m 755 -D -T FRIMDecode         "$(PREFIX)/bin/FRIMDecode"
-	install -m 755 -D -T FRIMEncode         "$(PREFIX)/bin/FRIMEncode"
-	install -m 755 -D -T FRIMTranscode      "$(PREFIX)/bin/FRIMTranscode"
+	$(PREFIX_SUDO) install -m 755 -D -T FRIMDecode         "$(PREFIX)/bin/FRIMDecode"
+	$(PREFIX_SUDO) install -m 755 -D -T FRIMEncode         "$(PREFIX)/bin/FRIMEncode"
+	$(PREFIX_SUDO) install -m 755 -D -T FRIMTranscode      "$(PREFIX)/bin/FRIMTranscode"
 
 .PHONY: uninstall
 uninstall:
-	rm -fv "$(PREFIX)/bin/FRIMDecode"
-	rm -fv "$(PREFIX)/bin/FRIMEncode"
-	rm -fv "$(PREFIX)/bin/FRIMTranscode"
+	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
+	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMDecode"
+	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMEncode"
+	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMTranscode"
 
 .PHONY: clean-all
 clean-all: clean

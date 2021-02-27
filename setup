@@ -1,0 +1,348 @@
+#!/bin/bash
+
+set -euo pipefail
+
+OPT_HELP=false
+OPT_YES=false
+OPT_USER=false
+OPT_DEVELOP=false
+OPT_INSTALL=true
+MAKE=${MAKE:-make -j}
+PREFIX=${PREFIX:-/usr/local}
+
+TEMP=`POSIXLY_CORRECT=1 getopt --long dummy,help,yes,system,user,develop,prefix:,uninstall --options hy --name "$0" -- --system "$@"`
+eval set -- "$TEMP"
+
+while true ; do
+    case "$1" in
+
+        --dummy) shift ;;
+        -h|--help) OPT_HELP=true ; shift ;;
+        -y|--yes)  OPT_YES=true ; shift ;;
+
+        --uninstall) OPT_INSTALL=false ; shift ;;
+
+        --system)  PREFIX=/usr/local ; OPT_USER=false ; shift 1 ;;
+        --user)    PREFIX=~/.local   ; OPT_USER=true  ; shift 1 ;;
+        --develop) PREFIX=~/.local   ; OPT_USER=true ; OPT_DEVELOP=true ; shift 1 ;;
+        --prefix)  PREFIX=$2                          ; shift 2 ;;
+
+        --) shift ; break ;;
+        *) echo "Internal error!" >&2 ; exit 1 ;;
+
+    esac
+done
+
+if $OPT_HELP ; then
+    echo "Usage: $0 [options...]"
+    echo "Options:"
+    echo "  -h, --help          Print this help and exit"
+    echo "  -y, --yes           Answer yes to all prompts (unattended)"
+    echo "  --uninstall         Uninstall instead of installing"
+    echo "  --user              Select user installation target (~/.local)"
+    echo "  --system            Select system installation target (/usr/local)"
+    echo "  --develop           Select development installation target (~/local)"
+    echo "  --prefix PREFIX     Specify custom installation prefix"
+    exit 0
+fi
+
+if ! [[ -d "$PREFIX" ]] ; then
+    mkdir "$PREFIX"
+fi
+
+PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
+maybe_sudo=$([[ "$USER" = "root" ]] || echo sudo)
+
+print_h2() {
+    echo
+    echo "## $*"
+    echo
+}
+
+test_prog_installed() {
+    local prog=$1 ; shift
+    local v
+
+    echo -n "$prog installed? "
+    v=$(which "$prog" 2> /dev/null || true)
+    if [[ -n "$v" ]] ; then
+        echo "Yes: $v"
+    else
+        echo "No"
+        echo "Error: $prog not found!" >&2
+        return 1
+    fi
+}
+
+test_docker_image_installed() {
+    local image=$1 ; shift
+    local v=
+
+    echo -n "Docker $image image installed? "
+    v=$(docker image ls -q "$image")
+    if [[ -n "$v" ]] ; then
+        echo " Yes"
+    else
+        echo " No"
+        echo "Error: docker $image not not found!" >&2
+        return 1
+    fi
+}
+
+_has_docker=
+need_docker() {
+    if [[ -z "$_has_docker" ]] ; then
+        if test_prog_installed docker ; then
+            _has_docker=true
+        else
+            _has_docker=false
+            echo "Docker is a container framework that reduces complexity of porting"
+            echo "applications. Several 3rd-party applications used by qualIP's Media Tools"
+            echo "are made available in dockers."
+            echo
+            echo "See https://www.docker.com"
+            echo
+            install_package docker-ce
+            if test_prog_installed docker ; then
+                _has_docker=true
+            fi
+        fi
+    fi
+    $_has_docker
+}
+
+_has_docker_wine=
+need_docker_wine() {
+    if [[ -z "$_has_docker_wine" ]] ; then
+        if test_docker_image_installed test/wine ; then
+            _has_docker_wine=true
+        else
+            _has_docker_wine=false
+            echo "Wine is a Windows compatibility layer for Linux which allows running some"
+            echo "3rd-party Windows applications used by qualIP's Media Tools."
+            echo "A wine docker is used as standard base for these 3rd-party Windows applications."
+            echo
+            echo "See https://www.docker.com"
+            echo
+            if ask_yes_no "Build and install wine docker?" \
+                && need_docker \
+                ; then
+                (set -x && $MAKE -C docker/wine)
+                (set -x && $MAKE -C docker/wine tag-latest)
+                _has_docker_wine=true
+            fi
+        fi
+    fi
+    $_has_docker_wine
+}
+
+ask_yes_no() {
+    local q=$1 ; shift
+    local v=
+
+    while true ; do
+        echo -n "$q [Y/n] "
+        if $OPT_YES ; then
+            v=yes
+            echo "$v"
+        else
+            read v
+        fi
+        case "x$v" in
+            x|xY|xy|xyes) v=true ; break ;;
+            xN|xn|xno) v=false ; break ;;
+            *) echo "Invalid input! Please try again" ;;
+        esac
+    done
+    $v
+}
+
+install_package() {
+    local package=$1 ; shift
+    local ask=true
+    local v=
+    while [[ "$#" != 0 ]] ; do
+        case "$1" in
+            -y) ask=false ;;
+            *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+        esac
+    done
+
+    set -- apt-get install $package
+    [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
+
+    if ! $ask || ask_yes_no "Install $1 package ($*)?" ; then
+        (set -x && "$@")
+    else
+        return 1
+    fi
+}
+
+
+print_h2 "Prologue"
+echo "This program will help you install qualIP's Media Tools and its"
+echo "dependencies."
+echo "Sudo access will be required to install certain tools."
+
+print_h2 "System Information"
+echo "Installation mode: $($OPT_INSTALL && echo "Install" || echo "Uninstall")"
+echo "Installation target: $( \
+    $OPT_DEVELOP && echo "Development" || \
+    ($OPT_USER && echo "User" || \
+     echo "System"))"
+echo "Installation prefix: $PREFIX"
+echo "Prompt mode: $($OPT_YES && echo "Answer yes" || echo "Prompt")"
+
+echo
+ask_yes_no "Ready to proceed?"
+
+print_h2 "qaac"
+echo "qaac is a CLI QuickTime AAC/ALAC encoder."
+echo "It is required to encode audio files (music, audiobooks) in .m4a format"
+echo "using Apple/iTunes's own AAC encoder resulting in widely compatible"
+echo "high-quality compressed audio files."
+echo
+echo "See https://github.com/nu774/qaac"
+echo
+
+if test_prog_installed qaac ; then
+    if ! $OPT_INSTALL \
+        && ask_yes_no "Uninstall qaac docker?" \
+        ; then
+            (set -x && $MAKE -C docker/qaac PREFIX="$PREFIX" uninstall)
+    fi
+else
+    if $OPT_INSTALL \
+        && ask_yes_no "Build and install qaac docker?" \
+        && need_docker \
+        && need_docker_wine \
+        ; then
+            (set -x && $MAKE -C docker/qaac)
+            (set -x && $MAKE -C docker/qaac tag-latest)
+            (set -x && $MAKE -C docker/qaac PREFIX="$PREFIX" install)
+    fi
+fi
+
+
+print_h2 "SubtitleEdit"
+echo "Subtitle Edit is an editor for video subtitles"
+echo "It is required to view subtitles and convert them between different"
+echo "formats, including using character recognition (OCR) to convert video"
+echo "subtitles, often found in DVD and Blu-ray movies, into text subtitles."
+echo
+echo "See https://nikse.dk/SubtitleEdit/"
+echo
+
+if test_prog_installed SubtitleEdit ; then
+    if ! $OPT_INSTALL \
+        && ask_yes_no "Uninstall SubtitleEdit docker?" \
+        ; then
+            (set -x && $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" uninstall)
+    fi
+else
+    if $OPT_INSTALL \
+        && ask_yes_no "Build and install SubtitleEdit docker?" \
+        && need_docker \
+        && need_docker_wine \
+        ; then
+            (set -x && $MAKE -C docker/SubtitleEdit)
+            (set -x && $MAKE -C docker/SubtitleEdit tag-latest)
+            (set -x && $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" install)
+    fi
+fi
+
+
+print_h2 "FRIMDecode"
+echo "FRIMDecode is a 3D-MVC Decoder."
+echo "It is required to decode 3D movies that are encoded in Multiview Video"
+echo "Coding format. For example, 3D Blu-ray movies."
+echo
+echo "See https://www.videohelp.com/software/FRIM"
+echo
+
+if test_prog_installed FRIMDecode ; then
+    if ! $OPT_INSTALL \
+        && ask_yes_no "Uninstall FRIM docker?" \
+        ; then
+            (set -x && $MAKE -C docker/frim PREFIX="$PREFIX" uninstall)
+    fi
+else
+    if $OPT_INSTALL \
+        && ask_yes_no "Build and install FRIM docker?" \
+        && need_docker \
+        && need_docker_wine \
+        ; then
+            (set -x && $MAKE -C docker/frim)
+            (set -x && $MAKE -C docker/frim tag-latest)
+            (set -x && $MAKE -C docker/frim PREFIX="$PREFIX" install)
+    fi
+fi
+
+
+print_h2 "MakeMKV"
+echo "MakeMKV is a format converter, otherwise called \"transcoder\" that can"
+echo "extract video/audio tracks from DVD and Blu-ray discs you own."
+echo "qualIP's Media Tools uses the console version of MakeMKV, makemkvcon."
+echo
+echo "NOTE: You must have a paid license key or a valid Linux Beta key:"
+echo "      https://www.makemkv.com/forum/viewtopic.php?t=1053"
+echo
+echo "See https://www.makemkv.com/"
+echo
+
+if test_prog_installed makemkvcon ; then
+    if ! $OPT_INSTALL \
+        && ask_yes_no "Uninstall MakeMKV?" \
+        ; then
+            (set -x && PREFIX="$PREFIX" installs/uninstall-makemkv)
+    fi
+else
+    if $OPT_INSTALL \
+        && ask_yes_no "Install MakeMKV?" \
+        ; then
+            (set -x && PREFIX="$PREFIX" installs/install-makemkv latest)
+    fi
+fi
+
+
+print_h2 "Package dependencies"
+echo "qualIP's Media Tools require several 3rd-party application packages"
+echo "available in most Linux distributions."
+echo "A small dependency-only package, \"qip-tools-depends\" is used to all"
+echo "required applications are installed."
+echo
+if ! $OPT_INSTALL ; then
+    if ask_yes_no "Uninstall qip-tools-depends package?" ; then
+        (set -x && $MAKE -C src uninstall-qip-tools-depends)
+    fi
+else
+    if ask_yes_no "Install qip-tools-depends package?" ; then
+        (set -x && $MAKE -C src install-qip-tools-depends)
+    fi
+fi
+
+
+print_h2 "qualIP's Media Tools"
+if ! $OPT_INSTALL ; then
+    if ask_yes_no "Uninstall qualIP's Media Tools?" ; then
+        if $OPT_USER ; then
+            (set -x && $MAKE -C src uninstall-user)
+        else
+            (set -x && $MAKE -C src uninstall-system)
+        fi
+    fi
+else
+    if ask_yes_no "Install qualIP's Media Tools?" ; then
+        if $OPT_DEVELOP ; then
+            (set -x && $MAKE -C src develop)
+        elif $OPT_USER ; then
+            (set -x && $MAKE -C src install-user)
+        else
+            (set -x && $MAKE -C src install-system)
+        fi
+    fi
+fi
+
+echo
+echo "ALL DONE!"
+echo

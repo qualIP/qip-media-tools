@@ -26,11 +26,13 @@ build-deps:
 install-deps:
 	@# null
 
-PREFIX = /usr/local
+PREFIX ?= /usr/local
 DEFINES =
 DEFINES += -DPREFIX=$(PREFIX)
 DEFINES += -DSUBTITLEEDIT_USE_WRAPPER
 #DEFINES += -DDOCKERFILE_DEBUG
+
+PREFIX_SUDO := $(shell [ -w "$(PREFIX)" ] || echo sudo)
 
 FILES_PREPROC =
 % : %.in
@@ -101,16 +103,17 @@ XDG_DATA_DIRS0 = $(PREFIX)/share
 
 .PHONY: install
 install: install-deps
-	install -m 755 -D -T SubtitleEdit         "$(PREFIX)/bin/SubtitleEdit"
-	install -m 644 -D -T SubtitleEdit.desktop "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
-	install -m 644 -D -T SubtitleEdit.png     "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
+	$(PREFIX_SUDO) install -m 755 -D -T SubtitleEdit         "$(PREFIX)/bin/SubtitleEdit"
+	$(PREFIX_SUDO) install -m 644 -D -T SubtitleEdit.desktop "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
+	$(PREFIX_SUDO) install -m 644 -D -T SubtitleEdit.png     "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
 	update-desktop-database "$(XDG_DATA_DIRS0)/applications"
 
 .PHONY: uninstall
 uninstall:
-	rm -fv "$(PREFIX)/bin/SubtitleEdit"
-	rm -fv "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
-	rm -fv "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
+	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
+	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/SubtitleEdit"
+	$(PREFIX_SUDO) rm -fv "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
+	$(PREFIX_SUDO) rm -fv "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
 
 .PHONY: clean-all
 clean-all: clean

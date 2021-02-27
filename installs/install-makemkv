@@ -1,8 +1,12 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 release_url="https://www.makemkv.com/forum/viewtopic.php?f=3&t=224"
+
+PREFIX=${PREFIX:-/usr/local}
+PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
+maybe_sudo=$([[ "$USER" = "root" ]] || echo sudo)
 
 if (( $# )) ; then
     version=$1 ; shift
@@ -10,45 +14,52 @@ else
     version=
 fi
 
+prog="$0"
+cd "$(dirname "$prog")"
+
 if [[ -z "$version" ]] ; then
-    echo -n "Version [latest]: "
+    echo -n "MakeMKV version [latest]: "
     read version
 fi
 
-if [[ -z "$version" ]] ; then
-    echo "Looking for latest version..."
-    version=$( (wget -O - "$release_url" 2> /dev/null) | sed -n -e 's/.*MakeMKV \([0-9.]\+\) for Linux is available.*/\1/p ; T ; q')
+if [[ -z "$version" ]] || [[ "$version" = "latest" ]] ; then
+    echo "Looking for latest MakeMKV version..."
+    version=$( (wget -O - "$release_url" 2> /dev/null || true) | sed -n -e 's/.*MakeMKV \([0-9.]\+\) for Linux is available.*/\1/p ; T ; q')
     if [[ -z "$version" ]] ; then
         echo "Latest version not found in $release_url" >&2
         exit 1
     fi
-    echo "Using version $version"
+    echo "Using MakeMKV version $version"
 fi
 
-set -x
-
-sudo true
-
-sudo apt-get install qtbase5-dev libssl-dev zlib1g-dev libexpat1-dev libavcodec-dev libavutil-dev
+(set -x && $maybe_sudo apt-get install qtbase5-dev libssl-dev zlib1g-dev libexpat1-dev libavcodec-dev libavutil-dev)
 
 wget -c http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
 wget -c http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
-#exit 1
 
 tar xzf makemkv-oss-${version}.tar.gz
-cd makemkv-oss-${version}
-./configure
-make -j
-sudo make install
-cd ..
-
 tar xzf makemkv-bin-${version}.tar.gz
+
+#exit 1
+
+(
+set -x
+cd makemkv-oss-${version}
+./configure --prefix "$PREFIX"
+make -j
+$PREFIX_SUDO make install
+)
+
+#(cd makemkv-bin-${version} && mkdir -p tmp && touch tmp/eula_accepted)
+
+(
+set -x
 cd makemkv-bin-${version}
-mkdir -p tmp
-touch tmp/eula_accepted
 make
-sudo make install
-cd ..
+$PREFIX_SUDO make install PREFIX="$PREFIX"
+)
+
+#exit 1
 
 rm -Rf makemkv-oss-${version} makemkv-bin-${version}
 rm -Rf makemkv-oss-${version}.tar.gz makemkv-bin-${version}.tar.gz
