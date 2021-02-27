@@ -42,7 +42,8 @@ class Mpeg4ContainerFile(BinaryMediaFile):
         #with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_dir = None
         with tempfile.NamedTemporaryFile(suffix='.wav') as tmp_fp:
-            wav_file = wav.WaveFile(file_name=tmp_fp.name)
+            from qip.wav import WaveFile
+            wav_file = WaveFile(file_name=tmp_fp.name)
             wav_file.rip_cue_track(cue_track=cue_track, bin_file=bin_file, tags=None, fp=tmp_fp)
             qaac.encode(file_name=wav_file.file_name,
                         output_file_name=self.file_name,
