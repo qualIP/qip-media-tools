@@ -808,8 +808,13 @@ class MediaFile(File):
                                 raise e
                     tags_done = True
                 self.stereo_3d_mode = None
+                found_video_stream = None
+                found_audio_stream = None
                 for stream_dict in ffprobe_dict['streams']:
                     if stream_dict['codec_type'] == 'video':
+                        if found_video_stream:
+                            continue  # Only first video stream
+                        found_video_stream = stream_dict
                         stereo_mode = stream_dict.get('tags', {}).get('stereo_mode', '')
                         for side_data in stream_dict.get('side_data_list', ()):
                             if side_data['side_data_type'] == 'Stereo 3D':
@@ -844,7 +849,11 @@ class MediaFile(File):
                                         (1920, 2205),
                                     ):
                                 self.stereo_3d_mode = Stereo3DMode.hdmi_frame_packing
-                        break  # Only first video stream
+                    elif stream_dict['codec_type'] == 'audio':
+                        if found_audio_stream:
+                            continue  # Only first audio stream
+                        found_audio_stream = stream_dict
+                        self.audio_type = stream_dict['codec_name']
 
         if self.file_name.suffix in get_mp4v2_app_support().extensions_can_read:
             if not tags_done and mp4info.which(assert_found=False):
