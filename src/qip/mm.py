@@ -1659,8 +1659,10 @@ class MediaTagEnum(enum.Enum):
 
     object_3d_plane = 'object_3d_plane'  # NUM  The 3D plane of this object
 
-    def __repr__(self):
+    def __str__(self):
         return self.value
+
+    __repr__ = __str__
 
     def __eq__(self, other):
         other = MediaTagEnum(other)
