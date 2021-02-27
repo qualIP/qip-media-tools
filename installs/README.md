@@ -21,3 +21,29 @@ make
 sudo make install
 cd ..
 ~~~~~~~~~~
+
+
+
+SubtitleEdit
+============
+
+~~~~~~~~~~{.sh}
+sudo apt-get tesseract-ocr-eng tesseract-ocr-fra libtesseract-dev
+winetricks vcrun2010
+~~~~~~~~~~
+
+
+
+Debian
+======
+
+https://www.deb-multimedia.org/
+
+
+
+Ubuntu
+======
+
+~~~~~~~~~~{.sh}
+sudo add-apt-repository ppa:mc3man/bionic-media
+~~~~~~~~~~
