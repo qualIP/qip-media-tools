@@ -38,6 +38,11 @@ Depends:
     ccextractor,
     udisks2,
     libdvdcss2,
+    libavutil-dev,
+    libavcodec-dev,
+    libexpat1-dev,
+    libdvdread-dev,
+    libudfread-dev,
 Recommends:
     winetricks,
     q4wine,
@@ -45,7 +50,6 @@ Recommends:
     gddrescue,
     safecopy,
     icoutils,
-    fuseiso,
     mp4v2-utils,
     python3-bs4,
 # NOTE: mp4v2-utils: https://www.deb-multimedia.org
