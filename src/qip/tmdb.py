@@ -18,6 +18,8 @@ from tmdbv3api import *
 
 from .isolang import isolang
 from .xdg import XdgResource
+from .propex import propex
+
 
 class TMDb(tmdbv3api.TMDb, XdgResource):
 
@@ -82,4 +84,91 @@ class TMDb(tmdbv3api.TMDb, XdgResource):
         else:
             os.environ[self.TMDB_LANGUAGE] = isolang(language).iso639_1
 
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
+    movie_genre_list = propex(
+        name='movie_genre_list',
+    )
+
+    @movie_genre_list.initter
+    def movie_genre_list(self):
+        genre = Genre()
+        return genre.movie_list()
+
+    tvshow_genre_list = propex(
+        name='tvshow_genre_list',
+        )
+
+    @tvshow_genre_list.initter
+    def tvshow_genre_list(self):
+        genre = Genre()
+        return genre.tv_list()
+
+    def movie_to_tags(self, o_movie):
+        #app.log.debug('o_movie=%r:\n%s', o_movie, pprint.pformat(vars(o_movie)))
+        #{'adult': False,
+        # 'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
+        # 'entries': {'adult': False,
+        #             'backdrop_path': '/eHUoB8NbvrvKp7KQMNgvc7yLpzM.jpg',
+        #             'genre_ids': [12, 18, 53],
+        #             'id': 44115,
+        #             'original_language': 'en',
+        #             'original_title': '127 Hours',
+        #             'overview': "The true story of mountain climber Aron Ralston's "
+        #                         'remarkable adventure to save himself after a fallen '
+        #                         'boulder crashes on his arm and traps him in an '
+        #                         'isolated canyon in Utah.',
+        #             'popularity': 11.822,
+        #             'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
+        #             'release_date': '2010-11-05',
+        #             'title': '127 Hours',
+        #             'video': False,
+        #             'vote_average': 7,
+        #             'vote_count': 4828},
+        # 'genre_ids': [12, 18, 53],
+        # 'id': 44115,
+        # 'original_language': 'en',
+        # 'original_title': '127 Hours',
+        # 'overview': "The true story of mountain climber Aron Ralston's remarkable "
+        #             'adventure to save himself after a fallen boulder crashes on his '
+        #             'arm and traps him in an isolated canyon in Utah.',
+        # 'popularity': 11.822,
+        # 'poster_path': '/c6Nu7UjhGCQtV16WXabqOQfikK6.jpg',
+        # 'release_date': '2010-11-05',
+        # 'title': '127 Hours',
+        # 'video': False,
+        # 'vote_average': 7,
+        # 'vote_count': 4828}
+        from qip.mm import AlbumTags, ITunesXid
+        tags = AlbumTags()
+        tags.xid = ITunesXid('tmdb', ITunesXid.Scheme.vendor_id, str(o_movie.id))
+        tags.title = o_movie.title
+        try:
+            tags.originaltitle = o_movie.original_title
+        except AttributeError:
+            pass
+        try:
+            tags.date = o_movie.release_date
+        except AttributeError:
+            pass
+        try:
+            tags.description = o_movie.overview
+        except AttributeError:
+            pass
+        # print('genre_ids=%r' % (o_movie.genre_ids,))
+        # print('movie_genre_list=%r' % (self.movie_genre_list,))
+        try:
+            if o_movie.adult:
+                tags.contentrating = 'explicit'
+        except AttributeError:
+            pass
+        try:
+            if o_movie.video:
+                tags.contenttype = 'video'
+        except AttributeError:
+            pass
+        return tags
+
+    def cite_movie(self, o_movie, cite_api=None):
+        if cite_api is None:
+            from qip.cite import default as cite_api
+        return cite_api.cite_movie(
+            **self.movie_to_tags(o_movie).as_str_dict())
