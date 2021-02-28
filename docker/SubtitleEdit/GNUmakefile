@@ -7,8 +7,6 @@ SUBTITLEEDIT_VER = 3.5.16
 SUBTITLEEDIT_VER_SHORT = $(subst .,,$(SUBTITLEEDIT_VER))
 PACKAGE_VER = 3.5.16
 
-REGISTRY = rip.jsoft.lan:5000
-
 BUILD_PACKAGE_NAMES = $(filter %-build,$(PACKAGE_NAMES))
 NONBUILD_PACKAGE_NAMES = $(filter-out %-build,$(PACKAGE_NAMES))
 
@@ -94,11 +92,13 @@ tag-latest:
 
 .PHONY: push
 push:
+	$(if $(REGISTRY),,echo "REGISTRY environment variable missing" >&2 ; exit 1)
 	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):$(PACKAGE_VER)
 	docker push $(REGISTRY)/$(PACKAGE_NAME):$(PACKAGE_VER)
 
 .PHONY: push-latest
 push-latest: tag-latest
+	$(if $(REGISTRY),,echo "REGISTRY environment variable missing" >&2 ; exit 1)
 	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):latest
 	docker push $(REGISTRY)/$(PACKAGE_NAME):latest
 
