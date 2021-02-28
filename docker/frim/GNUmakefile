@@ -44,9 +44,10 @@ FILES_PREPROC =
 
 FILE_FRIM_ZIP = FRIM_x64_version_$(FRIM_VER).zip
 $(FILE_FRIM_ZIP) :
-	# https://www.videohelp.com/software/FRIM
+	# https://www.videohelp.com/software/FRIM#download
 	curl --output "$@" \
 	    --location \
+	    --referer "https://www.videohelp.com/software/FRIM" \
 	    "https://www.videohelp.com/download/FRIM_x64_version_$(FRIM_VER).zip"
 
 build-deps: $(FILE_FRIM_ZIP)
