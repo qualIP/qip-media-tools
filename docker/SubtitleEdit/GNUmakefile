@@ -9,6 +9,9 @@ PACKAGE_VER = 3.5.16
 
 REGISTRY = rip.jsoft.lan:5000
 
+BUILD_PACKAGE_NAMES = $(filter %-build,$(PACKAGE_NAMES))
+NONBUILD_PACKAGE_NAMES = $(filter-out %-build,$(PACKAGE_NAMES))
+
 .PHONY: latest
 latest: all
 	$(MAKE) tag-latest
@@ -62,9 +65,9 @@ FILES_PREPROC += Dockerfile
 build-deps: Dockerfile
 
 SubtitleEdit.ico:
-	docker run --rm --entrypoint /bin/cat test/$(PACKAGE_NAME):$(PACKAGE_VER) "/home/developer/SubtitleEdit/SubtitleEdit.exe" < /dev/null > "$@.temp.exe"
-	wrestool -x -t 14 "$@.temp.exe" > "$@"
-	rm "$@.temp.exe"
+	docker run --rm --entrypoint /bin/cat test/$(PACKAGE_NAME):$(PACKAGE_VER) "/home/developer/SubtitleEdit/SubtitleEdit.exe" < /dev/null > "temp-$@.exe"
+	wrestool -x -t 14 "temp-$@.exe" > "$@"
+	rm "temp-$@.exe"
 	icotool -l "$@"
 
 SubtitleEdit-48x48.ico: SubtitleEdit.ico
@@ -106,14 +109,14 @@ install: install-deps
 	$(PREFIX_SUDO) install -m 755 -D -T SubtitleEdit         "$(PREFIX)/bin/SubtitleEdit"
 	$(PREFIX_SUDO) install -m 644 -D -T SubtitleEdit.desktop "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
 	$(PREFIX_SUDO) install -m 644 -D -T SubtitleEdit.png     "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
-	update-desktop-database "$(XDG_DATA_DIRS0)/applications"
+	$(PREFIX_SUDO) update-desktop-database "$(XDG_DATA_DIRS0)/applications"
 
 .PHONY: uninstall
 uninstall:
-	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/SubtitleEdit"
 	$(PREFIX_SUDO) rm -fv "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
 	$(PREFIX_SUDO) rm -fv "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
+	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-all
 clean-all: clean
@@ -121,14 +124,16 @@ clean-all: clean-dl
 
 .PHONY: clean
 clean:
-	rm -fv .*.timestamp
 	rm -fv $(FILES_PREPROC)
-	rm -fv SubtitleEdit.ico.temp.exe
-	rm -fv SubtitleEdit-48x48.ico
-	rm -fv SubtitleEdit.ico
+	rm -fv temp-*.exe
+	rm -fv SubtitleEdit*.ico
 	rm -fv SubtitleEdit.png
+	for p in $(BUILD_PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-dl
 clean-dl:
 	rm -fv $(FILE_SUBTITLEEDIT_SETUP_ZIP)
 	rm -fv $(FILE_SUBTITLEEDIT_PORTABLE_ZIP)
+
+.PHONY: distclean
+distclean: clean-all

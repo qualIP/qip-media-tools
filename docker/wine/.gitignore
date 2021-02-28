@@ -1,0 +1,5 @@
+/Dockerfile.wine32
+/Dockerfile.wine32-build
+/Dockerfile.wine64
+/Dockerfile.wine64-build
+/wine-git/

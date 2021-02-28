@@ -40,7 +40,7 @@ RUN mkdir -v -p \\
     ln -v -s "/home/developer/My Documents" "${WINEPREFIX}/drive_c/users/developer/My Documents"
 
 ARG FILE_FRIM_ZIP
-COPY --chown=developer:developer ${FILE_FRIM_ZIP} .
+COPY --chown=developer:developer ${FILE_FRIM_ZIP} ./
 RUN unzip ${FILE_FRIM_ZIP} && \\
     mv FRIM_x64_version_${FRIM_VER} FRIM
 

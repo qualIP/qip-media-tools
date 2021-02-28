@@ -1,0 +1,16 @@
+#!/bin/bash
+
+PREFIX=${PREFIX:-/usr/local}
+PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
+
+(set -x ; $PREFIX_SUDO rm -Rfv \
+    "$PREFIX/share/MakeMKV" \
+    "$PREFIX/bin/makemkv" \
+    "$PREFIX/bin/makemkvcon" \
+    "$PREFIX/bin/sdftool" \
+    "$PREFIX/lib/libdriveio.so.*" \
+    "$PREFIX/lib/libmakemkv.so.*" \
+    "$PREFIX/lib/libmmbd.so.*" \
+    "$PREFIX/share/applications/makemkv.desktop" \
+    "$PREFIX/share/icons/*/*/apps/makemkv.png" \
+)

@@ -21,7 +21,7 @@ RUN apt-get update && \\
 USER developer
 
 ARG FILE_QAAC_ZIP
-COPY --chown=developer:developer ${FILE_QAAC_ZIP} .
+COPY --chown=developer:developer ${FILE_QAAC_ZIP} ./
 RUN unzip ${FILE_QAAC_ZIP} && \\
     mv qaac_${QAAC_VER_SHORT} qaac
 
@@ -48,6 +48,4 @@ RUN ./makeportable2.sh && mv QTfiles64/ qaac/x64/
 
 #endif
 
-COPY --chown=developer:developer volumes-init entrypoint /home/developer/
-
-ENTRYPOINT ["/home/developer/entrypoint"]
+// vim: ft=dockerfile

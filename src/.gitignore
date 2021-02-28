@@ -1,2 +1,6 @@
-/qip.egg-info
-__pycache__
+/build/
+/qip.egg-info/
+/qip-tools-depends_1.0_all.deb
+/qip-tools-depends_1.0_amd64.buildinfo
+/qip-tools-depends_1.0_amd64.changes
+__pycache__/

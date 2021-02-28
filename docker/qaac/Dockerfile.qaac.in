@@ -1,0 +1,17 @@
+
+ARG WINE_VER=3.0.3
+ARG PACKAGE_VER=
+
+FROM test/qaac-build:${PACKAGE_VER} as build
+
+FROM test/wine64:${WINE_VER}
+ARG WINEPREFIX="/home/developer/.wine"
+LABEL maintainer="j.sebastien.trottier@gmail.com"
+
+COPY --from=build /home/developer/qaac/ /home/developer/qaac/
+
+COPY --chown=developer:developer volumes-init entrypoint /home/developer/
+
+ENTRYPOINT ["/home/developer/entrypoint"]
+
+// vim: ft=dockerfile

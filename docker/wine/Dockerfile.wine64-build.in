@@ -1,0 +1,98 @@
+/*
+ * See https://wiki.winehq.org/Building_Wine
+ */
+
+FROM ubuntu:20.04
+LABEL maintainer="j.sebastien.trottier@gmail.com"
+
+ARG WINE_TAG
+ARG WINE_VER
+
+USER root
+ENV HOME=/root
+WORKDIR /root
+
+// USER root
+RUN sed -i -E -e 's/ main$/ main contrib/' /etc/apt/sources.list
+RUN apt-get update
+/* Common */
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes \\
+    debhelper lzma flex bison quilt gettext icoutils sharutils pkg-config \\
+    dctrl-tools imagemagick librsvg2-bin fontforge-nox khronos-api \\
+    unicode-data libxml-simple-perl libxml-parser-perl
+/* amd64 */
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes \\
+    clang
+/* Development headers (amd64) */
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes \\
+    libxi-dev \\
+    libxt-dev \\
+    libxmu-dev \\
+    libx11-dev \\
+    libxext-dev \\
+    libxfixes-dev \\
+    libxrandr-dev \\
+    libxcursor-dev \\
+    libxrender-dev \\
+    libxkbfile-dev \\
+    libxxf86vm-dev \\
+    libxxf86dga-dev \\
+    libxinerama-dev \\
+    libgl1-mesa-dev \\
+    libglu1-mesa-dev \\
+    libxcomposite-dev \\
+    libpng-dev \\
+    libssl-dev \\
+    libv4l-dev \\
+    libsdl2-dev \\
+    libxml2-dev \\
+    libgsm1-dev \\
+    libjpeg-dev \\
+    libkrb5-dev \\
+    libsane-dev \\
+    libtiff-dev \\
+    libudev-dev \\
+    libpulse-dev \\
+    liblcms2-dev \\
+    libldap2-dev \\
+    libxslt1-dev \\
+    unixodbc-dev \\
+    libcups2-dev \\
+    libvkd3d-dev \\
+    libcapi20-dev \\
+    libvulkan-dev \\
+    libfaudio-dev \\
+    libopenal-dev \\
+    libdbus-1-dev \\
+    freeglut3-dev \\
+    libmpg123-dev \\
+    libunwind-dev \\
+    libasound2-dev \\
+    libgphoto2-dev \\
+    libosmesa6-dev \\
+    libpcap0.8-dev \\
+    libgnutls28-dev \\
+    libncurses5-dev \\
+    libgettextpo-dev \\
+    libfreetype6-dev \\
+    libfontconfig1-dev \\
+    ocl-icd-opencl-dev \\
+    libgstreamer-plugins-base1.0-dev
+
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes git
+#include <Dockerfile.git-setup.in>
+
+COPY wine-git/ wine-git/
+RUN cd wine-git && git checkout ${WINE_TAG}
+
+/* Subject: [PATCH] wpcap: Fix compilation with recent pcap/pcap.h versions.
+ * https://source.winehq.org/git/wine.git/patch/40c9b46500c3606e966d5404d45b68a48609b6ea
+ */
+RUN cd wine-git && git cherry-pick -x 40c9b46500c3606e966d5404d45b68a48609b6ea || git cherry-pick --abort
+
+RUN mkdir $HOME/wine64
+RUN cd $HOME/wine64 && ../wine-git/configure --enable-win64
+RUN make -C $HOME/wine64 -j`grep -c '^processor' /proc/cpuinfo`
+RUN make -C $HOME/wine64 -j`grep -c '^processor' /proc/cpuinfo` install
+
+// vim: ft=dockerfile

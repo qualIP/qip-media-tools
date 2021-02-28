@@ -1,0 +1,25 @@
+#!/bin/bash
+
+set -euo pipefail
+
+cd $(dirname "$0")
+CURDIR=$(pwd)
+
+make build-deps
+
+PACKAGE_NAMES=$(sed -n -E -e 's/^PACKAGE_NAMES *= *(.+)/\1/p' GNUmakefile)
+PACKAGE_VER=$(sed -n -E -e 's/^PACKAGE_VER *= *(.+)/\1/p' GNUmakefile)
+
+WINE_TAG=$(sed -n -E -e 's/^WINE_TAG *= *(.+)/\1/p' GNUmakefile)
+WINE_VER=$(sed -n -E -e 's/^WINE_VER *= *(.+)/\1/p' GNUmakefile)
+
+for PACKAGE_NAME in $PACKAGE_NAMES ; do
+    docker build \
+        -f "$CURDIR/Dockerfile.${PACKAGE_NAME}" \
+        --build-arg "WINE_TAG=${WINE_TAG}" \
+        --build-arg "WINE_VER=${WINE_VER}" \
+        -t test/${PACKAGE_NAME}:${PACKAGE_VER} \
+        .
+done
+
+docker image prune --force

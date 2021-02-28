@@ -1,10 +1,10 @@
 .PHONY: latest
 
-PACKAGE_NAMES = frim
-PACKAGE_NAME = frim
-# https://www.videohelp.com/software/FRIM
-FRIM_VER = 1.31
-PACKAGE_VER = 1.31
+PACKAGE_NAMES = wine64-build wine32-build wine64 wine32
+PACKAGE_NAME = # TBD
+WINE_TAG = wine-3.0.3
+WINE_VER = 3.0.3
+PACKAGE_VER = 3.0.3
 
 REGISTRY = rip.jsoft.lan:5000
 
@@ -41,28 +41,34 @@ FILES_PREPROC =
 	gcc -E -iquote -traditional -undef $(DEFINES) -I "../include" - < "$<" | sed -e '/^#/ d' > "$@"
 	chmod a-w "$@"
 
-%.png : %.gif
-	ffmpeg -loglevel warning -hide_banner -i "$<" -frames:v 1 -y "$@"
+FILES_PREPROC += $(addprefix Dockerfile.,$(PACKAGE_NAMES))
+build-deps: $(addprefix Dockerfile.,$(PACKAGE_NAMES))
 
-FILE_FRIM_ZIP = FRIM_x64_version_$(FRIM_VER).zip
-$(FILE_FRIM_ZIP) :
-	# https://www.videohelp.com/software/FRIM
-	curl --output "$@" \
-	    --location \
-	    "https://www.videohelp.com/download/FRIM_x64_version_$(FRIM_VER).zip"
+.PHONY: wine-git-init
+wine-git-init: wine-git/.git/config
+wine-git/.git/config:
+	git clone --no-checkout git://source.winehq.org/git/wine.git wine-git
+build-deps: wine-git-init
 
-build-deps: $(FILE_FRIM_ZIP)
-
-FILES_PREPROC += Dockerfile
-build-deps: Dockerfile
+.PHONY: wine-git-update-tag
+wine-git-update-tag: wine-git-init
+	git tag --verify $(WINE_TAG) || git fetch origin $(WINE_TAG)
+build-deps: wine-git-init
 
 .PHONY: build
 build:
 	./build
 
-.PHONY: run
-run:
-	./FRIM --shell
+ifeq ($(PACKAGE_NAME),)
+
+.PHONY: tag-latest push push-latest
+tag-latest push push-latest:
+	set -e ; \
+	for PACKAGE_NAME in $(PACKAGE_NAMES) ; do \
+	    make PACKAGE_NAME=$${PACKAGE_NAME} $@ ; \
+	done
+
+else
 
 .PHONY: tag-latest
 tag-latest:
@@ -78,19 +84,16 @@ push-latest: tag-latest
 	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):latest
 	docker push $(REGISTRY)/$(PACKAGE_NAME):latest
 
+endif
+
 XDG_DATA_DIRS0 = $(PREFIX)/share
 
 .PHONY: install
 install: install-deps
-	$(PREFIX_SUDO) install -m 755 -D -T FRIMDecode         "$(PREFIX)/bin/FRIMDecode"
-	$(PREFIX_SUDO) install -m 755 -D -T FRIMEncode         "$(PREFIX)/bin/FRIMEncode"
-	$(PREFIX_SUDO) install -m 755 -D -T FRIMTranscode      "$(PREFIX)/bin/FRIMTranscode"
+	echo "Nothing to install"
 
 .PHONY: uninstall
 uninstall:
-	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMDecode"
-	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMEncode"
-	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMTranscode"
 	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-all
@@ -104,7 +107,7 @@ clean:
 
 .PHONY: clean-dl
 clean-dl:
-	rm -fv $(FILE_FRIM_ZIP)
+	@# Nothing to do
 
 .PHONY: distclean
 distclean: clean-all

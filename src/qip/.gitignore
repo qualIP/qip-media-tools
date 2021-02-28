@@ -1,0 +1,6 @@
+/_libdvdread_swig.cpython-*.so
+/libdvdread_swig.py
+/libdvdread_swig_wrap.c
+/_libudfread_swig.cpython-*.so
+/libudfread_swig.py
+/libudfread_swig_wrap.c

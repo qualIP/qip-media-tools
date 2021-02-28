@@ -1,4 +1,5 @@
 FROM mono:6.8
+LABEL maintainer="j.sebastien.trottier@gmail.com"
 
 /* contrib is required by ttf-mscorefonts-installer */
 RUN sed -i -E -e 's/ main$/ main contrib/' /etc/apt/sources.list
@@ -30,7 +31,7 @@ ENV HOME /home/developer
 WORKDIR /home/developer
 
 ARG FILE_SUBTITLEEDIT_PORTABLE_ZIP
-COPY --chown=developer:developer ${FILE_SUBTITLEEDIT_PORTABLE_ZIP} .
+COPY --chown=developer:developer ${FILE_SUBTITLEEDIT_PORTABLE_ZIP} ./
 RUN mkdir SubtitleEdit && unzip ${FILE_SUBTITLEEDIT_PORTABLE_ZIP} -d SubtitleEdit
 RUN ln -s /usr/lib/x86_64-linux-gnu/libhunspell-1.7.so.0 SubtitleEdit/libhunspell.so
 RUN ln -s /usr/lib/x86_64-linux-gnu/libvlc.so SubtitleEdit/libvlc.so
@@ -47,10 +48,10 @@ VOLUME ["/home/developer/.config/Subtitle Edit"]
 // ENV OMP_THREAD_LIMIT 1
 
 #ifdef SUBTITLEEDIT_USE_WRAPPER
-COPY --chown=developer:developer SubtitleEdit-edit-Settings .
-COPY --chown=developer:developer volumes-init entrypoint .
+COPY --chown=developer:developer SubtitleEdit-edit-Settings ./
+COPY --chown=developer:developer volumes-init entrypoint ./
 #else
-COPY --chown=developer:developer volumes-init .
+COPY --chown=developer:developer volumes-init ./
 #endif
 
 #ifdef SUBTITLEEDIT_USE_WRAPPER

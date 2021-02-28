@@ -1,6 +1,8 @@
 .PHONY: all
 all:
 
+DEPS_PACKAGE_VER=1.0
+
 maybe_sudo=$(if $(filter $(USER),root),,sudo)
 
 swig_targets =
@@ -18,8 +20,8 @@ install-user: swig-targets
 	pip3 install . --user
 
 .PHONY: uninstall-user
-uninstall-user: swig-targets
-	pip3 uninstall . --user
+uninstall-user:
+	pip3 uninstall qip
 
 .PHONY: install-system
 install-system: swig-targets
@@ -27,7 +29,7 @@ install-system: swig-targets
 
 .PHONY: uninstall-system
 uninstall-system:
-	$(maybe_sudo) pip3 uninstall . --system
+	$(maybe_sudo) pip3 uninstall qip
 
 .PHONY: develop
 develop: swig-targets
@@ -35,24 +37,41 @@ develop: swig-targets
 	python3 setup.py develop --user
 	#echo Execute: ln -s $(CURDIR)/qip ~/.local/lib/pythonX.X/site-packages/qip
 
+FILE_DEPS_PACKAGE_DEB = qip-tools-depends_$(DEPS_PACKAGE_VER)_all.deb
 .PHONY: build-qip-tools-depends
-build-qip-tools-depends: qip-tools-depends_1.0_all.deb
-qip-tools-depends_1.0_all.deb: qip-tools-depends.ctl
+build-qip-tools-depends: $(FILE_DEPS_PACKAGE_DEB)
+$(FILE_DEPS_PACKAGE_DEB): qip-tools-depends.ctl
 	which equivs-build || $(maybe_sudo) apt-get install equivs
 	equivs-build $<
 
 .PHONY: install-qip-tools-depends
-install-qip-tools-depends: qip-tools-depends_1.0_all.deb
-	$(maybe_sudo) dpkg -i qip-tools-depends_1.0_all.deb || $(maybe_sudo) apt-get --fix-broken install
+install-qip-tools-depends: $(FILE_DEPS_PACKAGE_DEB)
+	$(maybe_sudo) dpkg -i $(FILE_DEPS_PACKAGE_DEB) || $(maybe_sudo) apt-get --fix-broken install
 
 .PHONY: uninstall-qip-tools-depends
 uninstall-qip-tools-depends:
-	$(maybe_sudo) apt-get purge qip-tools-depends_1.0_all.deb || true
+	$(maybe_sudo) apt-get purge qip-tools-depends || true
 
 .PHONY: swig-targets
 all: swig-targets
 swig-targets: $(swig_targets)
 
+.PHONY: clean-all
+clean-all: clean
+clean-all: clean-dl
+
+.PHONY: clean
 clean:
+	rm -Rf build/
+	rm -f qip-tools-depends_*.deb
+	rm -f qip-tools-depends_*.buildinfo
+	rm -f qip-tools-depends_*.changes
+
+.PHONY: clean-dl
+clean-dl:
+	@true  # Nothing yet
+
+.PHONY: distclean
+distclean: clean-all
 	rm -f $(swig_targets)
 	rm -f qip/_*.cpython-*.so

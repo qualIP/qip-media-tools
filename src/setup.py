@@ -136,6 +136,8 @@ setup(
         'console_scripts': [
             'bincuerip = qip.bin.bincuerip:main',
             'bincuetags = qip.bin.bincuetags:main',
+            'cdrom-ready = qip.bin.cdrom_ready:main',
+            'dl-playlist = qip.bin.dl_playlist:main',
             'librivox-dl = qip.bin.librivox_dl:main',
             'lsdvd = qip.bin.lsdvd:main',
             'mkbincue = qip.bin.mkbincue:main',
@@ -144,7 +146,6 @@ setup(
             'mmrename = qip.bin.mmrename:main',
             'organize-media = qip.bin.organize_media:main',
             'taged = qip.bin.taged:main',
-            'cdrom-ready = qip.bin.cdrom_ready:main',
         ],
     },
 )

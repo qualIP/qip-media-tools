@@ -1,0 +1,84 @@
+/*
+ * See https://wiki.winehq.org/Building_Wine
+ */
+
+ARG WINE_TAG
+ARG WINE_VER
+
+FROM test/wine64-build:${WINE_VER}
+LABEL maintainer="j.sebastien.trottier@gmail.com"
+
+ARG WINE_TAG
+ARG WINE_VER
+
+USER root
+ENV HOME=/root
+WORKDIR /root
+
+/* i386 */
+RUN dpkg --add-architecture i386
+RUN apt-get update
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes \\
+    gcc-multilib g++-multilib
+/* Development headers (i386) */
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes \\
+    libxi-dev:i386 \\
+    libxt-dev:i386 \\
+    libxmu-dev:i386 \\
+    libx11-dev:i386 \\
+    libxext-dev:i386 \\
+    libxfixes-dev:i386 \\
+    libxrandr-dev:i386 \\
+    libxcursor-dev:i386 \\
+    libxrender-dev:i386 \\
+    libxkbfile-dev:i386 \\
+    libxxf86vm-dev:i386 \\
+    libxxf86dga-dev:i386 \\
+    libxinerama-dev:i386 \\
+    libgl1-mesa-dev:i386 \\
+    libglu1-mesa-dev:i386 \\
+    libxcomposite-dev:i386 \\
+    libpng-dev:i386 \\
+    libssl-dev:i386 \\
+    libv4l-dev:i386 \\
+    libsdl2-dev:i386 \\
+    libxml2-dev:i386 \\
+    libgsm1-dev:i386 \\
+    libjpeg-dev:i386 \\
+    libkrb5-dev:i386 \\
+    libsane-dev:i386 \\
+    libtiff-dev:i386 \\
+    libudev-dev:i386 \\
+    libpulse-dev:i386 \\
+    liblcms2-dev:i386 \\
+    libldap2-dev:i386 \\
+    libxslt1-dev:i386 \\
+    unixodbc-dev:i386 \\
+    libcups2-dev:i386 \\
+    libvkd3d-dev:i386 \\
+    libcapi20-dev:i386 \\
+    libvulkan-dev:i386 \\
+    libfaudio-dev:i386 \\
+    libopenal-dev:i386 \\
+    libdbus-1-dev:i386 \\
+    freeglut3-dev:i386 \\
+    libmpg123-dev:i386 \\
+    libunwind-dev:i386 \\
+    libasound2-dev:i386 \\
+    libgphoto2-dev:i386 \\
+    libosmesa6-dev:i386 \\
+    libpcap0.8-dev:i386 \\
+    libgnutls28-dev:i386 \\
+    libncurses5-dev:i386 \\
+    libgettextpo-dev:i386 \\
+    libfreetype6-dev:i386 \\
+    libfontconfig1-dev:i386 \\
+    ocl-icd-opencl-dev:i386 \\
+    libgstreamer-plugins-base1.0-dev:i386
+
+RUN mkdir $HOME/wine32
+RUN cd $HOME/wine32 && ../wine-git/configure --with-wine64=../wine64
+RUN make -C $HOME/wine32 -j`grep -c '^processor' /proc/cpuinfo`
+RUN make -C $HOME/wine32 -j`grep -c '^processor' /proc/cpuinfo` install
+
+// vim: ft=dockerfile

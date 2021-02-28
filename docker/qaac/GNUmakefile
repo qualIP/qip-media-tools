@@ -4,13 +4,16 @@
 # https://sites.google.com/site/qaacpage/cabinet
 # https://github.com/nu774/qaac
 
-PACKAGE_NAMES = qaac
-PACKAGE_NAME = qaac
+PACKAGE_NAMES = qaac-build qaac
+PACKAGE_NAME = # TBD
 QAAC_VER = 2.70
 QAAC_VER_SHORT = 2.70
 PACKAGE_VER = 2.70
 
 REGISTRY = rip.jsoft.lan:5000
+
+BUILD_PACKAGE_NAMES = $(filter %-build,$(PACKAGE_NAMES))
+NONBUILD_PACKAGE_NAMES = $(filter-out %-build,$(PACKAGE_NAMES))
 
 .PHONY: latest
 latest: all
@@ -71,8 +74,8 @@ iTunes64Setup.exe:
 
 build-deps: $(FILE_ITUNES64_SETUP)
 
-FILES_PREPROC += Dockerfile
-build-deps: Dockerfile
+FILES_PREPROC += $(addprefix Dockerfile.,$(PACKAGE_NAMES))
+build-deps: $(addprefix Dockerfile.,$(PACKAGE_NAMES))
 
 .PHONY: build
 build:
@@ -81,6 +84,17 @@ build:
 .PHONY: run
 run:
 	./qaac
+
+ifeq ($(PACKAGE_NAME),)
+
+.PHONY: tag-latest push push-latest
+tag-latest push push-latest:
+	set -e ; \
+	for PACKAGE_NAME in $(PACKAGE_NAMES) ; do \
+	    make PACKAGE_NAME=$${PACKAGE_NAME} $@ ; \
+	done
+
+else
 
 .PHONY: tag-latest
 tag-latest:
@@ -96,6 +110,8 @@ push-latest: tag-latest
 	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):latest
 	docker push $(REGISTRY)/$(PACKAGE_NAME):latest
 
+endif
+
 XDG_DATA_DIRS0 = $(PREFIX)/share
 
 .PHONY: install
@@ -104,8 +120,8 @@ install: install-deps
 
 .PHONY: uninstall
 uninstall:
-	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/qaac"
+	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-all
 clean-all: clean
@@ -113,11 +129,14 @@ clean-all: clean-dl
 
 .PHONY: clean
 clean:
-	rm -fv .*.timestamp
 	rm -fv $(FILES_PREPROC)
+	for p in $(BUILD_PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-dl
 clean-dl:
 	rm -fv $(FILE_QAAC_ZIP)
 	rm -fv $(FILE_QAAC_MAKEPORTABLE2_ZIP)
 	rm -fv $(FILE_ITUNES64_SETUP)
+
+.PHONY: distclean
+distclean: clean-all

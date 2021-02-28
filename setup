@@ -7,10 +7,12 @@ OPT_YES=false
 OPT_USER=false
 OPT_DEVELOP=false
 OPT_INSTALL=true
+OPT_REINSTALL=false
+OPT_CLEAN=true
 MAKE=${MAKE:-make -j}
 PREFIX=${PREFIX:-/usr/local}
 
-TEMP=`POSIXLY_CORRECT=1 getopt --long dummy,help,yes,system,user,develop,prefix:,uninstall --options hy --name "$0" -- --system "$@"`
+TEMP=`POSIXLY_CORRECT=1 getopt --long dummy,help,yes,system,user,develop,prefix:,install,uninstall,reinstall,clean,no-clean --options hy --name "$0" -- --system "$@"`
 eval set -- "$TEMP"
 
 while true ; do
@@ -20,40 +22,62 @@ while true ; do
         -h|--help) OPT_HELP=true ; shift ;;
         -y|--yes)  OPT_YES=true ; shift ;;
 
-        --uninstall) OPT_INSTALL=false ; shift ;;
+        --install)   OPT_INSTALL=true                      ; shift ;;
+        --uninstall) OPT_INSTALL=false                     ; shift ;;
+        --reinstall) OPT_INSTALL=true  OPT_REINSTALL=true  ; shift ;;
 
         --system)  PREFIX=/usr/local ; OPT_USER=false ; shift 1 ;;
         --user)    PREFIX=~/.local   ; OPT_USER=true  ; shift 1 ;;
         --develop) PREFIX=~/.local   ; OPT_USER=true ; OPT_DEVELOP=true ; shift 1 ;;
         --prefix)  PREFIX=$2                          ; shift 2 ;;
 
+        --clean)    OPT_CLEAN=true  ; shift ;;
+        --no-clean) OPT_CLEAN=false ; shift ;;
+
         --) shift ; break ;;
         *) echo "Internal error!" >&2 ; exit 1 ;;
 
     esac
 done
+if [[ "$#" != 0 ]] ; then
+    echo "Extraneous arguments: $*" >&2
+    exit 1
+fi
 
 if $OPT_HELP ; then
     echo "Usage: $0 [options...]"
     echo "Options:"
     echo "  -h, --help          Print this help and exit"
     echo "  -y, --yes           Answer yes to all prompts (unattended)"
+    echo
+    echo "  --install           Install (default)"
+    echo "  --reinstall         Reinstall even if already installed"
     echo "  --uninstall         Uninstall instead of installing"
+    echo
     echo "  --user              Select user installation target (~/.local)"
     echo "  --system            Select system installation target (/usr/local)"
     echo "  --develop           Select development installation target (~/local)"
     echo "  --prefix PREFIX     Specify custom installation prefix"
+    echo
+    echo "  --clean             Clean build artifacts after installing/uninstalling (default)"
+    echo "  --no-clean          Do not clean build artifacts"
     exit 0
 fi
 
+if [[ -z "$PREFIX" ]] ; then
+    echo "Please specify installation target (e.g.: --user, --system)" >&2
+    exit 1
+fi
+
 if ! [[ -d "$PREFIX" ]] ; then
-    mkdir "$PREFIX"
+    $(PREFIX_SUDO) mkdir "$PREFIX"
 fi
 
 PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
 maybe_sudo=$([[ "$USER" = "root" ]] || echo sudo)
 
 print_h2() {
+    echo
     echo
     echo "## $*"
     echo
@@ -70,6 +94,21 @@ test_prog_installed() {
     else
         echo "No"
         echo "Error: $prog not found!" >&2
+        return 1
+    fi
+}
+
+test_package_installed() {
+    local package=$1 ; shift
+    local v
+
+    echo -n "$package package installed? "
+    v=$(dpkg -s "$package" | sed -n -e 's/^Version: //p ; T ; q' 2> /dev/null || true)
+    if [[ -n "$v" ]] ; then
+        echo "Yes: $v"
+    else
+        echo "No"
+        echo "Error: $package package not found!" >&2
         return 1
     fi
 }
@@ -96,6 +135,7 @@ need_docker() {
             _has_docker=true
         else
             _has_docker=false
+            print_h2 "Docker"
             echo "Docker is a container framework that reduces complexity of porting"
             echo "applications. Several 3rd-party applications used by qualIP's Media Tools"
             echo "are made available in dockers."
@@ -105,6 +145,25 @@ need_docker() {
             install_package docker-ce
             if test_prog_installed docker ; then
                 _has_docker=true
+            else
+                echo "docker-ce installed by docker is not found!" >&2
+                exit 1
+            fi
+        fi
+        if $_has_docker ; then
+            if ! (set -x && docker info) ; then
+                echo
+                echo "You don't seem to be able to run docker commands."
+                if groups | grep -qw docker ; then
+                    : #echo "You are part of the docker group."
+                else
+                    echo
+                    echo "You are not part of the docker group. You probably need to run"
+                    echo '`'"sudo adduser $USER docker"'`'" to be added to the group then start"
+                    echo "a new login session."
+                fi
+                echo "Please fix the issue and run $0 again."
+                exit 1
             fi
         fi
     fi
@@ -114,22 +173,49 @@ need_docker() {
 _has_docker_wine=
 need_docker_wine() {
     if [[ -z "$_has_docker_wine" ]] ; then
-        if test_docker_image_installed test/wine ; then
-            _has_docker_wine=true
-        else
-            _has_docker_wine=false
-            echo "Wine is a Windows compatibility layer for Linux which allows running some"
-            echo "3rd-party Windows applications used by qualIP's Media Tools."
-            echo "A wine docker is used as standard base for these 3rd-party Windows applications."
-            echo
-            echo "See https://www.docker.com"
-            echo
-            if ask_yes_no "Build and install wine docker?" \
-                && need_docker \
+        if $OPT_INSTALL ; then
+            if test_docker_image_installed test/wine64 \
+                    && test_docker_image_installed test/wine32 \
                 ; then
-                (set -x && $MAKE -C docker/wine)
-                (set -x && $MAKE -C docker/wine tag-latest)
                 _has_docker_wine=true
+            else
+                _has_docker_wine=false
+            fi
+        else
+            if test_docker_image_installed test/wine64 \
+                    || test_docker_image_installed test/wine32 \
+                ; then
+                _has_docker_wine=true
+            else
+                _has_docker_wine=false
+            fi
+        fi
+        if $OPT_INSTALL ; then
+            if $OPT_REINSTALL || ! $_has_docker_wine ; then
+                print_h2 "Wine"
+                echo "Wine is a Windows compatibility layer for Linux which allows running some"
+                echo "3rd-party Windows applications used by qualIP's Media Tools."
+                echo "Dockers for wine32 and wine64 are used as standard base for these"
+                echo "3rd-party Windows applications."
+                echo
+                echo "See https://www.docker.com"
+                echo
+                if ask_yes_no "Build and install wine dockers?" \
+                        && need_docker \
+                    ; then
+                    (set -x && $MAKE -C docker/wine) || exit $?
+                    (set -x && $MAKE -C docker/wine tag-latest) || exit $?
+                    $OPT_CLEAN && (set -x && $MAKE -C docker/wine clean)
+                    _has_docker_wine=true
+                fi
+            fi
+        else
+            if $_has_docker_wine \
+                    && ask_yes_no "Uninstall wine dockers?" \
+                ; then
+                (set -x && $MAKE -C docker/wine PREFIX="$PREFIX" uninstall)
+                $OPT_CLEAN && (set -x && $MAKE -C docker/wine clean)
+                _has_docker_wine=false
             fi
         fi
     fi
@@ -172,29 +258,59 @@ install_package() {
     [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
 
     if ! $ask || ask_yes_no "Install $1 package ($*)?" ; then
-        (set -x && "$@")
+        (set -x && "$@") || exit 1
     else
         return 1
     fi
 }
 
 
-print_h2 "Prologue"
+#print_h2 "Prologue"
+echo
 echo "This program will help you install qualIP's Media Tools and its"
 echo "dependencies."
 echo "Sudo access will be required to install certain tools."
 
 print_h2 "System Information"
-echo "Installation mode: $($OPT_INSTALL && echo "Install" || echo "Uninstall")"
+echo "Installation mode: $( \
+    $OPT_REINSTALL && echo "Reinstall" || \
+    ($OPT_INSTALL && echo "Install" || \
+     echo "Uninstall"))"
 echo "Installation target: $( \
     $OPT_DEVELOP && echo "Development" || \
     ($OPT_USER && echo "User" || \
      echo "System"))"
 echo "Installation prefix: $PREFIX"
 echo "Prompt mode: $($OPT_YES && echo "Answer yes" || echo "Prompt")"
+echo "Clean mode: $($OPT_CLEAN && echo "Clean" || echo "No clean")"
+
+echo
+echo "Run "'`'"$0 --help"'`'" for more options."
 
 echo
 ask_yes_no "Ready to proceed?"
+
+
+print_h2 "Package dependencies"
+echo "qualIP's Media Tools require several 3rd-party application packages"
+echo "available in most Linux distributions."
+echo "A small dependency-only package, \"qip-tools-depends\" is used to all"
+echo "required applications are installed."
+echo
+if $OPT_INSTALL ; then
+    if $OPT_REINSTALL || ! test_package_installed qip-tools-depends ; then
+        if ask_yes_no "Install qip-tools-depends package?" ; then
+            (set -x && $MAKE -C src install-qip-tools-depends)
+        fi
+    fi
+else
+    if test_package_installed qip-tools-depends \
+            && ask_yes_no "Uninstall qip-tools-depends package?" \
+        ; then
+        (set -x && $MAKE -C src uninstall-qip-tools-depends)
+    fi
+fi
+
 
 print_h2 "qaac"
 echo "qaac is a CLI QuickTime AAC/ALAC encoder."
@@ -205,21 +321,26 @@ echo
 echo "See https://github.com/nu774/qaac"
 echo
 
-if test_prog_installed qaac ; then
-    if ! $OPT_INSTALL \
-        && ask_yes_no "Uninstall qaac docker?" \
-        ; then
-            (set -x && $MAKE -C docker/qaac PREFIX="$PREFIX" uninstall)
-    fi
-else
-    if $OPT_INSTALL \
-        && ask_yes_no "Build and install qaac docker?" \
-        && need_docker \
-        && need_docker_wine \
-        ; then
+if $OPT_INSTALL ; then
+    if $OPT_REINSTALL || ! test_prog_installed qaac ; then
+        if ask_yes_no "Build and install qaac docker?" \
+                && need_docker \
+                && need_docker_wine \
+            ; then
             (set -x && $MAKE -C docker/qaac)
             (set -x && $MAKE -C docker/qaac tag-latest)
             (set -x && $MAKE -C docker/qaac PREFIX="$PREFIX" install)
+            $OPT_CLEAN && (set -x && $MAKE -C docker/qaac clean)
+        fi
+    fi
+else
+    if (test_prog_installed qaac \
+            || test_docker_image_installed test/qaac \
+        ) \
+            && ask_yes_no "Uninstall qaac docker?" \
+        ; then
+        (set -x && $MAKE -C docker/qaac PREFIX="$PREFIX" uninstall)
+        $OPT_CLEAN && (set -x && $MAKE -C docker/qaac clean)
     fi
 fi
 
@@ -233,21 +354,26 @@ echo
 echo "See https://nikse.dk/SubtitleEdit/"
 echo
 
-if test_prog_installed SubtitleEdit ; then
-    if ! $OPT_INSTALL \
-        && ask_yes_no "Uninstall SubtitleEdit docker?" \
-        ; then
-            (set -x && $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" uninstall)
-    fi
-else
-    if $OPT_INSTALL \
-        && ask_yes_no "Build and install SubtitleEdit docker?" \
-        && need_docker \
-        && need_docker_wine \
-        ; then
+if $OPT_INSTALL ; then
+    if $OPT_REINSTALL || ! test_prog_installed SubtitleEdit ; then
+        if ask_yes_no "Build and install SubtitleEdit docker?" \
+                && need_docker \
+                && need_docker_wine \
+            ; then
             (set -x && $MAKE -C docker/SubtitleEdit)
             (set -x && $MAKE -C docker/SubtitleEdit tag-latest)
             (set -x && $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" install)
+            $OPT_CLEAN && (set -x && $MAKE -C docker/SubtitleEdit clean)
+        fi
+    fi
+else
+    if (test_prog_installed SubtitleEdit \
+            || test_docker_image_installed test/subtitleedit \
+        ) \
+            && ask_yes_no "Uninstall SubtitleEdit docker?" \
+        ; then
+        (set -x && $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" uninstall)
+        $OPT_CLEAN && (set -x && $MAKE -C docker/SubtitleEdit clean)
     fi
 fi
 
@@ -260,22 +386,33 @@ echo
 echo "See https://www.videohelp.com/software/FRIM"
 echo
 
-if test_prog_installed FRIMDecode ; then
-    if ! $OPT_INSTALL \
-        && ask_yes_no "Uninstall FRIM docker?" \
-        ; then
-            (set -x && $MAKE -C docker/frim PREFIX="$PREFIX" uninstall)
-    fi
-else
-    if $OPT_INSTALL \
-        && ask_yes_no "Build and install FRIM docker?" \
-        && need_docker \
-        && need_docker_wine \
-        ; then
+if $OPT_INSTALL ; then
+    if $OPT_REINSTALL || ! test_prog_installed FRIMDecode ; then
+        if ask_yes_no "Build and install FRIM docker?" \
+                && need_docker \
+                && need_docker_wine \
+            ; then
             (set -x && $MAKE -C docker/frim)
             (set -x && $MAKE -C docker/frim tag-latest)
             (set -x && $MAKE -C docker/frim PREFIX="$PREFIX" install)
+            $OPT_CLEAN && (set -x && $MAKE -C docker/frim clean)
+        fi
     fi
+else
+    if (test_prog_installed FRIMDecode \
+            || test_docker_image_installed test/frim \
+        ) \
+            && ask_yes_no "Uninstall FRIM docker?" \
+        ; then
+        (set -x && $MAKE -C docker/frim PREFIX="$PREFIX" uninstall)
+        $OPT_CLEAN && (set -x && $MAKE -C docker/frim clean)
+    fi
+fi
+
+
+if ! $OPT_INSTALL ; then
+    _has_docker_wine=
+    need_docker_wine || true
 fi
 
 
@@ -290,48 +427,24 @@ echo
 echo "See https://www.makemkv.com/"
 echo
 
-if test_prog_installed makemkvcon ; then
-    if ! $OPT_INSTALL \
-        && ask_yes_no "Uninstall MakeMKV?" \
-        ; then
-            (set -x && PREFIX="$PREFIX" installs/uninstall-makemkv)
-    fi
-else
-    if $OPT_INSTALL \
-        && ask_yes_no "Install MakeMKV?" \
-        ; then
+if $OPT_INSTALL ; then
+    if $OPT_REINSTALL || ! test_prog_installed makemkvcon ; then
+        if ask_yes_no "Build and install MakeMKV?" ; then
             (set -x && PREFIX="$PREFIX" installs/install-makemkv latest)
-    fi
-fi
-
-
-print_h2 "Package dependencies"
-echo "qualIP's Media Tools require several 3rd-party application packages"
-echo "available in most Linux distributions."
-echo "A small dependency-only package, \"qip-tools-depends\" is used to all"
-echo "required applications are installed."
-echo
-if ! $OPT_INSTALL ; then
-    if ask_yes_no "Uninstall qip-tools-depends package?" ; then
-        (set -x && $MAKE -C src uninstall-qip-tools-depends)
+        fi
     fi
 else
-    if ask_yes_no "Install qip-tools-depends package?" ; then
-        (set -x && $MAKE -C src install-qip-tools-depends)
+    if test_prog_installed makemkvcon \
+            && ask_yes_no "Uninstall MakeMKV?" \
+        ; then
+        (set -x && PREFIX="$PREFIX" installs/uninstall-makemkv)
     fi
 fi
 
 
 print_h2 "qualIP's Media Tools"
-if ! $OPT_INSTALL ; then
-    if ask_yes_no "Uninstall qualIP's Media Tools?" ; then
-        if $OPT_USER ; then
-            (set -x && $MAKE -C src uninstall-user)
-        else
-            (set -x && $MAKE -C src uninstall-system)
-        fi
-    fi
-else
+
+if $OPT_INSTALL ; then
     if ask_yes_no "Install qualIP's Media Tools?" ; then
         if $OPT_DEVELOP ; then
             (set -x && $MAKE -C src develop)
@@ -341,8 +454,17 @@ else
             (set -x && $MAKE -C src install-system)
         fi
     fi
+else
+    if ask_yes_no "Uninstall qualIP's Media Tools?" ; then
+        if $OPT_USER ; then
+            (set -x && $MAKE -C src uninstall-user)
+        else
+            (set -x && $MAKE -C src uninstall-system)
+        fi
+    fi
 fi
 
+
 echo
-echo "ALL DONE!"
+echo "All done. Enjoy!"
 echo
