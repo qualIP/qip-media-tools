@@ -78,7 +78,7 @@ RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes \\
 
 RUN mkdir $HOME/wine32
 RUN cd $HOME/wine32 && ../wine-git/configure --with-wine64=../wine64
-RUN make -C $HOME/wine32 -j`grep -c '^processor' /proc/cpuinfo`
-RUN make -C $HOME/wine32 -j`grep -c '^processor' /proc/cpuinfo` install
+RUN make -C $HOME/wine32 -O -j`grep -c '^processor' /proc/cpuinfo`
+RUN make -C $HOME/wine32 -O -j`grep -c '^processor' /proc/cpuinfo` install
 
 // vim: ft=dockerfile

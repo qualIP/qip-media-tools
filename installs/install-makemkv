@@ -46,7 +46,7 @@ tar xzf makemkv-bin-${version}.tar.gz
 set -x
 cd makemkv-oss-${version}
 ./configure --prefix "$PREFIX"
-make -j
+make -O -j
 $PREFIX_SUDO make install
 )
 

@@ -10,7 +10,7 @@ wget http://www.makemkv.com/download/makemkv-oss-1.14.6.tar.gz
 tar xzf makemkv-oss-1.14.6.tar.gz
 cd makemkv-oss-1.14.6
 ./configure
-make -j
+make -O -j
 sudo make install
 cd ..
 

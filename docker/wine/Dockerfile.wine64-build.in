@@ -92,7 +92,7 @@ RUN cd wine-git && git cherry-pick -x 40c9b46500c3606e966d5404d45b68a48609b6ea |
 
 RUN mkdir $HOME/wine64
 RUN cd $HOME/wine64 && ../wine-git/configure --enable-win64
-RUN make -C $HOME/wine64 -j`grep -c '^processor' /proc/cpuinfo`
-RUN make -C $HOME/wine64 -j`grep -c '^processor' /proc/cpuinfo` install
+RUN make -C $HOME/wine64 -O -j`grep -c '^processor' /proc/cpuinfo`
+RUN make -C $HOME/wine64 -O -j`grep -c '^processor' /proc/cpuinfo` install
 
 // vim: ft=dockerfile
