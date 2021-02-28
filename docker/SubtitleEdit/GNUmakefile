@@ -59,6 +59,12 @@ $(FILE_SUBTITLEEDIT_PORTABLE_ZIP) :
 
 build-deps: $(FILE_SUBTITLEEDIT_PORTABLE_ZIP)
 
+.PHONY: subtitleedit-git-init
+subtitleedit-git-init: subtitleedit-git/.git/config
+subtitleedit-git/.git/config:
+	git clone --no-checkout https://github.com/SubtitleEdit/subtitleedit.git subtitleedit-git
+#build-deps: subtitleedit-git-init
+
 FILES_PREPROC += Dockerfile
 build-deps: Dockerfile
 
