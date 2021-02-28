@@ -67,8 +67,10 @@ build-deps: $(FILE_QAAC_MAKEPORTABLE2_ZIP)
 
 FILE_ITUNES64_SETUP = iTunes64Setup.exe
 iTunes64Setup.exe:
-	echo "Please download $@ from https://www.apple.com/itunes/download/" >&2
-	exit 1
+	# https://www.apple.com/itunes/
+	curl --output "$@" \
+	    --location \
+	    "https://www.apple.com/itunes/download/win64"
 
 build-deps: $(FILE_ITUNES64_SETUP)
 
