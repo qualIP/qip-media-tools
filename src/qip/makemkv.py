@@ -510,6 +510,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: video stream has (?P<num_frames>\d+) frame\(?s?\)? with invalid timecodes{re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: video frame timecode differs by (?P<video_timecode_skew>\S+){re_eol}', self.generic_warning),
             (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: too many video frames with invalid timecodes, future messages will be suppressed{re_eol}', self.generic_warning),
+            (fr'^AV sync issue in stream (?P<stream_no>{re_stream_no}) at (?P<timestamp>\S+) *: Forced subtitles track #(?P<stream_no2>{re_stream_no}) turned out to be empty and was removed from output file{re_eol}', self.generic_warning),
             (fr'^Too many AV synchronization issues in file \'(?P<file_out>[^\r\n]+)\' \(title #(?P<title_no>{re_title_no})\) ?, future messages will be printed only to log file{re_eol}', self.generic_warning),
             (fr'^Angle #(?P<angle_no>\d+) was added for title #(?P<title_no>{re_title_no}){re_eol}', self.parse_angle_added),
             (fr'^Calculated BUP offset for VTS #(?P<vts_no>\d+) does not match one in IFO header\.{re_eol}', self.generic_warning),
