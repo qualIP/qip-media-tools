@@ -1,0 +1,19 @@
+*** Makefile.in.orig	Mon Mar  1 01:39:14 2021
+--- Makefile.in	Mon Mar  1 01:39:32 2021
+*************** install: out/libdriveio.so.0 out/libmake
+*** 53,59 ****
+  	$(INSTALL) -D -m 644 out/libmakemkv.so.1 $(DESTDIR)$(libdir)/libmakemkv.so.1
+  	$(INSTALL) -D -m 644 out/libmmbd.so.0 $(DESTDIR)$(libdir)/libmmbd.so.0
+  ifeq ($(DESTDIR),)
+! 	ldconfig
+  endif
+  ifeq ($(ENABLE_GUI),yes)
+  	$(INSTALL) -D -m 755 out/makemkv $(DESTDIR)$(bindir)/makemkv
+--- 53,59 ----
+  	$(INSTALL) -D -m 644 out/libmakemkv.so.1 $(DESTDIR)$(libdir)/libmakemkv.so.1
+  	$(INSTALL) -D -m 644 out/libmmbd.so.0 $(DESTDIR)$(libdir)/libmmbd.so.0
+  ifeq ($(DESTDIR),)
+! 	ldconfig || true
+  endif
+  ifeq ($(ENABLE_GUI),yes)
+  	$(INSTALL) -D -m 755 out/makemkv $(DESTDIR)$(bindir)/makemkv

@@ -1,0 +1,31 @@
+#ifndef DOCKERFILE_MACROS
+#define DOCKERFILE_MACROS
+
+#define RUN_CLEAN_LOG \
+    ( rm -Rf \
+        /var/log \
+     && mkdir --mode 755 \
+        /var/log \
+    )
+
+#define RUN_CLEAN_TMP \
+    ( find /tmp \
+        -mindepth 1 \
+        -not \( \
+            -path /tmp/.X11-unix \
+        \) \
+        -exec rm -Rf '{}' \; -prune )
+
+#define RUN_CLEAN_APT \
+    ( rm -Rf \
+        /var/cache \
+        /var/lib/apt \
+        /var/lib/dpkg"/"*-old \
+        /var/log \
+     && mkdir --mode 755 \
+        /var/cache \
+        /var/log \
+    )
+
+#endif
+// vim: ft=dockerfile

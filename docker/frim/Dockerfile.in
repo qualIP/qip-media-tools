@@ -1,3 +1,4 @@
+#include <Dockerfile.macros.in>
 
 ARG WINE_VER=3.0.3
 
@@ -12,7 +13,7 @@ RUN apt-get update && \\
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes \\
         unzip \\
     && \\
-    rm -Rf /var/lib/apt /var/cache/apt /var/log/apt
+    RUN_CLEAN_APT && RUN_CLEAN_TMP && RUN_CLEAN_LOG
 
 /* Either use QT_X11_NO_MITSHM=1 or docker run --ipc=host.
  * QT_X11_NO_MITSHM=1 doesn't seem to work.

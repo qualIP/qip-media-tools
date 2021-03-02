@@ -774,7 +774,10 @@ class Makemkvcon(Executable):
 
     @property
     def share_dir(self):
-        return Path('/usr/share/MakeMKV')
+        p = Path(self.which())  # /usr/bin/makemkvcon
+        p = p.parent.parent     # /usr
+        p = p / 'share/MakeMKV' # /usr/share/MakeMKV
+        return p
 
     @property
     def settings_file_name(self):

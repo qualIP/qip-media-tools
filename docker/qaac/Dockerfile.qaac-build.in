@@ -13,9 +13,7 @@ RUN apt-get update && \\
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes \\
         file binutils \\
         unzip \\
-        p7zip-full \\
-    && \\
-    rm -Rf /var/lib/apt /var/cache/apt /var/log/apt
+        p7zip-full
 
 // #include <Dockerfile.add-developer-user.in>
 USER developer

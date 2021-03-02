@@ -2,6 +2,8 @@
  * See https://wiki.winehq.org/Building_Wine
  */
 
+#include <Dockerfile.macros.in>
+
 ARG WINE_VER
 FROM test/wine64-build:${WINE_VER} as build
 
@@ -25,9 +27,9 @@ RUN apt-get update && \\
         libmpg123-0 \\
         libgnutls30 \\
     && \\
-    rm -Rf /var/lib/apt /var/cache/apt /var/log/apt
+    RUN_CLEAN_APT && RUN_CLEAN_TMP && RUN_CLEAN_LOG
 
-RUN mkdir -m 1777 /tmp/.X11-unix
+RUN mkdir -m 1777 /tmp/.X11-unix/
 COPY --from=build /usr/local/ /usr/local/
 
 #include <Dockerfile.add-developer-user.in>
@@ -35,6 +37,6 @@ COPY --from=build /usr/local/ /usr/local/
 ARG WINEPREFIX="/home/developer/.wine64"
 ENV WINEPREFIX=${WINEPREFIX}
 ENV WINEARCH=win64
-RUN wineboot && wineboot --shutdown && wineserver -w
+RUN wineboot && wineboot --shutdown && wineserver -w && RUN_CLEAN_TMP
 
 // vim: ft=dockerfile

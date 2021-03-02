@@ -119,7 +119,11 @@ setup(
     # have to be included in MANIFEST.in as well.
     package_data={
         #'qip': ['package_data.dat'],
-        'qip': [],
+        'qip': [
+            "bin/ffmpeg-2pass-pipe",
+            "bin/fix-subtitles",
+            "bin/stdout-wrapper",
+        ],
     },
 
     # Although 'package_data' is the preferred approach, in some case you may

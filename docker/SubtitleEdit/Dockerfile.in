@@ -1,29 +1,43 @@
+#include <Dockerfile.macros.in>
+
 FROM mono:6.8
 LABEL maintainer="j.sebastien.trottier@gmail.com"
 
+
 /* contrib is required by ttf-mscorefonts-installer */
 RUN sed -i -E -e 's/ main$/ main contrib/' /etc/apt/sources.list
-RUN apt-get update
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes unzip
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes ttf-mscorefonts-installer
-
-// For color schemes
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libgtk2.0-0
-
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libcanberra-gtk-module
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes tesseract-ocr
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes tesseract-ocr-eng
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes tesseract-ocr-fra
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libhunspell-dev
-// RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libhunspell-1.7-0
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libmpv-dev
-// RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libmpv1
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes libvlc-dev
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes ffmpeg
-
 #ifdef SUBTITLEEDIT_USE_WRAPPER
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes python3.7-minimal libpython3.7-stdlib
+# define WRAPPER_DEPENDS \
+    python3.7-minimal \
+    libpython3.7-stdlib
+#else
+# define WRAPPER_DEPENDS
 #endif
+#ifdef SUBTITLEEDIT_DEBUG
+# define DEBUG_DEPENDS \
+    mono-dbg \
+    gdb
+#else
+# define DEBUG_DEPENDS
+#endif
+RUN apt-get update && \\
+    DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes \\
+        unzip \\
+        ttf-mscorefonts-installer \\
+        libgtk2.0-0 \\
+        libcanberra-gtk-module \\
+        tesseract-ocr \\
+        tesseract-ocr-eng \\
+        tesseract-ocr-fra \\
+        libhunspell-dev \\
+        /* libhunspell-1.7-0 */ \\
+        libmpv-dev \\
+        /* libmpv1 */ \\
+        libvlc-dev \\
+        ffmpeg \\
+        WRAPPER_DEPENDS \\
+    && \\
+    RUN_CLEAN_APT && RUN_CLEAN_TMP && RUN_CLEAN_LOG
 
 RUN groupadd -g 1000 developer && useradd -d /home/developer -s /bin/bash -m developer -u 1000 -g 1000
 USER developer
@@ -58,10 +72,4 @@ COPY --chown=developer:developer volumes-init ./
 ENTRYPOINT ["/home/developer/entrypoint"]
 #else
 ENTRYPOINT ["mono", "/home/developer/SubtitleEdit/SubtitleEdit.exe"]
-#endif
-
-#ifdef SUBTITLEEDIT_DEBUG
-USER root
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install --assume-yes mono-dbg gdb
-USER developer
 #endif

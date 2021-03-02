@@ -2,6 +2,8 @@
  * See https://wiki.winehq.org/Building_Wine
  */
 
+#include <Dockerfile.macros.in>
+
 ARG WINE_VER
 FROM test/wine32-build:${WINE_VER} as build
 
@@ -12,8 +14,8 @@ ARG WINE_TAG
 ARG WINE_VER
 
 /* i386 */
-RUN dpkg --add-architecture i386 && \\
-    apt-get update && \\
+RUN dpkg --add-architecture i386
+RUN apt-get update && \\
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends --assume-yes \\
         -o APT::Immediate-Configure=0 \\
         binfmt-support \\
@@ -26,7 +28,7 @@ RUN dpkg --add-architecture i386 && \\
         libmpg123-0:i386 \\
         libgnutls30:i386 \\
     && \\
-    rm -Rf /var/lib/apt /var/cache/apt /var/log/apt
+    RUN_CLEAN_APT && RUN_CLEAN_TMP && RUN_CLEAN_LOG
 
 RUN mkdir -m 1777 /tmp/.X11-unix/
 COPY --from=build /usr/local/ /usr/local/
@@ -36,6 +38,6 @@ COPY --from=build /usr/local/ /usr/local/
 ARG WINEPREFIX="/home/developer/.wine32"
 ENV WINEPREFIX=${WINEPREFIX}
 ENV WINEARCH=win32
-RUN wineboot && wineboot --shutdown && wineserver -w
+RUN wineboot && wineboot --shutdown && wineserver -w && RUN_CLEAN_TMP
 
 // vim: ft=dockerfile
