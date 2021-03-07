@@ -5192,9 +5192,9 @@ def argparse_add_tags_arguments(parser, tags, exclude=()):
     if 'type' not in exclude:
         parser.add_argument('--type', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     if 'mediatype' not in exclude:
-        parser.add_argument('--mediatype', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='Physical Media Type (%s)' % (', '.join((str(e) for e in qip.mm.MediaType)),))
+        parser.add_argument('--mediatype', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='physical Media Type (%s)' % (', '.join((str(e) for e in qip.mm.MediaType)),))
     if 'contenttype' not in exclude:
-        parser.add_argument('--contenttype', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
+        parser.add_argument('--contenttype', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
     if 'comment' not in exclude:
         parser.add_argument('--comment', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     if 'part' not in exclude:

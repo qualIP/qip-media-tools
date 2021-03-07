@@ -57,7 +57,7 @@ def main():
     xgroup.add_argument('--rename', dest='action', default=None, action='store_const', const='rename', help='rename media files')
 
     pgroup = app.parser.add_argument_group('Rename Pattern')
-    xgroup.add_argument('--pattern', default=None, type=str, help='File renaming pattern')
+    xgroup.add_argument('--pattern', default=None, type=str, help='file renaming pattern')
 
     app.parser.add_argument('inputfiles', nargs='*', default=(), type=Path, help='input files')
 

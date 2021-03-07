@@ -48,9 +48,8 @@ def main():
     pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue creating RIP')
     #pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
     pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
-    #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
-    pgroup.add_argument('--save-temps', dest='save_temps', default=False, action='store_true', help='do not delete intermediate files')
-    pgroup.add_argument('--no-save-temps', dest='save_temps', default=argparse.SUPPRESS, action='store_false', help='delete intermediate files (default)')
+    #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')  # TODO
+    pgroup.add_bool_argument('--save-temps', default=False, help='do not delete intermediate files')
     pgroup.add_argument('--format',
                         #default="wav",
                         #required=True,  # TODO Fix required with value from config file
@@ -63,11 +62,9 @@ def main():
 
     # Tie in to bincuetags {{{
     pgroup = app.parser.add_argument_group('Database Control (bincuetags)')
-    pgroup.add_argument('--no-tags', dest='use_bincuetags', default=True, action='store_false', help='Do not retrieve tags using bincuetags')
-    pgroup.add_argument('--cddb', dest='use_cddb', default=False, action='store_true', help='Use CDDB (closed!)')
-    pgroup.add_argument('--no-cddb', dest='use_cddb', default=argparse.SUPPRESS, action='store_false', help='Do not use CDDB (closed!)')
-    pgroup.add_argument('--musicbrainz', dest='use_musicbrainz', default=True, action='store_true', help='Use MusicBrainz')
-    pgroup.add_argument('--no-musicbrainz', dest='use_musicbrainz', default=argparse.SUPPRESS, action='store_false', help='Do not use MusicBrainz')
+    pgroup.add_bool_argument('--tags', dest='use_bincuetags', default=True, help='retrieve tags using bincuetags')
+    pgroup.add_bool_argument('--cddb', dest='use_cddb', default=False, help='query CDDB (closed!)')
+    pgroup.add_bool_argument('--musicbrainz', dest='use_musicbrainz', default=True, help='query MusicBrainz')
 
     pgroup.add_argument('--mb-discid', dest='musicbrainz_discid', default=None, help='specify MusicBrainz discid')
     pgroup.add_argument('--mb-releaseid', dest='musicbrainz_releaseid', default=None, help='specify MusicBrainz releaseid')

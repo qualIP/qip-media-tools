@@ -64,10 +64,6 @@ def main():
     app.parser.add_argument('--dir', default=None, type=Path, help='output directory')
     app.parser.add_argument('--m4b', action='store_true', help='create a M4B audiobook')
 
-    pgroup = app.parser.add_argument_group('Audiobook Control')
-    pgroup.add_argument('--m4b-reuse-chapters', action='store_true', help='M4B: reuse chapters.txt file')
-    pgroup.add_argument('--m4b-single', action='store_true', help='M4B: singles')
-
     app.parse_args()
 
     if not hasattr(app.args, 'logging_level'):

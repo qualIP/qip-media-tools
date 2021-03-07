@@ -187,9 +187,18 @@ class _ActionsContainer(_argparse._ActionsContainer):
         help = kwargs.pop('help', None)
         neg_help = kwargs.pop('neg_help', None)
         if help and not neg_help:
-            help, neg_help = (
-                _('enable {help}').format(help=help),
-                _('disable {help}').format(help=help))
+            if help.startswith('enable '):
+                help, neg_help = (
+                    f'{help}',
+                    f'disable {help[7:]}')
+            elif help.startswith('do not '):
+                help, neg_help = (
+                    f'{help}',
+                    f'{help[7:]}')
+            else:
+                help, neg_help = (
+                    f'{help}',
+                    f'do not {help}')
 
         kwargs2 = {}
         neg_kwargs2 = {}

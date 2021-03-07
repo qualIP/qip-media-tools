@@ -87,20 +87,23 @@ def main():
 
     pgroup.add_argument('--apply-suggestions', dest='apply_suggestions', default=False, action='store_true', help='apply suggestions')
 
-    pgroup.add_argument('--contenttype', help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
-    pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex', 'mmdemux'], help='App compatibility mode')
-    pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files')
-    pgroup.add_argument('--no-aux', dest='aux', default=argparse.SUPPRESS, action='store_false', help='Do not handle auxiliary files')
+    pgroup.add_argument('--contenttype', help='content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
+    pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex', 'mmdemux'], help='app compatibility mode')
+    pgroup.add_bool_argument('--aux', default=True, help='handle auxiliary files')
     pgroup.add_bool_argument('--overwrite', default=False, help='overwrite files')
-    pgroup.add_bool_argument('--copy', default=False, help='hard link files instead of copying')
-    pgroup.add_bool_argument('--link', '-l', default=False, help='hard link files copying')
+
+    pgroup = app.parser.add_argument_group('File Operation')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--move', dest='file_op', action='store_const', const='move', default='move', help='move files')
+    xgroup.add_argument('--copy', dest='file_op', action='store_const', const='copy', default=argparse.SUPPRESS, help='copy files')
+    xgroup.add_argument('--link', '-l', dest='file_op', action='store_const', const='link', default=argparse.SUPPRESS, help='hard link files')
 
     pgroup = app.parser.add_argument_group('Library Mode')
-    pgroup.add_argument('--music', '--normal', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='normal', help='Normal (Music) mode')
-    pgroup.add_argument('--musicvideo', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='musicvideo', help='Music Video mode')
-    pgroup.add_argument('--movie', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='movie', help='Movie mode')
-    pgroup.add_argument('--tvshow', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='tvshow', help='TV show mode')
-    pgroup.add_argument('--audiobook', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='audiobook', help='Audiobook mode')
+    pgroup.add_argument('--music', '--normal', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='normal', help='normal (Music) mode')
+    pgroup.add_argument('--musicvideo', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='musicvideo', help='music Video mode')
+    pgroup.add_argument('--movie', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='movie', help='movie mode')
+    pgroup.add_argument('--tvshow', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='tvshow', help='tV show mode')
+    pgroup.add_argument('--audiobook', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='audiobook', help='audiobook mode')
 
 #TODO
 #    app.parser.epilog = ''
@@ -133,8 +136,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Compatibility')
     xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--ascii-compat', dest='ascii_compat', default=True, action='store_true', help='Enable ASCII compatibility')
-    xgroup.add_argument('--no-ascii-compat', dest='ascii_compat', default=argparse.SUPPRESS, action='store_false', help='Disable ASCII compatibility')
+    xgroup.add_bool_argument('--ascii-compat', default=True, help='enable ASCII compatibility')
 
     pgroup = app.parser.add_argument_group('Actions')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -928,22 +930,24 @@ def organize(inputfile):
         def do_file_op(src, dst, *, is_aux=False):
             s_dry_run = " (dry-run)" if app.args.dry_run else ""
             s_to_aux = "aux" if is_aux else "to"
-            if app.args.copy or app.args.link:
+            if app.args.file_op in ('copy', 'link'):
                 app.log.info('  Copy %s %s.%s', s_to_aux, dst, s_dry_run)
                 if not app.args.dry_run:
-                    if app.args.link:
+                    if app.args.file_op == 'link':
                         qip.utils.progress_copy2_link(src, dst)
                     else:
                         qip.utils.progress_copy2(src, dst)
-            else:
+            elif app.args.file_op == 'move':
                 app.log.info('  Rename %s %s.%s', s_to_aux, dst, s_dry_run)
                 if not app.args.dry_run:
                     qip.utils.progress_move(src, dst)
+            else:
+                raise NotImplementedError(app.args.file_op)
 
         do_file_op(inputfile.file_name, dst_file_name)
         for aux_file_name, dst_aux_file_name in aux_moves:
             do_file_op(aux_file_name, dst_aux_file_name, is_aux=True)
-        if not (app.args.copy or app.args.link):
+        if app.args.file_op not in ('copy', 'link'):
             inputdir = os.path.dirname(inputfile.file_name)
             if inputdir not in ('.', '') and dir_empty(inputdir):
                 app.log.info('Remove %s.', inputdir)

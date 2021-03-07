@@ -219,7 +219,7 @@ def main():
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
-    pgroup.add_argument('--jobs', '-j', type=int, nargs='?', default=1, const=Auto, help='Specifies the number of jobs (threads) to run simultaneously')
+    pgroup.add_argument('--jobs', '-j', type=int, nargs='?', default=1, const=Auto, help='specifies the number of jobs (threads) to run simultaneously')
 
     pgroup = app.parser.add_argument_group('Alternate Actions')
     xgroup = pgroup.add_mutually_exclusive_group()
@@ -233,31 +233,28 @@ def main():
     pgroup.add_argument('--format', default=Auto, choices=('m4b', 'mka'), help='specify the output file format')
 
     pgroup = app.parser.add_argument_group('Compatibility')
-    pgroup.add_bool_argument('--ipod-compat', default=False, help='iPod compatibility')
-    pgroup.add_bool_argument('--itunes-compat', default=True, help='iTunes compatibility')
+    pgroup.add_bool_argument('--ipod-compat', default=False, help='enable iPod compatibility')
+    pgroup.add_bool_argument('--itunes-compat', default=True, help='enable iTunes compatibility')
 
     pgroup = app.parser.add_argument_group('Chapters Control')
-    pgroup.add_argument('--chapters', dest='chaptersfile', default=argparse.SUPPRESS, type=Path, help='specify the chapters file name')
-    pgroup.add_argument('--no-chapters', default=False, action='store_true', help='do not generate chapters')
-    pgroup.add_argument('--reuse-chapters', action='store_true', help='reuse chapters.txt file')
+    pgroup.add_bool_argument('--chapters', default=True, help='generate chapters')
+    pgroup.add_argument('--chapters-file', type=Path, help='specify the chapters file name')
+    pgroup.add_bool_argument('--reuse-chapters', help='reuse an existing chapters.txt file')
     pgroup.add_argument('--chapter-naming', dest='chapter_naming_format', default="default", help='chapters naming format',
             choices=["default", "title", "track", "disc", "disk", "disc-track", "disk-track"])
     xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--OverDrive-MediaMarkers', dest='OverDrive_MediaMarkers', default=True, action='store_true', help='use OverDrive MediaMarkers (default)')
-    xgroup.add_argument('--no-OverDrive-MediaMarkers', dest='OverDrive_MediaMarkers', default=argparse.SUPPRESS, action='store_false', help='do not use OverDrive MediaMarkers')
+    xgroup.add_bool_argument('--OverDrive-MediaMarkers', dest='OverDrive_MediaMarkers', default=True, help='use OverDrive MediaMarkers')
 
     pgroup = app.parser.add_argument_group('Encoding')
     xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--force-encode', dest='force_encode', default=False, action='store_true', help='force encoding (enable)')
-    xgroup.add_argument('--no-force-encode', dest='force_encode', default=argparse.SUPPRESS, action='store_false', help='do not force encoding (default)')
+    xgroup.add_bool_argument('--force-encode', dest='force_encode', help='force encoding')
     pgroup.add_argument('--bitrate', type=int, default=argparse.SUPPRESS, help='force the encoding bitrate')  # TODO support <int>k
     pgroup.add_argument('--target-bitrate', dest='target_bitrate', type=int, default=argparse.SUPPRESS, help='specify the resampling target bitrate')
     pgroup.add_argument('--channels', type=int, default=argparse.SUPPRESS, help='force the number of audio channels')
-    pgroup.add_argument('--qaac', dest='use_qaac', default=True, action='store_true', help='use qaac, if available')
-    pgroup.add_argument('--no-qaac', dest='use_qaac', default=argparse.SUPPRESS, action='store_false', help='do not use qaac')
+    pgroup.add_bool_argument('--qaac', dest='use_qaac', help='use qaac, if available', neg_help='do not use qaac')
 
     pgroup = app.parser.add_argument_group('Database Control')
-    pgroup.add_bool_argument('--goodreads', dest='use_goodreads', default=False, help='querying Goodreads')
+    pgroup.add_bool_argument('--goodreads', dest='use_goodreads', default=False, help='query Goodreads')
 
     pgroup = app.parser.add_argument_group('Tags')
     qip.mm.argparse_add_tags_arguments(pgroup, in_tags)
@@ -505,12 +502,12 @@ def mkm4b(inputfiles, default_tags):
 
     expected_duration = None
     chapters_file = TextFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
-    if hasattr(app.args, 'chaptersfile'):
-        if app.args.chaptersfile.samefile(chapters_file.file_name):
+    if app.args.chapters_file:
+        if app.args.chapters_file.samefile(chapters_file.file_name):
             app.log.info('Reusing %s...', chapters_file)
         else:
-            app.log.info('Writing %s from %s...', chapters_file, app.args.chaptersfile)
-            shutil.copyfile(app.args.chaptersfile, chapters_file.file_name)
+            app.log.info('Writing %s from %s...', chapters_file, app.args.chapters_file)
+            shutil.copyfile(app.args.chapters_file, chapters_file.file_name)
     elif app.args.reuse_chapters and chapters_file.exists():
         app.log.info('Reusing %s...', chapters_file)
     elif app.args.no_chapters:
@@ -636,12 +633,12 @@ def mkm4b(inputfiles, default_tags):
                 add_help=False, usage=argparse.SUPPRESS,
                 )
             subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
-            subparser = subparsers.add_parser('help', aliases=('h', '?'), help='Print this help')
-            subparser = subparsers.add_parser('tags', aliases=(), help='Edit tags')
-            subparser = subparsers.add_parser('chapters', aliases=(), help='Edit chapters')
-            subparser = subparsers.add_parser('picture', aliases=(), help='Change picture')
-            subparser = subparsers.add_parser('continue', aliases=('c',), help='Continue the audiobook creation -- done')
-            subparser = subparsers.add_parser('quit', aliases=('q',), help='Quit')
+            subparser = subparsers.add_parser('help', aliases=('h', '?'), help='print this help')
+            subparser = subparsers.add_parser('tags', aliases=(), help='edit tags')
+            subparser = subparsers.add_parser('chapters', aliases=(), help='edit chapters')
+            subparser = subparsers.add_parser('picture', aliases=(), help='change picture')
+            subparser = subparsers.add_parser('continue', aliases=('c',), help='continue the audiobook creation -- done')
+            subparser = subparsers.add_parser('quit', aliases=('q',), help='quit')
 
             completer = WordCompleter([name for name in subparsers._name_parser_map.keys() if len(name) > 1])
 
