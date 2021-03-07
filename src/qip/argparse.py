@@ -5,17 +5,6 @@ import sys as _sys
 import argparse as _argparse
 from argparse import *
 
-try:
-    from gettext import gettext as _, ngettext
-except ImportError:
-    def _(message):
-        return message
-    def ngettext(singular,plural,n):
-        if n == 1:
-            return singular
-        else:
-            return plural
-
 from .decorator import trace
 def trace(func, **kwargs): return func
 
@@ -223,8 +212,7 @@ class _ActionsContainer(_argparse._ActionsContainer):
             else:
                 args = {'option': option_strings[0],
                         'action': action_class}
-                msg = _('unsupported action %(action)r for option string %(option)r: '
-                        'provide both action and neg_action')
+                msg = 'unsupported action %(action)r for option string %(option)r: provide both action and neg_action'
                 raise ValueError(msg % args)
         neg_action_class = self._registry_get('action', neg_action, neg_action)
 
@@ -349,7 +337,7 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
     def parse_args(self, args=None, namespace=None, process_config_file=True):
         args, argv = self.parse_known_args(args, namespace, process_config_file=process_config_file)
         if argv:
-            msg = _('unrecognized arguments: %s')
+            msg = 'unrecognized arguments: %s'
             self.error(msg % ' '.join(argv))
         return args
 

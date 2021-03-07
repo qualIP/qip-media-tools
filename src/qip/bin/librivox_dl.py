@@ -77,7 +77,7 @@ def main():
             app.args.dir = Path('.')
     else:
         if app.args.url is None:
-            app.parser.error(_('the following arguments is required: %s') % ('--url',))
+            app.parser.error('the following arguments is required: %s' % ('--url',))
         if app.args.dir is None:
             url = app.args.url
             p = urllib.parse.urlparse(url)
@@ -95,7 +95,7 @@ def main():
                 if m:
                     app.args.dir = Path(m.group('book_id'))
         if app.args.dir is None:
-            app.parser.error(_('the following arguments is required: %s') % ('--dir',))
+            app.parser.error('the following arguments is required: %s' % ('--dir',))
 
     args_file = json.JsonFile(file_name=app.args.dir / 'librivox-dl.args.json')
     if app.args._continue:

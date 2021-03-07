@@ -78,7 +78,7 @@ class _argparse_type(object):
                 s_file_name = '<stdout>'
                 fp = sys.stdout
             else:
-                msg = _('argument "-" with mode %r') % mode
+                msg = 'argument "-" with mode %r' % mode
                 raise ValueError(msg)
             file = file_cls(file_name=None)
         else:
@@ -90,7 +90,7 @@ class _argparse_type(object):
             try:
                 fp = file.open(**kwargs)
             except OSError as e:
-                message = _("can't open %s: %s")
+                message = "can't open %s: %s"
                 raise TypeError(message % (s_file_name, e))
 
         file.fp = fp
