@@ -25,7 +25,6 @@ from qip import json
 from qip.app import app
 from qip.cdda import *
 from qip.exec import *
-from qip.extern import CDDB
 from qip.file import *
 from qip.mm import *
 from qip.utils import byte_decode
@@ -547,6 +546,7 @@ def bincuetags(cue_file):
 
     cddbinfos = []
     if app.args.use_cddb:
+        from qip.extern import CDDB
         app.log.info('Querying FreeDB...')
         toc = [int(e) for e in discid.toc.split()]
         #print('toc=%r' % (toc,))
