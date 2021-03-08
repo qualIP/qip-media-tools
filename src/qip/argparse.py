@@ -334,51 +334,23 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
         self.register('action', 'parsers', _SubParsersAction)
 
     @trace
-    def parse_args(self, args=None, namespace=None, process_config_file=True):
-        args, argv = self.parse_known_args(args, namespace, process_config_file=process_config_file)
+    def parse_args(self, args=None, namespace=None):
+        args, argv = self.parse_known_args(args, namespace)
         if argv:
             msg = 'unrecognized arguments: %s'
             self.error(msg % ' '.join(argv))
         return args
 
     @trace
-    def parse_known_args(self, args=None, namespace=None, process_config_file=True):
+    def parse_known_args(self, args=None, namespace=None):
         #print('%s @ 0x%x parse_known_args(%r, %r)' % (self.__class__.__name__, id(self), args, namespace))
         if namespace is None:
             namespace = Namespace()
-        if process_config_file:
-            namespace = self.process_config_file_args(args, namespace)
         args, argv = super().parse_known_args(args=args, namespace=namespace)
         for k, v in args.__dict__.items():
             if isinstance(v, DefaultWrapper):
                 setattr(args, k, v.inner)
         return args, argv
-
-    @trace
-    def process_config_file_args(self, args, namespace):
-        #print('self._actions = %r' % (self._actions,))
-        prev_actions = self._actions
-        prev_option_string_actions = self._option_string_actions
-        prev_defaults = self._defaults
-        try:
-            mock_actions = _MockActionDict()
-            self._actions = [mock_actions[action] for action in prev_actions]
-            self._option_string_actions = {key: mock_actions[action] for key, action in self._option_string_actions.items()}
-            self._defaults = {}
-            tmp_namespace = Namespace()
-            if args is None:
-                # args default to the system args
-                tmp_args = list(_sys.argv[1:])
-            else:
-                # make sure that args are mutable
-                tmp_args = list(args)
-            tmp_namespace, tmp_args = self._parse_known_args(tmp_args, tmp_namespace)
-            #print('tmp_namespace=%r' % (tmp_namespace,))
-        finally:
-            self._actions = prev_actions
-            self._option_string_actions = prev_option_string_actions
-            self._defaults = prev_defaults
-        return namespace
 
     def _read_args_from_files(self, arg_strings):
         # expand arguments referencing files
