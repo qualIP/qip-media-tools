@@ -487,12 +487,14 @@ def mkm4b(inputfiles, default_tags):
             if v:
                 parts.append(v)
         v = m4b.tags[MediaTagEnum.albumtitle]
-        assert v, '%r albumtitle not known' % (m4b,)
+        if not v:
+            raise ValueError('albumtitle not known (--title)')
         if v:
             parts.append(v)
         if True or app.args.single:
             v = m4b.tags[MediaTagEnum.title]
-            assert v, '%r title not known' % (m4b,)
+            if not v:
+                raise ValueError('title not known (--title)')
             if v:
                 parts.append(v)
         for i in range(len(parts)-2):  # skip last part XXXJST TODO why?
@@ -508,6 +510,17 @@ def mkm4b(inputfiles, default_tags):
                 i += 1
         m4b.file_name = clean_file_name(" - ".join(parts) + m4b._common_extensions[0])
     # }}}
+    app.log.info('Output file: %s', m4b)
+    if not app.args.yes and m4b.exists():
+        raise FileExistsError(m4b.file_name)
+
+    try:
+        expected_duration = sum(
+            (inputfile.duration
+             for inputfile in inputfiles),
+            start=qip.utils.Timestamp(0))
+    except AttributeError:
+        expected_duration = None
 
     def generate_chapters_file(chapters_file, chapter_naming_format, squash=False):
         if chapter_naming_format == 'empty':
@@ -523,7 +536,6 @@ def mkm4b(inputfiles, default_tags):
             for x in thread_executor.map(task_fill_inputfile_to_chapters, inputfiles):
                 pass
             def body(fp):
-                nonlocal expected_duration
                 offset = qip.utils.Timestamp(0)
                 prev_chap_info = None
                 for inputfile in inputfiles:
@@ -539,14 +551,15 @@ def mkm4b(inputfiles, default_tags):
                         pass  # Ok... never mind
                     else:
                         offset += inputfile.duration
-                expected_duration = offset
             safe_write_file_eval(chapters_file, body, text=True)
 
     def print_chapters_file(chapters_file):
+        nonlocal expected_duration
         print('Chapters:')
         print(re.sub(r'^', '    ', safe_read_file(chapters_file), flags=re.MULTILINE))
+        if expected_duration is not None:
+            app.log.info('Expected final duration: %s (%.3f seconds)', mp4chaps.Timestamp(expected_duration), expected_duration)
 
-    expected_duration = None
     chapters_file = TextFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
     if app.args.chapters_file:
         if app.args.chapters_file.samefile(chapters_file.file_name):
@@ -563,9 +576,6 @@ def mkm4b(inputfiles, default_tags):
         generate_chapters_file(chapters_file=chapters_file,
                                chapter_naming_format='empty')
     print_chapters_file(chapters_file=chapters_file)
-    if expected_duration is not None:
-        expected_duration = mp4chaps.Timestamp(expected_duration)
-        app.log.info('Expected final duration: %s (%.3f seconds)', expected_duration, expected_duration)
 
     src_picture = m4b.tags.picture
     if isinstance(src_picture, qip.mm.PictureTagInfo):
