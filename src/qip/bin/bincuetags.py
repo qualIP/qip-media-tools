@@ -648,7 +648,7 @@ def bincuetags(cue_file):
                 except ValueError:
                     try:
                         ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
-                    except argparse.ArgumentError as e:
+                    except (argparse.ArgumentError, ValueError) as e:
                         app.log.error(e);
                         print('')
                         continue

@@ -651,9 +651,14 @@ def mkm4b(inputfiles, default_tags):
                         break
                 try:
                     ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
-                except argparse.ArgumentError as e:
+                except (argparse.ArgumentError, ValueError) as e:
                     app.log.error(e);
                     print('')
+                    continue
+                except argparse.ParserExitException as e:
+                    if e.status:
+                        app.log.error(e);
+                        print('')
                     continue
                 if ns.action == 'help':
                     print(parser.format_help())

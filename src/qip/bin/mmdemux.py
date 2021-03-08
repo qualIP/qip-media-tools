@@ -3183,6 +3183,11 @@ def action_mux(inputfile, in_tags,
                     app.log.error(e)
                     print('')
                     continue
+                except argparse.ParserExitException as e:
+                    if e.status:
+                        app.log.error(e);
+                        print('')
+                    continue
                 if ns.action == 'help':
                     print(parser.format_help())
                 elif ns.action == 'continue':
