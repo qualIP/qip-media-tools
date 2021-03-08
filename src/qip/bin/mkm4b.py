@@ -194,6 +194,16 @@ def get_vbr_formats():
 
 # }}}
 
+chapter_naming_format_choices = (
+    "default",
+    "title",
+    "track",
+    "disc", "disk",
+    "disc-track",
+    "disk-track",
+    "empty",
+)
+
 @app.main_wrapper
 def main():
 
@@ -240,8 +250,7 @@ def main():
     pgroup.add_bool_argument('--chapters', default=True, help='generate chapters')
     pgroup.add_argument('--chapters-file', type=Path, help='specify the chapters file name')
     pgroup.add_bool_argument('--reuse-chapters', help='reuse an existing chapters.txt file')
-    pgroup.add_argument('--chapter-naming', dest='chapter_naming_format', default="default", help='chapters naming format',
-            choices=["default", "title", "track", "disc", "disk", "disc-track", "disk-track"])
+    pgroup.add_argument('--chapter-naming', dest='chapter_naming_format', default="default", help='chapters naming format', choices=chapter_naming_format_choices)
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_bool_argument('--OverDrive-MediaMarkers', dest='OverDrive_MediaMarkers', default=True, help='use OverDrive MediaMarkers')
 
@@ -500,6 +509,43 @@ def mkm4b(inputfiles, default_tags):
         m4b.file_name = clean_file_name(" - ".join(parts) + m4b._common_extensions[0])
     # }}}
 
+    def generate_chapters_file(chapters_file, chapter_naming_format, squash=False):
+        if chapter_naming_format == 'empty':
+            app.log.info('Writing empty %s...', chapters_file)
+            with chapters_file.open('w') as fp:
+                pass
+        else:
+            app.log.info('Writing %s...', chapters_file)
+            inputfile_to_chapters = {}
+            def task_fill_inputfile_to_chapters(inputfile):
+                nonlocal inputfile_to_chapters
+                inputfile_to_chapters[inputfile.file_name] = get_audio_file_chapters(inputfile, chapter_naming_format=chapter_naming_format)
+            for x in thread_executor.map(task_fill_inputfile_to_chapters, inputfiles):
+                pass
+            def body(fp):
+                nonlocal expected_duration
+                offset = qip.utils.Timestamp(0)
+                prev_chap_info = None
+                for inputfile in inputfiles:
+                    for chap_info in inputfile_to_chapters[inputfile.file_name]:
+                        if squash and prev_chap_info and chap_info.title == prev_chap_info.title:
+                            continue
+                        print('%s %s' % (
+                            mp4chaps.Timestamp(offset + chap_info.start),
+                            replace_html_entities(chap_info.title),
+                            ), file=fp)
+                        prev_chap_info = chap_info
+                    if len(inputfiles) == 1 and not hasattr(inputfile, 'duration'):
+                        pass  # Ok... never mind
+                    else:
+                        offset += inputfile.duration
+                expected_duration = offset
+            safe_write_file_eval(chapters_file, body, text=True)
+
+    def print_chapters_file(chapters_file):
+        print('Chapters:')
+        print(re.sub(r'^', '    ', safe_read_file(chapters_file), flags=re.MULTILINE))
+
     expected_duration = None
     chapters_file = TextFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
     if app.args.chapters_file:
@@ -510,34 +556,13 @@ def mkm4b(inputfiles, default_tags):
             shutil.copyfile(app.args.chapters_file, chapters_file.file_name)
     elif app.args.reuse_chapters and chapters_file.exists():
         app.log.info('Reusing %s...', chapters_file)
-    elif app.args.no_chapters:
-        app.log.info('Writing empty %s...', chapters_file)
-        chapters_file.touch()
+    elif app.args.chapters:
+        generate_chapters_file(chapters_file=chapters_file,
+                               chapter_naming_format=app.args.chapter_naming_format)
     else:
-        app.log.info('Writing %s...', chapters_file)
-        inputfile_to_chapters = {}
-        def task_fill_inputfile_to_chapters(inputfile):
-            nonlocal inputfile_to_chapters
-            inputfile_to_chapters[inputfile.file_name] = get_audio_file_chapters(inputfile, chapter_naming_format=app.args.chapter_naming_format)
-        for x in thread_executor.map(task_fill_inputfile_to_chapters, inputfiles):
-            pass
-        def body(fp):
-            nonlocal expected_duration
-            offset = qip.utils.Timestamp(0)
-            for inputfile in inputfiles:
-                for chap_info in inputfile_to_chapters[inputfile.file_name]:
-                    print('%s %s' % (
-                        mp4chaps.Timestamp(offset + chap_info.start),
-                        replace_html_entities(chap_info.title),
-                        ), file=fp)
-                if len(inputfiles) == 1 and not hasattr(inputfile, 'duration'):
-                    pass  # Ok... never mind
-                else:
-                    offset += inputfile.duration
-            expected_duration = offset
-        safe_write_file_eval(chapters_file, body, text=True)
-    print('Chapters:')
-    print(re.sub(r'^', '    ', safe_read_file(chapters_file), flags=re.MULTILINE))
+        generate_chapters_file(chapters_file=chapters_file,
+                               chapter_naming_format='empty')
+    print_chapters_file(chapters_file=chapters_file)
     if expected_duration is not None:
         expected_duration = mp4chaps.Timestamp(expected_duration)
         app.log.info('Expected final duration: %s (%.3f seconds)', expected_duration, expected_duration)
@@ -636,6 +661,8 @@ def mkm4b(inputfiles, default_tags):
             subparser = subparsers.add_parser('help', aliases=('h', '?'), help='print this help')
             subparser = subparsers.add_parser('tags', aliases=(), help='edit tags')
             subparser = subparsers.add_parser('chapters', aliases=(), help='edit chapters')
+            subparser.add_argument('format', nargs='?', choices=chapter_naming_format_choices)
+            subparser.add_argument('options', nargs='?', choices=('squash',))
             subparser = subparsers.add_parser('picture', aliases=(), help='change picture')
             subparser = subparsers.add_parser('continue', aliases=('c',), help='continue the audiobook creation -- done')
             subparser = subparsers.add_parser('quit', aliases=('q',), help='quit')
@@ -672,7 +699,13 @@ def mkm4b(inputfiles, default_tags):
                     except ValueError as e:
                         app.log.error(e)
                 elif ns.action == 'chapters':
-                    edfile(chapters_file)
+                    if ns.format:
+                        generate_chapters_file(chapters_file,
+                                               chapter_naming_format=ns.format,
+                                               squash='squash' in (ns.options or ''))
+                        print_chapters_file(chapters_file)
+                    else:
+                        edfile(chapters_file)
                 elif ns.action == 'picture':
                     print(f'Current picture: {src_picture}')
                     value = app.prompt('New picture: ')
