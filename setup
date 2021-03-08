@@ -58,7 +58,7 @@ if $OPT_HELP ; then
     echo
     echo "  --user              Select user installation target (~/.local)"
     echo "  --system            Select system installation target (/usr/local)"
-    echo "  --develop           Select development installation target (~/local)"
+    echo "  --develop           Select development installation target (~/.local)"
     echo "  --prefix PREFIX     Specify custom installation prefix"
     echo
     echo "  --clean             Clean build artifacts after installing/uninstalling (default)"
