@@ -590,6 +590,8 @@ def mkm4b(inputfiles, default_tags):
     def select_src_picture(new_picture):
         nonlocal picture
         nonlocal src_picture
+        if new_picture == 'None':
+            new_picture = None
         if not new_picture:
             src_picture = None
             app.log.warning('No picture.')
