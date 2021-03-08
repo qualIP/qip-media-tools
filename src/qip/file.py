@@ -276,6 +276,11 @@ class File(object):
                   tempfile._TemporaryFileWrapper,
               ))))
 
+    @property
+    def fd(self):
+        fp = self.fp
+        return fp and fp.fileno()
+
     def __enter__(self):
         return self
 
