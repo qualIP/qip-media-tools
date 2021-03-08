@@ -628,6 +628,8 @@ def taged_mf_VCFLACDict(file_name, mf, tags):
     return True
 
 def taged_mf(file_name, mf, tags):
+    if mf.tags is None:
+        mf.add_tags()
     if isinstance(mf.tags, mutagen.id3.ID3):
         return taged_mf_id3(file_name, mf, tags)
     if isinstance(mf.tags, mutagen.mp4.MP4Tags):
@@ -672,7 +674,7 @@ def taged(file_name, tags):
     app.log.info('Editing %s...', file_name)
     with perfcontext('mf.load'):
         mf = mutagen.File(file_name)
-    if mf:
+    if mf is not None:
         if not taged_mf(file_name, mf, tags):
             app.log.verbose('Nothing to do.')
             return False
