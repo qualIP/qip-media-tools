@@ -64,6 +64,11 @@ def replace_html_entities(s):
 
 # }}}
 
+def str_or_none(v):
+    if v in (None, 'None'):
+        return None
+    return v
+
 @app.main_wrapper
 def main():
 
@@ -86,17 +91,18 @@ def main():
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
 
     pgroup.add_argument('--apply-suggestions', dest='apply_suggestions', default=False, action='store_true', help='apply suggestions')
-
     pgroup.add_argument('--contenttype', help='content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
-    pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex', 'mmdemux'], help='app compatibility mode')
-    pgroup.add_bool_argument('--aux', default=True, help='handle auxiliary files')
-    pgroup.add_bool_argument('--overwrite', default=False, help='overwrite files')
+
+    pgroup.add_argument('--suffix', default=None, type=str_or_none, help='suffix string')
 
     pgroup = app.parser.add_argument_group('File Operation')
+    pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex', 'mmdemux'], help='app compatibility mode')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--move', dest='file_op', action='store_const', const='move', default='move', help='move files')
     xgroup.add_argument('--copy', dest='file_op', action='store_const', const='copy', default=argparse.SUPPRESS, help='copy files')
     xgroup.add_argument('--link', '-l', dest='file_op', action='store_const', const='link', default=argparse.SUPPRESS, help='hard link files')
+    pgroup.add_bool_argument('--overwrite', default=False, help='overwrite files')
+    pgroup.add_bool_argument('--aux', default=True, help='handle auxiliary files')
 
     pgroup = app.parser.add_argument_group('Library Mode')
     pgroup.add_argument('--music', '--normal', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='normal', help='normal (Music) mode')
@@ -465,6 +471,8 @@ def organize_audiobook(inputfile, *, suggest_tags):
     return dst_dir / dst_file_base
 
 def get_plex_format_hints_suffix(inputfile, dst_file_base):
+    if app.args.suffix is not None:
+        return app.args.suffix
     suffix = ''
     stereo_3d_mode = getattr(inputfile, 'stereo_3d_mode', None)
     if stereo_3d_mode is not None:
