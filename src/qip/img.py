@@ -256,7 +256,7 @@ class ImageType(enum.Enum):
     def __hash__(self):
         return hash(id(self))
 
-    def __new(cls, value):
+    def __new__override__(cls, value):
         if type(value) is str:
             value = value.strip()
             for pattern, new_value in (
@@ -276,7 +276,7 @@ class ImageType(enum.Enum):
                     value = value[1:]
         return super().__new__(cls, value)
 
-ImageType.__new__ = ImageType._ImageType__new
+ImageType.__new__ = ImageType.__new__override__
 
 # }}}
 

@@ -1429,7 +1429,7 @@ class MediaTagRating(enum.Enum):
     def __str__(self):
         return self.value
 
-    def __new(cls, value):
+    def __new_override__(cls, value):
         if type(value) is int:
             value = str(value)
         if type(value) is str:
@@ -1445,7 +1445,7 @@ class MediaTagRating(enum.Enum):
     def __int__(self):
         return self.int_value
 
-MediaTagRating.__new__ = MediaTagRating._MediaTagRating__new
+MediaTagRating.__new__ = MediaTagRating.__new_override__
 for _i, _e in (
     (0, MediaTagRating.none),
     (1, MediaTagRating.explicit),
@@ -1700,7 +1700,7 @@ class BroadcastFormat(enum.Enum):
     def __str__(self):
         return self.value
 
-    def __new(cls, value):
+    def __new_override__(cls, value):
         if type(value) is str:
             value = value.strip().lower()
             for pattern, new_value in (
@@ -1711,7 +1711,7 @@ class BroadcastFormat(enum.Enum):
                     break
         return super().__new__(cls, value)
 
-BroadcastFormat.__new__ = BroadcastFormat._BroadcastFormat__new
+BroadcastFormat.__new__ = BroadcastFormat.__new_override__
 for _e in BroadcastFormat:
     BroadcastFormat._value2member_map_[_e.value.lower()] = _e
     BroadcastFormat._value2member_map_[_e.name.lower()] = _e
@@ -1734,7 +1734,7 @@ class MediaType(enum.Enum):
     def __str__(self):
         return self.value
 
-    def __new(cls, value):
+    def __new_override__(cls, value):
         if type(value) is str:
             value = value.strip().lower()
             for pattern, new_value in (
@@ -1745,7 +1745,7 @@ class MediaType(enum.Enum):
                     break
         return super().__new__(cls, value)
 
-MediaType.__new__ = MediaType._MediaType__new
+MediaType.__new__ = MediaType.__new_override__
 for _e in MediaType:
     MediaType._value2member_map_[_e.value.lower()] = _e
     MediaType._value2member_map_[_e.name.lower()] = _e
@@ -1787,7 +1787,7 @@ class ContentType(enum.Enum):
     def __str__(self):
         return self.value
 
-    def __new(cls, value):
+    def __new_override__(cls, value):
         if type(value) is str:
             value = value.strip().lower()
             for pattern, new_value in (
@@ -1798,7 +1798,7 @@ class ContentType(enum.Enum):
                     break
         return super().__new__(cls, value)
 
-ContentType.__new__ = ContentType._ContentType__new
+ContentType.__new__ = ContentType.__new_override__
 for _e in ContentType:
     ContentType._value2member_map_[_e.value.lower()] = _e
     ContentType._value2member_map_[_e.name.lower()] = _e
@@ -1829,7 +1829,7 @@ class Stereo3DMode(enum.Enum):
     def __str__(self):
         return self.value
 
-    def __new(cls, value):
+    def __new_override__(cls, value):
         if type(value) is str:
             value = value.strip().lower()
             for pattern, new_value in (
@@ -1840,7 +1840,7 @@ class Stereo3DMode(enum.Enum):
                     break
         return super().__new__(cls, value)
 
-Stereo3DMode.__new__ = Stereo3DMode._Stereo3DMode__new
+Stereo3DMode.__new__ = Stereo3DMode.__new_override__
 for _e in Stereo3DMode:
     Stereo3DMode._value2member_map_[_e.value.lower()] = _e
     Stereo3DMode._value2member_map_[_e.name.lower()] = _e
@@ -4811,7 +4811,7 @@ class AudioType(enum.Enum):
     def __hash__(self):
         return hash(id(self))
 
-    def __new(cls, value):
+    def __new_override__(cls, value):
         if type(value) is str:
             value = value.strip()
             for pattern, new_value in (
@@ -4832,7 +4832,7 @@ class AudioType(enum.Enum):
                     break
         return super().__new__(cls, value)
 
-AudioType.__new__ = AudioType._AudioType__new
+AudioType.__new__ = AudioType.__new_override__
 
 # }}}
 
