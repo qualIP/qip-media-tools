@@ -13,7 +13,6 @@ import contextlib
 import decimal
 import errno
 import functools
-import html
 import logging
 import os
 import pexpect
@@ -36,7 +35,7 @@ from qip.matroska import MkaFile
 from qip.mm import *
 from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps
 from qip.parser import *
-from qip.utils import byte_decode, save_and_restore_tcattr
+from qip.utils import byte_decode, save_and_restore_tcattr, replace_html_entities
 import qip.mm
 import qip.utils
 Auto = qip.utils.Constants.Auto
@@ -58,17 +57,6 @@ def times_1000(v):
         if v.as_tuple().exponent >= 0:
             v = int(v)
     return v
-
-# }}}
-
-# replace_html_entities {{{
-
-def replace_html_entities(s):
-    s = html.unescape(s)
-    m = re.search(r'&\w+;', s)
-    if m:
-        raise ValueError('Unknown HTML entity: %s' % (m.group(0),))
-    return s
 
 # }}}
 

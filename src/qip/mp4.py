@@ -33,7 +33,7 @@ from .mm import Chapter, Chapters
 from .mm import MovieFile
 from .mm import RingtoneFile
 from .mm import SoundFile
-from .utils import byte_decode, Timestamp as _BaseTimestamp
+from .utils import byte_decode, Timestamp, Timestamp as _BaseTimestamp, replace_html_entities
 
 class Mpeg4ContainerFile(BinaryMediaFile):
 

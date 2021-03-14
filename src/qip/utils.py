@@ -22,6 +22,7 @@ __all__ = (
     'advenumerate',
     'adviter',
     'dict_from_swig_obj',
+    'replace_html_entities',
 )
 
 from _collections_abc import _check_methods
@@ -33,6 +34,7 @@ import contextlib
 import datetime
 import enum
 import functools
+import html
 import logging
 import math
 import os
@@ -843,3 +845,10 @@ def dict_from_swig_obj(obj):
                 and not callable(getattr(obj, name))
         )
     }
+
+def replace_html_entities(s):
+    s = html.unescape(s)
+    m = re.search(r'&\w+;', s)
+    if m:
+        raise ValueError('Unknown HTML entity: %s' % (m.group(0),))
+    return s
