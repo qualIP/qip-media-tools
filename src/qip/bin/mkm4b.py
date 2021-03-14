@@ -10,6 +10,7 @@
 from pathlib import Path
 import concurrent.futures
 import contextlib
+import copy
 import decimal
 import errno
 import functools
@@ -33,7 +34,7 @@ from qip.exec import *
 from qip.file import *
 from qip.matroska import MkaFile
 from qip.mm import *
-from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps
+from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps, Mp4chapsFile
 from qip.parser import *
 from qip.utils import byte_decode, save_and_restore_tcattr, replace_html_entities
 import qip.mm
@@ -273,7 +274,6 @@ def main():
 
     for prog in (
             'ffmpeg',  # ffmpeg | libav-tools
-            'mp4chaps',  # mp4v2-utils
             'mp4tags',  # mp4v2-utils
             'mp4art',  # mp4v2-utils
             'mp4info',  # mp4v2-utils
@@ -513,50 +513,52 @@ def mkm4b(inputfiles, default_tags):
     def generate_chapters_file(chapters_file, chapter_naming_format, squash=False):
         if chapter_naming_format == 'empty':
             app.log.info('Writing empty %s...', chapters_file)
-            with chapters_file.open('w') as fp:
-                pass
+            chapters_file.chapters = Chapters()
+            chapters_file.create()
         else:
             app.log.info('Writing %s...', chapters_file)
+            chapters_file.chapters = Chapters()
             inputfile_to_chapters = {}
             def task_fill_inputfile_to_chapters(inputfile):
                 nonlocal inputfile_to_chapters
                 inputfile_to_chapters[inputfile.file_name] = get_audio_file_chapters(inputfile, chapter_naming_format=chapter_naming_format)
             for x in thread_executor.map(task_fill_inputfile_to_chapters, inputfiles):
                 pass
-            def body(fp):
-                offset = qip.utils.Timestamp(0)
-                prev_chap_info = None
-                for inputfile in inputfiles:
-                    for chap_info in inputfile_to_chapters[inputfile.file_name]:
-                        if squash and prev_chap_info and chap_info.title == prev_chap_info.title:
-                            continue
-                        print('%s %s' % (
-                            mp4chaps.Timestamp(offset + chap_info.start),
-                            replace_html_entities(chap_info.title),
-                            ), file=fp)
-                        prev_chap_info = chap_info
-                    if len(inputfiles) == 1 and not hasattr(inputfile, 'duration'):
-                        pass  # Ok... never mind
-                    else:
-                        offset += inputfile.duration
-            safe_write_file_eval(chapters_file, body, text=True)
+            offset = qip.utils.Timestamp(0)
+            prev_chap_info = None
+            for inputfile in inputfiles:
+                for chap_info in inputfile_to_chapters[inputfile.file_name]:
+                    chap = copy.copy(chap_info)
+                    chap.offset(offset)
+                    chapters_file.chapters.append(chap)
+                    prev_chap_info = chap_info
+                if len(inputfiles) == 1 and not hasattr(inputfile, 'duration'):
+                    pass  # Ok... never mind
+                else:
+                    offset += inputfile.duration
+            if squash:
+                chapters_file.chapters.squash_by_title()
+            chapters_file.create()
 
     def print_chapters_file(chapters_file):
         nonlocal expected_duration
+        # chapters_file.load()  # Assume already loaded
         print('Chapters:')
         print(re.sub(r'^', '    ', safe_read_file(chapters_file), flags=re.MULTILINE))
         if expected_duration is not None:
             app.log.info('Expected final duration: %s (%.3f seconds)', mp4chaps.Timestamp(expected_duration), expected_duration)
 
-    chapters_file = TextFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
+    chapters_file = Mp4chapsFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
     if app.args.chapters_file:
-        if app.args.chapters_file.samefile(chapters_file.file_name):
+        if chapters_file.exists() and app.args.chapters_file.samefile(chapters_file.file_name):
             app.log.info('Reusing %s...', chapters_file)
         else:
             app.log.info('Writing %s from %s...', chapters_file, app.args.chapters_file)
             shutil.copyfile(app.args.chapters_file, chapters_file.file_name)
+        chapters_file.load()
     elif app.args.reuse_chapters and chapters_file.exists():
         app.log.info('Reusing %s...', chapters_file)
+        chapters_file.load()
     elif app.args.chapters:
         generate_chapters_file(chapters_file=chapters_file,
                                chapter_naming_format=app.args.chapter_naming_format)
@@ -706,6 +708,7 @@ def mkm4b(inputfiles, default_tags):
                         print_chapters_file(chapters_file)
                     else:
                         edfile(chapters_file)
+                        chapters_file.load()
                 elif ns.action == 'picture':
                     print(f'Current picture: {src_picture}')
                     value = app.prompt('New picture: ')
@@ -718,7 +721,7 @@ def mkm4b(inputfiles, default_tags):
                     app.log.error('Invalid input: %r' % (ns.action,))
 
     m4b.encode(inputfiles=inputfiles,
-               chapters_file=chapters_file if chapters_file.getsize() else None,
+               chapters=chapters_file.chapters,
                force_input_bitrate=getattr(app.args, 'bitrate', None),
                target_bitrate=getattr(app.args, 'target_bitrate', None),
                yes=app.args.yes,

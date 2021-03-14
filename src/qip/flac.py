@@ -66,12 +66,12 @@ class FlacFile(SoundFile):
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None):
         from .ffmpeg import ffmpeg
-        #with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_dir = None
-        with tempfile.NamedTemporaryFile(suffix='.wav') as tmp_fp:
-            from qip.wav import WaveFile
-            wav_file = WaveFile(file_name=tmp_fp.name)
-            wav_file.rip_cue_track(cue_track=cue_track, bin_file=bin_file, tags=None, fp=tmp_fp)
+        from qip.wav import WaveFile
+        with WaveFile.NamedTemporaryFile() as wav_file:
+            wav_file.rip_cue_track(cue_track=cue_track, bin_file=bin_file, tags=None)
+            # write -> read
+            wav_file.flush()
+            wav_file.seel(0)
             ffmpeg(
                 '-i', wav_file,
                 '-f', 'flac',

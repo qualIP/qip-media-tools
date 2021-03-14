@@ -714,6 +714,8 @@ class CDTocFile(TextFile):
 
     def create(self, indent='  ', include_defaults=False, file=None):
         if file is None:
+            file = self.fp
+        if file is None:
             with self.open('w', encoding='utf-8') as file:
                 return self.create(file=file)
         if self.tags.barcode:
@@ -993,6 +995,8 @@ class CDDACueSheetFile(TextFile):
         self.tags.tracks = len(self.tracks)
 
     def create(self, indent='  ', file=None):
+        if file is None:
+            file = self.fp
         if file is None:
             with self.open('w', encoding='utf-8') as file:
                 return self.create(file=file)

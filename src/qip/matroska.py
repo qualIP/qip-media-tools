@@ -772,7 +772,8 @@ class MatroskaFile(BinaryMediaFile):
                 break
         return chapters_out
 
-    def save_chapters(self, chaps):
+    def write_chapters(self, chaps,
+                       show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
         from qip.file import TempFile
         chapters_xml = chaps.to_mkv_xml()
         chapters_xml_file = TempFile.mkstemp(suffix='.chapters.xml', open=True, text=True)
@@ -826,7 +827,7 @@ class MatroskaFile(BinaryMediaFile):
 
     def encode(self, *,
                inputfiles,
-               chapters_file=None,
+               chapters=None,
                force_input_bitrate=None,
                target_bitrate=None,
                yes=False,
@@ -935,11 +936,12 @@ class MatroskaFile(BinaryMediaFile):
             out_time = ffmpeg.Timestamp(out_time)
             log.info('Final duration:          %s (%.3f seconds)', out_time, out_time)
 
-        if chapters_file:
+        if chapters:
             log.info("Adding chapters...")
-            from .mp4 import mp4chaps
-            chaps = mp4chaps.parse_chapters_out(chapters_file.read())
-            output_file.save_chapters(chaps)
+            chapters.fill_end_times(duration=out_time if out_time is not None else expected_duration)
+            output_file.write_chapters(chapters,
+                                       show_progress_bar=show_progress_bar,
+                                       progress_bar_max=progress_bar_max)
 
         log.info('Adding tags...')
         tags = copy.copy(output_file.tags)

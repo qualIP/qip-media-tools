@@ -161,6 +161,32 @@ class File(object):
             raise ValueError('Unknown extension %r' % (ext,))
         return factory_cls(file_name, *args, **kwargs)
 
+    @classmethod
+    def NamedTemporaryFile(cls, mode=None, buffering=-1, encoding=None, newline=None, suffix=None, prefix=None, dir=None, delete=True, *, errors=None):
+        '''NamedTemporaryFile(mode='w+b', buffering=-1, encoding=, newline=None, suffix=None, prefix=None, dir=None, delete=True, *, errors=None)'''
+
+        if mode is None:
+            if encoding is None and errors is None:
+                # Class default
+                mode = 'w+' + (cls.open_mode or 't')
+            else:
+                mode = 'w+' + ('t' if (encoding or errors) else 'b')
+
+        if suffix is None:
+            for suffix in cls.get_default_extensions():
+                break
+
+        tmp_fp = tempfile.NamedTemporaryFile(
+            mode=mode, buffering=buffering, encoding=encoding, newline=newline,
+            suffix=suffix, prefix=prefix, dir=dir, delete=delete,
+            errors=errors)
+
+        file = cls.new_by_file_name(file_name=tmp_fp.name)
+        assert isinstance(file, cls)
+        file.open_mode = 'b' if 'b' in mode else 't'
+        file.fp = tmp_fp
+        return file
+
     def __init__(self, file_name, open_mode=None):
         self.file_name = file_name
         if open_mode is not None:
@@ -174,7 +200,7 @@ class File(object):
 
     def __str__(self):
         if self.file_name is None:
-            return 'None'
+            return '(unnamed)'
         else:
             return os.fspath(self)
 
@@ -348,6 +374,20 @@ class File(object):
         with self.open(mode='w') as fp:
             return fp.write(*args, **kwargs)
 
+    def flush(self):
+        if self.fp:
+            self.fp.flush()
+
+    def seek(self, offset, whence=io.SEEK_SET):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.seek(offset, whence)
+
+    def seekable(self, /):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.seekable()
+
     def close(self):
         fp = self.fp
         if fp is not None:
@@ -383,6 +423,20 @@ class File(object):
         for sub_cls in cls.__subclasses__():
             common_extensions |= sub_cls.get_common_extensions()
         return common_extensions
+
+    @classmethod
+    def get_default_extensions(cls):
+        seen = set()
+        for ext in cls.__dict__.get('_common_extensions', ()):
+            if ext not in seen:
+                yield ext
+                seen.add(ext)
+        for base_cls in cls.__bases__:
+            if isinstance(base_cls, File):
+                for ext in cls.get_default_extensions():
+                    if ext not in seen:
+                        yield ext
+                        seen.add(ext)
 
     def decode_ffmpeg_args(self, **kwargs):
         return kwargs
@@ -501,49 +555,35 @@ def cache_url(url, cache_dict={}):
         return Path(url).resolve()
 
     try:
-        tfp = cache_dict[url]
+        temp_file = cache_dict[url]
     except KeyError:
         req = urllib.request.Request(url)
         from qip.app import app
         user_agent = app.user_agent
         if user_agent:
             req.add_header('User-Agent', user_agent)
+
+        size = -1
+        temp_file = BinaryFile.NamedTemporaryFile(suffix=Path(purl.path).suffix)
+
         opener = urllib.request.build_opener()
         with opener.open(req) as fp:
+
             headers = fp.info()
-
-            suffix = Path(purl.path).suffix
-            tfp = tempfile.NamedTemporaryFile(suffix=suffix)
-
-            bs = 1024*8
-            size = -1
-            read = 0
-            blocknum = 0
             if "content-length" in headers:
                 size = int(headers["Content-Length"])
 
-            #if reporthook:
-            #    reporthook(blocknum, bs, size)
+            shutil.copyfileobj(src=fp, dst=temp_file.fp)
 
-            while True:
-                block = fp.read(bs)
-                if not block:
-                    break
-                read += len(block)
-                tfp.write(block)
-                blocknum += 1
-                #if reporthook:
-                #    reporthook(blocknum, bs, size)
+        temp_file.flush()
+        read = temp_file.tell()
 
         if size >= 0 and read < size:
-            raise ContentTooShortError(
-                "retrieval incomplete: got only %i out of %i bytes"
-                % (read, size))
+            raise ContentTooShortError(f'retrieval incomplete: got only {read} out of {size} bytes')
 
-        tfp.flush()
-        cache_dict[url] = tfp
+        cache_dict[url] = temp_file
 
-    return Path(tfp.name)
+    return temp_file.file_name
 
 # safe_write_file {{{
 

@@ -7,6 +7,7 @@ __all__ = [
         ]
 
 from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 import collections
 import contextlib
@@ -27,7 +28,7 @@ from .exec import *
 from .exec import _SpawnMixin, spawn as _exec_spawn, popen_spawn as _exec_popen_spawn
 from .parser import lines_parser
 from .utils import byte_decode
-from .utils import Timestamp as _BaseTimestamp, Ratio
+from .utils import Timestamp as _BaseTimestamp, Ratio, round_half_up
 from qip.file import *
 from qip.collections import OrderedSet
 from qip.app import app
@@ -76,6 +77,128 @@ class Timestamp(_BaseTimestamp):
 
 Timestamp.MAX = Timestamp('99:59:59.99999999')
 
+class MetadataFile(TextFile):
+    # [ffmpeg-1]: https://ffmpeg.org/ffmpeg-formats.html#Metadata-1
+
+    version = 1
+    section = None
+
+    DEFAULT_CHAPTER_TIMEBASE = Fraction(1, 1000000000)  # nanoseconds
+    DEFAULT_OUTPUT_CHAPTER_TIMEBASE = Fraction(1, 1000)  # milliseconds
+
+    def __init__(self, *args, **kwargs):
+        self.sections = []
+        super().__init__(*args, **kwargs)
+
+    def load(self):
+        self.version = None
+        self.sections = []
+        from .parser import lines_parser
+        with self.open('r') as fp:  # Could already be opened (temp file, write, load)
+            parser = lines_parser(fp)
+
+            # [ffmpeg-1] A file consists of a header and a number of metadata tags divided into sections, each on its own line.
+
+            parser.advance()
+            parser.line = (parser.line or '').rstrip('\r\n')
+            if parser.re_match(r'^;FFMETADATA(?P<version>\d+)\s*$'):
+                # [ffmpeg-1] The header is a ‘;FFMETADATA’ string, followed by a version number (now 1).
+                self.version = int(parser.match.group('version'))
+                if self.version == 1:
+                    pass
+                else:
+                    raise ValueError(f'Unsupported ffmpeg metadata version: {self.version}')
+            else:
+                parser.raiseValueError('Invalid ffmpeg metadata header: {line!r}', input=self)
+
+            # [ffmpeg-1] Immediately after header follows global metadata
+            section = 'GLOBAL'
+            section_tags = collections.OrderedDict()
+            self.sections.append((section, section_tags))
+            while parser.advance():
+                parser.line = (parser.line or '').rstrip('\r\n')
+                if parser.re_match(r'^\s*[;#]|^\s*$'):
+                    # [ffmpeg-1] Empty lines and lines starting with ‘;’ or ‘#’ are ignored.
+                    pass
+                elif parser.re_match(r'^(?P<key>[^=]+)=(?P<value>.*)'):
+                    # [ffmpeg-1] Metadata tags are of the form ‘key=value’
+                    # [ffmpeg-1] Note that whitespace in metadata (e.g. ‘foo = bar’) is considered to be a part of the tag (in the example above key is ‘foo ’, value is ‘ bar’). 
+                    key = parser.match.group('key')
+                    value = parser.match.group('value')
+                    section_tags[key] = value
+                elif parser.re_match(r'\[(?P<section>\w+)\]'):
+                    # [ffmpeg-1] After global metadata there may be sections with per-stream/per-chapter metadata.
+                    # [ffmpeg-1] A section starts with the section name in uppercase (i.e. STREAM or CHAPTER) in brackets (‘[’, ‘]’) and ends with next section or end of file.
+                    section = parser.match.group('section')
+                    section_tags = collections.OrderedDict()
+                    if section in ('STREAM', 'CHAPTER'):
+                        pass
+                    else:
+                        raise ValueError(f'Unsupported ffmpeg metadata section: {section}')
+                    self.sections.append((section, section_tags))
+                else:
+                    parser.raiseValueError('Invalid ffmpeg metadata line: {line!r}', input=self)
+
+            # TODO [ffmpeg-1] Metadata keys or values containing special characters (‘=’, ‘;’, ‘#’, ‘\’ and a newline) must be escaped with a backslash ‘\’.
+
+    def create(self, file=None):
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('w', encoding='utf-8') as file:
+                return self.create(file=file)
+        print(f';FFMETADATA{self.version}', file=file)
+        for section, section_tags in self.sections:
+            if section == 'GLOBAL':
+                for key, value in section_tags.items():
+                    print(f'{key}={value}', file=file)
+        for section, section_tags in self.sections:
+            if section == 'GLOBAL':
+                pass
+            else:
+                print(f'[{section}]', file=file)
+                for key, value in section_tags.items():
+                    print(f'{key}={value}', file=file)
+
+    @property
+    def chapters(self):
+        from qip.mm import Chapter, Chapters
+        chaps = Chapters()
+        no = 0
+        for section, section_tags in self.sections:
+            if section == 'CHAPTER':
+                timebase = section_tags.get('TIMEBASE', None)
+                timebase = self.DEFAULT_CHAPTER_TIMEBASE if self.DEFAULT_CHAPTER_TIMEBASE is None else Fraction(timebase)
+                start = section_tags.get('START', None)
+                start = None if start is None else int(start) * timebase
+                end = section_tags.get('END', None)
+                end = None if end is None else int(end) * timebase
+                title = section_tags.get('title', None)
+                no += 1
+                chap = Chapter(start=start, end=end, title=title, no=no)
+                chaps.chapters.append(chap)
+        return chaps
+
+    @chapters.setter
+    def chapters(self, chaps):
+        self.sections = [(section, section_tags)
+                         for section, section_tags in self.sections
+                         if section != 'CHAPTER']
+        for chap in chaps:
+            section = 'CHAPTER'
+            section_tags = collections.OrderedDict()
+            # [ffmpeg-1] At the beginning of a chapter section there may be an optional timebase to be used for start/end values. It must be in form ‘TIMEBASE=num/den’, where num and den are integers. If the timebase is missing then start/end times are assumed to be in nanoseconds.
+            section_tags['TIMEBASE'] = timebase = self.DEFAULT_OUTPUT_CHAPTER_TIMEBASE
+            # [ffmpeg-1] Next a chapter section must contain chapter start and end times in form ‘START=num’, ‘END=num’, where num is a positive integer.
+            if chap.start is not None:
+                section_tags['START'] = int(round_half_up(chap.start / timebase))
+            if chap.end is not None:
+                section_tags['END'] = int(round_half_up(chap.end / timebase))
+            if chap.title is not None:
+                section_tags['title'] = chap.title
+            self.sections.append((section, section_tags))
+
+
 class ConcatScriptFile(TextFile):
 
     ffconcat_version = 1.0
@@ -97,6 +220,8 @@ class ConcatScriptFile(TextFile):
         super().__init__(file_name)
 
     def create(self, file=None, absolute=False):
+        if file is None:
+            file = self.fp
         if file is None:
             with self.open('w', encoding='utf-8') as file:
                 return self.create(file=file, absolute=absolute)
@@ -125,6 +250,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
     errors_seen = None
     current_info_section = None
     streams_info = None
+    progress_match = None
 
     def __init__(self, *args, invocation_purpose=None,
                  show_progress_bar=None, progress_bar_max=None, progress_bar_title=None,
@@ -218,6 +344,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
         return True
 
     def progress_line(self, str):
+        self.progress_match = self.match
         if self.progress_bar is not None:
             if self.progress_bar_max:
                 if isinstance(self.progress_bar_max, _BaseTimestamp):
@@ -235,11 +362,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
                 self.progress_bar.next()
             self.on_progress_bar_line = True
         else:
-            str = byte_decode(str).rstrip('\r\n')
-            if self.on_progress_bar_line:
-                print('')
-                self.on_progress_bar_line = False
-            print(str)
+            self.log_line(str, level=logging.DEBUG)
         return True
 
     def parsed_cropdetect_line(self, str):
@@ -464,6 +587,7 @@ class _Ffmpeg(Executable):
 
     Timestamp = Timestamp
     ConcatScriptFile = ConcatScriptFile
+    MetadataFile = MetadataFile
 
     encoding = 'utf-8'
     encoding_errors = 'replace'

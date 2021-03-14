@@ -7,13 +7,15 @@ __all__ = (
     'M4aFile',
     'M4bFile',
     'M4rFile',
-    'mp4chaps',
+    # 'mp4chaps',  # Deprecated
+    'Mp4chapsFile',
 )
 
 # https://en.wikipedia.org/wiki/MPEG-4_Part_14
 
 from pathlib import Path
 import copy
+import contextlib
 import logging
 import os
 import errno
@@ -25,7 +27,7 @@ log = logging.getLogger(__name__)
 
 from . import mm
 from .exec import Executable
-from .file import cache_url
+from .file import cache_url, TextFile
 from .img import ImageFile
 from .mm import AudiobookFile
 from .mm import BinaryMediaFile
@@ -38,17 +40,13 @@ from .utils import byte_decode, Timestamp, Timestamp as _BaseTimestamp, replace_
 class Mpeg4ContainerFile(BinaryMediaFile):
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None):
-        from .qaac import qaac
-        #with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_dir = None
-        with tempfile.NamedTemporaryFile(suffix='.wav') as tmp_fp:
-            from qip.wav import WaveFile
-            wav_file = WaveFile(file_name=tmp_fp.name)
-            wav_file.rip_cue_track(cue_track=cue_track, bin_file=bin_file, tags=None, fp=tmp_fp)
-            qaac.encode(file_name=wav_file.file_name,
-                        output_file_name=self.file_name,
-                        threading=True,
-                        )
+        from qip.wav import WaveFile
+        with WaveFile.NamedTemporaryFile() as wav_file:
+            wav_file.rip_cue_track(cue_track=cue_track, bin_file=bin_file, tags=None)
+            # write -> read
+            wav_file.flush()
+            wav_file.seek(0)
+            self.encode(inputfiles=[wav_file])
         if tags is not None:
             self.write_tags(tags=tags)
 
@@ -105,7 +103,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
 
     def encode(self, *,
                inputfiles,
-               chapters_file=None,
+               chapters=None,
                force_input_bitrate=None,
                target_bitrate=None,
                yes=False,
@@ -123,6 +121,9 @@ class Mpeg4ContainerFile(BinaryMediaFile):
         from .ffmpeg import ffmpeg
         from .file import TempFile, safe_write_file_eval, safe_read_file
         m4b = self
+        chapters_added = False
+
+        assert self.fp is None  # Writing using file name
 
         if show_progress_bar:
             if progress_bar_max is None:
@@ -284,65 +285,76 @@ class Mpeg4ContainerFile(BinaryMediaFile):
 
             ffmpeg_output_cmd += [m4b.file_name]
             qaac_cmd += ['-o', m4b.file_name]
-            if use_qaac_cmd:
-                qaac_cmd += ['--text-codepage', '65001']  # utf-8
-                if chapters_file:
-                    qaac_cmd += ['--chapter', chapters_file.file_name]
-                # TODO qaac_cmd += qaac.get_tag_args(m4b.tags)
-                if picture is not None:
-                    qaac_cmd += ['--artwork', str(picture)]
-            if use_qaac_cmd:
-                out = do_spawn_cmd(qaac_cmd)
-            else:
-                out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd),
-                             show_progress_bar=show_progress_bar,
-                             progress_bar_max=progress_bar_max,
-                             progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
-                             )
-                out = out.out
-            out_time = None
-            # {{{
-            out = clean_cmd_output(out)
-            if use_qaac_cmd:
-                parser = lines_parser(out.split('\n'))
-                while parser.advance():
-                    parser.line = parser.line.strip()
-                    if parser.re_search(r'^\[[0-9.]+%\] [0-9:.]+/(?P<out_time>[0-9:.]+) \([0-9.]+x\), ETA [0-9:.]+$'):
-                        # [35.6%] 2:51:28.297/8:01:13.150 (68.2x), ETA 4:32.491
-                        out_time = mm.parse_time_duration(parser.match.group('out_time'))
-                    else:
-                        pass  # TODO
-            else:
-                parser = lines_parser(out.split('\n'))
-                while parser.advance():
-                    parser.line = parser.line.strip()
-                    if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
-                        # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
-                        # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
-                        out_time = mm.parse_time_duration(parser.match.group('out_time'))
-                    elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
-                        log.warning('TODO: %s', parser.line)
-                        pass
-                    else:
-                        pass  # TODO
-            # }}}
+            with contextlib.ExitStack() as exit_stack:
+                if use_qaac_cmd:
+                    qaac_cmd += ['--text-codepage', '65001']  # utf-8
+                    if chapters:
+                        chapters_file = Mp4chapsFile.NamedTemporaryFile()
+                        exit_stack.enter_context(chapters_file)
+                        chapters_file.chapters = chapters
+                        chapters_file.create()
+                        # write -> read
+                        chapters_file.flush()
+                        chapters_file.seek(0)
+                        qaac_cmd += ['--chapter', chapters_file]
+                        chapters_added = True
+                    # TODO qaac_cmd += qaac.get_tag_args(m4b.tags)
+                    if picture is not None:
+                        qaac_cmd += ['--artwork', str(picture)]
+                out_time = None
+                if use_qaac_cmd:
+                    out = do_spawn_cmd(qaac_cmd)
+                    out = clean_cmd_output(out)
+                    parser = lines_parser(out.split('\n'))
+                    while parser.advance():
+                        parser.line = parser.line.strip()
+                        if parser.re_search(r'^\[[0-9.]+%\] [0-9:.]+/(?P<out_time>[0-9:.]+) \([0-9.]+x\), ETA [0-9:.]+$'):
+                            # [35.6%] 2:51:28.297/8:01:13.150 (68.2x), ETA 4:32.491
+                            out_time = mm.parse_time_duration(parser.match.group('out_time'))
+                        else:
+                            pass  # TODO
+                else:
+                    ffmpeg_chapters_cmd = []
+                    if chapters:
+                        metadata_file = ffmpeg.MetadataFile.NamedTemporaryFile()
+                        exit_stack.enter_context(metadata_file)
+                        chapters.fill_end_times(duration=expected_duration)
+                        metadata_file.chapters = chapters
+                        metadata_file.create()
+                        # write -> read
+                        metadata_file.flush()
+                        metadata_file.seek(0)
+                        print(f'metadata_file={metadata_file!r}: {metadata_file.read()}')
+                        ffmpeg_chapters_cmd += [
+                            '-i', metadata_file,
+                            '-map_metadata', 1,  # second input
+                        ]
+                        chapters_added = True
+                    out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_chapters_cmd + ffmpeg_output_cmd),
+                                 show_progress_bar=show_progress_bar,
+                                 progress_bar_max=progress_bar_max,
+                                 progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
+                                 )
+                    out_time = ffmpeg.Timestamp(byte_decode(out.spawn.progress_match.group('time')))
             print('')
             if expected_duration is not None:
-                expected_duration = mp4chaps.Timestamp(expected_duration)
-                log.info('Expected final duration: %s (%.3f seconds)', expected_duration, expected_duration)
+                log.info('Expected final duration: %s (%.3f seconds)', Mp4chapsFile.Timestamp(expected_duration), expected_duration)
             if out_time is None:
                 log.warning('final duration unknown!')
             else:
-                out_time = mp4chaps.Timestamp(out_time)
-                log.info('Final duration:          %s (%.3f seconds)', out_time, out_time)
+                log.info('Final duration:          %s (%.3f seconds)', Mp4chapsFile.Timestamp(out_time), out_time)
 
         finally:
             for intermediate_wav_file in intermediate_wav_files:
                 intermediate_wav_file.unlink(force=True)
 
-        if not use_qaac_cmd and chapters_file:
+        if not chapters_added and chapters:
             log.info("Adding chapters...")
-            out = mp4chaps('-i', m4b.file_name).out
+            chapters.fill_end_times(duration=out_time if out_time is not None else expected_duration)
+            m4b.write_chapters(chapters,
+                               show_progress_bar=show_progress_bar,
+                               progress_bar_max=progress_bar_max)
+            chapters_added = True
 
         log.info('Adding tags...')
         tags = copy.copy(m4b.tags)
@@ -357,8 +369,9 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 out = do_exec_cmd(cmd)
 
     def load_chapters(self):
-        chapters_out = mp4chaps('-l', self).out
-        chaps = mp4chaps.parse_chapters_out(chapters_out)
+        import mutagen
+        mf = mutagen.File(self.file_name)
+        chaps = Chapters.from_mutagen_mp4_chapters(mf.chapters)
         return chaps
 
 class Mp4File(Mpeg4ContainerFile, MovieFile):
@@ -430,7 +443,52 @@ class Mp4chapsTimestamp(_BaseTimestamp):
         m = m - h * 60
         return '%s%02d:%02d:%s' % (sign, h, m, ('%.3f' % (s + 100.0))[1:])
 
+class Mp4chapsFile(TextFile):
+    """A chapters file in mp4chaps format"""
+
+    chapters = None
+
+    Timestamp = Mp4chapsTimestamp
+
+    def __init__(self, *args, **kwargs):
+        self.chapters = Chapters()
+        super().__init__(*args, **kwargs)
+
+    def load(self):
+        from .parser import lines_parser
+        self.chapters = Chapters()
+        with self.open('r') as fp:
+            parser = lines_parser(fp)
+            while parser.advance():
+                if parser.line == '':
+                    pass
+                elif parser.re_search(r'^(?P<start>\d+:\d+:\d+\.\d+)(?:\s+(?P<title>.*))?$'):
+                    # 00:00:00.000 Chapter 1
+                    self.chapters.append(Chapter(
+                        start=parser.match.group('start'), end=None,
+                        title=(parser.match.group('title') or '').strip(),
+                    ))
+                else:
+                    log.debug('TODO: %s', parser.line)
+                    parser.raiseValueError('Invalid MP4 chaoters line: {line!r}', input=self)
+
+    def create(self, file=None):
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('w', encoding='utf-8') as file:
+                return self.create(file=file)
+        for chap in self.chapters:
+            line = f'{Mp4chapsTimestamp(chap.start)}'
+            if chap.title:
+                line += f' {replace_html_entities(chap.title)}'
+            print(line, file=file)
+
+
 class Mp4chaps(Executable):
+    """mp4chaps is part of the deprecated mp4v2 utils.
+    Only the syntax is still used here.
+    """
 
     name = 'mp4chaps'
 
@@ -462,7 +520,7 @@ class Mp4chaps(Executable):
                 pass
             else:
                 log.debug('TODO: %s', parser.line)
-                raise ValueError('Invalid mp4chaps line: %s' % (parser.line,))
+                parser.raiseValueError('Invalid mp4chaps line: {line}')
                 # TODO
         return chaps
 

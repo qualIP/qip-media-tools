@@ -46,3 +46,18 @@ class lines_parser(object):
     def __iter__(self):
         while self.advance():
             yield self.line
+
+    def raiseValueError(self, message=None, input=None, prefix=None):
+        message = message or 'Invalid line: {line!r}'
+        prefix = prefix or ('{input}:{line_no}: ' if input else '{input}:{line_no}: ')
+        message = message.format(
+            input=input,
+            line=self.line,
+            line_no=self.line_no,
+        )
+        prefix = prefix.format(
+            input=input,
+            line=self.line,
+            line_no=self.line_no,
+        )
+        raise ValueError(prefix + message)

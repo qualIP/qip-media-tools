@@ -46,6 +46,7 @@ import reprlib
 import shutil
 import string
 import subprocess
+import tempfile
 import types
 log = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ from qip.file import *
 from qip.parser import *
 from qip.propex import propex
 from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise, Timestamp, Ratio
+from qip.perf import perfcontext
 import qip.utils
 
 from fractions import Fraction
@@ -245,6 +247,14 @@ class Chapter(object):
         self.no = None if no is None else int(no)
         self.lang = None if lang is None else isolang(lang)
 
+    def offset(self, offset):
+        start = self.start
+        if start is not None:
+            self.start = offset + start
+        end = self.end
+        if end is not None:
+            self.end = offset + end
+
     @classmethod
     def from_mkv_xml_ChapterAtom(cls, eChapterAtom, **kwargs):
         # <ChapterAtom>
@@ -299,6 +309,18 @@ class Chapter(object):
                 eChapterLanguage.text = self.lang.iso639_2
         return eChapterAtom
 
+    @classmethod
+    def from_mutagen_mp4_chapter(cls, mp4chap, **kwargs):
+        return cls(start=mp4chap.start, end=None,
+                   title=mp4chap.title,
+                   **kwargs)
+
+    def to_mutagen_mp4_chapter(self):
+        import mutagen
+        return mutagen.mp4.Chapter(
+            float(self.start),
+            self.title)
+
     def __str__(self):
         s = ''
         if self.no is not None:
@@ -308,10 +330,30 @@ class Chapter(object):
             s += ' %r' % (self.title,)
         return s
 
+    def __repr__(self):
+        lkwargs = []
+        for attr, ignore_values in (
+                ('start', (None,)),
+                ('end', (None,)),
+                ('uid', (None,)),
+                ('hidden', (None, False)),
+                ('enabled', (None, True)),
+                ('title', (None,)),
+                ('no', (None,)),
+                ('lang', (None,)),
+        ):
+            v = getattr(self, attr)
+            if v in ignore_values:
+                continue
+            lkwargs.append(f'{attr}={v!r}')
+        return '%s(%s)' % (
+            self.__class__.__name__,
+            ', '.join(lkwargs))
+
     def __deepcopy__(self, memo=None):
         return self.__class__(start=self.start,
                               end=self.end,
-                              uid=getattr(self, 'uid', None),
+                              uid=self.uid,
                               hidden=self.hidden,
                               enabled=self.enabled,
                               title=self.title,
@@ -422,6 +464,54 @@ class Chapters(collections.UserList):
             eChapterAtom = chap.to_mkv_xml_ChapterAtom()
             eEditionEntry.append(eChapterAtom)
         return xml
+
+    @classmethod
+    def from_mutagen_mp4_chapters(cls, mp4chaps, **kwargs):
+        chapters = [
+            Chapter.from_mutagen_mp4_chapter(mp4chap, no=chapter_no)
+            for chapter_no, mp4chap in enumerate(mp4chaps or (), start=1)]
+        return cls(chapters, **kwargs)
+
+    def to_mutagen_mp4_chapters(self):
+        import mutagen
+        mp4chaps = mutagen.mp4.MP4Chapters()
+        mp4chaps._timescale = 1000
+        mp4chaps._chapters = [
+            chap.to_mutagen_mp4_chapter()
+            for chap in self]
+        return mp4chaps
+
+    def fill_end_times(self, duration=None):
+        next_chap = None
+        for chap in reversed(self.chapters):
+            if chap.end is None:
+                if next_chap is None:
+                    # At least for mp4 containers, setting chap.end=start
+                    # pleases ffmpeg and it gladly expands to the full duration.
+                    #
+                    # Setting end < start is rejected:
+                    #
+                    #     ffmetadata @ 0x55fa1a8c8e40] [error] Chapter end time 0 before start 9549540
+                    #     [error] metadata.txt: Cannot allocate memory
+                    chap.end = duration or chap.start
+                else:
+                    chap.end = next_chap.start
+            next_chap = chap
+
+    def squash_by_title(self):
+        prev_chap = None
+        def squash(chap):
+            nonlocal prev_chap
+            if prev_chap is not None and prev_chap.title == chap.title:
+                prev_chap.env = chap.end
+                return True
+            else:
+                prev_chap = chap
+                return False
+        self.chapters = [
+            chap
+            for chap in self.chapters
+            if not squash(chap)]
 
     def __deepcopy__(self, memo=None):
         return self.__class__(chapters=copy.deepcopy(self.chapters, memo=memo))
@@ -541,6 +631,64 @@ class MediaFile(File):
     @mediainfo_dict.initter
     def mediainfo_dict(self):
         return self.extract_mediainfo_dict()
+
+    def load_ffmpeg_metadata(self):
+        from qip.ffmpeg import ffmpeg
+        with ffmpeg.MetadataFile.NamedTemporaryFile() as metadata_file:
+            ffmpeg_args = [
+                '-i', self,
+                '-f', 'ffmetadata',
+                '-y',
+                metadata_file,
+            ]
+            ffmpeg(*ffmpeg_args)
+            # write -> read
+            metadata_file.flush()
+            metadata_file.seek(0)
+            metadata_file.load()
+        metadata_file.file_name = None
+        return metadata_file
+
+    def write_ffmpeg_metadata(self, metadata_file,
+                              show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
+        from qip.ffmpeg import ffmpeg
+        assert isinstance(metadata_file, ffmpeg.MetadataFile)
+        if metadata_file.file_name is None:
+            assert metadata_file.fp is None, 'metadata file is opened file with no name!?'
+            with metadata_file.NamedTemporaryFile() as temp_file:
+                metadata_file.file_name = temp_file.name
+                metadata_file.fp = temp_file.fp
+                metadata_file.create()
+                # write -> read
+                metadata_file.flush()
+                metadata_file.seek(0)
+                try:
+                    return self.write_ffmpeg_metadata(metadata_file)
+                finally:
+                    metadata_file.file_name = None
+                    metadata_file.fp = None
+
+        with self.NamedTemporaryFile(suffix=self.file_name.suffix) as output_file:
+            # log.debug('metadata_file:\n%s', metadata_file.read())
+            ffmpeg_args = [
+                '-i', self,
+                '-i', metadata_file,
+                '-map_metadata', 1,
+                '-codec', 'copy',
+                '-y',
+                output_file,
+            ]
+            with perfcontext('write metadata w/ ffmpeg'):
+                ffmpeg(*ffmpeg_args,
+                       show_progress_bar=show_progress_bar,
+                       progress_bar_max=progress_bar_max,
+                       progress_bar_title=progress_bar_title or f'Write {self} metadata w/ ffmpeg',
+                       )
+            # write -> read
+            output_file.flush()
+            output_file.seek(0)
+            output_file.move(self)
+            output_file.fp.delete = False
 
     def set_tag(self, tag, value, source=''):
         return self.tags.set_tag(tag, value, source=source)
@@ -746,8 +894,6 @@ class MediaFile(File):
         tags = None
         if tags is None:
             import mutagen
-            #from qip.perf import perfcontext
-            #with perfcontext('mf.load'):
             mf = mutagen.File(self.file_name)
         if tags is None and mf is not None:
             tags = self._load_tags_mf(mf)
@@ -756,10 +902,19 @@ class MediaFile(File):
         return tags
 
     def load_chapters(self):
-        chaps = None
-        if chaps is None:
-            raise NotImplementedError(f'{self}: Loading chapters unsupported')
+        metadata_file = self.load_ffmpeg_metadata()
+        chaps = metadata_file.chapters()
         return chaps
+
+    def write_chapters(self, chapters,
+                       show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
+        metadata_file = self.load_ffmpeg_metadata()
+        metadata_file.chapters = chapters
+        self.write_ffmpeg_metadata(metadata_file,
+                                   show_progress_bar=show_progress_bar,
+                                   progress_bar_max=progress_bar_max,
+                                   progress_bar_title=progress_bar_title or f'Write {self} chapters w/ ffmpeg',
+                                   )
 
     def extract_info(self, need_actual_duration=False):
         tags_done = False
