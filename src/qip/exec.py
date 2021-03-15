@@ -51,6 +51,7 @@ import pexpect.popen_spawn
 import pexpect.spawnbase
 import pexpect.utils
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -183,7 +184,6 @@ class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
             kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
 
         if isinstance(cmd, pexpect.utils.string_types) and sys.platform != 'win32':
-            import shlex
             cmd = shlex.split(cmd, posix=os.name == 'posix')
 
         if read_from == 'auto':
@@ -1209,16 +1209,21 @@ def do_sbatch_cmd(cmd,
 
 class Editor(Executable):
 
-    _name = None
     @property
     def run_func(self):
         return do_system_cmd
+
+    _name = None
 
     @property
     def name(self):
         editor = self._name
         if not editor:
-            editor = os.environ.get('EDITOR', None)
+            EDITOR = os.environ.get('EDITOR', None)
+            if EDITOR:
+                cmd = shlex.split(EDITOR, posix=os.name == 'posix')
+                if cmd:
+                    editor = cmd[0]
         if not editor:
             for e in ('vim', 'vi', 'emacs'):
                 editor = shutil.which(e)
@@ -1231,6 +1236,27 @@ class Editor(Executable):
     @name.setter
     def name(self, value):
         self._name = value
+
+    _args = None
+
+    @property
+    def args(self):
+        args = self._args
+        if args is None:
+            EDITOR = os.environ.get('EDITOR', None)
+            if EDITOR:
+                cmd = shlex.split(EDITOR, posix=os.name == 'posix')
+                if cmd:
+                    args = tuple(cmd[1:])
+        return args or ()
+
+    @args.setter
+    def args(self, value):
+        self._args = value
+
+    def _run(self, *args, **kwargs):
+        args = tuple(self.args) + args
+        return super()._run(*args, **kwargs)
 
 EDITOR = Editor()
 
