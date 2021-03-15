@@ -25,6 +25,8 @@ log = logging.getLogger(__name__)
 from .mm import MediaTagEnum, BinaryMediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters, parse_time_duration
 from .utils import KwVarsObject, byte_decode
 from .exec import Executable
+from .file import XmlFile
+from .ffmpeg import ffmpeg
 
 
 class MatroskaTagTarget(KwVarsObject):
@@ -174,6 +176,77 @@ default_tag_map = (
     #TagInfo(None, None, 'TODO', 'itunescatalogid'),
     #TagInfo(None, None, 'TODO', 'itunesplaylistid'),
 )
+
+
+class MatroskaChaptersFile(XmlFile):
+    """A chapters file in matroska XML format"""
+
+    chapters = None
+
+    Timestamp = ffmpeg.Timestamp
+
+    def __init__(self, *args, **kwargs):
+        self.chapters = Chapters()
+        super().__init__(*args, **kwargs)
+
+    XML_VALUE_ELEMENTS = set((
+        'ChapterTimeStart',
+        'ChapterTimeEnd',
+        'ChapterUID',
+        'ChapterFlagHidden',
+        'ChapterFlagEnabled',
+        'ChapterString',
+        'ChapterLanguage',
+    ))
+
+    def load(self, *, add_pre_gap=True, fix=True, return_raw_xml=False):
+        chapters_out = self.read()
+        chapters_out = self.fix_chapters_out(chapters_out)
+        if return_raw_xml:
+            return chapters_out
+        chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
+        self.chapters = Chapters.from_mkv_xml(chapters_xml, add_pre_gap=add_pre_gap)
+
+    @classmethod
+    def fix_chapters_out(cls, chapters_out):
+        import xml.etree.ElementTree as ET
+        from .ffmpeg import ffmpeg
+        chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
+        chapters_root = chapters_xml.getroot()
+        for eEditionEntry in chapters_root.findall('EditionEntry'):
+            for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
+                e = eChapterAtom.find('ChapterTimeStart')
+                v = ffmpeg.Timestamp(e.text)
+                if v != 0.0:
+                    # In case initial frame is a I frame to be displayed after
+                    # subqequent P or B frames, the start time will be
+                    # incorrect.
+                    log.warning('Fixing first chapter start time %s to 0', v)
+                    if False:
+                        # mkvpropedit doesn't like unknown elements
+                        e.tag = 'original_ChapterTimeStart'
+                        e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
+                    e.text = str(ffmpeg.Timestamp(0))
+                    chapters_xml_io = io.StringIO()
+                    chapters_xml.write(chapters_xml_io,
+                                       xml_declaration=True,
+                                       encoding='unicode',  # Force string
+                                       )
+                    chapters_out = chapters_xml_io.getvalue()
+                break
+        return chapters_out
+
+    def create(self, file=None):
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('w', encoding='utf-8') as file:
+                return self.create(file=file)
+        chapters_xml = self.chapters.to_mkv_xml()
+        chapters_xml.write(file,
+                           xml_declaration=True,
+                           encoding='unicode',  # Force string
+                           )
 
 
 class MatroskaFile(BinaryMediaFile):
@@ -731,65 +804,48 @@ class MatroskaFile(BinaryMediaFile):
                 target_tags.set_tag(mapped_tag, d_tag.String)
         return tags
 
-    def load_chapters(self, *, add_pre_gap=True, fix=True, return_raw_xml=False):
+    def load_chapters(self, *, return_raw_xml=False, **kwargs):
         import xml.etree.ElementTree as ET
         from qip.perf import perfcontext
         with perfcontext('mkvextract chapters'):
-            chapters_out = mkvextract('chapters', self).out
-        chapters_out = self.fix_chapters_out(chapters_out)
+            chapters_out = mkvextract('chapters', self,
+                                      encoding='utf-8-sig').out
+        chapters_out = MatroskaChaptersFile.fix_chapters_out(chapters_out)
         if return_raw_xml:
             return chapters_out
         chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
         chaps = Chapters.from_mkv_xml(chapters_xml, add_pre_gap=add_pre_gap)
         return chaps
 
-    @classmethod
-    def fix_chapters_out(cls, chapters_out):
-        import xml.etree.ElementTree as ET
-        from .ffmpeg import ffmpeg
-        chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
-        chapters_root = chapters_xml.getroot()
-        for eEditionEntry in chapters_root.findall('EditionEntry'):
-            for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
-                e = eChapterAtom.find('ChapterTimeStart')
-                v = ffmpeg.Timestamp(e.text)
-                if v != 0.0:
-                    # In case initial frame is a I frame to be displayed after
-                    # subqequent P or B frames, the start time will be
-                    # incorrect.
-                    log.warning('Fixing first chapter start time %s to 0', v)
-                    if False:
-                        # mkvpropedit doesn't like unknown elements
-                        e.tag = 'original_ChapterTimeStart'
-                        e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
-                    e.text = str(ffmpeg.Timestamp(0))
-                    chapters_xml_io = io.StringIO()
-                    chapters_xml.write(chapters_xml_io,
-                                       xml_declaration=True,
-                                       encoding='unicode',  # Force string
-                                       )
-                    chapters_out = chapters_xml_io.getvalue()
-                break
-        return chapters_out
-
     def write_chapters(self, chaps,
                        show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
-        from qip.file import TempFile
-        chapters_xml = chaps.to_mkv_xml()
-        chapters_xml_file = TempFile.mkstemp(suffix='.chapters.xml', open=True, text=True)
-        chapters_xml.write(chapters_xml_file.fp,
-                           xml_declaration=True,
-                           encoding='unicode',  # Force string
-                           )
-        chapters_xml_file.close()
+        import xml.etree.ElementTree as ET
 
-        from qip.perf import perfcontext
-        with perfcontext('save chapters w/ mkvpropedit'):
-            mkvpropedit(
-                self,
-                actions=mkvpropedit.ActionArgs(
-                    '--chapters', chapters_xml_file,
-                ))
+        with MatroskaChaptersFile.NamedTemporaryFile() as chapters_file:
+            if isinstance(chaps, ET.ElementTree):
+                # XML tree
+                chapters_xml = chaps
+                chapters_xml.write(chapters_file.fp,
+                                   xml_declaration=True,
+                                   encoding='unicode',  # Force string
+                                   )
+                return
+            if isinstance(chaps, str) and chaps.startswith('<'):
+                # XML string -> Chapters
+                # This allows for verification and standardization
+                chaps = Chapters.from_mkv_xml(chaps)
+            chapters_file.chapters = chaps
+            chapters_file.create()
+            # write -> read
+            chapters_file.flush()
+            chapters_file.seek(0)
+            from qip.perf import perfcontext
+            with perfcontext('write chapters w/ mkvpropedit'):
+                mkvpropedit(
+                    self,
+                    actions=mkvpropedit.ActionArgs(
+                        '--chapters', chapters_file,
+                    ))
 
     def prep_picture(self, src_picture, *,
             yes=False,

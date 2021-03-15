@@ -539,9 +539,20 @@ class Executable(metaclass=abc.ABCMeta):
     popen_class = subprocess.Popen
 
     run_func = None
-    run_func_options = tuple()
+    run_func_options = (
+        # options from do_exec_cmd/dbg_exec_cmd/subprocess.run/Popen
+        #'dry_run',
+        #'input',
+        'stdin', 'stdout', 'stderr',
+        'encoding', 'errors',
+        #'universal_newlines', 'text',
+    )
     popen_func = None
-    popen_func_options = tuple()
+    popen_func_options = (
+        # options from popen_spawn
+        'stdin', 'stdout', 'stderr',
+        'encoding', 'errors',
+    )
 
     encoding = None
     encoding_errors = None

@@ -89,6 +89,7 @@ def main():
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--set', dest='action', default=None, action='store_const', const='set', help='set tags')
     xgroup.add_argument('--edit', dest='action', default=argparse.SUPPRESS, action='store_const', const='edit', help='edit tags')
+    xgroup.add_argument('--edit-chapters', dest='action', default=argparse.SUPPRESS, action='store_const', const='edit_chapters', help='edit chapters')
     xgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
     xgroup.add_argument('--apply', dest='action', default=argparse.SUPPRESS, action='store_const', const='apply', help='apply tags')
     xgroup.add_argument('--find-lyrics', dest='action', default=argparse.SUPPRESS, action='store_const', const='find_lyrics', help='find lyrics')
@@ -173,8 +174,18 @@ def main():
         if not app.args.files:
             raise Exception('No files provided')
         for file_name in app.args.files:
-            with perfcontext('list'):
+            with perfcontext('edit'):
                 tageditor(file_name)
+
+        # }}}
+    elif app.args.action == 'edit_chapters':
+        # {{{
+
+        if not app.args.files:
+            raise Exception('No files provided')
+        for file_name in app.args.files:
+            with perfcontext('edit_chapters'):
+                chaptereditor(file_name)
 
         # }}}
     elif app.args.action == 'list':
@@ -671,7 +682,7 @@ def taged_Matroska(file_name, tags):
     matroska_file.set_tags_xml(tags_xml)
 
 def taged(file_name, tags):
-    app.log.info('Editing %s...', file_name)
+    app.log.info('Setting %s tags...', file_name)
     with perfcontext('mf.load'):
         mf = mutagen.File(file_name)
     if mf is not None:
@@ -683,14 +694,14 @@ def taged(file_name, tags):
         else:
             with perfcontext('mf.save'):
                 mf.save()
-        return True
-    if file_name.suffix in ('.mka', '.mkv', '.webm'):
+    elif file_name.suffix in ('.mka', '.mkv', '.webm'):
         return taged_Matroska(file_name, tags)
-    raise NotImplementedError(file_name.suffix)
+    else:
+        raise NotImplementedError(file_name.suffix)
     return True
 
 def tageditor(file_name):
-    app.log.info('Editing %s...', file_name)
+    app.log.info('Editing %s tags...', file_name)
     mm_file = MediaFile.new_by_file_name(file_name)
     import qip.matroska
     if isinstance(mm_file, qip.matroska.MatroskaFile):
@@ -700,8 +711,7 @@ def tageditor(file_name):
             preserve_whitespace_tags=qip.matroska.MatroskaFile.XML_VALUE_ELEMENTS)
         if modified:
             mm_file.set_tags_xml(tags_xml)
-        return True
-    if isinstance(mm_file, qip.mp4.Mpeg4ContainerFile):
+    elif isinstance(mm_file, qip.mp4.Mpeg4ContainerFile):
         tags = mm_file.load_tags()
         try:
             del tags.picture
@@ -710,12 +720,13 @@ def tageditor(file_name):
         modified, tags = edvar(tags)
         if modified:
             mm_file.write_tags(tags=tags)
-        return True
-    raise NotImplementedError(mm_file)
+    else:
+        raise NotImplementedError(mm_file)
+    return True
 
 def taglist(file_name, format):
     if format == 'human':
-        app.log.info('Listing %s...', file_name)
+        app.log.info('Listing %s tags...', file_name)
     mm_file = MediaFile.new_by_file_name(file_name)
     app.log.debug('mm_file = %r', mm_file)
     tags = mm_file.load_tags()
@@ -728,6 +739,24 @@ def taglist(file_name, format):
         sys.stdout.flush()  # Sync with logging
     else:
         raise NotImplementedError(format)
+    return True
+
+def chaptereditor(file_name):
+    app.log.info('Editing %s chapters...', file_name)
+    mm_file = MediaFile.new_by_file_name(file_name)
+    import qip.matroska
+    if isinstance(mm_file, qip.matroska.MatroskaFile):
+        chapters_xml = mm_file.load_chapters(return_raw_xml=True)
+        modified, chapters_xml = edvar(
+            chapters_xml,
+            preserve_whitespace_tags=qip.matroska.MatroskaChaptersFile.XML_VALUE_ELEMENTS)
+        if modified:
+            mm_file.write_chapters(chapters_xml)
+    else:
+        chaps = mm_file.load_chapters()
+        modified, chaps = edvar(chaps)
+        if modified:
+            mm_file.write_chapters(chapters=chaps)
     return True
 
 if __name__ == "__main__":
