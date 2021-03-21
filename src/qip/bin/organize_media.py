@@ -53,17 +53,6 @@ import qip.wav
 Auto = qip.utils.Constants.Auto
 all_part_names = {'disk', 'track', 'part'}
 
-# replace_html_entities {{{
-
-def replace_html_entities(s):
-    s = html.unescape(s)
-    m = re.search(r'&\w+;', s)
-    if m:
-        raise ValueError('Unknown HTML entity: %s' % (m.group(0),))
-    return s
-
-# }}}
-
 def str_or_none(v):
     if v in (None, 'None'):
         return None
