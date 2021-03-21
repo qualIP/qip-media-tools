@@ -623,14 +623,21 @@ def safe_read_file(file, *, encoding='utf-8'):
 
 @func_once
 def load_all_file_types():
+    import qip.avi
     import qip.cdda
+    import qip.ffmpeg
     #import qip.file
-    import qip.json
-    import qip.mm
+    import qip.flac
     import qip.img
-    import qip.mp4
+    import qip.json
+    import qip.lodev
     import qip.matroska
+    import qip.mm
+    import qip.mp2
     import qip.mp3
+    import qip.mp4
+    import qip.pgs
+    import qip.vob
     import qip.wav
 
 File._build_extension_to_class_map()
