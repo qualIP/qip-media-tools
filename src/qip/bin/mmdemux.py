@@ -3744,6 +3744,7 @@ def action_verify(inputfile, in_tags):
                        'right',
                        'right',
                    ],
+                   tablefmt='simple',
                    ))
 
     min_stream_duration = min(stream_duration
@@ -4068,6 +4069,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
                                'ĺeft',
                                'ĺeft',
                            ],
+                           tablefmt='simple',
                            ))
 
 def stream_dict_key(stream_dict):
