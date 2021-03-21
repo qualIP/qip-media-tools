@@ -42,6 +42,7 @@ import mutagen
 import operator
 import os
 import re
+import sys
 import reprlib
 import shutil
 import string
@@ -62,7 +63,7 @@ from qip.isocountry import isocountry, IsoCountry
 from qip.file import *
 from qip.parser import *
 from qip.propex import propex
-from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise, Timestamp, Ratio
+from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise, Timestamp, Ratio, replace_html_entities, StreamTransform
 from qip.perf import perfcontext
 import qip.utils
 
@@ -191,7 +192,7 @@ class PictureTagInfo(object):
         return f'({self.format}: {self.description})'
 
 
-class Chapter(object):
+class Chapter(json.JSONEncodable, object):
 
     start = propex(
         name='start',
@@ -246,6 +247,20 @@ class Chapter(object):
         self.title = title
         self.no = None if no is None else int(no)
         self.lang = None if lang is None else isolang(lang)
+
+    def __json_encode_class_name__(self):
+        return None
+
+    def __json_encode_vars__(self):
+        d = collections.OrderedDict()
+        for attr, ignore_values in self.MEMBERS_INFO:
+            v = getattr(self, attr)
+            if v in ignore_values:
+                continue
+            if not isinstance(v, json.JSON_NATIVE_TYPES):
+                v = str(v)
+            d[attr] = v
+        return d
 
     def offset(self, offset):
         start = self.start
@@ -330,18 +345,20 @@ class Chapter(object):
             s += ' %r' % (self.title,)
         return s
 
+    MEMBERS_INFO = (
+        ('no', (None,)),
+        ('start', (None,)),
+        ('end', (None,)),
+        ('title', (None,)),
+        ('uid', (None,)),
+        ('hidden', (None, False)),
+        ('enabled', (None, True)),
+        ('lang', (None,)),
+    )
+
     def __repr__(self):
         lkwargs = []
-        for attr, ignore_values in (
-                ('start', (None,)),
-                ('end', (None,)),
-                ('uid', (None,)),
-                ('hidden', (None, False)),
-                ('enabled', (None, True)),
-                ('title', (None,)),
-                ('no', (None,)),
-                ('lang', (None,)),
-        ):
+        for attr, ignore_values in self.MEMBERS_INFO:
             v = getattr(self, attr)
             if v in ignore_values:
                 continue
@@ -387,7 +404,7 @@ class Chapter(object):
             self.end -= other
         return self
 
-class Chapters(collections.UserList):
+class Chapters(json.JSONEncodable, collections.UserList):
 
     MKV_XML_VALUE_TAGS = {
         'EditionFlagHidden',
@@ -417,6 +434,12 @@ class Chapters(collections.UserList):
                 title='pre-gap', hidden=True)
             chapters.insert(0, chap)
         super().__init__(chapters)
+
+    def __json_encode_class_name__(self):
+        return None
+
+    def __json_encode_vars__(self):
+        return self.chapters
 
     @classmethod
     def from_mkv_xml(cls, xml, **kwargs):
@@ -535,6 +558,27 @@ class Chapters(collections.UserList):
         for chap in self.chapters:
             chap -= other
         return self
+
+    def pprint(self, *, deep=True, heading='Chapters:', file=None):
+        if file is None:
+            file = sys.stdout
+        chaps = self
+        if heading:
+            print(heading, file=file)
+        from tabulate import tabulate
+        chaps_table = [
+            (chap.no if chap.no is not None else '',
+             chap.start.canonical_str(precision=3) if chap.start is not None else '',
+             chap.end.canonical_str(precision=3) if chap.end is not None else '',
+             chap.title,
+             )
+            for chap in chaps]
+        print(
+            tabulate(chaps_table,
+                     headers=['No', 'Start', 'End', 'Title'],
+                     colalign=['right', 'right', 'right', 'left'],
+                     tablefmt='simple'),
+            file=StreamTransform.indenter(file))
 
 class MediaFile(File):
 
@@ -2041,7 +2085,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
     def __json_encode_vars__(self):
         d = collections.OrderedDict()
         for k, v in self.items():
-            if v is not None and not isinstance(v, (str, int, list, tuple, collections.abc.Mapping, json.JSONEncodable)):
+            if not isinstance(v, json.JSON_NATIVE_TYPES):
                 v = str(v)
             d[k.value] = v
         return d
@@ -2820,7 +2864,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
         formatter = self.Formatter(tags=self)
         return formatter.vformat(format_string, args, kwargs)
 
-    def pprint(self, *, deep=True, heading='Tags:'):
+    def pprint(self, *, deep=True, heading='Tags:', file=None):
+        if file is None:
+            file = sys.stdout
         tags = self
         if heading:
             print(heading)
@@ -2830,14 +2876,6 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
                 tags[tag_info.tag_enum] = None
         tags_keys = tags.keys() if deep else tags.keys(deep=False)
 
-        import html
-        def replace_html_entities(s):
-            s = html.unescape(s)
-            m = re.search(r'&\w+;', s)
-            if m:
-                raise ValueError('Unknown HTML entity: %s' % (m.group(0),))
-            return s
-
         for tag in sorted(tags_keys, key=functools.cmp_to_key(dictionarycmp)):
             value = tags[tag]
             if isinstance(value, str):
@@ -2845,7 +2883,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
             if value is not None:
                 if type(value) not in (int, str, bool, tuple):
                     value = str(value)
-                print('    %-13s = %r' % (tag.value, value))
+                print('    %-13s = %r' % (tag.value, value), file=file)
 
     def cite(self, cite_api=None, type_=None):
 
@@ -3041,10 +3079,12 @@ class AlbumTags(MediaTagDict):
             for k, v in self.tracks_tags.items()}
         return d
 
-    def pprint(self, *, deep=True, heading='Tags:'):
-        super().pprint(deep=deep, heading=heading)
+    def pprint(self, *, deep=True, heading='Tags:', file=None):
+        if file is None:
+            file = sys.stdout
+        super().pprint(deep=deep, heading=heading, file=file)
         for track_no, track_tags in self.tracks_tags.items():
-            track_tags.pprint(deep=False, heading='- Track %d' % (track_no,))
+            track_tags.pprint(deep=False, heading='- Track %d' % (track_no,), file=file)
 
 # }}}
 
@@ -5276,7 +5316,7 @@ class ArgparseTypeListAction(argparse.Action):
         buf = 'Types:'
         for stik in sorted(tag_stik_info['stik'].keys()):
             buf += '\n  %-2d \'%s\'' % (stik, tag_stik_info['stik'][stik]['element'])
-        parser._print_message(buf, _sys.stdout)
+        parser._print_message(buf, sys.stdout)
         parser.exit()
 
 # }}}
@@ -5316,7 +5356,7 @@ class ArgparseGenreListAction(argparse.Action):
             buf += '\n  %-8d \'%s\'' % (genre_id, mp4v2_genres_info[genre_id]['genre_name'])
             for subgenre_id in sorted(mp4v2_genres_info[genre_id]['sub_genres_info'].keys()):
                 buf += '\n    %-8i \'%s\'' % (subgenre_id, mp4v2_genres_info[genre_id]['sub_genres_info'][subgenre_id]['genre_name'])
-        parser._print_message(buf, _sys.stdout)
+        parser._print_message(buf, sys.stdout)
         parser.exit()
 
 # }}}

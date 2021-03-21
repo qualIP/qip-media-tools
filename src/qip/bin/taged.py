@@ -87,10 +87,11 @@ def main():
 
     pgroup = app.parser.add_argument_group('Actions')
     xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_argument('--set', dest='action', default=None, action='store_const', const='set', help='set tags')
-    xgroup.add_argument('--edit', dest='action', default=argparse.SUPPRESS, action='store_const', const='edit', help='edit tags')
+    xgroup.add_argument('--set', '--set-tags', dest='action', default=None, action='store_const', const='set', help='set tags')
+    xgroup.add_argument('--edit', '--edit-tags', dest='action', default=argparse.SUPPRESS, action='store_const', const='edit', help='edit tags')
     xgroup.add_argument('--edit-chapters', dest='action', default=argparse.SUPPRESS, action='store_const', const='edit_chapters', help='edit chapters')
-    xgroup.add_argument('--list', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
+    xgroup.add_argument('--list', '--list-tags', dest='action', default=argparse.SUPPRESS, action='store_const', const='list', help='list tags')
+    xgroup.add_argument('--list-chapters', dest='action', default=argparse.SUPPRESS, action='store_const', const='list_chapters', help='list chapters')
     xgroup.add_argument('--apply', dest='action', default=argparse.SUPPRESS, action='store_const', const='apply', help='apply tags')
     xgroup.add_argument('--find-lyrics', dest='action', default=argparse.SUPPRESS, action='store_const', const='find_lyrics', help='find lyrics')
     xgroup.add_argument('--id-audiobooks', dest='action', default=argparse.SUPPRESS, action='store_const', const='id_audiobooks', help='identify audiobooks')
@@ -164,7 +165,7 @@ def main():
         if not app.args.files:
             raise Exception('No files provided')
         for file_name in app.args.files:
-            with perfcontext('taged'):
+            with perfcontext(app.args.action):
                 taged(file_name, in_tags)
 
         # }}}
@@ -174,7 +175,7 @@ def main():
         if not app.args.files:
             raise Exception('No files provided')
         for file_name in app.args.files:
-            with perfcontext('edit'):
+            with perfcontext(app.args.action):
                 tageditor(file_name)
 
         # }}}
@@ -184,7 +185,7 @@ def main():
         if not app.args.files:
             raise Exception('No files provided')
         for file_name in app.args.files:
-            with perfcontext('edit_chapters'):
+            with perfcontext(app.args.action):
                 chaptereditor(file_name)
 
         # }}}
@@ -194,8 +195,18 @@ def main():
         if not app.args.files:
             raise Exception('No files provided')
         for file_name in app.args.files:
-            with perfcontext('list'):
+            with perfcontext(app.args.action):
                 taglist(file_name, app.args.format)
+
+        # }}}
+    elif app.args.action == 'list_chapters':
+        # {{{
+
+        if not app.args.files:
+            raise Exception('No files provided')
+        for file_name in app.args.files:
+            with perfcontext(app.args.action):
+                chapterlist(file_name, app.args.format)
 
         # }}}
     elif app.args.action == 'find_lyrics':
@@ -736,6 +747,7 @@ def taglist(file_name, format):
         sys.stdout.flush()  # Sync with logging
     elif format == 'json':
         json.dump(tags, fp=sys.stdout)
+        print()  # json.dump writes no eol
         sys.stdout.flush()  # Sync with logging
     else:
         raise NotImplementedError(format)
@@ -757,6 +769,24 @@ def chaptereditor(file_name):
         modified, chaps = edvar(chaps)
         if modified:
             mm_file.write_chapters(chapters=chaps)
+    return True
+
+def chapterlist(file_name, format):
+    if format == 'human':
+        app.log.info('Listing %s chapters...', file_name)
+    mm_file = MediaFile.new_by_file_name(file_name)
+    app.log.debug('mm_file = %r', mm_file)
+    chaps = mm_file.load_chapters()
+    assert chaps is not None
+    if format == 'human':
+        chaps.pprint()
+        sys.stdout.flush()  # Sync with logging
+    elif format == 'json':
+        json.dump(chaps, fp=sys.stdout)
+        print()
+        sys.stdout.flush()  # Sync with logging
+    else:
+        raise NotImplementedError(format)
     return True
 
 if __name__ == "__main__":

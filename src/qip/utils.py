@@ -23,6 +23,7 @@ __all__ = (
     'adviter',
     'dict_from_swig_obj',
     'replace_html_entities',
+    'StreamTransform',
 )
 
 from _collections_abc import _check_methods
@@ -44,6 +45,7 @@ import stat
 import sys
 import termios
 import time
+import textwrap
 log = logging.getLogger(__name__)
 
 def beep():
@@ -337,7 +339,7 @@ class Timestamp(object):
     def __bool__(self):
         return bool(self.seconds)
 
-    def canonical_str(self):
+    def canonical_str(self, precision=9):
         s = self.seconds
         if s < 0.0:
             sign = '-'
@@ -348,7 +350,7 @@ class Timestamp(object):
         s = s - m * 60
         h = m // 60
         m = m - h * 60
-        s = '%.9f' % (s,)
+        s = '%.*f' % (9 if precision is None else precision, s)
         if h:
             if s[1] == '.':
                 s = '0'+ s
@@ -359,11 +361,12 @@ class Timestamp(object):
             string = '%dm%s' % (m, s)
         else:
             string = s
-        if string.endswith('000'):
-            if string.endswith('000000'):
-                string = string[:-6]
-            else:
-                string = string[:-3]
+        if precision is None:
+            if string.endswith('000'):
+                if string.endswith('000000'):
+                    string = string[:-6]
+                else:
+                    string = string[:-3]
         return sign + string + 's'
 
     def friendly_str(self):
@@ -852,3 +855,73 @@ def replace_html_entities(s):
     if m:
         raise ValueError('Unknown HTML entity: %s' % (m.group(0),))
     return s
+
+class StreamTransform(object):
+
+    file = None
+    transform = None
+
+    def __init__(self, file, *, transform=None):
+        self.file = file
+        self.transform = transform
+        super().__init__()
+
+    def __getattr__(self, name):
+        # Attribute lookups are delegated to the underlying file
+        # and cached for non-numeric results
+        # (i.e. methods are cached, closed and friends are not)
+        file = self.__dict__['file']
+        a = getattr(file, name)
+        #if hasattr(a, '__call__'):
+        #    func = a
+        #    @_functools.wraps(func)
+        #    def func_wrapper(*args, **kwargs):
+        #        return func(*args, **kwargs)
+        #    # Avoid closing the file as long as the wrapper is alive,
+        #    # see issue #18879.
+        #    func_wrapper._closer = self._closer
+        #    a = func_wrapper
+        if not isinstance(a, int):
+            setattr(self, name, a)
+        return a
+
+    # The underlying __enter__ method returns the wrong object
+    # (self.file) so override it to return the wrapper
+    def __enter__(self):
+        self.file.__enter__()
+        return self
+
+    # Need to trap __exit__ as well to ensure the file gets
+    # deleted when used in a with statement
+    def __exit__(self, exc, value, tb):
+        result = self.file.__exit__(exc, value, tb)
+        return result
+
+    # iter() doesn't use __getattr__ to find the __iter__ method
+    def __iter__(self):
+        # Don't return iter(self.file), but yield from it to avoid closing
+        # file as long as it's being used as iterator (see issue #23700).  We
+        # can't use 'yield from' here because iter(file) returns the file
+        # object itself, which has a close method, and thus the file would get
+        # closed when the generator is finalized, due to PEP380 semantics.
+        for line in self.file:
+            yield line
+
+    #def writelines(self, lines, /):
+    #    if self.closed:
+    #        raise ValueError('I/O operation on closed file')
+    #    return self.fp.writelines(lines)
+
+    def write(self, s):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        if self.transform:
+            s = self.transform(s)
+        return self.file.write(s)
+
+    @classmethod
+    def indenter(cls, file, *, prefix=None, indent=4):
+        if prefix is None:
+            prefix = ' ' * indent
+        return cls(file,
+                   transform=functools.partial(textwrap.indent, prefix=prefix))

@@ -230,4 +230,14 @@ def register_class(cls, encoder, decoder, wrap=True):
         cls.__json_encode__ = encoder
         cls.__json_decode__ = decoder
 
+JSON_NATIVE_TYPES = (
+    type(None),
+    str,
+    int,
+    list,
+    tuple,
+    _collections.abc.Mapping,
+    JSONEncodable,
+)
+
 JsonFile._build_extension_to_class_map()

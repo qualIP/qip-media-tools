@@ -201,7 +201,8 @@ class MatroskaChaptersFile(XmlFile):
 
     def load(self, *, add_pre_gap=True, fix=True, return_raw_xml=False):
         chapters_out = self.read()
-        chapters_out = self.fix_chapters_out(chapters_out)
+        if fix:
+            chapters_out = self.fix_chapters_out(chapters_out)
         if return_raw_xml:
             return chapters_out
         chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
@@ -804,17 +805,18 @@ class MatroskaFile(BinaryMediaFile):
                 target_tags.set_tag(mapped_tag, d_tag.String)
         return tags
 
-    def load_chapters(self, *, return_raw_xml=False, **kwargs):
+    def load_chapters(self, *, fix=True, return_raw_xml=False, **kwargs):
         import xml.etree.ElementTree as ET
         from qip.perf import perfcontext
         with perfcontext('mkvextract chapters'):
             chapters_out = mkvextract('chapters', self,
                                       encoding='utf-8-sig').out
-        chapters_out = MatroskaChaptersFile.fix_chapters_out(chapters_out)
+        if fix:
+            chapters_out = MatroskaChaptersFile.fix_chapters_out(chapters_out)
         if return_raw_xml:
             return chapters_out
         chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
-        chaps = Chapters.from_mkv_xml(chapters_xml, add_pre_gap=add_pre_gap)
+        chaps = Chapters.from_mkv_xml(chapters_xml, **kwargs)
         return chaps
 
     def write_chapters(self, chaps,
