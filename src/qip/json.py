@@ -13,8 +13,9 @@ __all__ = (
         'JSONDecoder',
         )
 
-import datetime
-import importlib
+import datetime as _datetime
+import importlib as _importlib
+import collections as _collections
 
 from json import JSONEncoder as _JSONEncoder
 from json import JSONDecoder as _JSONDecoder
@@ -23,9 +24,9 @@ from json import loads as _loads
 from json import dump as _dump
 from json import dumps as _dumps
 
-from .file import TextFile
+from .file import TextFile as _TextFile
 
-class JsonFile(TextFile):
+class JsonFile(_TextFile):
 
     _common_extensions = (
         '.json',
@@ -121,7 +122,7 @@ class JSONEncoder(_JSONEncoder):
 
     def _encode_datetime(obj):
         return {
-            '__class__': JSONEncoder.encode_class_name(datetime.datetime),
+            '__class__': JSONEncoder.encode_class_name(_datetime.datetime),
             'year': obj.year,
             'month': obj.month,
             'day': obj.day,
@@ -132,17 +133,17 @@ class JSONEncoder(_JSONEncoder):
             'tzinfo': obj.tzinfo,
         }
 
-    _builtin_encoders[datetime.datetime] = _encode_datetime
+    _builtin_encoders[_datetime.datetime] = _encode_datetime
 
     def _encode_date(obj):
         return {
-            '__class__': JSONEncoder.encode_class_name(datetime.date),
+            '__class__': JSONEncoder.encode_class_name(_datetime.date),
             'year': obj.year,
             'month': obj.month,
             'day': obj.day,
         }
 
-    _builtin_encoders[datetime.date] = _encode_date
+    _builtin_encoders[_datetime.date] = _encode_date
 
     @classmethod
     def encode_class_name(self, cls):
@@ -167,14 +168,14 @@ class JSONDecoder(_JSONDecoder):
     _builtin_decoders = {}
 
     def _decode_datetime(obj):
-        return datetime.datetime(**obj)
+        return _datetime.datetime(**obj)
 
-    _builtin_decoders[datetime.datetime] = _decode_datetime
+    _builtin_decoders[_datetime.datetime] = _decode_datetime
 
     def _decode_date(obj):
-        return datetime.date(**obj)
+        return _datetime.date(**obj)
 
-    _builtin_decoders[datetime.date] = _decode_date
+    _builtin_decoders[_datetime.date] = _decode_date
 
     def __init__(self, object_hook=None, **kwargs):
         if object_hook is None:
@@ -187,7 +188,7 @@ class JSONDecoder(_JSONDecoder):
         except KeyError:
             pass
         mod_name, cls_name = cls_name.split(':', maxsplit=1)
-        mod = importlib.import_module(mod_name)
+        mod = _importlib.import_module(mod_name)
         cls = mod
         for sub_cls_name in cls_name.split(sep='.'):
             cls = getattr(cls, sub_cls_name)
