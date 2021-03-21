@@ -46,6 +46,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             # write -> read
             wav_file.flush()
             wav_file.seek(0)
+            wav_file.bitrate = 1411200  # 44100Hz * 16 bits/sample * 2 channels
             self.encode(inputfiles=[wav_file], yes=yes)
         if tags is not None:
             self.write_tags(tags=tags)
@@ -180,7 +181,14 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 # TODO select preferred encoder based on bitrate: https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio
                 kbitrate = [target_bitrate]
                 if kbitrate[0] is None:
-                    kbitrate = [round(inputfile.bitrate / 1000.0 / 16.0) * 16 for inputfile in inputfiles]
+                    def get_kbitrate(inputfile):
+                        try:
+                            bitrate = inputfile.bitrate
+                        except AttributeError:
+                            inputfile.extract_info()
+                            bitrate = inputfile.bitrate
+                        return round(bitrate / 1000.0 / 16.0) * 16
+                    kbitrate = [get_kbitrate(inputfile) for inputfile in inputfiles]
                     kbitrate = sorted(set(kbitrate))
                     kbitrate = [kbitrate[0]]  # TODO
                 if len(kbitrate) == 1:

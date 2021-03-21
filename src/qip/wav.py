@@ -31,7 +31,10 @@ class WaveFile(SoundFile):
     @audio_type.setter
     def audio_type(self, value):
         if value is not None \
-                and mm.AudioType(value) is not mm.AudioType.wav:
+                and mm.AudioType(value) not in (
+                    mm.AudioType.wav,
+                    mm.AudioType.pcm_s16le,
+                ):
             raise ValueError(value)
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None, fp=None, yes=False):
