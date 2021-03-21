@@ -34,7 +34,7 @@ class WaveFile(SoundFile):
                 and mm.AudioType(value) is not mm.AudioType.wav:
             raise ValueError(value)
 
-    def rip_cue_track(self, cue_track, bin_file=None, tags=None, fp=None):
+    def rip_cue_track(self, cue_track, bin_file=None, tags=None, fp=None, yes=False):
         if bin_file is None:
             bin_file = BinaryFile(cue_track.file.name)
         if fp is None:
@@ -42,7 +42,7 @@ class WaveFile(SoundFile):
             # assert fp.tell() == 0
 
         if fp is None:
-            with self.open('w') as fp:
+            with self.open('w' if app.args.yes else 'x') as fp:
                 self.rip_cue_track(cue_track=cue_track, bin_file=bin_file, tags=None, fp=fp)
         else:
             assert tags is None, 'Cannot write tags if fp is not closed!'

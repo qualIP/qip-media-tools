@@ -48,7 +48,7 @@ def main():
     pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue creating RIP')
     #pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
     pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
-    #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')  # TODO
+    pgroup.add_bool_argument('--yes', '-y', help='answer "yes" to all prompts', neg_help='do not answer prompts')
     pgroup.add_bool_argument('--save-temps', default=False, help='do not delete intermediate files')
     pgroup.add_argument('--format',
                         #default="wav",
@@ -96,7 +96,7 @@ def main():
         for cue_file in app.args.cue_files:
             if not app.args.format:
                 app.parser.error('the following argument is required: --format')
-            bincuerip(cue_file, format=app.args.format)
+            bincuerip(cue_file, format=app.args.format, yes=app.args.yes)
     else:
         raise ValueError('Invalid action \'%s\'' % (app.args.action,))
 
@@ -109,7 +109,7 @@ def prep_bincuetags(cue_file):
         import qip.bin.bincuetags
         qip.bin.bincuetags.bincuetags(cue_file)
 
-def bincuerip(cue_file, *, format):
+def bincuerip(cue_file, *, format, yes=False):
     if not isinstance(cue_file, CDDACueSheetFile):
         cue_file = CDDACueSheetFile(cue_file)
 
@@ -160,7 +160,8 @@ def bincuerip(cue_file, *, format):
         app.log.info('Ripping %s (%s)...', track_out_file, summary)
         track_out_file.rip_cue_track(track,
                                      bin_file=bin_file,
-                                     tags=track_tags)
+                                     tags=track_tags,
+                                     yes=yes)
 
     return True
 
