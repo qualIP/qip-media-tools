@@ -160,6 +160,12 @@ class MetadataFile(TextFile):
                 for key, value in section_tags.items():
                     print(f'{key}={value}', file=file)
 
+    @classmethod
+    def NamedTemporaryFile(cls, *, suffix=None, **kwargs):
+        if suffix is None:
+            suffix = '.metadata.txt'
+        return super().NamedTemporaryFile(suffix=suffix, **kwargs)
+
     @property
     def chapters(self):
         from qip.mm import Chapter, Chapters
@@ -235,6 +241,12 @@ class ConcatScriptFile(TextFile):
             print(f'file \'{esc_file}\'', file=file)
             if file_entry.duration is not None:
                 print(f'duration {Timestamp(file_entry.duration)}', file=file)
+
+    @classmethod
+    def NamedTemporaryFile(cls, *, suffix=None, **kwargs):
+        if suffix is None:
+            suffix = '.concat.lst'
+        return super().NamedTemporaryFile(suffix=suffix, **kwargs)
 
 class _FfmpegSpawnMixin(_SpawnMixin):
 
@@ -1378,3 +1390,6 @@ class Ffprobe(_Ffmpeg):
                 raise ValueError('Unrecognized line %d: %s' % (parser.line_no, line))
 
 ffprobe = Ffprobe()
+
+MetadataFile._build_extension_to_class_map()
+ConcatScriptFile._build_extension_to_class_map()
