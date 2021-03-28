@@ -19,8 +19,8 @@ __all__ = (
     'MediaType',
     'ContentType',
     'Stereo3DMode',
-    'mp4tags',
-    'mp4info',
+    #'mp4tags',  # Deprecated
+    #'mp4info',  # Deprecated
     'id3v2',
     'operon',
     'taged',
@@ -1055,7 +1055,7 @@ class MediaFile(File):
                         self.audio_type = stream_dict['codec_name']
 
         if self.file_name.suffix in get_mp4v2_app_support().extensions_can_read:
-            if not tags_done and mp4info.which(assert_found=False):
+            if False and not tags_done and mp4info.which(assert_found=False):
                 # {{{
                 d2, track_tags = mp4info.query(self.file_name)
                 if d2.get('audio_type', None) is not None:
@@ -5513,6 +5513,8 @@ class Mp4tags(Executable):
 mp4tags = Mp4tags()
 
 class Mp4info(Executable):
+    """mp4info is part of the deprecated mp4v2 utils.
+    """
 
     name = 'mp4info'
 

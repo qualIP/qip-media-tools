@@ -465,7 +465,7 @@ def do_spawn_cmd(cmd, dry_run=None, **kwargs):
 def clean_cmd_output(out):
     out = byte_decode(out)
     out = re.sub(r'\x1B\[[0-9;]*m', '', out)
-    out = re.sub(r'\r\n', '\n', out)
+    out = re.sub(r'\r+\n', '\n', out)
     out = re.sub(r'.*\r', '', out, flags=re.MULTILINE)
     out = re.sub(r'\t', ' ', out)
     out = re.sub(r' +$', '', out, flags=re.MULTILINE)

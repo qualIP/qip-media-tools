@@ -120,9 +120,11 @@ class Mpeg4ContainerFile(BinaryMediaFile):
         from .parser import lines_parser
         from .qaac import qaac
         from .ffmpeg import ffmpeg
-        from .file import TempFile, safe_write_file_eval, safe_read_file
+        from .file import safe_read_file
         m4b = self
         chapters_added = False
+        tags_added = False
+        picture_added = False
 
         assert self.fp is None  # Writing using file name
 
@@ -296,7 +298,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             with contextlib.ExitStack() as exit_stack:
                 if use_qaac_cmd:
                     qaac_cmd += ['--text-codepage', '65001']  # utf-8
-                    if chapters:
+                    if not chapters_added and chapters:
                         chapters_file = Mp4chapsFile.NamedTemporaryFile()
                         exit_stack.enter_context(chapters_file)
                         chapters_file.chapters = chapters
@@ -307,23 +309,28 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                         qaac_cmd += ['--chapter', chapters_file]
                         chapters_added = True
                     # TODO qaac_cmd += qaac.get_tag_args(m4b.tags)
-                    if picture is not None:
+                    if not picture_added and picture is not None:
                         qaac_cmd += ['--artwork', str(picture)]
+                        picture_added = True
                 out_time = None
                 if use_qaac_cmd:
                     out = do_spawn_cmd(qaac_cmd)
                     out = clean_cmd_output(out)
                     parser = lines_parser(out.split('\n'))
+                    out_time_match = None
                     while parser.advance():
                         parser.line = parser.line.strip()
                         if parser.re_search(r'^\[[0-9.]+%\] [0-9:.]+/(?P<out_time>[0-9:.]+) \([0-9.]+x\), ETA [0-9:.]+$'):
                             # [35.6%] 2:51:28.297/8:01:13.150 (68.2x), ETA 4:32.491
-                            out_time = mm.parse_time_duration(parser.match.group('out_time'))
+                            # [100.0%] 10:04.626/10:04.626 (79.9x), ETA 0:00.000
+                            out_time_match = parser.match
                         else:
                             pass  # TODO
+                    if out_time_match is not None:
+                        out_time = mm.parse_time_duration(out_time_match.group('out_time'))
                 else:
                     ffmpeg_chapters_cmd = []
-                    if chapters:
+                    if not chapters_added and chapters:
                         metadata_file = ffmpeg.MetadataFile.NamedTemporaryFile()
                         exit_stack.enter_context(metadata_file)
                         chapters.fill_end_times(duration=expected_duration)
@@ -332,7 +339,6 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                         # write -> read
                         metadata_file.flush()
                         metadata_file.seek(0)
-                        print(f'metadata_file={metadata_file!r}: {metadata_file.read()}')
                         ffmpeg_chapters_cmd += [
                             '-i', metadata_file,
                             '-map_metadata', 1,  # second input
@@ -364,17 +370,19 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                                progress_bar_max=progress_bar_max)
             chapters_added = True
 
-        log.info('Adding tags...')
-        tags = copy.copy(m4b.tags)
-        tags.picture = None
-        m4b.write_tags(tags=tags, run_func=do_exec_cmd)
+        if not tags_added and m4b.tags is not None:
+            log.info('Adding tags...')
+            tags = copy.copy(m4b.tags)
+            tags.picture = None
+            m4b.write_tags(tags=tags)
+            tags_added = True
 
-        if not use_qaac_cmd:
-            if picture is not None:
-                log.info('Adding picture...')
-                cmd = [shutil.which('mp4art')]
-                cmd += ['--add', str(picture), m4b.file_name]
-                out = do_exec_cmd(cmd)
+        if not picture_added and picture is not None:
+            log.info('Adding picture...')
+            tags = TrackTags()
+            tags.picture = picture
+            m4b.write_tags(tags=tags)
+            picture_added = True
 
     def load_chapters(self):
         import mutagen
@@ -491,6 +499,12 @@ class Mp4chapsFile(TextFile):
             if chap.title:
                 line += f' {replace_html_entities(chap.title)}'
             print(line, file=file)
+
+    @classmethod
+    def NamedTemporaryFile(cls, *, suffix=None, **kwargs):
+        if suffix is None:
+            suffix = '.chapters.txt'
+        return super().NamedTemporaryFile(suffix=suffix, **kwargs)
 
 
 class Mp4chaps(Executable):

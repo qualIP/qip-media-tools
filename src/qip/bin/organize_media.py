@@ -152,7 +152,6 @@ def main():
 
     for prog in (
             'ffmpeg',  # ffmpeg | libav-tools
-            #'mp4info',  # mp4v2-utils
             ):
         if not shutil.which(prog):
             raise Exception('%s: command not found' % (prog,))

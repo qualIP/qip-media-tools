@@ -274,9 +274,8 @@ def main():
 
     for prog in (
             'ffmpeg',  # ffmpeg | libav-tools
-            'mp4tags',  # mp4v2-utils
-            'mp4art',  # mp4v2-utils
-            'mp4info',  # mp4v2-utils
+            # 'mp4tags',  # mp4v2-utils
+            # 'mp4art',  # mp4v2-utils
             ):
         if not shutil.which(prog):
             raise Exception('%s: command not found' % (prog,))
@@ -736,13 +735,14 @@ def mkm4b(inputfiles, default_tags):
 
     app.log.info('DONE!')
 
-    if isinstance(m4b, Mpeg4ContainerFile) and mp4info.which(assert_found=False):
-        print('')
-        cmd = [mp4info.which()]
-        cmd += [m4b.file_name]
-        out = do_exec_cmd(cmd)
-        out = clean_cmd_output(out)
-        print(out)
+    if True:
+        print()
+        tags = m4b.load_tags()
+        if tags is not None:
+            tags.pprint()
+        chapters = m4b.load_chapters()
+        if chapters is not None:
+            chapters.pprint()
 
     return True
 
