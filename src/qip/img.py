@@ -5,6 +5,11 @@ __all__ = (
     'ImageFile',
     'ImageTags',
     'ImageType',
+    'PngFile',
+    'JpegFile',
+    'GifFile',
+    'TiffFile',
+    'BmpFile',
 )
 
 import copy
@@ -240,7 +245,7 @@ class ImageType(enum.Enum):
     gif = 'gif'
     jpg = 'jpg'
     png = 'png'
-    tif = 'tif'
+    tiff = 'tiff'
 
     def __eq__(self, other):
         try:
@@ -265,7 +270,8 @@ class ImageType(enum.Enum):
                 (r'^.jpeg$', 'jpg'),
                 (r'^PC bitmap$', 'bmp'),
                 (r'^PNG$', 'png'),
-                (r'^TIFF$', 'tif'),
+                (r'^TIFF$', 'tiff'),
+                (r'^TIF$', 'tiff'),
                 ):
                 m = re.search(pattern, value)
                 if m:
@@ -283,14 +289,6 @@ ImageType.__new__ = ImageType.__new__override__
 # class ImageFile {{{
 
 class ImageFile(MediaFile):
-
-    _common_extensions = (
-        '.png',
-        '.jpeg',
-        '.jpg',
-        '.gif',
-        '.tiff',
-    )
 
     @property
     def image_type(self):
@@ -478,5 +476,87 @@ def date_to_year(date):
     m = re.match('^(\d{4})(?:\d\d?-\d\d?)?$', date)
     if m:
         return int(m.group(1))
+
+class PngFile(ImageFile):
+
+    _common_extensions = (
+        '.png',
+    )
+
+    @property
+    def image_type(self):
+        return ImageType.png
+
+    @image_type.setter
+    def image_type(self, value):
+        if value is not None \
+                and ImageType(value) is not ImageType.png:
+            raise ValueError(value)
+
+class JpegFile(ImageFile):
+
+    _common_extensions = (
+        '.jpg',
+        '.jpeg',
+    )
+
+    @property
+    def image_type(self):
+        return ImageType.jpg
+
+    @image_type.setter
+    def image_type(self, value):
+        if value is not None \
+                and ImageType(value) is not ImageType.jpg:
+            raise ValueError(value)
+
+class GifFile(ImageFile):
+
+    _common_extensions = (
+        '.gif',
+    )
+
+    @property
+    def image_type(self):
+        return ImageType.gif
+
+    @image_type.setter
+    def image_type(self, value):
+        if value is not None \
+                and ImageType(value) is not ImageType.gif:
+            raise ValueError(value)
+
+class TiffFile(ImageFile):
+
+    _common_extensions = (
+        '.tiff',
+        '.tif',
+    )
+
+    @property
+    def image_type(self):
+        return ImageType.tiff
+
+    @image_type.setter
+    def image_type(self, value):
+        if value is not None \
+                and ImageType(value) is not ImageType.tiff:
+            raise ValueError(value)
+
+class BmpFile(ImageFile):
+
+    _common_extensions = (
+        '.bmp',
+    )
+
+    @property
+    def image_type(self):
+        return ImageType.bmp
+
+    @image_type.setter
+    def image_type(self, value):
+        if value is not None \
+                and ImageType(value) is not ImageType.bmp:
+            raise ValueError(value)
 
 ImageFile._build_extension_to_class_map()
