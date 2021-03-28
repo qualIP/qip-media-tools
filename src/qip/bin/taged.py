@@ -688,6 +688,7 @@ def taged_Matroska(file_name, tags):
 
 def taged(file_name, tags):
     app.log.info('Setting %s tags...', file_name)
+    import qip.matroska
     with perfcontext('mf.load'):
         mf = mutagen.File(file_name)
     if mf is not None:
@@ -699,7 +700,7 @@ def taged(file_name, tags):
         else:
             with perfcontext('mf.save'):
                 mf.save()
-    elif file_name.suffix in ('.mka', '.mkv', '.webm'):
+    elif file_name.suffix in qip.matroska.MatroskaFile.get_common_extensions():
         return taged_Matroska(file_name, tags)
     else:
         raise NotImplementedError(file_name.suffix)

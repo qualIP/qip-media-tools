@@ -184,7 +184,8 @@ class File(object):
             default_class = cls
         file_name = toPath(file_name)
         ext = file_name.suffix
-        if cls._extension_to_class_map is None:
+        if cls.__dict__.get('_extension_to_class_map', None) is None:
+            cls._extension_to_class_map = {}
             cls._update_extension_to_class_map()
         factory_cls = cls._extension_to_class_map.get(ext, None)
         if not factory_cls:
