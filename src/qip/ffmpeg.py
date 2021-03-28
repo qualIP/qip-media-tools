@@ -20,6 +20,7 @@ import os
 import pexpect
 import re
 import subprocess
+import sys
 import types
 log = logging.getLogger(__name__)
 
@@ -27,8 +28,7 @@ from .perf import perfcontext
 from .exec import *
 from .exec import _SpawnMixin, spawn as _exec_spawn, popen_spawn as _exec_popen_spawn
 from .parser import lines_parser
-from .utils import byte_decode
-from .utils import Timestamp as _BaseTimestamp, Ratio, round_half_up
+from .utils import byte_decode, Timestamp as _BaseTimestamp, Ratio, round_half_up, StreamTransform
 from qip.file import *
 from qip.collections import OrderedSet
 from qip.app import app
@@ -212,14 +212,18 @@ class ConcatScriptFile(TextFile):
 
     class File(object):
 
-        def __init__(self, name, duration=None):
-            self.name = toPath(name)
-            if '..' in os.fspath(self.name):
-                raise ValueError(f'ffmpeg does not properly handle paths containing \'..\': {self.name}')
+        file_name = None
+        duration = None
+
+        def __init__(self, file_name, duration=None):
+            self.file_name = toPath(file_name)
+            if '..' in os.fspath(self.file_name):
+                raise ValueError(f'ffmpeg does not properly handle paths containing \'..\': {self.file_name}')
             self.duration = None if duration is None else Timestamp(duration)
+            super().__init__()
 
         def __fspath__(self):
-            return os.fspath(self.name)
+            return os.fspath(self.file_name)
 
     def __init__(self, file_name):
         self.files = []
@@ -247,6 +251,26 @@ class ConcatScriptFile(TextFile):
         if suffix is None:
             suffix = '.concat.lst'
         return super().NamedTemporaryFile(suffix=suffix, **kwargs)
+
+    def pprint(self, *, deep=True, heading='Files:', file=None):
+        if file is None:
+            file = sys.stdout
+        files = self.files
+        if heading:
+            print(heading, file=file)
+        from tabulate import tabulate
+        files_table = [
+            (i,
+             os.fspath(f),
+             f.duration.canonical_str(precision=3) if f.duration is not None else '',
+             )
+            for i, f in enumerate(files, start=1)]
+        print(
+            tabulate(files_table,
+                     headers=['No', 'Name', 'Duration'],
+                     colalign=['right', 'left', 'right'],
+                     tablefmt='simple'),
+            file=StreamTransform.indenter(file))
 
 class _FfmpegSpawnMixin(_SpawnMixin):
 
