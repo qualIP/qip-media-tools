@@ -15,18 +15,20 @@ __all__ = (
 # http://wiki.webmproject.org/webm-metadata/global-metadata
 
 from pathlib import Path
-import copy
 import collections
+import copy
+import functools
 import io
 import logging
 import re
 log = logging.getLogger(__name__)
 
+from .exec import Executable
+from .ffmpeg import ffmpeg
+from .file import XmlFile
+from .img import ImageFile, PngFile
 from .mm import MediaTagEnum, BinaryMediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters, parse_time_duration
 from .utils import KwVarsObject, byte_decode
-from .exec import Executable
-from .file import XmlFile
-from .ffmpeg import ffmpeg
 
 
 class MatroskaTagTarget(KwVarsObject):
@@ -248,6 +250,12 @@ class MatroskaChaptersFile(XmlFile):
                            xml_declaration=True,
                            encoding='unicode',  # Force string
                            )
+
+    @classmethod
+    def NamedTemporaryFile(cls, *, suffix=None, **kwargs):
+        if suffix is None:
+            suffix = '.chapters.xml'
+        return super().NamedTemporaryFile(suffix=suffix, **kwargs)
 
 
 class MatroskaFile(BinaryMediaFile):
@@ -849,8 +857,9 @@ class MatroskaFile(BinaryMediaFile):
                         '--chapters', chapters_file,
                     ))
 
-    def prep_picture(self, src_picture, *,
-            yes=False,
+    @classmethod
+    def prep_picture(cls, src_picture, *,
+            yes=False,  # unused
             ipod_compat=True,  # unused
             keep_picture_file_name=None,
             ):
@@ -859,7 +868,17 @@ class MatroskaFile(BinaryMediaFile):
 
         if not src_picture:
             return None
-        picture = src_picture = Path(src_picture)
+        src_picture = Path(src_picture)
+
+        return cls._lru_prep_picture(src_picture,
+                                     keep_picture_file_name)
+
+    @classmethod
+    @functools.lru_cache
+    def _lru_prep_picture(cls,
+                          src_picture : Path,
+                          keep_picture_file_name):
+        picture = src_picture
 
         if src_picture.suffix not in (
                 #'.gif',
@@ -867,14 +886,14 @@ class MatroskaFile(BinaryMediaFile):
                 '.jpg',
                 '.jpeg'):
             if keep_picture_file_name:
-                picture = ImageFile(keep_picture_file_name)
+                picture = ImageFile.new_by_file_name(keep_picture_file_name)
             else:
-                picture = TempFile.mkstemp(suffix='.png')
+                picture = PngFile.NamedTemporaryFile()
             if src_picture.resolve() != picture.file_name.resolve():
                 log.info('Writing new picture %s...', picture)
             from .ffmpeg import ffmpeg
             ffmpeg_args = []
-            if True or yes:
+            if True:  # yes
                 ffmpeg_args += ['-y']
             ffmpeg_args += ['-i', src_picture]
             ffmpeg_args += ['-an', str(picture)]
@@ -903,6 +922,9 @@ class MatroskaFile(BinaryMediaFile):
         from .ffmpeg import ffmpeg
         from .file import TempFile, safe_write_file_eval, safe_read_file
         output_file = self
+        chapters_added = False
+        tags_added = False
+        picture_added = False
 
         if show_progress_bar:
             if progress_bar_max is None:
@@ -940,13 +962,14 @@ class MatroskaFile(BinaryMediaFile):
             '-map', '0:a',
         ]
 
-        if picture is not None:
+        if not picture_added and picture is not None:
             ffmpeg_input_cmd += [
                 '-i', picture,
             ]
             ffmpeg_output_cmd += [
                 '-map', '1:v',
             ]
+            picture_added = True
 
         ffmpeg_output_cmd += [
             '-codec', 'copy',
@@ -994,17 +1017,20 @@ class MatroskaFile(BinaryMediaFile):
             out_time = ffmpeg.Timestamp(out_time)
             log.info('Final duration:          %s (%.3f seconds)', out_time, out_time)
 
-        if chapters:
+        if not chapters_added and chapters:
             log.info("Adding chapters...")
             chapters.fill_end_times(duration=out_time if out_time is not None else expected_duration)
             output_file.write_chapters(chapters,
                                        show_progress_bar=show_progress_bar,
                                        progress_bar_max=progress_bar_max)
+            chapters_added = True
 
-        log.info('Adding tags...')
-        tags = copy.copy(output_file.tags)
-        tags.picture = None
-        output_file.write_tags(tags=tags, run_func=do_exec_cmd)
+        if not tags_added and output_file.tags is not None:
+            log.info('Adding tags...')
+            tags = copy.copy(output_file.tags)
+            tags.picture = None
+            output_file.write_tags(tags=tags, run_func=do_exec_cmd)
+            tags_added = True
 
 class MkvFile(MatroskaFile, MovieFile):
 
