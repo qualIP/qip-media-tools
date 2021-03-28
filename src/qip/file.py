@@ -362,6 +362,10 @@ class File(object):
     def closed(self):
         return not self.fp or self.fp.closed
 
+    @property
+    def is_text(self):
+        return 'b' not in self.open_mode
+
     def fileno(self):
         fp = self.fp
         if fp is not None:
@@ -421,6 +425,26 @@ class File(object):
         if self.fp:
             self.fp.flush()
 
+    def isatty(self, /):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.isatty()
+
+    def readable(self, /):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.readable()
+
+    def readline(self, size=-1, /):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.readline(size=size)
+
+    def readlines(self, hint=-1, /):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.readlines(hint=hint)
+
     def seek(self, offset, whence=io.SEEK_SET):
         if self.closed:
             raise ValueError('I/O operation on closed file')
@@ -430,6 +454,28 @@ class File(object):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         return self.fp.seekable()
+
+    def tell(self, /):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.tell()
+
+    def truncate(self, /, size=None):
+        if self.closed:
+            self.assert_file_name_defined()
+            return os.truncate(self.file_name, size)
+        else:
+            return self.fp.truncate(size)
+
+    def writable(self, /):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.writable()
+
+    def writelines(self, lines, /):
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+        return self.fp.writelines(lines)
 
     def close(self):
         fp = self.fp
