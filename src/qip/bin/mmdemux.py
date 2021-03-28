@@ -5207,6 +5207,9 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         vp9_tile_columns, vp9_threads = get_vp9_tile_columns_and_threads(
                             width=qwidth, height=qheight,
                             )
+                        if codec == 'libvpx-vp9':
+                            # [libvpx-vp9 @ 0x55a6db68e900] Application has requested 24 threads. Using a thread count greater than 16 is not recommended.
+                            vp9_threads = min(vp9_threads, 16)
 
                         if app.args.video_rate_control_mode == 'Q':
                             ffmpeg_conv_args += [
