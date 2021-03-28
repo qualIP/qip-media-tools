@@ -14,11 +14,12 @@ __all__ = (
 # https://en.wikipedia.org/wiki/MPEG-4_Part_14
 
 from pathlib import Path
-import copy
 import contextlib
+import copy
+import errno
+import functools
 import logging
 import os
-import errno
 import re
 import shutil
 import struct
@@ -28,13 +29,14 @@ log = logging.getLogger(__name__)
 from . import mm
 from .exec import Executable
 from .file import cache_url, TextFile
-from .img import ImageFile
+from .img import ImageFile, PngFile
 from .mm import AudiobookFile
 from .mm import BinaryMediaFile
 from .mm import Chapter, Chapters
 from .mm import MovieFile
 from .mm import RingtoneFile
 from .mm import SoundFile
+from .mm import TrackTags
 from .utils import byte_decode, Timestamp, Timestamp as _BaseTimestamp, replace_html_entities
 
 class Mpeg4ContainerFile(BinaryMediaFile):
@@ -54,19 +56,30 @@ class Mpeg4ContainerFile(BinaryMediaFile):
     @property
     def tag_writer(self):
         return mm.taged
-        #return mm.mp4tags
 
-    def prep_picture(self, src_picture, *,
-            yes=False,
+    @classmethod
+    def prep_picture(cls, src_picture, *,
+            yes=False,  # unused
             ipod_compat=True,
             keep_picture_file_name=None,
             ):
-        from .file import TempFile
         from .exec import do_exec_cmd
 
         if not src_picture:
             return None
-        picture = src_picture = cache_url(src_picture)
+        src_picture = cache_url(src_picture)
+
+        return cls._lru_prep_picture(src_picture,
+                                     ipod_compat,
+                                     keep_picture_file_name)
+
+    @classmethod
+    @functools.lru_cache
+    def _lru_prep_picture(cls,
+                          src_picture : Path,
+                          ipod_compat,
+                          keep_picture_file_name):
+        picture = src_picture
 
         if src_picture.suffix not in (
                 #'.gif',
@@ -74,14 +87,14 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 '.jpg',
                 '.jpeg'):
             if keep_picture_file_name:
-                picture = ImageFile(keep_picture_file_name)
+                picture = ImageFile.new_by_file_name(keep_picture_file_name)
             else:
-                picture = TempFile.mkstemp(suffix='.png')
+                picture = PngFile.NamedTemporaryFile()
             if src_picture.resolve() != picture.file_name.resolve():
                 log.info('Writing new picture %s...', picture)
             from .ffmpeg import ffmpeg
             ffmpeg_args = []
-            if True or yes:
+            if True:  # yes
                 ffmpeg_args += ['-y']
             ffmpeg_args += ['-i', src_picture]
             ffmpeg_args += ['-an', str(picture)]
@@ -92,7 +105,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             if keep_picture_file_name:
                 picture = ImageFile(keep_picture_file_name)
             else:
-                picture = TempFile.mkstemp(suffix='.png')
+                picture = PngFile.NamedTemporaryFile()
             log.info('Writing iPod-compatible picture %s...', picture)
             cmd = [shutil.which('gm'),
                     'convert', str(src_picture),
@@ -254,13 +267,14 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 pass
         inputfiles_names = [inputfile.file_name for inputfile in inputfiles]
         if len(inputfiles_names) > 1:
-            temp_concat_file = TempFile.mkstemp(suffix='.concat.lst')
-            concat_file = ffmpeg.ConcatScriptFile(temp_concat_file)
+            concat_file = ffmpeg.ConcatScriptFile.NamedTemporaryFile()
             concat_file.files = inputfiles
             log.info('Writing %s...', concat_file)
             concat_file.create(absolute=True)
-            log.debug('Files:\n' +
-                      re.sub(r'^', '    ', safe_read_file(concat_file), flags=re.MULTILINE))
+            # write -> read
+            concat_file.flush()
+            concat_file.seek(0)
+            concat_file.pprint()
             ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', concat_file]
         else:
             ffmpeg_input_cmd += ['-i', inputfiles_names[0]]
