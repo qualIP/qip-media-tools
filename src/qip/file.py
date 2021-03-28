@@ -45,13 +45,46 @@ def toPath(value):
     return Path(value)
 
 # http://stackoverflow.com/questions/3431825/generating-a-md5-checksum-of-a-file
-def hashfile(afile, hasher, blocksize=65536):
-    buf = afile.read(blocksize)
-    while len(buf) > 0:
-        hasher.update(buf)
+def hashfile(afile, hasher, blocksize=65536,
+             show_progress_bar=None, progress_bar_max=None, progress_bar_title=None,
+             ):
+    pos = 0
+    if show_progress_bar is None:
+        show_progress_bar = progress_bar_max is not None
+    if show_progress_bar:
+        try:
+            from qip.utils import BytesBar, ProgressSpinner
+        except ImportError:
+            show_progress_bar = False
+    if show_progress_bar:
+        start_pos = afile.tell()
+        if progress_bar_max is None:
+            if afile.seekable():
+                afile.seek(0, io.SEEK_END)
+                try:
+                    size = afile.tell()
+                finally:
+                    afile.seek(start_pos)
+                progress_bar_max = size - start_pos
+        if progress_bar_max is not None:
+            progress_bar = BytesBar(progress_bar_title or 'Calculating hash',
+                                       max=progress_bar_max)
+        else:
+            progress_bar = ProgressSpinner(progress_bar_title or 'Calculating hash')
+    try:
         buf = afile.read(blocksize)
+        pos += len(buf)
+        while len(buf) > 0:
+            hasher.update(buf)
+            if show_progress_bar:
+                progress_bar.goto(pos - start_pos)
+            buf = afile.read(blocksize)
+            pos += len(buf)
+    finally:
+        if show_progress_bar:
+            progress_bar.finish()
     return hasher
-# [(fname, hashfile(open(fname, 'rb'), hashlib.md5())) for fname in fnamelst]
+    # [(fname, hashfile(open(fname, 'rb'), hashlib.md5())) for fname in fnamelst]
 
 class _argparse_type(object):
 
@@ -246,15 +279,23 @@ class File(object):
     def test_integrity(self):
         raise NotImplementedError()
 
-    def hash(self, hasher):
-        return hashfile(self.open(mode='rb'), hasher)
+    def hash(self, hasher, **kwargs):
+        return hashfile(self.open(mode='rb'), hasher, **kwargs)
 
     md5 = propex(
         name='md5')
 
     @md5.initter
     def md5(self):
-        return self.hash(hashlib.md5())
+        return self.md5_ex()
+
+    def md5_ex(self, **kwargs):
+        try:
+            return getattr(self, '_md5')
+        except AttributeError:
+            md5 = self.hash(hashlib.md5(), **kwargs)
+            self.md5 = md5
+            return md5
 
     def download(self, url, md5=None, overwrite=False):
         self.assert_file_name_defined()
