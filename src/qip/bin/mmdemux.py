@@ -1230,15 +1230,15 @@ def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_
             # https://www.webmproject.org/vp9/profiles/
             if 'yuv420' in ffprobe_stream_json['pix_fmt']:
                 ffmpeg_hdr_args += [
-                    '-profile', 2,  # 10 or 12 bit, 4:2:0
+                    '-profile:v', 2,  # 10 or 12 bit, 4:2:0
                 ]
             elif 'yuv422' in ffprobe_stream_json['pix_fmt']:
                 ffmpeg_hdr_args += [
-                    '-profile', 3,  # 10 or 12 bit, 4:2:2 or 4:4:4
+                    '-profile:v', 3,  # 10 or 12 bit, 4:2:2 or 4:4:4
                 ]
             elif 'yuv420' in ffprobe_stream_json['pix_fmt']:
                 ffmpeg_hdr_args += [
-                    '-profile', 3,  # 10 or 12 bit, 4:2:2 or 4:4:4
+                    '-profile:v', 3,  # 10 or 12 bit, 4:2:2 or 4:4:4
                 ]
             else:
                 raise NotImplementedError('VP9 HDR {color_range} profile for {pix_fmt}'.format_map(ffprobe_stream_json))
