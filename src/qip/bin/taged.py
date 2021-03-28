@@ -43,7 +43,6 @@ mutagen.mp4.MP4Tags._MP4Tags__atoms[b'idx'] = (
     mutagen.mp4.MP4Tags._MP4Tags__render_text,
 )
 
-m4a_prepped_picture = None
 
 @app.main_wrapper
 def main():
@@ -563,14 +562,9 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                 assert mp4_tag == 'covr'
                 mp4_value = []
                 from qip.file import cache_url
-                value = cache_url(os.fspath(value))
+                value = cache_url(value)
                 if getattr(app.args, 'prep_picture', False):
-                    global m4a_prepped_picture
-                    if not m4a_prepped_picture:
-                        from qip.mp4 import M4aFile
-                        m4a = M4aFile(file_name)
-                        m4a_prepped_picture = m4a.prep_picture(value)
-                    value = m4a_prepped_picture
+                    value = Mpeg4ContainerFile.prep_picture(value)
                 img_file = ImageFile(value)
                 img_type = img_file.image_type
                 if img_type is ImageType.jpg:

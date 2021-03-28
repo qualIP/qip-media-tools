@@ -18,6 +18,7 @@ __all__ = [
 from contextlib import contextmanager
 from gettext import gettext as _, ngettext
 from pathlib import Path
+import functools
 import hashlib
 import io
 import os
@@ -583,8 +584,8 @@ class ConfigFile(File):
 
 
 def cache_url(url, cache_dict={}):
-    if isinstance(url, Path):
-        return url
+    if isinstance(url, os.PathLike):
+        return Path(url)
     assert isinstance(url, str)
     purl = urllib.parse.urlparse(url)
     if purl.scheme == 'file':
@@ -594,37 +595,38 @@ def cache_url(url, cache_dict={}):
         #assert purl.path == url, (purl.path, url)
         #return Path(purl.path).resolve()
         return Path(url).resolve()
-
-    try:
-        temp_file = cache_dict[url]
-    except KeyError:
-        req = urllib.request.Request(url)
-        from qip.app import app
-        user_agent = app.user_agent
-        if user_agent:
-            req.add_header('User-Agent', user_agent)
-
-        size = -1
-        temp_file = BinaryFile.NamedTemporaryFile(suffix=Path(purl.path).suffix)
-
-        opener = urllib.request.build_opener()
-        with opener.open(req) as fp:
-
-            headers = fp.info()
-            if "content-length" in headers:
-                size = int(headers["Content-Length"])
-
-            shutil.copyfileobj(src=fp, dst=temp_file.fp)
-
-        temp_file.flush()
-        read = temp_file.tell()
-
-        if size >= 0 and read < size:
-            raise ContentTooShortError(f'retrieval incomplete: got only {read} out of {size} bytes')
-
-        cache_dict[url] = temp_file
-
+    temp_file = _lru_cache_url(url, Path(purl.path).suffix)
     return temp_file.file_name
+
+@functools.lru_cache
+def _lru_cache_url(url, suffix):
+    req = urllib.request.Request(url)
+    from qip.app import app
+    user_agent = app.user_agent
+    if user_agent:
+        req.add_header('User-Agent', user_agent)
+
+    size = -1
+    temp_file = BinaryFile.NamedTemporaryFile(suffix=suffix)
+
+    opener = urllib.request.build_opener()
+    with opener.open(req) as fp:
+
+        headers = fp.info()
+        if "content-length" in headers:
+            size = int(headers["Content-Length"])
+
+        shutil.copyfileobj(fsrc=fp, fdst=temp_file.fp)
+
+    read = temp_file.tell()
+    if size >= 0 and read < size:
+        raise ContentTooShortError(f'retrieval incomplete: got only {read} out of {size} bytes')
+
+    # write -> read
+    temp_file.flush()
+    temp_file.seek(0)
+
+    return temp_file
 
 # safe_write_file {{{
 

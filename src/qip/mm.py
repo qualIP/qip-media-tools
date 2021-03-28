@@ -152,14 +152,14 @@ def _tIntOrList(value):
 def _tPicture(value, accept_iterable=True):
     if accept_iterable and isinstance(value, (tuple, list)):
         return tuple(_tPicture(e, accept_iterable=False) for e in value)
-    if type(value) is str:
-        # value = qip.file.cache_url(value)
+    if isinstance(value, (File, PictureTagInfo)):
         return value
-    if isinstance(value, File):
+    if isinstance(value, os.PathLike):
+        return Path(value)
+    if isinstance(value, str):
+        value = qip.file.cache_url(value)
         return value
-    if isinstance(value, PictureTagInfo):
-        return value
-    raise ValueError('Not a valid string or file: %r' % (value,))
+    raise ValueError('Not a valid picture file: %r' % (value,))
 
 
 # parse_time_duration {{{
