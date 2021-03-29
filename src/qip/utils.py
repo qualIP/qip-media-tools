@@ -10,6 +10,7 @@ __all__ = (
     'TypedValueDict',
     'byte_decode',
     'pairwise',
+    'grouper',
     'Timestamp',
     'prettyxml',
     'round_up',
@@ -36,6 +37,7 @@ import datetime
 import enum
 import functools
 import html
+import itertools
 import logging
 import math
 import os
@@ -44,8 +46,8 @@ import shutil
 import stat
 import sys
 import termios
-import time
 import textwrap
+import time
 log = logging.getLogger(__name__)
 
 def beep():
@@ -278,6 +280,7 @@ def humanbytes(B):
 
 class Constants(enum.Enum):
     Auto = 1
+    NotSet = 2
 
     def __str__(self):
         return self.name
@@ -574,9 +577,19 @@ def byte_decode(b, encodings=('utf-8', 'iso-8859-1', 'us-ascii'), errors='strict
 
 
 def pairwise(iterable):
-    "s -> (s0, s1), (s2, s3), (s4, s5), ..."
-    a = iter(iterable)
-    return zip(a, a)
+    # From https://docs.python.org/3/library/itertools.html
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    a, b = itertools.tee(iterable)
+    next(b, None)
+    return zip(a, b)
+
+
+def grouper(iterable, n, fillvalue=None):
+    # From https://docs.python.org/3/library/itertools.html
+    "Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return itertools.zip_longest(*args, fillvalue=fillvalue)
 
 
 class Ratio(Fraction):

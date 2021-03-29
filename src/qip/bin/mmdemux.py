@@ -101,6 +101,7 @@ from qip.avi import *
 from qip.cdrom import cdrom_ready
 from qip.ddrescue import ddrescue
 from qip.exec import *
+from qip.exec import list2cmdlist
 from qip.ffmpeg import ffmpeg, ffprobe
 from qip.file import *
 from qip.frim import FRIMDecode
@@ -1066,16 +1067,18 @@ def ext_to_container(ext):
         raise ValueError('Unsupported extension %r' % (ext,)) from err
     return ext_container
 
-def ext_to_codec(ext, lossless=False):
+def ext_to_codec(ext, lossless=False, hdr=None):
     ext = my_splitext('x' + ext, strip_container=True)[1]
     try:
         ext_container = {
             # video
             '.ffv1': 'ffv1',
-            '.h264': ('h264_nvenc' if app.args.cuda and lossless
-                      else 'libx264'),  # better quality
-            '.h265': ('hevc_nvenc' if app.args.cuda and lossless
-                      else 'libx265'),  # better quality
+            '.h264': ('h264_nvenc' if app.args.cuda and lossless and hdr is not True  # fast lossless
+                      else ('libx264' if not lossless  # better quality
+                            else NotImplementedError(f'No codec for {ext} (lossless={lossless}, hdr={hdr}, cuda={app.args.cuda})'))),
+            '.h265': ('hevc_nvenc' if app.args.cuda and lossless and hdr is not True  # fast lossless
+                      else ('libx265' if True  # better quality, lossless possible
+                            else NotImplementedError(f'No codec for {ext} (lossless={lossless}, hdr={hdr}, cuda={app.args.cuda})'))),
             '.vp9': 'libvpx-vp9',
             '.y4m': 'yuv4',
             '.mpeg2': 'mpeg2video',
@@ -1084,11 +1087,13 @@ def ext_to_codec(ext, lossless=False):
         }[ext]
     except KeyError as err:
         raise ValueError('Unsupported extension %r' % (ext,)) from err
+    if isinstance(ext_container, Exception):
+        raise ext_container
     return ext_container
 
-def ext_to_codec_args(ext, lossless=False):
-    codec = ext_to_codec(ext, lossless=lossless)
-    codec_args = []
+def ext_to_codec_args(ext, codec, lossless=False):
+    codec_args = ffmpeg.Options()
+
     if codec == 'ffv1':
         codec_args += [
             '-slices', 24,
@@ -1099,28 +1104,37 @@ def ext_to_codec_args(ext, lossless=False):
             codec_args += [
                 '-surfaces', 8,  # https://github.com/keylase/nvidia-patch -- Avoid CreateBitstreamBuffer failed: out of memory (10)
             ]
+
+    if codec in (
+            'libx265',
+    ):
+        if lossless:
+            codec_args.append_colon_option('-x265-params', 'lossless=1')
+            codec_args.set_option('-preset', 'faster')  # lossless is used for temp files, prefer speed over size
     if codec in (
             'h264_nvenc', 'libx264',
-            'hevc_nvenc', 'libx265',
+            'hevc_nvenc',
     ):
         if lossless:
             codec_args += [
                 '-preset', 'lossless',
             ]
+
     if ext in (
             '.h265',
     ):
         codec_args += [
             '-tag:v', 'hvc1',  # QuickTime compatibility
         ]
+
     return codec_args
 
 class ColorSpaceParams(collections.namedtuple(
         'ColorSpaceParams',
         (
-        'xR', 'yR', 'xG', 'yG', 'xB', 'yB',  # Primary colors
-        'xW', 'yW',                          # White point
-        'K',                                 # CCT
+            'xR', 'yR', 'xG', 'yG', 'xB', 'yB',  # Primary colors
+            'xW', 'yW',                          # White point
+            'K',                                 # CCT
         ),
 )):
     __slots__ = ()
@@ -1162,6 +1176,54 @@ class ColorSpaceParams(collections.namedtuple(
     def master_display_str(self):
         return f'G({self.uxG},{self.uyG})B({self.uxB},{self.uyB})R({self.uxR},{self.uyR})WP({self.uxW},{self.uyW})'
 
+    @classmethod
+    def from_mediainfo_track_dict(cls, mediainfo_track_dict):
+        color_primaries = mediainfo_track_dict.get('MasteringDisplay_ColorPrimaries', None)
+        if color_primaries:
+            try:
+                # Display P3
+                color_primaries = color_space_params[color_primaries]
+            except KeyError:
+                # R: x=0.680000 y=0.320000, G: x=0.265000 y=0.690000, B: x=0.150000 y=0.060000, White point: x=0.312700 y=0.329000
+                m = re.match(r'^R: x=(?P<xR>\d+\.\d+) y=(?P<yR>\d+\.\d+), G: x=(?P<xG>\d+\.\d+) y=(?P<yG>\d+\.\d+), B: x=(?P<xB>\d+\.\d+) y=(?P<yB>\d+\.\d+), White point: x=(?P<xW>\d+\.\d+) y=(?P<yW>\d+\.\d+)$', color_primaries)
+                if m:
+                    color_primaries = cls(**m.groupdict())
+                else:
+                    raise ValueError(f'Unrecognized mediainfo MasteringDisplay_ColorPrimaries: {color_primaries!r}')
+        return color_primaries
+
+class LuminanceParams(collections.namedtuple(
+        'LuminanceParams',
+        (
+            'min', 'max',
+        ),
+)):
+    __slots__ = ()
+
+    # Unit of 0.0001 cd/m2
+
+    @property
+    def umin(self):
+        return int(self.min / 0.0001)
+
+    @property
+    def umax(self):
+        return int(self.max / 0.0001)
+
+    def master_display_str(self):
+        return f'L({self.umin},{self.umax})'
+
+    @classmethod
+    def from_mediainfo_track_dict(cls, mediainfo_track_dict):
+        luminance = mediainfo_track_dict['MasteringDisplay_Luminance']
+        # min: 0.0200 cd/m2, max: 1200.0000 cd/m2
+        m = re.match(r'^min: (?P<min>\d+(?:\.\d+)?) cd/m2, max: (?P<max>\d+(?:\.\d+)?) cd/m2$', luminance)
+        if m:
+            luminance = cls(min=float(m.group('min')), max=float(m.group('max')))
+        else:
+            raise ValueError(f'Unrecognized mediainfo MasteringDisplay_Luminance: {luminance!r}')
+        return luminance
+
 def parse_master_display_str(master_display):
     m = re.match(r'^G\((?P<uxG>\d+),(?P<uyG>\d+)\)B\((?P<uxB>\d+),(?P<uyB>\d+)\)R\((?P<uxR>\d+),(?P<uyR>\d+)\)WP\((?P<uxW>\d+),(?P<uyW>\d+)\)L\((?P<uminL>\d+),(?P<umaxL>\d+)\)$', master_display)
     if m:
@@ -1198,7 +1260,7 @@ hdr_color_transfer_stems = {
 # 'smpte2086',  # Metadata format, used in HDR10 & DolbyVision
 
 def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_track_dict=None):
-    ffmpeg_hdr_args = []
+    ffmpeg_hdr_args = ffmpeg.Options()
     assert codec
     if ffprobe_stream_json is None:
         ffprobe_stream_json, = inputfile.ffprobe_dict['streams']
@@ -1218,30 +1280,44 @@ def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_
             need_2pass = True
             assert mediainfo_track_dict['BitDepth'] == 10 # avc @ profile High, hevc @ profile Main 10, ??
             assert ffprobe_stream_json['pix_fmt'] == 'yuv420p10le'
-            ffmpeg_hdr_args += [
-                '-pix_fmt', 'yuv420p10le',
-            ]
-            ffmpeg_hdr_args += [
-                '-color_primaries', ffmpeg.get_option_value('color_primaries', ffprobe_stream_json['color_primaries']),
-                '-color_trc', ffmpeg.get_option_value('color_trc', ffprobe_stream_json['color_transfer']),
-                '-colorspace', ffmpeg.get_option_value('colorspace', ffprobe_stream_json['color_space']),
-                '-color_range', ffmpeg.get_option_value('color_range', ffprobe_stream_json['color_range']),
-            ]
+            ffmpeg_hdr_args.set_option('-pix_fmt', 'yuv420p10le')
+            ffmpeg_hdr_args.set_option('-color_primaries', ffmpeg.get_option_value('color_primaries', ffprobe_stream_json['color_primaries']))
+            ffmpeg_hdr_args.set_option('-color_trc', ffmpeg.get_option_value('color_trc', ffprobe_stream_json['color_transfer']))
+            ffmpeg_hdr_args.set_option('-colorspace', ffmpeg.get_option_value('colorspace', ffprobe_stream_json['color_space']))
+            ffmpeg_hdr_args.set_option('-color_range', ffmpeg.get_option_value('color_range', ffprobe_stream_json['color_range']))
             # https://www.webmproject.org/vp9/profiles/
             if 'yuv420' in ffprobe_stream_json['pix_fmt']:
-                ffmpeg_hdr_args += [
-                    '-profile:v', 2,  # 10 or 12 bit, 4:2:0
-                ]
+                ffmpeg_hdr_args.set_option('-profile:v', 2)  # 10 or 12 bit, 4:2:0
             elif 'yuv422' in ffprobe_stream_json['pix_fmt']:
-                ffmpeg_hdr_args += [
-                    '-profile:v', 3,  # 10 or 12 bit, 4:2:2 or 4:4:4
-                ]
-            elif 'yuv420' in ffprobe_stream_json['pix_fmt']:
-                ffmpeg_hdr_args += [
-                    '-profile:v', 3,  # 10 or 12 bit, 4:2:2 or 4:4:4
-                ]
+                ffmpeg_hdr_args.set_option('-profile:v', 3)  # 10 or 12 bit, 4:2:2 or 4:4:4
             else:
                 raise NotImplementedError('VP9 HDR {color_range} profile for {pix_fmt}'.format_map(ffprobe_stream_json))
+
+        elif codec in (
+                'libx265',
+        ):
+            # https://x265.readthedocs.io
+            assert mediainfo_track_dict['BitDepth'] == 10
+            assert ffprobe_stream_json['pix_fmt'] == 'yuv420p10le'
+            ffmpeg_hdr_args.set_option('-pix_fmt', 'yuv420p10le')
+            ffmpeg_hdr_args.append_colon_option('-x265-params', 'hdr-opt=1')
+            ffmpeg_hdr_args.append_colon_option('-x265-params', 'colorprim={}'.format(ffmpeg.get_option_value('color_primaries', ffprobe_stream_json['color_primaries'])))
+            ffmpeg_hdr_args.append_colon_option('-x265-params', 'transfer={}'.format(ffmpeg.get_option_value('color_trc', ffprobe_stream_json['color_transfer'])))
+            ffmpeg_hdr_args.append_colon_option('-x265-params', 'colormatrix={}'.format(ffmpeg.get_option_value('colorspace', ffprobe_stream_json['color_space'])))
+            color_primaries = ColorSpaceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
+            master_display = ''
+            master_display += color_primaries.master_display_str()
+            luminance = LuminanceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
+            master_display += luminance.master_display_str()
+            ffmpeg_hdr_args.append_colon_option('-x265-params', 'master-display={}'.format(master_display))
+            # https://x265.readthedocs.io/en/master/cli.html?highlight=--profile#profile-level-tier
+            if 'yuv420' in ffprobe_stream_json['pix_fmt']:
+                ffmpeg_hdr_args.set_option('-profile:v', 'main10')
+            elif 'yuv422' in ffprobe_stream_json['pix_fmt']:
+                ffmpeg_hdr_args.set_option('-profile:v', 'main422-10')
+            else:
+                raise NotImplementedError('libx265 HDR {color_range} profile for {pix_fmt}'.format_map(ffprobe_stream_json))
+
         else:
             raise NotImplementedError(f'HDR support not implemented (HDR {color_transfer} using {codec})')
     else:
@@ -2380,7 +2456,8 @@ def chop_chapters(chaps,
                   chapter_lossless=True,
                   reset_timestamps=True,
                   chop_chaps=None,
-                  ffprobe_dict=None):
+                  ffprobe_dict=None,
+                  hdr=None):
     if not isinstance(inputfile, MediaFile):
         inputfile = MediaFile.new_by_file_name(inputfile)
     inputfile_base, inputfile_ext = my_splitext(inputfile)
@@ -2407,7 +2484,7 @@ def chop_chapters(chaps,
         chaps_list = [Chapters(chapters=[chap]) for chap in chaps]
 
     ffmpeg_input_args = []
-    codec_args = []
+    codec_args = ffmpeg.Options()
 
     if (
             (chapter_file_ext == inputfile_ext
@@ -2418,13 +2495,15 @@ def chop_chapters(chaps,
             ))):
         codec = 'copy'
     else:
-        codec = ext_to_codec(chapter_file_ext, lossless=chapter_lossless)
+        codec = ext_to_codec(chapter_file_ext,
+                             lossless=chapter_lossless,
+                             hdr=hdr)
     ffmpeg_input_args += codec_to_input_args(codec)
-    codec_args += [
-        '-codec', codec,
-    ]
+    codec_args.set_option('-codec', codec)
     if codec != 'copy':
-        codec_args += ext_to_codec_args(chapter_file_ext, lossless=chapter_lossless)
+        codec_args += ext_to_codec_args(chapter_file_ext,
+                                        codec=codec,
+                                        lossless=chapter_lossless)
     codec_args += get_hdr_codec_args(inputfile=inputfile,
                                      codec=codec)
 
@@ -2442,6 +2521,7 @@ def chop_chapters(chaps,
         '-f', 'ssegment',
         '-segment_format', ext_to_container(chapter_file_ext),
     ]
+
     if reset_timestamps:
         ffmpeg_args += [
             '-reset_timestamps', 1,
@@ -2949,30 +3029,10 @@ def mux_dict_from_file(inputfile, outputdir):
 
                     master_display = ''  # SMPTE 2086 mastering data
                     if stream.codec_type == 'video':
-                        color_primaries = mediainfo_track_dict.get('MasteringDisplay_ColorPrimaries', None)
-                        if color_primaries:
-                            try:
-                                # Display P3
-                                color_primaries = color_space_params[color_primaries]
-                            except KeyError:
-                                # R: x=0.680000 y=0.320000, G: x=0.265000 y=0.690000, B: x=0.150000 y=0.060000, White point: x=0.312700 y=0.329000
-                                m = re.match(r'^R: x=(?P<xR>\d+\.\d+) y=(?P<yR>\d+\.\d+), G: x=(?P<xG>\d+\.\d+) y=(?P<yG>\d+\.\d+), B: x=(?P<xB>\d+\.\d+) y=(?P<yB>\d+\.\d+), White point: x=(?P<xW>\d+\.\d+) y=(?P<yW>\d+\.\d+)$', color_primaries)
-                                if m:
-                                    color_primaries = ColorSpaceParams(**m.groupdict())
-                                else:
-                                    raise ValueError(f'Unrecognized mediainfo MasteringDisplay_ColorPrimaries: {color_primaries!r}')
-                            master_display += color_primaries.master_display_str()
-                            luminance = mediainfo_track_dict['MasteringDisplay_Luminance']
-                            # min: 0.0200 cd/m2, max: 1200.0000 cd/m2
-                            m = re.match(r'^min: (?P<min>\d+(?:\.\d+)?) cd/m2, max: (?P<max>\d+(?:\.\d+)?) cd/m2$', luminance)
-                            if m:
-                                luminance = (float(m.group('min')), float(m.group('max')))
-                            else:
-                                raise ValueError(f'Unrecognized mediainfo MasteringDisplay_Luminance: {luminance!r}')
-                            master_display += 'L({min},{max})'.format(
-                                min=int(luminance[0] / 0.0001), # Units of 0.0001 cd/m2
-                                max=int(luminance[1] / 0.0001), # Units of 0.0001 cd/m2
-                            )
+                        color_primaries = ColorSpaceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
+                        master_display += color_primaries.master_display_str()
+                        luminance = LuminanceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
+                        master_display += luminance.master_display_str()
                         if master_display:
                             stream['master_display'] = master_display
                         try:
@@ -4657,9 +4717,14 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             ffmpeg_enc_args += [
                                 '-vf', 'scale=%d:%d' % (ffprobe_stream_json['width'], ffprobe_stream_json['height']),
                             ]
+                        codec = ext_to_codec(new_stream_file_ext,
+                                             lossless=lossless,
+                                             hdr=stream_dict.is_hdr())
                         ffmpeg_enc_args += [
-                            '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
-                        ] + ext_to_codec_args(new_stream_file_ext, lossless=lossless)
+                            '-codec:v', codec,
+                        ] + ext_to_codec_args(new_stream_file_ext,
+                                              codec=codec,
+                                              lossless=lossless)
                         ffmpeg_enc_args += [
                             '-f', ext_to_container(new_stream_file_ext),
                             new_stream.path,
@@ -4789,10 +4854,15 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                             if stream_dict.is_hdr():
                                 raise NotImplementedError('HDR support not implemented')
+                            codec = ext_to_codec(new_stream_file_ext,
+                                                 lossless=lossless,
+                                                 hdr=stream_dict.is_hdr())
                             ffmpeg_enc_args = [
                                 '-i', 'pipe:0',
-                                '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
-                            ] + ext_to_codec_args(new_stream_file_ext, lossless=lossless) + [
+                                '-codec:v', codec,
+                            ] + ext_to_codec_args(new_stream_file_ext,
+                                                  codec=codec,
+                                                  lossless=lossless) + [
                                 '-f', ext_to_container(new_stream_file_ext),
                                 new_stream.path,
                             ]
@@ -4874,11 +4944,16 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                     '-r', force_input_framerate,
                                     ]
                             ffmpeg_args += ffmpeg.input_args(stream_dict.file)
+                            codec = ext_to_codec(new_stream_file_ext,
+                                                 lossless=lossless,
+                                                 hdr=stream_dict.is_hdr())
                             ffmpeg_args += [
                                 '-vf', f'fieldmatch,yadif,decimate' if decimate_using_ffmpeg else f'pullup,fps={framerate}',
                                 '-r', framerate,
-                                '-codec:v', ext_to_codec(new_stream_file_ext, lossless=lossless),
-                                ] + ext_to_codec_args(new_stream_file_ext, lossless=lossless)
+                                '-codec:v', codec,
+                                ] + ext_to_codec_args(new_stream_file_ext,
+                                                      codec=codec,
+                                                      lossless=lossless)
                             if limit_duration:
                                 ffmpeg_args += ['-t', ffmpeg.Timestamp(limit_duration)]
                             ffmpeg_args += [
@@ -5171,8 +5246,10 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 extra_args += ['-vsync', 'drop']
 
                     need_2pass = False
-                    ffmpeg_conv_args = []
-                    codec = ext_to_codec(new_stream_file_ext, lossless=lossless)
+                    ffmpeg_conv_args = ffmpeg.Options()
+                    codec = ext_to_codec(new_stream_file_ext,
+                                         lossless=lossless,
+                                         hdr=stream_dict.is_hdr())
                     ffmpeg_conv_args += [
                         '-codec:v', codec,
                     ]
@@ -5256,7 +5333,9 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             '-g', int(app.args.keyint * framerate),
                             ]
                     else:
-                        ffmpeg_conv_args += ext_to_codec_args(new_stream_file_ext, lossless=lossless)
+                        ffmpeg_conv_args += ext_to_codec_args(new_stream_file_ext,
+                                                              codec=codec,
+                                                              lossless=lossless)
 
                     ffmpeg_conv_args += extra_args
 
@@ -5277,7 +5356,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         #if app.args.force_constant_framerate:
                         #    raise NotImplementedError('--parallel-chapters and --force-constant-framerate')
                         if app.args.pad_video:
-                            raise NotImplementedError('--pad-video and --force-constant-framerate')
+                            raise NotImplementedError('--parallel-chapters and --pad-video')
                         concat_list_file = ffmpeg.ConcatScriptFile(new_stream.inputdir / f'{new_stream.file_name}.concat.txt')
                         ffmpeg_concat_args = []
                         with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
@@ -5299,7 +5378,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 chop_chapters(chaps=chaps,
                                               inputfile=stream_dict.file,
                                               chapter_file_ext=chapter_stream_file_ext,
-                                              chapter_lossless=chapter_lossless)
+                                              chapter_lossless=chapter_lossless,
+                                              hdr=stream_dict.is_hdr())
                             stream_chapter_file_name_pat = os.fspath(
                                 Path(stream_chapter_file_name_pat).relative_to(
                                     os.fspath(stream_dict.inputdir).replace('%', '%%')))

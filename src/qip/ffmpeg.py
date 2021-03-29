@@ -28,7 +28,7 @@ from .perf import perfcontext
 from .exec import *
 from .exec import _SpawnMixin, spawn as _exec_spawn, popen_spawn as _exec_popen_spawn
 from .parser import lines_parser
-from .utils import byte_decode, Timestamp as _BaseTimestamp, Ratio, round_half_up, StreamTransform
+from .utils import byte_decode, Timestamp as _BaseTimestamp, Ratio, round_half_up, StreamTransform, Constants, grouper
 from qip.file import *
 from qip.collections import OrderedSet
 from qip.app import app
@@ -617,11 +617,111 @@ class FfmpegSpawn(_FfmpegSpawnMixin, _exec_spawn):
 class FfmpegPopenSpawn(_FfmpegSpawnMixin, _exec_popen_spawn):
     pass
 
+class FfmpegOptions(collections.UserList):
+
+    colon_options = None
+
+    def __init__(self, initlist=None):
+        self.colon_options = set(
+            initlist.colon_options if isinstance(initlist, FfmpegOptions)
+            else ())
+        super().__init__(initlist=initlist)
+
+    def get_option(self, option, default=Constants.NotSet):
+        try:
+            idx = self.index(option)
+        except ValueError:
+            if default is Constants.NotSet:
+                raise IndexError(f'Option {option} not set')
+            return default
+        else:
+            return self[idx + 1]
+
+    def set_option(self, option, value):
+        try:
+            idx = self.index(option)
+        except ValueError:
+            self += [option, value]
+        else:
+            self[idx + 1] = value
+
+    def del_option(self, option, value):
+        try:
+            idx = self.index(option)
+        except ValueError:
+            raise IndexError(f'Option {option} not set')
+        else:
+            del self[idx:idx + 2]
+
+    def pop_option(self, option, default=Constants.NotSet):
+        try:
+            idx = self.index(option)
+        except ValueError:
+            if default is Constants.NotSet:
+                raise IndexError(f'Option {option} not set')
+            return default
+        else:
+            value = self[idx + 1]
+            del self[idx:idx + 2]
+            return value
+
+    def append_colon_option(self, option, value):
+        try:
+            idx = self.index(option)
+        except ValueError:
+            self += [option, value]
+        else:
+            old_value = self[idx + 1]
+            if old_value:
+                self[idx + 1] = f'{old_value}:{value}'
+            else:
+                self[idx + 1] = value
+        self.colon_options.add(option)
+
+    def __add__(self, other):
+        if isinstance(other, FfmpegOptions):
+            new = self.__class__(self)
+            new += other
+            return new
+        else:
+            return super().__add__(other)
+
+    def __radd__(self, other):
+        # Refuse to create a new object that has different semantics than `other`
+        return other + self.data
+
+    def __iadd__(self, other):
+        if isinstance(other, FfmpegOptions):
+            self.extend(other)
+        else:
+            super().__iadd__(other)
+        return self
+
+    def extend(self, other):
+        if isinstance(other, FfmpegOptions):
+            colon_options = self.colon_options
+            colon_options.update(other.colon_options)
+            for option, value in grouper(other.data, 2):
+                if option in colon_options:
+                    self.append_colon_option(option, value)
+                else:
+                    self.set_option(option, value)
+        else:
+            super().extend(other)
+
+    def __repr__(self):
+        s = f'{self.__class__.__name__}({self.data!r}'
+        if self.colon_options:
+            s += f', colon_options={self.colon_options!r}'
+        s += ')'
+        return s
+
 class _Ffmpeg(Executable):
 
     Timestamp = Timestamp
     ConcatScriptFile = ConcatScriptFile
     MetadataFile = MetadataFile
+    Options = FfmpegOptions
 
     encoding = 'utf-8'
     encoding_errors = 'replace'
