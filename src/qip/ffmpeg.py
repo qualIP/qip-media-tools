@@ -409,7 +409,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             if self.progress_bar_max:
                 if self.progress_bar.index == 0:
                     #self.progress_bar.message = f'{self.command} cropdetect'
-                    self.progress_bar.message = 'cropdetect'
+                    self.progress_bar.message = 'Cropdetect'
                     self.progress_bar.suffix += ' crop=%(crop)s'
                 self.progress_bar.crop = self.cropdetect_result
                 if isinstance(self.progress_bar_max, _BaseTimestamp):
@@ -442,13 +442,14 @@ class _FfmpegSpawnMixin(_SpawnMixin):
         return True
 
     def progress_pass(self, str):
-        str = byte_decode(str).rstrip('\r\n')
         if self.progress_bar is not None:
-            self.progress_bar.message = f'{self.command} -- {str}'
+            pass_name = self.match.group('pass_name')
+            self.progress_bar.message = f'{self.progress_bar_title or self.command} -- {pass_name}'
             self.progress_bar.reset()
             #self.progress_bar.update()
             self.on_progress_bar_line = True
         else:
+            str = byte_decode(str).rstrip('\r\n')
             if self.on_progress_bar_line:
                 print('')
                 self.on_progress_bar_line = False
@@ -494,10 +495,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
     def eof(self, _dummy):
         str = byte_decode(self.before).rstrip('\r\n')
         if str:
-            if self.on_progress_bar_line:
-                print('')
-                self.on_progress_bar_line = False
-            print(f'EOF: {str!r}')
+            self.log_line(f'EOF: {str!r}', level=logging.DEBUG)
         return True
 
     def get_pattern_dict(self):
@@ -515,7 +513,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [Parsed_cropdetect_1 @ 0x56473433ba40] x1:0 x2:717 y1:0 y2:477 w:718 h:478 x:0 y:0 pts:504504000 t:210.210000 crop=718:478:0:0
             (fr'^\[Parsed_cropdetect\S* @ \S+\]\s(?:\[info\]\s)?x1:(?P<x1>\S+) x2:(?P<x2>\S+) y1:(?P<y1>\S+) y2:(?P<y2>\S+) w:(?P<w>\S+) h:(?P<h>\S+) x:(?P<x>\S+) y:(?P<y>\S+) pts:(?P<pts>\S+) t:(?P<time>\S+) crop=(?P<crop>\S+) *{re_eol}', self.parsed_cropdetect_line),
 
-            (fr'^\[ffmpeg-2pass-pipe\]\s(?P<pass>PASS [12]){re_eol}', self.progress_pass),
+            (fr'^\[ffmpeg-2pass-pipe\]\s(?P<pass_name>PASS [12]){re_eol}', self.progress_pass),
 
             # [info] Input #0, h264, from 'test-movie3/track-00-video.h264':
             # [info] Input #0, h264, from 'pipe:':
@@ -980,7 +978,7 @@ class Ffmpeg(_Ffmpeg):
             out = self(*ffmpeg_args,
                        show_progress_bar=show_progress_bar,
                        progress_bar_max=Timestamp(cropdetect_duration),
-                       progress_bar_title=progress_bar_title or 'cropdetect',
+                       progress_bar_title=progress_bar_title or 'Cropdetect',
                        invocation_purpose='cropdetect',
                        dry_run=dry_run,
                        loglevel=loglevel)
@@ -1102,7 +1100,7 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
                 if progress_bar_max is not None:
                     run_kwargs['progress_bar_max'] = progress_bar_max
                 if progress_bar_title is not None:
-                    run_kwargs['progress_bar_title'] = progress_bar_title
+                    run_kwargs['progress_bar_title'] = progress_bar_title or 'Encode'
             if run_kwargs:
                 run_func = functools.partial(run_func, **run_kwargs)
 
