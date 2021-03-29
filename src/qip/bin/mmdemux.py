@@ -5322,72 +5322,44 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             done_optimize_iter(new_stream=new_stream)
                             continue
 
-                        force_input_framerate = getattr(app.args, 'force_input_framerate', None)
-                        assert force_input_framerate or input_framerate or framerate
-
-                        # Concat
-                        ffmpeg_concat_args = []
-                        with perfcontext('Concat %s w/ ffmpeg' % (new_stream.file_name,), log=True):
-                            cwd = concat_list_file.file_name.parent  # Certain characters (like '?') confuse the concat protocol
-                            if stream_dict.is_hdr():
-                                raise NotImplementedError('HDR support not implemented')
-                            ffmpeg_args = default_ffmpeg_args + [
-                                '-f', 'concat', '-safe', 1 if safe_concat else 0,
-                                '-r', force_input_framerate or input_framerate or framerate,
-                            ] + ffmpeg.input_args(concat_list_file.file_name.relative_to(cwd)) + [
-                                '-codec', 'copy',
-                                ] + ffmpeg_concat_args + [
-                                '-start_at_zero',
-                                '-f', ext_to_container(new_stream_file_ext), new_stream.file_name.relative_to(cwd),
-                                ]
+                    ffmpeg_args = [] + default_ffmpeg_args
+                    force_input_framerate = getattr(app.args, 'force_input_framerate', None)
+                    if force_input_framerate:
+                        ffmpeg_args += [
+                            '-r', force_input_framerate,
+                            ]
+                    ffmpeg_args += ffmpeg.input_args(stream_dict.file)
+                    ffmpeg_args += ffmpeg_conv_args
+                    if app.args.force_constant_framerate \
+                            or stream_file_ext in still_image_exts:
+                        ffmpeg_args += [
+                            '-r', framerate,
+                        ]
+                    ffmpeg_args += [
+                        '-f', ext_to_container(new_stream_file_ext), new_stream.path,
+                        ]
+                    if need_2pass or new_stream_file_ext in (
+                            '.vp8.ivf',
+                            '.vp9.ivf',
+                            '.av1.ivf',
+                            # '.ffv1.mkv',  # no need for better compression
+                    ):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
+                            ffmpeg.run2pass(*ffmpeg_args,
+                                            slurm=app.args.slurm,
+                                            progress_bar_max=stream_dict.estimated_duration,
+                                            progress_bar_title=f'Convert {stream_dict.codec_type} stream {stream_dict.pprint_index} {stream_file_ext} -> {new_stream_file_ext} w/ ffmpeg',
+                                            dry_run=app.args.dry_run,
+                                            y=app.args.yes)
+                    else:
+                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg(*ffmpeg_args,
-                                   cwd=cwd,
                                    progress_bar_max=stream_dict.estimated_duration,
-                                   progress_bar_title=f'Concat {stream_dict.codec_type} stream {stream_dict.pprint_index} w/ ffmpeg',
+                                   progress_bar_title=f'Convert {stream_dict.codec_type} stream {stream_dict.pprint_index} {stream_file_ext} -> {new_stream_file_ext} w/ ffmpeg',
+                                   slurm=app.args.slurm,
                                    dry_run=app.args.dry_run,
                                    y=app.args.yes)
-                            for chap in chaps:
-                                new_stream_chapter_file_name = new_stream_chapter_file_name_pat % (chap.no,)
-                                temp_files.append(stream_dict.inputdir / new_stream_chapter_file_name)
-                    else:
-                        ffmpeg_args = [] + default_ffmpeg_args
-                        force_input_framerate = getattr(app.args, 'force_input_framerate', None)
-                        if force_input_framerate:
-                            ffmpeg_args += [
-                                '-r', force_input_framerate,
-                                ]
-                        ffmpeg_args += ffmpeg.input_args(stream_dict.file)
-                        ffmpeg_args += ffmpeg_conv_args
-                        if app.args.force_constant_framerate \
-                                or stream_file_ext in still_image_exts:
-                            ffmpeg_args += [
-                                '-r', framerate,
-                            ]
-                        ffmpeg_args += [
-                            '-f', ext_to_container(new_stream_file_ext), new_stream.path,
-                            ]
-                        if need_2pass or new_stream_file_ext in (
-                                '.vp8.ivf',
-                                '.vp9.ivf',
-                                '.av1.ivf',
-                                # '.ffv1.mkv',  # no need for better compression
-                        ):
-                            with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
-                                ffmpeg.run2pass(*ffmpeg_args,
-                                                slurm=app.args.slurm,
-                                                progress_bar_max=stream_dict.estimated_duration,
-                                                progress_bar_title=f'Convert {stream_dict.codec_type} stream {stream_dict.pprint_index} {stream_file_ext} -> {new_stream_file_ext} w/ ffmpeg',
-                                                dry_run=app.args.dry_run,
-                                                y=app.args.yes)
-                        else:
-                            with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
-                                ffmpeg(*ffmpeg_args,
-                                       progress_bar_max=stream_dict.estimated_duration,
-                                       progress_bar_title=f'Convert {stream_dict.codec_type} stream {stream_dict.pprint_index} {stream_file_ext} -> {new_stream_file_ext} w/ ffmpeg',
-                                       slurm=app.args.slurm,
-                                       dry_run=app.args.dry_run,
-                                       y=app.args.yes)
-                        test_out_file(new_stream.path)
+                    test_out_file(new_stream.path)
 
                     done_optimize_iter(new_stream=new_stream)
                     continue
