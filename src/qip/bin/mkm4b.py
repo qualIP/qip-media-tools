@@ -665,6 +665,7 @@ def mkm4b(inputfiles, default_tags):
             subparser.add_argument('format', nargs='?', choices=chapter_naming_format_choices)
             subparser.add_argument('options', nargs='?', choices=('squash',))
             subparser = subparsers.add_parser('picture', aliases=(), help='change picture')
+            subparser.add_argument('picture', nargs='?')
             subparser = subparsers.add_parser('continue', aliases=('c',), help='continue the audiobook creation -- done')
             subparser = subparsers.add_parser('quit', aliases=('q',), help='quit')
 
@@ -709,13 +710,16 @@ def mkm4b(inputfiles, default_tags):
                         edfile(chapters_file)
                         chapters_file.load()
                 elif ns.action == 'picture':
-                    print(f'Current picture: {src_picture}')
-                    value = app.prompt('New picture: ')
-                    if not value:
-                        print('Cancelled by user!')
-                        print('')
-                        continue
-                    select_src_picture(Path(value).expanduser())
+                    if ns.picture is not None:
+                        select_src_picture(Path(ns.picture).expanduser())
+                    else:
+                        print(f'Current picture: {src_picture}')
+                        value = app.prompt('New picture: ')
+                        if not value:
+                            print('Cancelled by user!')
+                            print('')
+                            continue
+                        select_src_picture(Path(value).expanduser())
                 else:
                     app.log.error('Invalid input: %r' % (ns.action,))
 
