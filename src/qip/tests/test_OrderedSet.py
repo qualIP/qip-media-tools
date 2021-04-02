@@ -1,10 +1,27 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 import unittest
 
+from pathlib import Path
+import os
+import sys
+
 from qip.collections import OrderedSet
 
+import logging
+#logging.basicConfig(level=logging.DEBUG)
+log = logging.getLogger(__name__)
+
+test_dir = Path(__file__).parent.absolute()
+
+
 class test_OrderedSet(unittest.TestCase):
+
+    @property
+    def tmp_dir(self):
+        return test_dir / f'tmp{Path(self.id()).suffix}'
 
     def test_OrderedSet(self):
         s = OrderedSet('abracadaba')
@@ -14,5 +31,3 @@ class test_OrderedSet(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
