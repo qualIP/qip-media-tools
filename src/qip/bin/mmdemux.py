@@ -1180,7 +1180,7 @@ class ColorSpaceParams(collections.namedtuple(
     @classmethod
     def from_mediainfo_track_dict(cls, mediainfo_track_dict):
         color_primaries = mediainfo_track_dict.get('MasteringDisplay_ColorPrimaries', None)
-        if color_primaries:
+        if color_primaries is not None:
             try:
                 # Display P3
                 color_primaries = color_space_params[color_primaries]
@@ -1188,7 +1188,16 @@ class ColorSpaceParams(collections.namedtuple(
                 # R: x=0.680000 y=0.320000, G: x=0.265000 y=0.690000, B: x=0.150000 y=0.060000, White point: x=0.312700 y=0.329000
                 m = re.match(r'^R: x=(?P<xR>\d+\.\d+) y=(?P<yR>\d+\.\d+), G: x=(?P<xG>\d+\.\d+) y=(?P<yG>\d+\.\d+), B: x=(?P<xB>\d+\.\d+) y=(?P<yB>\d+\.\d+), White point: x=(?P<xW>\d+\.\d+) y=(?P<yW>\d+\.\d+)$', color_primaries)
                 if m:
-                    color_primaries = cls(**m.groupdict())
+                    color_primaries = cls(
+                        xR=float(m.group('xR')),
+                        yR=float(m.group('yR')),
+                        xG=float(m.group('xG')),
+                        yG=float(m.group('yG')),
+                        xB=float(m.group('xB')),
+                        yB=float(m.group('yB')),
+                        xW=float(m.group('xW')),
+                        yW=float(m.group('yW')),
+                        K=None)
                 else:
                     raise ValueError(f'Unrecognized mediainfo MasteringDisplay_ColorPrimaries: {color_primaries!r}')
         return color_primaries
@@ -1216,13 +1225,14 @@ class LuminanceParams(collections.namedtuple(
 
     @classmethod
     def from_mediainfo_track_dict(cls, mediainfo_track_dict):
-        luminance = mediainfo_track_dict['MasteringDisplay_Luminance']
-        # min: 0.0200 cd/m2, max: 1200.0000 cd/m2
-        m = re.match(r'^min: (?P<min>\d+(?:\.\d+)?) cd/m2, max: (?P<max>\d+(?:\.\d+)?) cd/m2$', luminance)
-        if m:
-            luminance = cls(min=float(m.group('min')), max=float(m.group('max')))
-        else:
-            raise ValueError(f'Unrecognized mediainfo MasteringDisplay_Luminance: {luminance!r}')
+        luminance = mediainfo_track_dict.get('MasteringDisplay_Luminance', None)
+        if luminance is not None:
+            # min: 0.0200 cd/m2, max: 1200.0000 cd/m2
+            m = re.match(r'^min: (?P<min>\d+(?:\.\d+)?) cd/m2, max: (?P<max>\d+(?:\.\d+)?) cd/m2$', luminance)
+            if m:
+                luminance = cls(min=float(m.group('min')), max=float(m.group('max')))
+            else:
+                raise ValueError(f'Unrecognized mediainfo MasteringDisplay_Luminance: {luminance!r}')
         return luminance
 
 def parse_master_display_str(master_display):
@@ -3031,9 +3041,11 @@ def mux_dict_from_file(inputfile, outputdir):
                     master_display = ''  # SMPTE 2086 mastering data
                     if stream.codec_type == 'video':
                         color_primaries = ColorSpaceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
-                        master_display += color_primaries.master_display_str()
+                        if color_primaries:
+                            master_display += color_primaries.master_display_str()
                         luminance = LuminanceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
-                        master_display += luminance.master_display_str()
+                        if luminance:
+                            master_display += luminance.master_display_str()
                         if master_display:
                             stream['master_display'] = master_display
                         try:
@@ -6822,7 +6834,10 @@ def action_demux(inputdir, in_tags):
                     color_primaries = stream_dict.get('color_primaries', None)
 
                     if master_display or max_cll or max_fall:  # or color_transfer or color_primaries:
-                        assert master_display and max_cll and max_fall and color_transfer and color_primaries, f'Incomplete color information: master_display={master_display!r}, max_cll={max_cll!r}, max_fall={max_fall!r}, color_transfer={color_transfer!r}, color_primaries={color_primaries!r}'
+                        if max_cll is None and max_fall is None:
+                            app.log.warning('HDR: max_cll and max_fall are not set; Defaulting both to 0.')
+                            max_cll, max_fall = 0, 0
+                        assert master_display and max_cll is not None and max_fall is not None and color_transfer and color_primaries, f'Incomplete color information: master_display={master_display!r}, max_cll={max_cll!r}, max_fall={max_fall!r}, color_transfer={color_transfer!r}, color_primaries={color_primaries!r}'
                         master_display = parse_master_display_str(master_display)
 
                         ffprobe_stream_json = stream_dict.file.ffprobe_dict['streams'][0]
