@@ -170,7 +170,8 @@ class StreamCharacteristicsSeenError(ValueError):
     def __init__(self, stream, stream_characteristics):
         self.stream = stream
         self.stream_characteristics = stream_characteristics
-        super().__init__(f'Stream #{stream.pprint_index} characteristics already seen: {stream_characteristics!r}')
+        s = ', '.join(f'{k}: {v}' for k, v in stream_characteristics.items())
+        super().__init__(f'Stream #{stream.pprint_index} characteristics already seen: {s}')
 
 class StreamLanguageUnknownError(ValueError):
 
@@ -4422,6 +4423,73 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
         return None
 
+    def identifying_characteristics(self, mkvmerge=False):
+        stream_characteristics = collections.OrderedDict()
+        stream_characteristics['type'] = self.codec_type
+        stream_characteristics['language'] = self.language
+        stream_title = self.get('title', None)
+
+        if self.codec_type == 'video':
+            if False:  # TODO
+                video_angle += 1
+                if False and video_angle > 1:
+                    stream_characteristics['angle'] = video_angle
+
+        elif self.codec_type == 'subtitle':
+            disposition = [
+                d for d in (
+                    'hearing_impaired',
+                    'visual_impaired',
+                    'karaoke',
+                    'dub',
+                    'clean_effects',
+                    'lyrics',
+                    'comment',
+                    'forced',
+                    'closed_caption',
+                )
+                if self['disposition'].get(d, None)]
+            if disposition:
+                stream_characteristics['disposition'] = '+'.join(disposition)
+
+        if not mkvmerge:
+            # TODO remove mkvmerge distinction!
+
+            if self.codec_type == 'audio':
+                if self['disposition'].get('comment', None):
+                    if stream_title is None:
+                        stream_title = 'Commentary'
+                elif self['disposition'].get('karaoke', None):
+                    if stream_title is None:
+                        stream_title = 'Karaoke'
+                elif self['disposition'].get('dub', None):
+                    if stream_title is None:
+                        stream_title = 'Dub'
+                elif self['disposition'].get('clean_effects', None):
+                    if stream_title is None:
+                        stream_title = 'Clean Effects'
+                elif self['disposition'].get('original', None):
+                    if stream_title is None:
+                        stream_title = 'Original'
+                elif app.args.audio_track_titles:
+                    if stream_title is None:
+                        stream_title = self.language.name
+
+            if self.codec_type == 'subtitle':
+                if app.args.external_subtitles and my_splitext(self['file_name'])[1] != '.vtt':
+                    stream_characteristics += ('external',)
+                    try:
+                        stream_characteristics += (
+                            ('suffix', self['external_stream_file_name_suffix']),
+                        )
+                    except KeyError:
+                        pass
+
+        if stream_title is not None:
+            stream_characteristics['title'] = stream_title
+
+        return stream_characteristics
+
     def optimize(self, /, *, target_codec_names, stats):
         stream_dict = self
         with self.two_stage_commit_context():
@@ -6393,7 +6461,6 @@ def action_demux(inputdir, in_tags):
         for sorted_stream_index, stream_dict in enumerated_sorted_streams:
             if stream_dict.skip:
                 continue
-            stream_title = stream_dict.get('title', None)
 
             if stream_dict.codec_type not in ('video', 'image', 'data') \
                 and stream_dict.language is isolang('und'):
@@ -6405,25 +6472,7 @@ def action_demux(inputdir, in_tags):
                         handle_StreamCharacteristicsSeenError(e)
                         continue
 
-            stream_characteristics = (stream_dict.codec_type, stream_dict.language)
-            if stream_dict.codec_type == 'video':
-                video_angle += 1
-                if video_angle > 1:
-                    stream_characteristics += (('angle', video_angle),)
-                if stream_title is not None:
-                    stream_characteristics += (('title', stream_title),)
-            if stream_dict.codec_type == 'subtitle':
-                stream_characteristics += (
-                    'hearing_impaired' if stream_dict['disposition'].get('hearing_impaired', None) else '',
-                    'visual_impaired' if stream_dict['disposition'].get('visual_impaired', None) else '',
-                    'karaoke' if stream_dict['disposition'].get('karaoke', None) else '',
-                    'dub' if stream_dict['disposition'].get('dub', None) else '',
-                    'clean_effects' if stream_dict['disposition'].get('clean_effects', None) else '',
-                    'lyrics' if stream_dict['disposition'].get('lyrics', None) else '',
-                    'comment' if stream_dict['disposition'].get('comment', None) else '',
-                    'forced' if stream_dict['disposition'].get('forced', None) else '',
-                    'closed_caption' if stream_dict['disposition'].get('closed_caption', None) else '',
-                )
+            stream_characteristics = stream_dict.identifying_characteristics(mkvmerge=True)
 
             if stream_characteristics in (
                     stream_dict2['_temp'].stream_characteristics
@@ -6539,7 +6588,6 @@ def action_demux(inputdir, in_tags):
                     continue
                 if stream_dict.skip:
                     continue
-                stream_title = stream_dict.get('title', None)
 
                 stream_dict['_temp'].out_index = max(
                     (stream_index2['_temp'].out_index
@@ -6620,7 +6668,6 @@ def action_demux(inputdir, in_tags):
             if stream_dict.skip:
                 continue
             stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
-            stream_title = stream_dict.get('title', None)
 
             if stream_dict.codec_type not in ('video', 'image', 'data') \
                 and stream_dict.language is isolang('und'):
@@ -6632,80 +6679,8 @@ def action_demux(inputdir, in_tags):
                         handle_StreamCharacteristicsSeenError(e)
                         continue
 
-            stream_characteristics = (stream_dict.codec_type, stream_dict.language)
-            if stream_dict.codec_type == 'video':
-                video_angle += 1
-                if video_angle > 1:
-                    stream_characteristics += (
-                        ('angle', video_angle),
-                    )
-                if stream_title is not None:
-                    stream_characteristics += (
-                        ('title', stream_title),
-                    )
-            if stream_dict.codec_type == 'subtitle':
-                stream_characteristics += (
-                    'hearing_impaired' if stream_dict['disposition'].get('hearing_impaired', None) else '',
-                    'visual_impaired' if stream_dict['disposition'].get('visual_impaired', None) else '',
-                    'karaoke' if stream_dict['disposition'].get('karaoke', None) else '',
-                    'dub' if stream_dict['disposition'].get('dub', None) else '',
-                    'clean_effects' if stream_dict['disposition'].get('clean_effects', None) else '',
-                    'lyrics' if stream_dict['disposition'].get('lyrics', None) else '',
-                    'comment' if stream_dict['disposition'].get('comment', None) else '',
-                    'forced' if stream_dict['disposition'].get('forced', None) else '',
-                    'closed_caption' if stream_dict['disposition'].get('closed_caption', None) else '',
-                )
-            if stream_dict.codec_type == 'audio':
-                if stream_dict['disposition'].get('comment', None):
-                    if stream_title is None:
-                        stream_title = 'Commentary'
-                    stream_characteristics += (
-                        ('comment', stream_title),
-                    )
-                elif stream_dict['disposition'].get('karaoke', None):
-                    if stream_title is None:
-                        stream_title = 'Karaoke'
-                    stream_characteristics += (
-                        ('karaoke', stream_title),
-                    )
-                elif stream_dict['disposition'].get('dub', None):
-                    if stream_title is None:
-                        stream_title = 'Dub'
-                    stream_characteristics += (
-                        ('dub', stream_title),
-                    )
-                elif stream_dict['disposition'].get('clean_effects', None):
-                    if stream_title is None:
-                        stream_title = 'Clean Effects'
-                    stream_characteristics += (
-                        ('clean_effects', stream_title),
-                    )
-                elif stream_dict['disposition'].get('original', None):
-                    if stream_title is None:
-                        stream_title = 'Original'
-                    stream_characteristics += (
-                        ('title', stream_title),
-                    )
-                elif app.args.audio_track_titles:
-                    if stream_title is None:
-                        stream_title = stream_dict.language.name
-                    stream_characteristics += (
-                        ('title', stream_title),
-                    )
-                else:
-                    if stream_title is not None:
-                        stream_characteristics += (
-                            ('title', stream_title),
-                        )
             if stream_dict.codec_type == 'subtitle':
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
-                    stream_characteristics += ('external',)
-                    try:
-                        stream_characteristics += (
-                            ('suffix', stream_dict['external_stream_file_name_suffix']),
-                        )
-                    except KeyError:
-                        pass
                     stream_file_names = [stream_dict.file_name]
                     if my_splitext(stream_dict['file_name'])[1] == '.sub':
                         stream_file_names.append(my_splitext(stream_dict.file_name)[0] + '.idx')
@@ -6729,6 +6704,8 @@ def action_demux(inputdir, in_tags):
                         continue
                     stream_dict['_temp'].external = True
                     continue
+
+            stream_characteristics = stream_dict.identifying_characteristics(mkvmerge=False)
 
             if stream_characteristics in (
                     stream_dict2['_temp'].stream_characteristics
