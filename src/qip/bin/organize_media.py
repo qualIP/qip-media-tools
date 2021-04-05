@@ -811,7 +811,7 @@ def organize(inputfile):
         inputfile = MediaFile.new_by_file_name(inputfile)
 
     if not inputfile.file_name.is_file():
-        raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
+        raise OSError(errno.ENOENT, f'No such file: {inputfile}')
     app.log.info('Organizing %s...', inputfile)
     inputfile.extract_info(need_actual_duration=False)
     #inputfile.tags = inputfile.load_tags()  # Already done by extract_info
@@ -915,13 +915,13 @@ def organize(inputfile):
                 assert aux_file_tail.startswith(inputfile_base), (aux_file_tail, inputfile_base)
                 aux_file_suffix = aux_file_tail[len(inputfile_base):]
                 dst_aux_file_tail = dst_file_base + aux_file_suffix
-                dst_aux_file_name = os.fspath(dst_dir / dst_aux_file_tail)
-                if os.path.exists(dst_aux_file_name):
+                dst_aux_file = dst_dir / dst_aux_file_tail
+                if dst_aux_file.exists():
                     if app.args.overwrite:
-                        app.log.debug('  Collision with %s. (overwriting)', dst_aux_file_name)
+                        app.log.debug('  Collision with %s. (overwriting)', dst_aux_file)
                     else:
-                        raise OSError(errno.EEXIST, dst_aux_file_name)
-                aux_moves.append((aux_file_name, dst_aux_file_name))
+                        raise OSError(errno.EEXIST, f'File exists: {dst_aux_file}')
+                aux_moves.append((aux_file_name, dst_aux_file))
 
         def do_file_op(src, dst, *, is_aux=False):
             s_dry_run = " (dry-run)" if app.args.dry_run else ""
@@ -941,8 +941,8 @@ def organize(inputfile):
                 raise NotImplementedError(app.args.file_op)
 
         do_file_op(inputfile.file_name, dst_file_name)
-        for aux_file_name, dst_aux_file_name in aux_moves:
-            do_file_op(aux_file_name, dst_aux_file_name, is_aux=True)
+        for aux_file_name, dst_aux_file in aux_moves:
+            do_file_op(aux_file_name, dst_aux_file, is_aux=True)
         if app.args.file_op not in ('copy', 'link'):
             inputdir = os.path.dirname(inputfile.file_name)
             if inputdir not in ('.', '') and dir_empty(inputdir):

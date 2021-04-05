@@ -346,7 +346,7 @@ def mkm4b(inputfiles, default_tags):
 
     def task_extract_info(inputfile):
         if not inputfile.file_name.is_file():
-            raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
+            raise OSError(errno.ENOENT, f'No such file: {inputfile}')
         app.log.info('Reading %s...', inputfile)
         inputfile.extract_info(need_actual_duration=(len(inputfiles) > 1))
         #inputfile.tags.picture = None

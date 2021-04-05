@@ -157,7 +157,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             ffmpeg_cmd += ['-y']
         else:
             if self.exists():
-                raise OSError(errno.EEXIST, os.fspath(self))
+                raise OSError(errno.EEXIST, f'File exists: {self}')
 
         ffmpeg_cmd += ['-stats']
         qaac_cmd += ['--verbose']

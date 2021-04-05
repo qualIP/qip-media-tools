@@ -487,7 +487,8 @@ class _FfmpegSpawnMixin(_SpawnMixin):
 
     def prompt_file_overwrite(self, str):
         self.generic_error(str, error_tag='file-already-exists')
-        raise OSError(errno.EEXIST, byte_decode(self.match.group('file_name')))
+        file_name = byte_decode(self.match.group('file_name'))
+        raise OSError(errno.EEXIST, f'File exists: {file_name}')
 
     def terminal_escape_sequence(self, str):
         return True

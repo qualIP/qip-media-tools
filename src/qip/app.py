@@ -88,7 +88,7 @@ class ConfigParser(configparser.ConfigParser):
             filenames = [self.file_name]
         read_ok = super().read(filenames=filenames, **kwargs)
         if not no_exists_ok and not read_ok:
-            raise OSError(errno.ENOENT, 'Config file(s) not found', ', '.join(filenames))
+            raise OSError(errno.ENOENT, 'Config file(s) not found: {}'.format(', '.join(map(os.fspath, filenames))))
         return read_ok
 
     def write(self, file_name=None, fp=None, **kwargs):

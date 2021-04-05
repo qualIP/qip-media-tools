@@ -653,7 +653,7 @@ def _mux_dir_Path(path):
         mux_file2 = path2 / 'mux.json'
         if mux_file2.exists():
             return path2
-    raise OSError(errno.EEXIST, 'No such file', os.fspath(mux_file))
+    raise OSError(errno.EEXIST, f'No such file: {mux_file}')
 
 class NumericTextArea(TextArea):
 
@@ -2263,7 +2263,7 @@ def action_backup(backup_dir, device, in_tags):
     app.log.info('Backing up %s from %s...', backup_dir, device)
 
     if backup_dir.is_dir():
-        raise OSError(errno.EEXIST, backup_dir)
+        raise OSError(errno.EEXIST, f'Directory exists: {backup_dir}')
 
     from qip.makemkv import makemkvcon
     decrypt = app.args.decrypt
@@ -3216,7 +3216,7 @@ def action_mux(inputfile, in_tags,
                 app.log.warning('Directory exists: %s; Ignoring', outputdir)
                 return True
             else:
-                raise OSError(errno.EEXIST, outputdir)
+                raise OSError(errno.EEXIST, f'Directory exists: {outputdir}')
 
     init_inputfile_tags(inputfile, in_tags=in_tags)
 
@@ -3740,7 +3740,7 @@ def action_verify(inputfile, in_tags):
                 app.log.warning('Directory exists: %r; Just verifying', outputdir)
                 dir_existed = True
             else:
-                raise OSError(errno.EEXIST, outputdir)
+                raise OSError(errno.EEXIST, f'Directory exists: {outputdir}')
 
     if not dir_existed:
         assert action_mux(inputfile, in_tags=in_tags,
@@ -4002,15 +4002,11 @@ def my_splitext(file_name, strip_container=False):
 def test_out_file(out_file):
     if not app.args.dry_run:
         if not out_file.exists():
-            raise OSError(errno.ENOENT,
-                          'File not found: %r' % (out_file,),
-                          out_file)
+            raise OSError(errno.ENOENT, f'No such file: {out_file}')
         siz = out_file.stat().st_size
         app.log.debug(f'{out_file} has size {siz}')
         if siz == 0:
-            raise OSError(errno.ENOENT,
-                          'File empty: %r' % (out_file,),
-                          out_file)
+            raise OSError(errno.ENOENT, f'File empty: {out_file}')
 
 class MmdemuxTask(collections.UserDict, json.JSONEncodable):
 
@@ -5841,9 +5837,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                  )
                                 if not new_stream.path.is_file():
                                     try:
-                                        raise OSError(errno.ENOENT,
-                                                      'File not found: %r' % (new_stream.path,),
-                                                      new_stream.path)
+                                        raise OSError(errno.ENOENT, f'No such file: {new_stream.path}')
                                     except OSError as e:
                                         if not app.args.interactive:
                                             raise
@@ -7409,7 +7403,7 @@ def action_tag_episodes(episode_file_names, in_tags):
             opath = episode_file.file_name.with_name(opath.name)
             if opath != episode_file.file_name:
                 if opath.exists():
-                    raise OSError(errno.EEXIST, opath)
+                    raise OSError(errno.EEXIST, f'File exists: {opath}')
                 if app.args.dry_run:
                     app.log.info('  Rename to %s. (dry-run)', opath)
                 else:
@@ -7727,7 +7721,7 @@ def action_identify_files(file_names, in_tags):
                 opath = o_file.file_name.with_name(opath.name)
                 if opath != o_file.file_name:
                     if opath.exists():
-                        raise OSError(errno.EEXIST, opath)
+                        raise OSError(errno.EEXIST, f'File exists: {opath}')
                     if app.args.dry_run:
                         app.log.info('  Rename to %s. (dry-run)', opath)
                     else:

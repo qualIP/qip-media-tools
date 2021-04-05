@@ -227,7 +227,7 @@ def rename(inputfile, pattern):
         inputfile = MediaFile.new_by_file_name(inputfile)
 
     if not inputfile.file_name.is_file():
-        raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
+        raise OSError(errno.ENOENT, f'No such file: {inputfile}')
 
     subs = FileRenameSubstitutionsMap(inputfile)
     new_file_name = pattern.format_map(subs)

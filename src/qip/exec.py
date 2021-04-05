@@ -693,7 +693,7 @@ class Executable(metaclass=abc.ABCMeta):
     def which(self, mode=os.F_OK | os.X_OK, path=None, assert_found=True):
         cmd = shutil.which(os.fspath(self.name), mode=mode, path=path)
         if cmd is None and assert_found:
-            raise OSError(errno.ENOENT, 'Command not found', self.name)
+            raise OSError(errno.ENOENT, f'Command not found: {self.name}')
         return cmd
 
     @classmethod
