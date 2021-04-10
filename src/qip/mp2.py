@@ -53,8 +53,8 @@ class Mpeg2MovieFile(Mpeg2ContainerFile, MovieFile):
 class VobFile(Mpeg2MovieFile):
 
     _common_extensions = (
-        '.m2p',        # MPEG-2 Program Stream (MPEG-PS)
         '.vob',
+        '.m2p',        # MPEG-2 Program Stream (MPEG-PS)
     )
 
     def extract_ffprobe_dict(self, **kwargs):
