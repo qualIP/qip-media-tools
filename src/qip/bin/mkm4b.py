@@ -534,8 +534,7 @@ def mkm4b(inputfiles, default_tags):
     def print_chapters_file(chapters_file):
         nonlocal expected_duration
         # chapters_file.load()  # Assume already loaded
-        print('Chapters:')
-        print(re.sub(r'^', '    ', safe_read_file(chapters_file), flags=re.MULTILINE))
+        chapters_file.chapters.pprint()
         if expected_duration is not None:
             app.log.info('Expected final duration: %s (%.3f seconds)', mp4chaps.Timestamp(expected_duration), expected_duration)
 

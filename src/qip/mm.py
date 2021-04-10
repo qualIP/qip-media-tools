@@ -722,7 +722,7 @@ class MediaFile(File):
                 '-y',
                 output_file,
             ]
-            with perfcontext('write metadata w/ ffmpeg'):
+            with perfcontext('Write metadata w/ ffmpeg'):
                 ffmpeg(*ffmpeg_args,
                        show_progress_bar=show_progress_bar,
                        progress_bar_max=progress_bar_max,
@@ -951,14 +951,16 @@ class MediaFile(File):
         return chaps
 
     def write_chapters(self, chapters,
-                       show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
-        metadata_file = self.load_ffmpeg_metadata()
-        metadata_file.chapters = chapters
-        self.write_ffmpeg_metadata(metadata_file,
-                                   show_progress_bar=show_progress_bar,
-                                   progress_bar_max=progress_bar_max,
-                                   progress_bar_title=progress_bar_title or f'Write {self} chapters w/ ffmpeg',
-                                   )
+                       show_progress_bar=None, progress_bar_max=None, progress_bar_title=None,
+                       log=False):
+        with perfcontext('Write chapters w/ ffmpeg', log=log):
+            metadata_file = self.load_ffmpeg_metadata()
+            metadata_file.chapters = chapters
+            self.write_ffmpeg_metadata(metadata_file,
+                                       show_progress_bar=show_progress_bar,
+                                       progress_bar_max=progress_bar_max,
+                                       progress_bar_title=progress_bar_title or f'Write {self} chapters w/ ffmpeg',
+                                       )
 
     def extract_info(self, need_actual_duration=False):
         tags_done = False

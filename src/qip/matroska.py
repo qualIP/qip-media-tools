@@ -802,7 +802,7 @@ class MatroskaFile(BinaryMediaFile):
 
     def load_chapters(self, *, fix=True, return_raw_xml=False, **kwargs):
         from qip.perf import perfcontext
-        with perfcontext('mkvextract chapters'):
+        with perfcontext('Extract chapters w/ mkvextract'):
             chapters_out = mkvextract('chapters', self,
                                       encoding='utf-8-sig').out
         if fix:
@@ -814,7 +814,8 @@ class MatroskaFile(BinaryMediaFile):
         return chaps
 
     def write_chapters(self, chaps,
-                       show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
+                       show_progress_bar=None, progress_bar_max=None, progress_bar_title=None,
+                       log=False):
         with MatroskaChaptersFile.NamedTemporaryFile() as chapters_file:
             if isinstance(chaps, ET.ElementTree):
                 # XML tree
@@ -833,7 +834,7 @@ class MatroskaFile(BinaryMediaFile):
             chapters_file.flush()
             chapters_file.seek(0)
             from qip.perf import perfcontext
-            with perfcontext('write chapters w/ mkvpropedit'):
+            with perfcontext('Write chapters w/ mkvpropedit', log=log):
                 mkvpropedit(
                     self,
                     actions=mkvpropedit.ActionArgs(
