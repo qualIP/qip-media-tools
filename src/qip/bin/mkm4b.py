@@ -29,7 +29,7 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
-from qip.matroska import MkaFile
+from qip.matroska import MkaFile, MatroskaChaptersFile
 from qip.mm import *
 from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps, Mp4chapsFile
 from qip.parser import *
@@ -542,10 +542,17 @@ def mkm4b(inputfiles, default_tags):
     if app.args.chapters_file:
         if chapters_file.exists() and app.args.chapters_file.samefile(chapters_file.file_name):
             app.log.info('Reusing %s...', chapters_file)
+            chapters_file.load()
         else:
             app.log.info('Writing %s from %s...', chapters_file, app.args.chapters_file)
-            shutil.copyfile(app.args.chapters_file, chapters_file.file_name)
-        chapters_file.load()
+            if app.args.chapters_file.suffix == '.xml':
+                xml_chapters_file = MatroskaChaptersFile(file_name=app.args.chapters_file)
+                xml_chapters_file.load()
+                chapters_file.chapters = xml_chapters_file.chapters
+                chapters_file.create()
+            else:
+                shutil.copyfile(app.args.chapters_file, chapters_file.file_name)
+                chapters_file.load()
     elif app.args.reuse_chapters and chapters_file.exists():
         app.log.info('Reusing %s...', chapters_file)
         chapters_file.load()
