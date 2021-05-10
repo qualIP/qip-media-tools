@@ -8,6 +8,10 @@ from argparse import *
 from .decorator import trace
 def trace(func, **kwargs): return func
 
+from .utils import Constants as _Constants
+Auto = _Constants.Auto
+NotSet = _Constants.NotSet
+
 __all__ = list(_argparse.__all__) + [
     'ParserExitException',
 ]
@@ -76,27 +80,37 @@ class Action(_argparse.Action, _AttributeHolder, metaclass=_ActionMeta):
 #class _SubParsersAction(Action): pass
 #class FileType(object): pass
 
+def constants_parser(value):
+    value = _Constants._value2member_map_.get(value, value)
+    return value
+
+def constants_type(value):
+    try:
+        value = _Constants._value2member_map_[value]
+    except KeyError:
+        raise ValueError(value)
+    return value
+
 class _StoreBoolOrSuperAction(Action):
 
-    def __init__(self, *, choices, nargs=None, **kwargs):
+    def __init__(self, *, choices, type=None, nargs=None, **kwargs):
         super().__init__(**kwargs)
         self.choices = choices
+        self.type = type
         self.nargs = nargs
 
     def __call__(self, parser, namespace, values, option_string=None):
-        if values is True:
+        if values is True or values == []:
             return super().__call__(parser=parser,
                                     namespace=namespace,
                                     values=values,
                                     option_string=option_string)
         else:
-            values = {
-                'True': True,
-                'true': True,
-                'False': False,
-                'false': False,
-            }.get(values, values)
             setattr(namespace, self.dest, values)
+
+class _StoreConstOrSuperAction(_StoreBoolOrSuperAction, _argparse._StoreConstAction):
+
+    pass
 
 class _StoreTrueOrSuperAction(_StoreBoolOrSuperAction, _argparse._StoreTrueAction):
 
@@ -131,6 +145,7 @@ class _ActionsContainer(_argparse._ActionsContainer):
         super().__init__(*args, **kwargs)
 
         # register actions
+        self.register('action', 'store_const_or_super', _StoreConstOrSuperAction)
         self.register('action', 'store_true_or_super', _StoreTrueOrSuperAction)
         self.register('action', 'store_false_or_super', _StoreFalseOrSuperAction)
 
@@ -162,16 +177,6 @@ class _ActionsContainer(_argparse._ActionsContainer):
                 for option_string in long_option_strings]
         assert neg_option_strings
 
-        # if no default was supplied, use the parser-level default
-        if 'default' not in kwargs:
-            dest = kwargs['dest']
-            if dest in self._defaults:
-                kwargs['default'] = self._defaults[dest]
-            elif self.argument_default is not None:
-                kwargs['default'] = self.argument_default
-        default = kwargs.pop('default', False)
-        neg_default = SUPPRESS
-
         help = kwargs.pop('help', None)
         neg_help = kwargs.pop('neg_help', None)
         if help and not neg_help:
@@ -188,17 +193,51 @@ class _ActionsContainer(_argparse._ActionsContainer):
                     f'{help}',
                     f'do not {help}')
 
-        kwargs2 = {}
+        pos_kwargs2 = {}
         neg_kwargs2 = {}
 
-        action = kwargs.pop('action', 'store_true')
+        # keyword arguments that only apply to positive option
+        for k in ('type', 'nargs', 'choices', 'const'):
+            try:
+                pos_kwargs2[k] = kwargs.pop(k)
+            except KeyError:
+                pass
 
-        choices = kwargs.pop('choices', None)
-        if choices:
-            if action in ('store_true', 'store_false'):
+        has_choices = bool(pos_kwargs2.get('choices', None))
+        if has_choices:
+            pos_kwargs2.setdefault('nargs', OPTIONAL)
+
+        is_list = pos_kwargs2.get('nargs', None) not in (None, OPTIONAL)
+        is_optional = pos_kwargs2.get('nargs', None) in (OPTIONAL, ZERO_OR_MORE)
+
+        try:
+            action = kwargs.pop('action')
+        except KeyError:
+            if is_list or 'const' in pos_kwargs2:
+                action = 'store_const'
+                pos_kwargs2.setdefault('const', [True] if is_list else True)
+            else:
+                action = 'store_true'
+
+        if has_choices:
+            if action in ('store_const', 'store_true', 'store_false'):
                 action += '_or_super'
-            kwargs2['choices'] = choices
-            kwargs2['nargs'] = '?'
+
+        if pos_kwargs2.get('nargs', None) is not None:
+            pos_kwargs2.setdefault('type', constants_parser)
+
+        # if no default was supplied, use the parser-level default
+        try:
+            default = kwargs.pop('default')
+        except KeyError:
+            dest = kwargs['dest']
+            if dest in self._defaults:
+                default = self._defaults[dest]
+            elif self.argument_default is not None:
+                default = self.argument_default
+            else:
+                default = [False] if is_list else False
+        neg_default = SUPPRESS
 
         action_class = self._registry_get('action', action, action)
         try:
@@ -208,6 +247,18 @@ class _ActionsContainer(_argparse._ActionsContainer):
                 neg_action = 'store_false'
             elif issubclass(action_class, _argparse._StoreFalseAction):
                 neg_action = 'store_true'
+            elif issubclass(action_class, _argparse._StoreConstAction) and pos_kwargs2['const'] is True:
+                neg_action = 'store_const'
+                neg_kwargs2['const'] = False
+            elif issubclass(action_class, _argparse._StoreConstAction) and pos_kwargs2['const'] is False:
+                neg_action = 'store_const'
+                neg_kwargs2['const'] = True
+            elif issubclass(action_class, _argparse._StoreConstAction) and pos_kwargs2['const'] == [True]:
+                neg_action = 'store_const'
+                neg_kwargs2['const'] = [False]
+            elif issubclass(action_class, _argparse._StoreConstAction) and pos_kwargs2['const'] == [False]:
+                neg_action = 'store_const'
+                neg_kwargs2['const'] = [True]
             else:
                 args = {'option': option_strings[0],
                         'action': action_class}
@@ -218,14 +269,14 @@ class _ActionsContainer(_argparse._ActionsContainer):
         if issubclass(neg_action_class, _argparse._StoreFalseAction) and default is False:
             default, neg_default = neg_default, default
 
-        kwargs2.update(kwargs)
+        pos_kwargs2.update(kwargs)
         neg_kwargs2.update(kwargs)
 
         self.add_argument(*option_strings,
                           default=default,
                           action=action,
                           help=help,
-                          **kwargs2)
+                          **pos_kwargs2)
         self.add_argument(*neg_option_strings,
                           default=neg_default,
                           action=neg_action,
@@ -350,7 +401,6 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
 
     @trace
     def parse_known_args(self, args=None, namespace=None):
-        #print('%s @ 0x%x parse_known_args(%r, %r)' % (self.__class__.__name__, id(self), args, namespace))
         if namespace is None:
             namespace = Namespace()
         args, argv = super().parse_known_args(args=args, namespace=namespace)
