@@ -3216,10 +3216,11 @@ def action_mux(inputfile, in_tags,
             from prompt_toolkit.formatted_text import FormattedText
             from prompt_toolkit.completion import WordCompleter
 
-            parser = argparse.NoExitArgumentParser(
+            parser = argparse.ArgumentParser(
                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                 description='Initial tags setup',
                 add_help=False, usage=argparse.SUPPRESS,
+                exit_on_error=False,
                 )
             subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
             subparser = subparsers.add_parser('help', aliases=('h', '?'), help='print this help')
@@ -3241,12 +3242,11 @@ def action_mux(inputfile, in_tags,
                 try:
                     ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
                 except (argparse.ArgumentError, ValueError) as e:
-                    app.log.error(e)
-                    print('')
-                    continue
-                except argparse.ParserExitException as e:
-                    if e.status:
-                        app.log.error(e);
+                    if isinstance(e, argparse.ParserExitException) and e.status == 0:
+                        # help?
+                        pass
+                    else:
+                        app.log.error(e)
                         print('')
                     continue
                 if ns.action == 'help':
@@ -6215,10 +6215,11 @@ def action_demux(inputdir, in_tags):
 
             def setup_parser(in_err):
                 nonlocal completer
-                parser = argparse.NoExitArgumentParser(
+                parser = argparse.ArgumentParser(
                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                     description=str(in_err),
                     add_help=False, usage=argparse.SUPPRESS,
+                    exit_on_error=False,
                     )
                 subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
                 subparser = subparsers.add_parser('help', aliases=('h', '?'), help='print this help')
@@ -6274,11 +6275,10 @@ def action_demux(inputdir, in_tags):
                 try:
                     ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
                 except (argparse.ArgumentError, ValueError) as e:
-                    app.log.error(e)
-                    print('')
-                    continue
-                except argparse.ParserExitException as e:
-                    if e.status:
+                    if isinstance(e, argparse.ParserExitException) and e.status == 0:
+                        # help?
+                        pass
+                    else:
                         app.log.error(e)
                         print('')
                     continue

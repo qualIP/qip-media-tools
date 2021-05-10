@@ -609,10 +609,11 @@ def bincuetags(cue_file):
             from prompt_toolkit.formatted_text import FormattedText
             from prompt_toolkit.completion import WordCompleter
 
-            parser = argparse.NoExitArgumentParser(
+            parser = argparse.ArgumentParser(
                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                 description='tags selection',
                 add_help=False, usage=argparse.SUPPRESS,
+                exit_on_error=False,
                 )
             subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
             subparser = subparsers.add_parser('help', aliases=('h', '?'), help='print this help')
@@ -646,11 +647,10 @@ def bincuetags(cue_file):
                     try:
                         ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
                     except (argparse.ArgumentError, ValueError) as e:
-                        app.log.error(e);
-                        print('')
-                        continue
-                    except argparse.ParserExitException as e:
-                        if e.status:
+                        if isinstance(e, argparse.ParserExitException) and e.status == 0:
+                            # help?
+                            pass
+                        else:
                             app.log.error(e);
                             print('')
                         continue

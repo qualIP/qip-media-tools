@@ -9,7 +9,6 @@ from .decorator import trace
 def trace(func, **kwargs): return func
 
 __all__ = list(_argparse.__all__) + [
-    'NoExitArgumentParser',
     'ParserExitException',
 ]
 
@@ -317,7 +316,8 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
                  fromfile_prefix_chars=None,
                  argument_default=None,
                  conflict_handler='error',
-                 add_help=True):
+                 add_help=True,
+                 exit_on_error=True):
         super().__init__(
             prog=prog,
             usage=usage,
@@ -330,8 +330,15 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
             argument_default=argument_default,
             conflict_handler=conflict_handler,
             add_help=add_help)
+        self.exit_on_error = exit_on_error  # 3.9 feature
 
         self.register('action', 'parsers', _SubParsersAction)
+
+    def exit(self, status=0, message=None):
+        if self.exit_on_error:  # 3.9 is not supposed to call exit, but it can.
+            super().exit(status=status, message=message)
+        else:
+            raise ParserExitException(status=status, message=message.rstrip())
 
     @trace
     def parse_args(self, args=None, namespace=None):
@@ -391,18 +398,14 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
             raise
 
 
-class ParserExitException(Exception):
+class ParserExitException(ArgumentError):
 
     def __init__(self, status, message):
         self.status = status
-        self.message = message
-        super().__init__(message)
+        super().__init__(argument=None, message=message)
 
-
-class NoExitArgumentParser(ArgumentParser):
-
-    def exit(self, status=0, message=None):
-        raise ParserExitException(status, message)
+    def __str__(self):
+        return self.message
 
 
 class DefaultWrapper(object):
