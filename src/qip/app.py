@@ -495,6 +495,12 @@ class App(XdgResource):
         return prompt_message
 
     def init_prompt_session(self):
+        # Avoid: ImportError: cannot import name 'Vt100Input' from partially initialized module 'prompt_toolkit.input.vt100' (most likely due to a circular import) (/usr/lib/python3/dist-packages/prompt_toolkit/input/vt100.py)
+        try:
+            import prompt_toolkit.input.vt100
+        except ImportError:
+            pass
+
         if self.prompt_session is None:
 
             self.prompt_message = self.get_prompt_message
