@@ -302,6 +302,38 @@ def unmangle_search_string(initial_text):
         initial_text = re.sub(r' dis[ck] [0-9]+$', r'', initial_text, flags=re.IGNORECASE)  # ABC disc 1 -> ABC
     return initial_text
 
+webm_codec_names = {
+    # video
+    'vp8',
+    'vp9',
+    # audio
+    'opus',
+    # subtitle
+    'webvtt',
+}
+
+mkv_codec_names = webm_codec_names | {
+    # image
+    'png', 'mjpeg',
+    # subtitle
+    'dvd_subtitle',
+    'hdmv_pgs_subtitle',
+}
+
+ffv1_codec_names = {
+    # video
+    'ffv1',
+}
+
+def get_target_codec_names(webm):
+    if webm is True:  # not Auto
+        target_codec_names = set(webm_codec_names)
+    else:
+        target_codec_names = set(mkv_codec_names)
+        if app.args.ffv1:
+            target_codec_names |= ffv1_codec_names
+    return target_codec_names
+
 def av_stream_frame_timing_str(av_stream, av_frame):
     return f'stream_index={av_stream.index}, pkt_pos={av_frame.pkt_pos}, dts={getattr(av_frame, "dts", "<notset>")}, pts={av_frame.pts}, pkt_duration={av_frame.pkt_duration}, I?{int(av_frame.interlaced_frame)}, R?{int(av_frame.repeat_pict)}, T?{int(av_frame.top_field_first)}'
 
@@ -890,7 +922,8 @@ def main():
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', default=Auto, type=_resolved_Path, help='SubRip OCR matrix file')
-    pgroup.add_bool_argument('--external-subtitles', choices=('True', 'False', 'non-forced'), help='enable exporting unoptimized subtitles as external files')
+    pgroup.add_bool_argument('--external-subtitles', choices=(True, False, '.sup', '.sub', '.srt', '.vtt', 'forced', 'non-forced'), nargs=argparse.ZERO_OR_MORE, help='enable exporting unoptimized subtitles as external files')
+    pgroup.add_bool_argument('--ocr-subtitles', choices=(True, False, 'forced', 'non-forced'), nargs=argparse.ZERO_OR_MORE, help='enable optical character recognition of graphical subtitles')
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--output', '-o', dest='output_file', default=Auto, type=Path, help='specify the output (demuxed) file name')
@@ -950,6 +983,12 @@ def main():
 
     app.parse_args()
 
+    app.args.external_subtitles = set(app.args.external_subtitles)
+    if len({True, False, Auto} & app.args.external_subtitles) > 1:
+        raise argparse.ArgumentError(argument=app.parser._option_string_actions['--external-subtitles'], message='''True, False and Auto are mutually exclusive''')
+
+    app.args.ocr_subtitles = set(app.args.ocr_subtitles)
+
     if in_tags.type is None:
         try:
             in_tags.type = in_tags.deduce_type()
@@ -962,8 +1001,6 @@ def main():
     if app.args.webm is Auto:
         if app.args.ffv1:
             app.args.webm = False
-        else:
-            app.args.webm = True
 
     if app.args.pad_video == 'None':
         app.args.pad_video = None
@@ -1109,6 +1146,11 @@ iso_image_exts = {
     '.img',
 }
 
+text_subtitle_exts = TextSubtitleFile.get_common_extensions()
+
+# For now, all binary subtitle files are graphical
+graphic_subtitle_exts = BinarySubtitleFile.get_common_extensions()
+
 def codec_name_to_ext(codec_name):
     try:
         codec_ext = {
@@ -1206,6 +1248,12 @@ def ext_to_codec(ext, lossless=False, hdr=None):
             '.mpeg2': 'mpeg2video',
             '.mpegts': 'mpeg2video',
             '.vc1': 'vc1',
+            # subtitle
+            '.sub': 'dvd_subtitle',  # and .idx
+            '.sup': 'hdmv_pgs_subtitle',
+            '.srt': 'subrip',
+            '.ass': 'ass',
+            '.vtt': 'webvtt',
         }[ext]
     except KeyError as err:
         raise ValueError('Unsupported extension %r' % (ext,)) from err
