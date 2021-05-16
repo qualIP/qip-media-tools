@@ -13,6 +13,8 @@ OPT_REINSTALL=false
 OPT_CLEAN=true
 MAKE=${MAKE:-make -j}
 PREFIX=${PREFIX:-/usr/local}
+PYTHON=python3
+PIP=pip3
 
 TEMP=`POSIXLY_CORRECT=1 getopt --long dummy,help,yes,system,user,develop,prefix:,install,uninstall,reinstall,clean,no-clean --options hy --name "$0" -- --system "$@"`
 eval set -- "$TEMP"
@@ -126,6 +128,21 @@ test_docker_image_installed() {
     else
         echo " No"
         echo "Error: docker $image not found!" >&2
+        return 1
+    fi
+}
+
+test_python_module_installed() {
+    local module=$1 ; shift
+    local v=
+
+    echo -n "Python module $module installed? "
+    v=$($PYTHON -c "import importlib ; print(importlib.util.find_spec('${module}') is not None)")
+    if [[ "$v" = "True" ]] ; then
+        echo " Yes"
+    else
+        echo " No"
+        echo "Error: Python module $module not found!" >&2
         return 1
     fi
 }
@@ -313,6 +330,46 @@ else
     fi
 fi
 
+
+print_h2 "PyAV (qualIP fork)"
+echo "PyAV is a Pythonic binding for the FFmpeg libraries."
+echo "The qualIP/PyAV fork has many enhancements required."
+echo
+#echo "See https://github.com/PyAV-Org/PyAV"
+echo "See https://github.com/qualIP/PyAV"
+echo
+
+src_pyav_dir="$(pwd)/src/qip/PyAV"
+if $OPT_INSTALL ; then
+    if $OPT_REINSTALL || ! test_python_module_installed av ; then
+        if ask_yes_no "Build and install Python module av (qualIP/PyAV)?" \
+            ; then
+            if ! [[ -d "$src_pyav_dir" ]] ; then
+                (set -x && git clone "https://github.com/qualIP/PyAV.git" "$src_pyav_dir")
+            fi
+            (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py build)
+            if $OPT_DEVELOP ; then
+                (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py develop --user)
+            elif $OPT_USER ; then
+                (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py develop --user)
+            else
+                (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py develop --system)
+            fi
+        fi
+    fi
+else
+    if (test_python_module_installed av \
+        ) \
+            && ask_yes_no "Uninstall Python module av (qualIP/PyAV)?" \
+        ; then
+        if $OPT_USER ; then
+            (set -x ; $PIP uninstall --user "av")
+        else
+            (set -x ; $PIP uninstall --system "av")
+        fi
+        $OPT_CLEAN && (set -x && $MAKE -C "$src_pyav_dir" clean)
+    fi
+fi
 
 print_h2 "qaac"
 echo "qaac is a CLI QuickTime AAC/ALAC encoder."
