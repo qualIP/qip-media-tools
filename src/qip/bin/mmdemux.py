@@ -167,6 +167,12 @@ default_ffmpeg_args = []
 #    ratio = map_RatioConverter.get(ratio, ratio)
 #    return ratio
 
+def round_packet_time(duration, exp=Decimal('0.000001'), rounding=decimal.ROUND_HALF_UP):
+    return Decimal(duration).quantize(exp, rounding)
+
+def calc_packet_time(value, time_base):
+    if value is not None:
+        return Decimal(value) * time_base.numerator / time_base.denominator
 
 # https://www.ffmpeg.org/ffmpeg.html
 
@@ -296,6 +302,98 @@ def unmangle_search_string(initial_text):
         initial_text = re.sub(r' dis[ck] [0-9]+$', r'', initial_text, flags=re.IGNORECASE)  # ABC disc 1 -> ABC
     return initial_text
 
+def av_stream_frame_timing_str(av_stream, av_frame):
+    return f'stream_index={av_stream.index}, pkt_pos={av_frame.pkt_pos}, dts={getattr(av_frame, "dts", "<notset>")}, pts={av_frame.pts}, pkt_duration={av_frame.pkt_duration}, I?{int(av_frame.interlaced_frame)}, R?{int(av_frame.repeat_pict)}, T?{int(av_frame.top_field_first)}'
+
+
+class ObjectWrapper(object):
+
+    def __init__(self, obj):
+        self._obj = obj
+
+    def __getattr__(self, name, getattr=getattr):
+        if name.startswith('_'):
+            raise AttributeError(name)
+        return getattr(self._obj, name)
+
+
+def fixup_iter_av_frames(av_stream_frames):
+
+    # TODO support multi-stream
+    prev_av_frame = types.SimpleNamespace(
+        dts=0,
+        pts=0,
+        pkt_pos=0,
+        pkt_duration=0,
+    )
+
+    for av_stream, av_frame in av_stream_frames:
+
+        pts = av_frame.pts
+        dts = av_frame.dts
+        if pts is None or dts is None:
+            if pts is None:
+                pts = dts
+                if pts is None:
+                    pts = prev_av_frame.pts + prev_av_frame.pkt_duration
+            if dts is None:
+                dts = pts
+            av_frame = ObjectWrapper(av_frame)
+            av_frame.dts = dts
+            av_frame.pts = pts
+
+        yield av_stream, av_frame
+
+        prev_av_frame = av_frame
+
+def sync_iter_av_frames(av_stream_frames):
+
+    # See http://dranger.com/ffmpeg/tutorial05.html
+
+    # TODO support multi-stream
+    video_clock = 0.0  # seconds
+
+    for av_stream, av_frame in av_stream_frames:
+        time_base = av_stream.time_base
+
+        pts = av_frame.pts
+        if pts is not None:
+            # if we have pts, set video clock to it
+            video_clock = pts * time_base
+        else:
+            # if we aren't given a pts, set it to the clock
+            pts = int(video_clock / time_base)
+            av_frame = ObjectWrapper(av_frame)
+            av_frame.pts = pts
+
+        # TODO
+        # # update the video clock (seconds)
+        # frame_delay = av_stream.codec_context.time_base
+        # # if we are repeating a frame, adjust clock accordingly
+        # frame_delay += av_frame.repeat_pict * (frame_delay * 0.5)  # extra_delay = repeat_pict / (2*fps)
+        # video_clock += frame_delay
+        video_clock += av_frame.pkt_duration * time_base
+
+        yield av_stream, av_frame
+
+def iter_av_frames(file, stream_index=0, max_analyze_duration=100 * 1000000):
+    with av.open(os.fspath(file)) as av_file:
+        av_file.flags = 0
+        av_file.auto_bsf = app.args.autobsf
+        av_file.gen_pts = app.args.genpts
+        av_file.ign_dts = app.args.igndts
+        av_file.discard_corrupt = app.args.discardcorrupt
+        av_file.sort_dts = app.args.sortdts
+        av_file.max_analyze_duration = max_analyze_duration
+        for av_stream in av_file.streams:
+            if av_stream.index != stream_index:
+                continue
+            # assert av_stream.type == 'video'
+            av_packets = av_file.demux(av_stream)
+            for av_packet in av_packets:
+                for av_frame in av_packet.decode():
+                    yield av_stream, av_frame
+
 def analyze_field_order_and_framerate(
         *,
         stream_file,
@@ -335,15 +433,6 @@ def analyze_field_order_and_framerate(
             ffprobe_field_order = ffprobe_stream_json.get('field_order', 'progressive')
             time_base = Fraction(ffprobe_stream_json['time_base'])
 
-            video_frames = []
-            prev_frame = ffprobe.Frame()
-            prev_frame.pkt_dts_time = Decimal('0.000000')
-            prev_frame.pkt_pts_time = Decimal('0.000000')
-            prev_frame.pkt_duration_time = Decimal('0.000000')
-            prev_frame.pkt_dts = 0
-            prev_frame.pkt_pts = 0
-            prev_frame.pkt_duration = 0
-            prev_frame.interlaced_frame = False
             video_analyze_duration = app.args.video_analyze_duration
             try:
                 mediainfo_duration = AnyTimestamp(mediainfo_track_dict['Duration'])
@@ -360,37 +449,21 @@ def analyze_field_order_and_framerate(
                                            max=float(video_analyze_duration),
                                            suffix='%(index)d/%(max)d (%(eta_td)s remaining)')
                 try:
-                    for frame in ffprobe.iter_frames(stream_file.file_name,
-                                                     # [error] Failed to set value 'nvdec' for option 'hwaccel': Option not found
-                                                     # TODO default_ffmpeg_args=default_ffmpeg_args,
-                                                     ):
-                        if frame.media_type != 'video':
-                            continue
-                        assert frame.stream_index == 0
 
-                        if frame.pkt_pts_time is None:
-                            frame.pkt_pts_time = frame.pkt_dts_time
-                            if frame.pkt_pts_time is None:
-                                frame.pkt_pts_time = prev_frame.pkt_pts_time + prev_frame.pkt_duration_time
-                        if frame.pkt_dts_time is None:
-                            frame.pkt_dts_time = frame.pkt_pts_time
+                    video_frames = []
 
-                        if frame.pkt_pts is None:
-                            frame.pkt_pts = frame.pkt_dts
-                            if frame.pkt_pts is None:
-                                frame.pkt_pts = prev_frame.pkt_pts + prev_frame.pkt_duration
-                        if frame.pkt_dts is None:
-                            frame.pkt_dts = frame.pkt_pts
+                    av_stream_frames = iter_av_frames(stream_file)
+                    av_stream_frames = sync_iter_av_frames(av_stream_frames)
+                    for av_stream, av_frame in av_stream_frames:
+                        video_frames.append((av_stream, av_frame))
 
-                        video_frames.append(frame)
+                        float_pts_time = float(calc_packet_time(av_frame.pts, time_base))
                         if progress_bar is not None:
-                            if int(progress_bar.index) != int(float(frame.pkt_dts_time)):
-                                progress_bar.goto(float(frame.pkt_dts_time))
-                        if float(frame.pkt_dts_time) >= video_analyze_duration:
+                            if int(progress_bar.index) != int(float_pts_time):
+                                progress_bar.goto(float_pts_time)
+                        if float_pts_time >= video_analyze_duration:
                             break
-                        prev_frame = frame
-                    #video_frames = sorted(video_frames, key=lambda frame: frame.pkt_pts_time)
-                    #video_frames = sorted(video_frames, key=lambda frame: frame.coded_picture_number)
+
                 finally:
                     if progress_bar is not None:
                         progress_bar.finish()
@@ -402,14 +475,13 @@ def analyze_field_order_and_framerate(
 
             field_order_diags = []
 
-            # video_frames_by_dts = sorted(video_frames, key=lambda frame: frame.pkt_dts_time)
             # XXXJST:
             # Based on libmediainfo-18.12/Source/MediaInfo/Video/File_Mpegv.cpp
             # though getting the proper TemporalReference is more complex and may
-            # be different than pkt_dts_time ordering.
+            # be different than dts_time ordering.
             temporal_string = ''.join([
-                ('T' if frame.top_field_first else 'B') + ('3' if frame.repeat_pict else '2')
-                for frame in video_frames])
+                ('T' if av_frame.top_field_first else 'B') + ('3' if av_frame.repeat_pict else '2')
+                for av_stream, av_frame in video_frames])
             app.log.debug('temporal_string: %r', temporal_string)
 
             if field_order is None and '3' in temporal_string:
@@ -427,21 +499,21 @@ def analyze_field_order_and_framerate(
                     found_frame_count = len(temporal_pattern) // 2
                     found_frames = video_frames[found_frame_offset:found_frame_offset + found_frame_count]
                     if app.log.isEnabledFor(logging.DEBUG):
-                        app.log.debug('found_frames: \n%s', pprint.pformat(found_frames))
+                        app.log.debug('found_frames: \n%s', pprint.pformat([av_stream_frame_timing_str(av_stream, av_frame) for av_stream, av_frame in found_frames]))
                     field_order = result_field_order
                     interlacement = result_interlacement
                     # framerate = FrameRate(1 / (
                     #     time_base
-                    #     * sum(frame.pkt_duration for frame in found_frames)
+                    #     * sum(av_frame.pkt_duration for av_stream, av_frame in found_frames)
                     #     / len(found_frames)))
                     #calc_framerate = framerate = FrameRate(1 / (Fraction(
-                    #    found_frames[-1].pkt_pts - found_frames[0].pkt_pts
-                    #    + found_frames[-1].pkt_duration,
+                    #    found_frames[-1][1].pts - found_frames[0][1].pts
+                    #    + found_frames[-1][0].duration,
                     #    len(found_frames)) * time_base))
                     #framerate = framerate.round_common()
                     found_pkt_duration_times = [
-                            frame.pkt_duration_time
-                            for frame in found_frames]
+                            round_packet_time(calc_packet_time(av_frame.pkt_duration, time_base))
+                            for av_stream, av_frame in found_frames]
                     found_pkt_duration_times = sorted(found_pkt_duration_times)
                     if found_pkt_duration_times in (
                             sorted([Decimal('0.033000'), Decimal('0.050000')] * 4),
@@ -454,30 +526,31 @@ def analyze_field_order_and_framerate(
                     if temporal_pattern_offset <= 24:
                         # starts with pulldown
                         app.log.warning('Detected field order %s at %s (%.3f) fps based on temporal pattern near start of analysis section %r', field_order, framerate, framerate, temporal_pattern)
-                        last_frame = video_frames[-1]
+                        last_av_stream, last_av_frame = video_frames[-1]
+                        last_av_frame_pkt_duration_time = round_packet_time(calc_packet_time(last_av_frame.pkt_duration, time_base))
                         if temporal_string.endswith('T2' * 12):
-                            if last_frame.pkt_duration_time in (
+                            if last_av_frame_pkt_duration_time in (
                                         Decimal('0.033367'),
                                     ):
                                 input_framerate = framerate = FrameRate(30000, 1001)
-                            elif last_frame.pkt_duration_time in (
+                            elif last_av_frame_pkt_duration_time in (
                                         Decimal('0.041708'),
                                     ):
                                 input_framerate = framerate = FrameRate(24000, 1001)
                             else:
-                                raise ValueError(f'last_frame.pkt_duration_time = {last_frame.pkt_duration_time}')
+                                raise ValueError(f'Unexpected last AV packet duration: {last_av_frame_pkt_duration_time}')
                             app.log.warning('Also detected field order progressive or tt at %s (%.3f) fps based on temporal pattern at end of analysis section', framerate, framerate)
                         elif temporal_string.endswith('B2' * 12):
-                            if last_frame.pkt_duration_time in (
+                            if last_av_frame_pkt_duration_time in (
                                         Decimal('0.033367'),
                                     ):
                                 input_framerate = framerate = FrameRate(30000, 1001)
-                            elif last_frame.pkt_duration_time in (
+                            elif last_av_frame_pkt_duration_time in (
                                         Decimal('0.041708'),
                                     ):
                                 input_framerate = framerate = FrameRate(24000, 1001)
                             else:
-                                raise ValueError(f'last_frame.pkt_duration_time = {last_frame.pkt_duration_time}')
+                                raise ValueError(f'Unexpected last AV packet duration: {last_av_frame_pkt_duration_time}')
                             app.log.warning('Also detected field order progressive or bb at %s (%.3f) fps based on temporal pattern at end of analysis section', framerate, framerate)
                     else:
                         # ends with pulldown
@@ -488,41 +561,42 @@ def analyze_field_order_and_framerate(
                     break
 
             if field_order is None:
-                frame0 = video_frames[0]
+                av_stream0, av_frame0 = video_frames[0]
                 if framerate is not None:
                     constant_framerate = True
                 else:
                     constant_framerate = all(
-                            frame.pkt_duration == frame0.pkt_duration
-                            for frame in video_frames)
+                            av_frame.pkt_duration == av_frame0.pkt_duration
+                            for av_stream, av_frame in video_frames)
                 if constant_framerate:
                     if framerate is None:
                         if False:
-                            if frame0.pkt_duration_time in (
+                            av_frame0_pkt_duration_time = round_packet_time(calc_packet_time(av_frame0.pkt_duration, time_base))
+                            if av_frame0_pkt_duration_time in (
                                         Decimal('0.033367'),
                                         Decimal('0.033000'),
                                     ):
                                 framerate = FrameRate(30000, 1001)
-                            elif frame0.pkt_duration_time in (
+                            elif av_frame0_pkt_duration_time in (
                                         Decimal('0.041000'),
                                     ):
                                 framerate = FrameRate(24000, 1001)
                             else:
-                                raise NotImplementedError(frame0.pkt_duration_time)
+                                raise NotImplementedError(av_frame0_pkt_duration_time)
                         elif False:
                             pts_sum = sum(
-                                frameB.pkt_pts - frameA.pkt_pts
+                                frameB.pts - frameA.pts
                                 for frameA, frameB in zip(video_frames[0:-2], video_frames[1:-1]))  # Last frame may not have either dts and pts
                             framerate = FrameRate(1 / (time_base * pts_sum / (len(video_frames) - 2)), 1)
                             app.log.debug('framerate = 1 / (%r * %r / (%r - 2)) = %r = %r', time_base, pts_sum, len(video_frames), framerate, float(framerate))
-                            # framerate = FrameRate(1 / (frame0.pkt_duration * time_base))
+                            # framerate = FrameRate(1 / (calc_packet_time(av_frame0.pkt_duration, time_base)))
                             framerate = framerate.round_common()
                             app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
                         else:
                             assert len(video_frames) > 5, f'Not enough precision, only {len(video_frames)} frames analyzed. (Use --force-framerate and --force-field-order?)'
                             pts_diff = (
-                                video_frames[-2].pkt_pts  # Last frame may not have either dts and pts
-                                - video_frames[0].pkt_pts)
+                                video_frames[-2][1].pts  # Last frame may not have either dts and pts
+                                - video_frames[0][1].pts)
                             framerate = FrameRate(1 / (time_base * pts_diff / (len(video_frames) - 2)), 1)
                             app.log.debug('framerate = 1 / (%r * %r) / (%r - 2) = %r = %r', time_base, pts_diff, len(video_frames), framerate, float(framerate))
                             framerate = framerate.round_common()
@@ -530,15 +604,15 @@ def analyze_field_order_and_framerate(
                         app.log.debug('Constant %s (%.3f) fps found...', framerate, framerate)
 
                     all_same_interlaced_frame = all(
-                            frame.interlaced_frame == frame0.interlaced_frame
-                            for frame in video_frames)
+                            av_frame.interlaced_frame == av_frame0.interlaced_frame
+                            for av_stream, av_frame in video_frames)
                     if all_same_interlaced_frame:
-                        if frame0.interlaced_frame:
+                        if av_frame0.interlaced_frame:
                             all_same_top_field_first = all(
-                                    frame.top_field_first == frame0.top_field_first
-                                    for frame in video_frames)
+                                    av_frame.top_field_first == av_frame0.top_field_first
+                                    for av_stream, av_frame in video_frames)
                             if all_same_top_field_first:
-                                if frame0.top_field_first:
+                                if av_frame0.top_field_first:
                                     field_order = 'tt'
                                     app.log.warning('Detected field order is %s at %s (%.3f) fps', field_order, framerate, framerate)
                                 else:
@@ -566,13 +640,13 @@ def analyze_field_order_and_framerate(
                 else:
                     field_order_diags.append('Variable fps found.')
                     if app.log.isEnabledFor(logging.DEBUG):
-                        fps_stats = collections.Counter([frame.pkt_duration_time
-                                                         for frame in video_frames])
+                        fps_stats = collections.Counter([av_frame.pkt_duration
+                                                         for av_stream, av_frame in video_frames])
                         app.log.debug('field_order_diags: %r', field_order_diags)
                         app.log.debug('Fps stats: %s',
                                       ', '.join(
-                                          "{:.2f}({:.2%})".format(1 / pkt_duration_time, fps_stats_count / len(video_frames))
-                                          for pkt_duration_time, fps_stats_count in fps_stats.most_common()))
+                                          '{:.2f}({:.2%})'.format(1 / (calc_packet_time(duration, time_base)), fps_stats_count / len(video_frames))
+                                          for duration, fps_stats_count in fps_stats.most_common()))
 
 
             if False and field_order is None:
@@ -581,12 +655,12 @@ def analyze_field_order_and_framerate(
                         (Decimal('0.050000'), Decimal('0.033000'), FrameRate(24000, 1001)),
                 ):
                     i = 0
-                    while i < len(video_frames) and video_frames[i].pkt_duration_time == time_short:
+                    while i < len(video_frames) and round_packet_time(calc_packet_time(video_frames[i][0].duration, time_base)) == time_short:
                         i += 1
                     for c in range(3):
-                        if i < len(video_frames) and video_frames[i].pkt_duration_time == time_long:
+                        if i < len(video_frames) and round_packet_time(calc_packet_time(video_frames[i][0].duration, time_base)) == time_long:
                             i += 1
-                    while i < len(video_frames) and video_frames[i].pkt_duration_time == time_short:
+                    while i < len(video_frames) and round_packet_time(calc_packet_time(video_frames[i][0].duration, time_base)) == time_short:
                         i += 1
                     # pts_time=1.668333 duration_time=0.050050
                     # pts_time=N/A      duration_time=0.050050
@@ -606,12 +680,12 @@ def analyze_field_order_and_framerate(
                     )
                     while i < len(video_frames) - 6:
                         duration_time_found = (
-                            video_frames[i+0].pkt_duration_time,
-                            video_frames[i+1].pkt_duration_time,
-                            video_frames[i+2].pkt_duration_time,
-                            video_frames[i+3].pkt_duration_time,
-                            video_frames[i+4].pkt_duration_time,
-                            video_frames[i+5].pkt_duration_time,
+                            round_packet_time(calc_packet_time(video_frames[i+0][0].duration, time_base)),
+                            round_packet_time(calc_packet_time(video_frames[i+1][0].duration, time_base)),
+                            round_packet_time(calc_packet_time(video_frames[i+2][0].duration, time_base)),
+                            round_packet_time(calc_packet_time(video_frames[i+3][0].duration, time_base)),
+                            round_packet_time(calc_packet_time(video_frames[i+4][0].duration, time_base)),
+                            round_packet_time(calc_packet_time(video_frames[i+5][0].duration, time_base)),
                         )
                         if (
                                 duration_time_found == duration_time_pattern1
@@ -631,7 +705,7 @@ def analyze_field_order_and_framerate(
 
             if False and field_order is None:
                 #for i in range(0, len(video_frames)):
-                #    print('pkt_duration_time=%r, interlaced_frame=%r' % (video_frames[i].pkt_duration_time, video_frames[i].interlaced_frame))
+                #    print('pkt_duration_time=%r, interlaced_frame=%r' % (calc_packet_time(video_frames[i][0].duration, time_base), video_frames[i][1].interlaced_frame))
                 # pkt_duration_time=0.033000|interlaced_frame=1|top_field_first=1 = tt @ 30000/1001 ?
                 # pkt_duration_time=0.041000|interlaced_frame=0|top_field_first=0 = progressive @ 24000/1001 ?
                 field_order = pick_field_order(stream_file.file_name, stream_file.ffprobe_dict, ffprobe_stream_json, mediainfo_track_dict)
@@ -773,6 +847,13 @@ def main():
     pgroup.add_argument('--seek-video', type=AnyTimestamp, default=qip.utils.Timestamp(0), help='seek some time past the start of the video')
     pgroup.add_bool_argument('--force-constant-framerate', '--force-cfr', default=False, help='force creating a constant framerate video')
     pgroup.add_argument('--pad-video', default=None, choices=('None', 'clone', 'black'), help='pad video stream')
+
+    pgroup = app.parser.add_argument_group('Format context flags')
+    pgroup.add_bool_argument('--autobsf', default=True, help='fflags: Automatically apply bitstream filters as required by the output format')
+    pgroup.add_bool_argument('--genpts', default=True, help='fflags: generate pts')
+    pgroup.add_bool_argument('--discardcorrupt', help='fflags: discard corrupted frames')
+    pgroup.add_bool_argument('--igndts', help='fflags: ignore dts')
+    pgroup.add_bool_argument('--sortdts', help='fflags: try to interleave outputted packets by dts')
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', default=Auto, type=_resolved_Path, help='SubRip OCR matrix file')
