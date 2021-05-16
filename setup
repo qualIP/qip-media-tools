@@ -125,7 +125,7 @@ test_docker_image_installed() {
         echo " Yes"
     else
         echo " No"
-        echo "Error: docker $image not not found!" >&2
+        echo "Error: docker $image not found!" >&2
         return 1
     fi
 }
