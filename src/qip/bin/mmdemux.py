@@ -3,9 +3,9 @@
 # vim: set fileencoding=utf-8 :
 # PYTHON_ARGCOMPLETE_OK
 
-#if __name__ == "__main__":
+#if __name__ == '__main__':
 #    import os, sys
-#    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
+#    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, 'lib', 'python'))
 
 # Aspect Ratios
 ###############
@@ -79,69 +79,67 @@ import subprocess
 import sys
 import tempfile
 import types
-import unidecode
 import xml.etree.ElementTree as ET
 
+import unidecode
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.widgets import TextArea
 from tabulate import tabulate
-
-try:
-    from qip.utils import ProgressBar
-except ImportError:
-    ProgressBar = None
 
 from qip import argparse
 from qip import json
 from qip import threading
 from qip.app import app
-from qip.avi import *
+from qip.ccextractor import ccextractor
 from qip.cdrom import cdrom_ready
 from qip.ddrescue import ddrescue
-from qip.exec import *
-from qip.exec import list2cmdlist
+from qip.exec import SpawnedProcessError, dbg_exec_cmd, do_exec_cmd, do_popen_cmd, do_spawn_cmd, clean_cmd_output, edfile, edvar, eddiff, xdg_open, list2cmdline, clean_file_name
 from qip.ffmpeg import ffmpeg, ffprobe
-from qip.file import *
+from qip.file import toPath
 from qip.frim import FRIMDecode
-from qip.handbrake import *
+from qip.handbrake import HandBrake
 from qip.isolang import isolang
-from qip.matroska import *
-from qip.mediainfo import *
+from qip.matroska import mkvextract
+from qip.mediainfo import mediainfo
 from qip.mencoder import mencoder
-from qip.ccextractor import ccextractor
-from qip.mplayer import mplayer
 from qip.mkvmerge import mkvmerge
-from qip.mm import *
-from qip.mm import Chapter, Chapters, FrameRate
-from qip.mp2 import *
-from qip.mp4 import *
+from qip.mm import Chapter, Chapters, FrameRate, CodecType, BroadcastFormat, MediaTagEnum, TrackTags, AlbumTags, MediaType, ContentType, Stereo3DMode
+from qip.mplayer import mplayer
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
 from qip.propex import propex
-from qip.udisksctl import udisksctl
-from qip.utils import byte_decode, Ratio, round_half_away_from_zero, dict_from_swig_obj
+from qip.utils import byte_decode, Ratio, round_half_away_from_zero, dict_from_swig_obj, Auto
+import qip.file
 import qip.mm
 import qip.utils
-Auto = qip.utils.Constants.Auto
 
-from qip.json import JsonFile
-from qip.file import File
-from qip.file import XmlFile
+qip.file.load_all_file_types()
+
 from qip.file import BinaryFile
+from qip.file import File
 from qip.file import TextFile
+from qip.file import XmlFile
+from qip.img import ImageFile
+from qip.json import JsonFile
+from qip.matroska import MatroskaChaptersFile
+from qip.matroska import MatroskaFile
+from qip.matroska import MkvFile
+from qip.mm import BinarySubtitleFile
 from qip.mm import MediaFile
 from qip.mm import MovieFile
 from qip.mm import SoundFile
 from qip.mm import SubtitleFile
-from qip.mp2 import VobFile
+from qip.mm import TextSubtitleFile
 from qip.mp2 import Mpeg2ContainerFile
-from qip.matroska import MatroskaFile
-from qip.matroska import MatroskaChaptersFile
-from qip.matroska import MkvFile
+from qip.mp2 import VobFile
 from qip.mp4 import M4aFile
 from qip.mp4 import Mpeg4ContainerFile
-from qip.img import ImageFile
 from qip.pgs import PgsFile
+
+try:
+    from qip.utils import ProgressBar
+except ImportError:
+    ProgressBar = None
 
 tmdb = None
 tvdb = None
@@ -161,8 +159,8 @@ def AnyTimestamp(value):
 default_ffmpeg_args = []
 
 #map_RatioConverter = {
-#    Ratio("186:157"):
-#    Ratio("279:157"):
+#    Ratio('186:157'):
+#    Ratio('279:157'):
 #}
 #def RatioConverter(ratio)
 #    ratio = Ratio(ratio)
@@ -875,7 +873,7 @@ def main():
         if app.args.slurm and app.args.jobs == 1:
             slurm_executor = concurrent.futures.ThreadPoolExecutor(
                 max_workers=(1 if app.args.step
-                             else float("inf")))
+                             else float('inf')))
             exit_stack.enter_context(slurm_executor)
         else:
             slurm_executor = thread_executor
