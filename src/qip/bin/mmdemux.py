@@ -376,6 +376,32 @@ def sync_iter_av_frames(av_stream_frames):
 
         yield av_stream, av_frame
 
+def ffprobe_iter_av_frames(file, stream_index=0):
+
+    for ff_frame in ffprobe.iter_frames(file,
+                                        # [error] Failed to set value 'nvdec' for option 'hwaccel': Option not found
+                                        # TODO default_ffmpeg_args=default_ffmpeg_args,
+                                        ):
+        if ff_frame.stream_index != stream_index:
+            continue
+        # assert frame.media_type == 'video'
+
+        av_stream = types.SimpleNamespace(
+            index=ff_frame.stream_index,
+        )
+
+        av_frame = types.SimpleNamespace(
+            pkt_pos=ff_frame.pkt_pos,
+            dts=ff_frame.pkt_dts,
+            pts=ff_frame.pkt_pts,
+            pkt_duration=ff_frame.pkt_duration,
+            interlaced_frame=ff_frame.interlaced_frame,
+            repeat_pict=ff_frame.repeat_pict,
+            top_field_first=ff_frame.top_field_first,
+        )
+
+        yield av_stream, av_frame
+
 def iter_av_frames(file, stream_index=0, max_analyze_duration=100 * 1000000):
     with av.open(os.fspath(file)) as av_file:
         av_file.flags = 0
@@ -393,6 +419,13 @@ def iter_av_frames(file, stream_index=0, max_analyze_duration=100 * 1000000):
             for av_packet in av_packets:
                 for av_frame in av_packet.decode():
                     yield av_stream, av_frame
+
+try:
+    import av
+except ImportError as e:
+    app.log.warning(f'PyAV not found: {e}')
+    app.log.warning(f'Will use slower analysis using ffprobe.')
+    iter_av_frames = ffprobe_iter_av_frames
 
 def analyze_field_order_and_framerate(
         *,
@@ -3042,19 +3075,19 @@ def mux_dict_from_file(inputfile, outputdir):
                     if check_start_time:
                         if stream.index not in first_pts_time_per_stream:
                             if iter_frames is None:
-                                iter_frames = ffprobe.iter_frames(inputfile)
-                                stream_dict_loop_exit_stack.push(contextlib.closing(iter_frames))
-                            for frame in iter_frames:
+                                iter_frames = iter_av_frames(inputfile)
+                                iter_frames = sync_iter_av_frames(iter_frames)
+                            for av_stream, av_frame in iter_frames:
                                 try:
-                                    if frame.stream_index in first_pts_time_per_stream:
+                                    if av_stream.index in first_pts_time_per_stream:
                                         continue
                                 except AttributeError:
                                     # no stream_index!
                                     continue
-                                if frame.pkt_pts_time is None:
+                                if av_frame.pts is None:
                                     continue
-                                first_pts_time_per_stream[frame.stream_index] = frame.pkt_pts_time
-                                if frame.stream_index == stream.index:
+                                first_pts_time_per_stream[av_stream.index] = calc_packet_time(av_frame.pts, av_frame.time_base)
+                                if av_stream.index == stream.index:
                                     break
                         if stream.index in first_pts_time_per_stream:
                             stream_start_time_pts = adjust_start_time(
