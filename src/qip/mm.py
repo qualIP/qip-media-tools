@@ -18,6 +18,7 @@ __all__ = (
     'AlbumTags',
     'MediaType',
     'ContentType',
+    'CodecType',
     'Stereo3DMode',
     #'mp4tags',  # Deprecated
     #'mp4info',  # Deprecated
@@ -2012,6 +2013,61 @@ ContentType._value2member_map_['music video'] = ContentType.video
 ContentType._value2member_map_['movie'] = ContentType.feature_film
 
 # }}}
+
+@functools.total_ordering
+class CodecType(enum.Enum):
+    general = 'general'    # mediainfo general information
+    video = 'video'
+    audio = 'audio'
+    subtitle = 'subtitle'  # mediainfo: text
+    image = 'image'
+    data = 'data'
+    chapters = 'chapters'  # mediainfo: menu
+
+    def __str__(self):
+        return self.value
+
+    def __new_override__(cls, value):
+        if type(value) is int:
+            value = str(value)
+        if type(value) is str:
+            value = value.strip().lower()
+            for pattern, new_value in (
+                ):
+                m = re.search(pattern, value)
+                if m:
+                    value = new_value
+                    break
+        return super().__new__(cls, value)
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __eq__(self, other):
+        if not isinstance(other, CodecType):
+            return NotImplemented
+        return self is other
+
+    def __lt__(self, other):
+        if not isinstance(other, CodecType):
+            return NotImplemented
+        return CodecType._member_names_.index(self.name) \
+            < CodecType._member_names_.index(other.name)
+
+CodecType.__new__ = CodecType.__new_override__
+for _e in CodecType:
+    CodecType._value2member_map_[_e.value.lower()] = _e
+    CodecType._value2member_map_[_e.name.lower()] = _e
+    CodecType._value2member_map_[_e.value.title()] = _e
+    CodecType._value2member_map_[_e.name.title()] = _e
+for v, e in {
+        # mediainfo: ffprobe mappings
+        'menu': CodecType.chapters,
+        'text': CodecType.subtitle,
+}.items():
+    CodecType._value2member_map_[v.lower()] = \
+        CodecType._value2member_map_[v.title()] = \
+        e
 
 # Stereo3DMode {{{
 

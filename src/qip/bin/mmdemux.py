@@ -2767,19 +2767,19 @@ def skip_duplicate_streams(streams, mux_subtitles=True):
     for stream1_i, stream1 in enumerate(streams):
         if stream1.skip:
             continue
-        if stream1.codec_type == 'video' and stream1['disposition'].get('attached_pic', False) and not mux_attached_pic:
+        if stream1.codec_type is CodecType.video and stream1['disposition'].get('attached_pic', False) and not mux_attached_pic:
             continue
-        if stream1.codec_type == 'subtitle' and not mux_subtitles:
+        if stream1.codec_type is CodecType.subtitle and not mux_subtitles:
             continue
         stream_language1 = stream1.language
         for stream2 in streams[stream1_i + 1:]:
             if stream2.skip:
                 continue
-            if stream2.codec_type != stream1.codec_type:
+            if stream2.codec_type is not stream1.codec_type:
                 continue
-            if stream2.codec_type == 'video' and stream2['disposition'].get('attached_pic', False) and not mux_attached_pic:
+            if stream2.codec_type is CodecType.video and stream2['disposition'].get('attached_pic', False) and not mux_attached_pic:
                 continue
-            if stream2.codec_type == 'subtitle' and not mux_subtitles:
+            if stream2.codec_type is CodecType.subtitle and not mux_subtitles:
                 continue
             if stream2.language != stream_language1:
                 continue
@@ -2812,7 +2812,7 @@ def action_hb(inputfile, in_tags):
         for ffprobe_stream_dict in sorted_stream_dicts(inputfile.ffprobe_dict['streams']):
             if ffprobe_stream_dict.get('skip', False):
                 continue
-            if ffprobe_stream_dict.codec_type == 'video':
+            if ffprobe_stream_dict.codec_type is CodecType.video:
                 break
         else:
             raise ValueError('No video stream found!')
@@ -3013,7 +3013,7 @@ def mux_dict_from_file(inputfile, outputdir):
                                 # CCs are embedded in the video stream
                                 video_stream, = (stream2
                                                  for stream2 in mux_dict['streams']
-                                                 if stream2.codec_type == 'video')
+                                                 if stream2.codec_type is CodecType.video)
                                 stream['start_time'] = video_stream.start_time
                             else:
                                 raise NotImplementedError(f'Caption Service Name: {stream["caption_service_name"]}')
@@ -3026,9 +3026,14 @@ def mux_dict_from_file(inputfile, outputdir):
                 if ffprobe_stream_dict is None and mediainfo_track_dict is None:
                     break
 
-                if stream.codec_type in ('video', 'audio', 'subtitle', 'image'):
+                if stream.codec_type in (
+                        CodecType.video,
+                        CodecType.audio,
+                        CodecType.subtitle,
+                        CodecType.image
+                ):
                     EstimatedFrameCount = None
-                    if stream.codec_type == 'video':
+                    if stream.codec_type is CodecType.video:
                         if app.args.force_still_video:
                             EstimatedFrameCount = 1
                         elif 'Duration' in mediainfo_track_dict:
@@ -3044,29 +3049,34 @@ def mux_dict_from_file(inputfile, outputdir):
                         elif stream_codec_name in still_image_exts:
                             EstimatedFrameCount = 1
                     app.log.debug('EstimatedFrameCount=%r', EstimatedFrameCount)
+
+                    # Confirm codec_type (final) and stream_file_ext
                     if (
-                            stream.codec_type in ('video', 'image')
+                            stream.codec_type in (
+                                CodecType.video,
+                                CodecType.image,
+                            )
                             and stream_codec_name == 'mjpeg'
                             and ffprobe_stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
                         stream['codec_type'] = 'image'
                         stream_file_ext = '.jpg'
                         stream['attachment_type'] = my_splitext(ffprobe_stream_dict['tags']['filename'])[0]
                     elif (
-                        stream.codec_type == 'video'
+                        stream.codec_type is CodecType.video
                         and EstimatedFrameCount == 1):
                         stream_file_ext = '.png'
                         app.log.warning('Detected %s stream #%s is still image', stream.codec_type, stream.pprint_index)
                     else:
                         stream_file_ext = codec_name_to_ext(stream_codec_name)
 
-                    if stream.codec_type == 'video':
+                    if stream.codec_type is CodecType.video:
                         if app.args.video_language:
                             ffprobe_stream_dict.setdefault('tags', {})
                             ffprobe_stream_dict['tags']['language'] = app.args.video_language.code3
                         # stream['pixel_aspect_ratio'] = ffprobe_stream_dict['pixel_aspect_ratio']
                         # stream['display_aspect_ratio'] = ffprobe_stream_dict['display_aspect_ratio']
 
-                    if stream.codec_type == 'audio':
+                    if stream.codec_type is CodecType.audio:
                         try:
                             stream['original_bit_rate'] = ffprobe_stream_dict['bit_rate']
                         except KeyError:
@@ -3109,7 +3119,7 @@ def mux_dict_from_file(inputfile, outputdir):
                             stream_time_base=stream_time_base)
 
                     check_start_time = app.args.check_start_time
-                    if stream.codec_type == 'subtitle':
+                    if stream.codec_type is CodecType.subtitle:
                         check_start_time = False
                     if check_start_time is Auto and stream_start_time == 0.0:
                         # Sometimes ffprobe reports start_time=0 but mediainfo reports Delay (with low accuracy)
@@ -3117,7 +3127,7 @@ def mux_dict_from_file(inputfile, outputdir):
                         Delay = qip.utils.Timestamp(Delay) if Delay is not None else None
                         if Delay:
                             check_start_time = True
-                    if check_start_time is Auto and stream_start_time and stream.codec_type == 'video':
+                    if check_start_time is Auto and stream_start_time and stream.codec_type is CodecType.video:
                         check_start_time = True
                     if check_start_time is Auto:
                         check_start_time = False
@@ -3149,7 +3159,7 @@ def mux_dict_from_file(inputfile, outputdir):
                             app.log.warning('Correcting %s stream #%s start time %s to %s based on first frame PTS', stream.codec_type, stream.pprint_index, stream_start_time, stream_start_time_pts)
                             stream_start_time = stream_start_time_pts
 
-                    if stream_start_time and stream.codec_type == 'subtitle':
+                    if stream_start_time and stream.codec_type is CodecType.subtitle:
                         # ffmpeg estimates the start_time if it is low enough but the actual time indices will be correct
                         app.log.warning('Correcting %s stream #%s start time %s to 0 based on experience', stream.codec_type, stream.pprint_index, stream_start_time)
                         stream_start_time = qip.utils.Timestamp(0)
@@ -3175,7 +3185,7 @@ def mux_dict_from_file(inputfile, outputdir):
                     except KeyError:
                         pass
                     else:
-                        if stream.codec_type == 'audio' \
+                        if stream.codec_type is CodecType.audio \
                                 and re.match(r'^(Stereo|Mono|Surround [0-9.]+)$', stream_title):
                             del stream['title']
 
@@ -3188,7 +3198,7 @@ def mux_dict_from_file(inputfile, outputdir):
                             del stream['language']
 
                     master_display = ''  # SMPTE 2086 mastering data
-                    if stream.codec_type == 'video':
+                    if stream.codec_type is CodecType.video:
                         color_primaries = ColorSpaceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
                         if color_primaries:
                             master_display += color_primaries.master_display_str()
@@ -3215,7 +3225,7 @@ def mux_dict_from_file(inputfile, outputdir):
                             pass
 
                     stream_file_format_ext = ''
-                    if stream.codec_type == 'video' \
+                    if stream.codec_type is CodecType.video \
                             and stream_codec_name == 'h264' \
                             and ffprobe_stream_dict.get('profile', '') == 'High' \
                             and ffprobe_stream_dict.get('tags', {}).get('stereo_mode', '') == 'block_lr' \
@@ -3253,7 +3263,7 @@ def mux_dict_from_file(inputfile, outputdir):
                     stream['file_name'] = output_track_file_name
 
 
-                elif stream.codec_type == 'data':
+                elif stream.codec_type is CodecType.data:
                     if stream_codec_name == 'dvd_nav_packet':
                         app.log.warning('Skipping %s/%s stream.', stream.codec_type, stream_codec_name)
                         stream['skip'] = f'Skipping {stream_codec_name}'
@@ -3264,7 +3274,7 @@ def mux_dict_from_file(inputfile, outputdir):
 
                 original_source_description = []
                 original_source_description.append(stream_codec_name)
-                if stream.codec_type == 'video':
+                if stream.codec_type is CodecType.video:
                     try:
                         original_source_description.append(ffprobe_stream_dict['profile'])
                     except KeyError:
@@ -3279,7 +3289,7 @@ def mux_dict_from_file(inputfile, outputdir):
                         pass
                     original_source_description.append('%sx%s' % (ffprobe_stream_dict['width'], ffprobe_stream_dict['height']))
                     original_source_description.append(ffprobe_stream_dict['display_aspect_ratio'])
-                elif stream.codec_type == 'audio':
+                elif stream.codec_type is CodecType.audio:
                     try:
                         original_source_description.append(ffprobe_stream_dict['profile'])
                     except KeyError:
@@ -3314,18 +3324,18 @@ def mux_dict_from_file(inputfile, outputdir):
                             original_source_description.append(f'{audio_samplefmt}')
                         else:
                             original_source_description.append(f'{audio_samplefmt}({bits_per_raw_sample}b)')
-                elif stream.codec_type == 'subtitle':
+                elif stream.codec_type is CodecType.subtitle:
                     try:
                         original_source_description.append(stream['caption_service_name'])
                     except KeyError:
                         pass
-                elif stream.codec_type == 'image':
+                elif stream.codec_type is CodecType.image:
                     try:
                         original_source_description.append(stream['attachment_type'])
                     except KeyError:
                         pass
                     original_source_description.append('%sx%s' % (ffprobe_stream_dict['width'], ffprobe_stream_dict['height']))
-                elif stream.codec_type == 'data':
+                elif stream.codec_type is CodecType.data:
                     pass
                 else:
                     raise ValueError('Unsupported codec type %r' % (stream.codec_type,))
@@ -3511,35 +3521,40 @@ def action_mux(inputfile, in_tags,
             stream_file_name = stream['file_name']
             stream_file_base, stream_file_ext = my_splitext(stream_file_name)
 
-            if stream.codec_type == 'video':
+            if stream.codec_type is CodecType.video:
                 pass
 
-            elif stream.codec_type == 'audio':
+            elif stream.codec_type is CodecType.audio:
                 pass
 
-            elif stream.codec_type == 'subtitle':
+            elif stream.codec_type is CodecType.subtitle:
 
                 if stream['disposition'].get('forced', None):
                     has_forced_subtitle = True
 
-            elif stream.codec_type == 'image':
+            elif stream.codec_type is CodecType.image:
                 pass
 
-            elif stream.codec_type == 'data':
+            elif stream.codec_type is CodecType.data:
                 pass
 
             else:
                 raise NotImplementedError(stream.codec_type)
 
-            if stream.codec_type in ('video', 'audio', 'subtitle', 'image'):
+            if stream.codec_type in (
+                    CodecType.video,
+                    CodecType.audio,
+                    CodecType.subtitle,
+                    CodecType.image,
+            ):
 
                 if (
                         (not mux_attached_pic and stream['disposition'].get('attached_pic', False)) or
-                        (not mux_subtitles and stream.codec_type == 'subtitle')):
+                        (not mux_subtitles and stream.codec_type is CodecType.subtitle)):
                     app.log.warning('Not muxing %s stream #%s...', stream.codec_type, stream.pprint_index)
                     continue
 
-                if stream.codec_type == 'subtitle' \
+                if stream.codec_type is CodecType.subtitle \
                         and stream_file_ext in (
                             '.sub',
                         ) and not isinstance(inputfile, MatroskaFile):
@@ -3562,7 +3577,7 @@ def action_mux(inputfile, in_tags,
                                  # TODO y=app.args.yes or app.args.remux)
                     continue
 
-                if stream.codec_type == 'subtitle' \
+                if stream.codec_type is CodecType.subtitle \
                         and stream.get('caption_service_name', None) \
                         and stream_file_ext in (
                             '.srt',     # SubRip (default, so not actually needed).
@@ -3717,23 +3732,23 @@ def action_mux(inputfile, in_tags,
             app.log.warning('Stream #%s file does not exist: %s (ignoring due to dry-run but information may be incomplete)', stream.pprint_index, stream.file)
             continue
 
-        if stream.codec_type == 'video':
+        if stream.codec_type is CodecType.video:
             mediainfo_track_dict = next(iter_mediainfo_track_dicts)
             assert mediainfo_track_dict['@type'] == 'Video'
-        elif stream.codec_type == 'audio':
+        elif stream.codec_type is CodecType.audio:
             mediainfo_track_dict = next(iter_mediainfo_track_dicts)
             assert mediainfo_track_dict['@type'] == 'Audio'
-        elif stream.codec_type == 'subtitle':
+        elif stream.codec_type is CodecType.subtitle:
             try:
                 mediainfo_track_dict = next(iter_mediainfo_track_dicts)
             except StopIteration:
                 # Example: ffprobe with large probeduration picks up a subtitle but not mediainfo
                 pass
             else:
-                assert mediainfo_track_dict['@type'] == 'Text', f'mediainfo_track_dict={mediainfo_track_dict!r}'
-        elif stream.codec_type == 'image':
+                assert CodecType(mediainfo_track_dict['@type']) is stream.codec_type, f'Stream #{stream.pprint_index} has codec type {stream.codec_type} but mediainfo track has {mediainfo_track_dict["@type"]}'
+        elif stream.codec_type is CodecType.image:
             mediainfo_track_dict = None  # Not its own track
-        elif stream.codec_type == 'data':
+        elif stream.codec_type is CodecType.data:
             mediainfo_track_dict = None  # Not its own track
             assert stream.skip
         else:
@@ -3745,7 +3760,7 @@ def action_mux(inputfile, in_tags,
         stream_file_name = stream['file_name']
         stream_file_base, stream_file_ext = my_splitext(stream_file_name)
 
-        if stream.codec_type == 'video':
+        if stream.codec_type is CodecType.video:
 
             def try_int(v):
                 try:
@@ -3767,7 +3782,7 @@ def action_mux(inputfile, in_tags,
             stream['display_aspect_ratio'] = str(display_aspect_ratio)
             stream['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
 
-        if mux_subtitles and stream.codec_type == 'subtitle':
+        if mux_subtitles and stream.codec_type is CodecType.subtitle:
             stream_forced = stream['disposition'].get('forced', None)
             # TODO Detect closed_caption
             if isinstance(stream.file, PgsFile):
@@ -3905,9 +3920,15 @@ def action_verify(inputfile, in_tags):
             continue
         stream_file_name = stream_dict['file_name']
         stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-        if stream_dict.codec_type in ('video', 'image') and stream_file_ext in still_image_exts:
+        if stream_dict.codec_type in (
+                CodecType.video,
+                CodecType.image,
+        ) and stream_file_ext in still_image_exts:
             continue
-        if stream_dict.codec_type in ('video', 'audio'):
+        if stream_dict.codec_type in (
+                CodecType.video,
+                CodecType.audio,
+        ):
 
             if True:
                 try:
@@ -4057,16 +4078,16 @@ def action_chop(inputfile, *, in_tags=None, chaps=None, chop_chaps=None):
 
                 stream_file_base, stream_file_ext = my_splitext(stream_file_name)
 
-                if (stream_dict.codec_type == 'video'
-                    or stream_dict.codec_type == 'audio'):
+                if (stream_dict.codec_type is CodecType.video
+                    or stream_dict.codec_type is CodecType.audio):
 
                     action_chop(inputfile=inputfile,
                                 in_tags=in_tags,
                                 chaps=chaps, chop_chaps=chop_chaps)
 
-                elif stream_dict.codec_type == 'subtitle':
+                elif stream_dict.codec_type is CodecType.subtitle:
                     pass
-                elif stream_dict.codec_type == 'image':
+                elif stream_dict.codec_type is CodecType.image:
                     pass
                 else:
                     raise ValueError('Unsupported codec type %r' % (stream_dict.codec_type,))
@@ -4215,7 +4236,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
                 stream_index = f'(S){stream_index}'
             if stream_dict is current_stream or stream_dict.index == current_stream_index:
                 stream_index = f'*{stream_index}'
-            codec_type = stream_dict['codec_type']
+            codec_type = stream_dict.codec_type
             extension = '->'.join([e for e in [
                 my_splitext(stream_dict.get('original_file_name', ''))[1],
                 my_splitext(stream_dict.get('file_name', ''))[1],]
@@ -4265,7 +4286,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
 
 def stream_dict_key(stream_dict):
     return (
-        ('video', 'audio', 'subtitle', 'image', 'data').index(stream_dict['codec_type']),
+        CodecType(stream_dict['codec_type']),
         not bool(stream_dict.get('disposition', {}).get('default', False)),  # default then non-default
         bool(stream_dict.get('disposition', {}).get('forced', False)),       # non-forced, then forced
         bool(stream_dict.get('disposition', {}).get('comment', False)),      # non-comment, then comment
@@ -4381,7 +4402,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                 self._data_backup = _data_backup
 
     def is_hdr(self):
-        if self.codec_type != 'video':
+        if self.codec_type is not CodecType.video:
             return False
         ffprobe_stream_json, = self.file.ffprobe_dict['streams']
         color_transfer = ffprobe_stream_json.get('color_transfer', '')
@@ -4397,17 +4418,17 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
     @file.initter
     def file(self):
         cls = {
-            'video': MovieFile,
-            'audio': SoundFile,
-            'subtitle': SubtitleFile,
-            'image': ImageFile,
+            CodecType.video: MovieFile,
+            CodecType.audio: SoundFile,
+            CodecType.subtitle: SubtitleFile,
+            CodecType.image: ImageFile,
         }[self.codec_type]
         return cls.new_by_file_name(self.path)
 
     def __str__(self):
         orig_stream_file_name = self.get('original_file_name', self['file_name'])
         desc = '{codec_type} stream #{index}: title={title!r}, language={language}, disposition=({disposition}), ext={orig_ext}'.format(
-            codec_type=self['codec_type'],
+            codec_type=str(self.codec_type).title(),
             index=self.pprint_index,
             title=self.get('title', None),
             language=isolang(self.get('language', 'und')),
@@ -4485,7 +4506,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
     @property
     def codec_type(self):
         try:
-            return self['codec_type']
+            return CodecType(self['codec_type'])
         except KeyError:
             raise AttributeError
 
@@ -4559,13 +4580,13 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
         stream_characteristics['language'] = self.language
         stream_title = self.get('title', None)
 
-        if self.codec_type == 'video':
+        if self.codec_type is CodecType.video:
             if False:  # TODO
                 video_angle += 1
                 if False and video_angle > 1:
                     stream_characteristics['angle'] = video_angle
 
-        elif self.codec_type == 'subtitle':
+        elif self.codec_type is CodecType.subtitle:
             disposition = [
                 d for d in (
                     'hearing_impaired',
@@ -4585,7 +4606,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
         if not mkvmerge:
             # TODO remove mkvmerge distinction!
 
-            if self.codec_type == 'audio':
+            if self.codec_type is CodecType.audio:
                 if self['disposition'].get('comment', None):
                     if stream_title is None:
                         stream_title = 'Commentary'
@@ -4605,7 +4626,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     if stream_title is None:
                         stream_title = self.language.name
 
-            if self.codec_type == 'subtitle':
+            if self.codec_type is CodecType.subtitle:
                 if app.args.external_subtitles and my_splitext(self['file_name'])[1] != '.vtt':
                     stream_characteristics += ('external',)
                     try:
@@ -4671,7 +4692,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                 new_stream = copy.copy(stream_dict)
 
-                if stream_dict.codec_type == 'video':
+                if stream_dict.codec_type is CodecType.video:
 
                     if 'concat_streams' in stream_dict:
                         del new_stream['concat_streams']
@@ -4715,7 +4736,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                             assert len(sub_stream0.file.mediainfo_dict['media']['track']) >= 2
                             sub_stream0_mediainfo_track_dict = sub_stream0.file.mediainfo_dict['media']['track'][1]
-                            assert sub_stream0_mediainfo_track_dict['@type'] == 'Video'
+                            assert CodecType(sub_stream0_mediainfo_track_dict['@type']) is sub_stream0.codec_type, f'Stream #{sub_stream0.pprint_index} has codec type {sub_stream0.codec_type} but mediainfo track has {sub_stream0_mediainfo_track_dict["@type"]}'
 
                             sub_stream0_field_order, sub_stream0_input_framerate, sub_stream0_framerate = analyze_field_order_and_framerate(
                                 stream_dict=sub_stream0,
@@ -5642,7 +5663,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     done_optimize_iter(new_stream=new_stream)
                     continue
 
-                elif stream_dict.codec_type == 'audio':
+                elif stream_dict.codec_type is CodecType.audio:
 
                     ok_exts = (
                             '.opus',
@@ -5813,7 +5834,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                     raise ValueError('Unsupported audio extension %r' % (stream_file_ext,))
 
-                elif stream_dict.codec_type == 'subtitle':
+                elif stream_dict.codec_type is CodecType.subtitle:
 
                     ok_exts = (
                             '.vtt',
@@ -6068,7 +6089,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                     raise ValueError('Unsupported subtitle extension %r' % (stream_file_ext,))
 
-                elif stream_dict.codec_type == 'image':
+                elif stream_dict.codec_type is CodecType.image:
 
                     # https://matroska.org/technical/cover_art/index.html
                     ok_exts = (
@@ -6180,9 +6201,9 @@ def action_extract_music(inputdir, in_tags):
                 stream_dict['file_name'] = stream_dict.pop('original_file_name')
             stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
 
-            if stream_dict.codec_type == 'video':
+            if stream_dict.codec_type is CodecType.video:
                 pass
-            elif stream_dict.codec_type == 'audio':
+            elif stream_dict.codec_type is CodecType.audio:
                 try:
                     stream_dict.file.duration = float(ffmpeg.Timestamp(stream_dict.file.ffprobe_dict['format']['duration']))
                 except KeyError:
@@ -6268,9 +6289,9 @@ def action_extract_music(inputdir, in_tags):
                             dry_run=app.args.dry_run,
                             run_func=do_exec_cmd)
 
-            elif stream_dict.codec_type == 'subtitle':
+            elif stream_dict.codec_type is CodecType.subtitle:
                 pass
-            elif stream_dict.codec_type == 'image':
+            elif stream_dict.codec_type is CodecType.image:
                 # TODO image -> picture
                 pass
             else:
@@ -6365,25 +6386,25 @@ def action_demux(inputdir, in_tags):
                 subparser = subparsers.add_parser('default', help='toggle default disposition')
                 subparser = subparsers.add_parser('language', help='edit language')
                 subparser.add_argument('language', nargs='?')
-                if stream_dict.codec_type in ('subtitle',):
+                if stream_dict.codec_type in (CodecType.subtitle,):
                     subparser = subparsers.add_parser('forced', help='toggle forced disposition')
-                if stream_dict.codec_type in ('subtitle',):
+                if stream_dict.codec_type in (CodecType.subtitle,):
                     subparser = subparsers.add_parser('hearing_impaired', help='toggle hearing_impaired disposition')
-                if stream_dict.codec_type in ('audio',):
+                if stream_dict.codec_type in (CodecType.audio,):
                     subparser = subparsers.add_parser('visual_impaired', help='toggle visual_impaired disposition')
-                if stream_dict.codec_type in ('audio', 'subtitle'):
+                if stream_dict.codec_type in (CodecType.audio, CodecType.subtitle):
                     subparser = subparsers.add_parser('comment', help='toggle comment disposition')
-                if stream_dict.codec_type in ('audio', 'subtitle'):
+                if stream_dict.codec_type in (CodecType.audio, CodecType.subtitle):
                     subparser = subparsers.add_parser('karaoke', help='toggle karaoke disposition')
-                if stream_dict.codec_type in ('audio', 'subtitle'):
+                if stream_dict.codec_type in (CodecType.audio, CodecType.subtitle):
                     subparser = subparsers.add_parser('dub', help='toggle dub disposition')
-                if stream_dict.codec_type in ('audio', 'subtitle'):
+                if stream_dict.codec_type in (CodecType.audio, CodecType.subtitle):
                     subparser = subparsers.add_parser('clean_effects', help='toggle clean_effects disposition (stream without voice)')
-                if stream_dict.codec_type in ('subtitle',):
+                if stream_dict.codec_type in (CodecType.subtitle,):
                     subparser = subparsers.add_parser('lyrics', help='toggle lyrics disposition')
-                if stream_dict.codec_type in ('audio',):
+                if stream_dict.codec_type in (CodecType.audio,):
                     subparser = subparsers.add_parser('original', help='toggle original disposition')
-                if stream_dict.codec_type in ('audio',):
+                if stream_dict.codec_type in (CodecType.audio,):
                     subparser = subparsers.add_parser('title', help='edit title')
                     subparser.add_argument('title', nargs='?')
                 if isinstance(in_err, StreamExternalSubtitleAlreadyCreated):
@@ -6590,7 +6611,7 @@ def action_demux(inputdir, in_tags):
             if stream_dict.skip:
                 continue
 
-            if stream_dict.codec_type not in ('video', 'image', 'data') \
+            if stream_dict.codec_type not in (CodecType.video, CodecType.image, CodecType.data) \
                 and stream_dict.language is isolang('und'):
                 if not stream_dict['_temp'].unknown_language_warned:
                     stream_dict['_temp'].unknown_language_warned = True
@@ -6614,7 +6635,7 @@ def action_demux(inputdir, in_tags):
                     continue
             stream_dict['_temp'].stream_characteristics = stream_characteristics
 
-            if stream_dict.codec_type == 'subtitle':
+            if stream_dict.codec_type is CodecType.subtitle:
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_file_names = [stream_dict.file_name]
                     if my_splitext(stream_dict['file_name'])[1] == '.sub':
@@ -6650,7 +6671,7 @@ def action_demux(inputdir, in_tags):
                  for stream_index2 in sorted_streams[:sorted_stream_index]),
                 default=-1) + 1
 
-            if stream_dict.codec_type == 'image':
+            if stream_dict.codec_type is CodecType.image:
                 attachment_type = stream_dict['attachment_type']
                 if webm:
                     # attachments not supported
@@ -6675,7 +6696,7 @@ def action_demux(inputdir, in_tags):
                         '--attach-file', stream_dict.path,
                         ]
             else:
-                if stream_dict.codec_type == 'video':
+                if stream_dict.codec_type is CodecType.video:
                     display_aspect_ratio = Ratio(stream_dict.get('display_aspect_ratio', None))
                     if display_aspect_ratio:
                         mkvmerge_args += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
@@ -6688,9 +6709,10 @@ def action_demux(inputdir, in_tags):
                 if stream_title is not None:
                     mkvmerge_args += ['--track-name', '%d:%s' % (0, stream_title)]
                 # TODO --tags
-                if stream_dict.codec_type == 'subtitle' and my_splitext(stream_dict.file_name)[1] == '.sub':
-                    mkvmerge_args += [inputdir / '%s.idx' % (my_splitext(stream_dict.file_name)[0],)]
+                if stream_dict.codec_type is CodecType.subtitle and stream_dict.file_name.suffix == '.sub':
+                    mkvmerge_args += stream_dict.path.with_suffix('.idx')
                 mkvmerge_args += [stream_dict.path]
+
         if mux_dict.get('chapters', None):
             mkvmerge_args += ['--chapters', inputdir / mux_dict['chapters']['file_name']]
         else:
@@ -6797,7 +6819,7 @@ def action_demux(inputdir, in_tags):
                 continue
             stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
 
-            if stream_dict.codec_type not in ('video', 'image', 'data') \
+            if stream_dict.codec_type not in (CodecType.video, CodecType.image, CodecType.data) \
                 and stream_dict.language is isolang('und'):
                 if not stream_dict['_temp'].unknown_language_warned:
                     stream_dict['_temp'].unknown_language_warned = True
@@ -6807,7 +6829,7 @@ def action_demux(inputdir, in_tags):
                         handle_StreamCharacteristicsSeenError(e)
                         continue
 
-            if stream_dict.codec_type == 'subtitle':
+            if stream_dict.codec_type is CodecType.subtitle:
                 if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
                     stream_file_names = [stream_dict.file_name]
                     if my_splitext(stream_dict['file_name'])[1] == '.sub':
@@ -6858,7 +6880,7 @@ def action_demux(inputdir, in_tags):
             stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
             stream_title = stream_dict.get('title', None)
 
-            if stream_dict.codec_type == 'image':
+            if stream_dict.codec_type is CodecType.image:
                 attachment_type = stream_dict['attachment_type']
                 if webm:
                     # attachments not supported
@@ -6880,7 +6902,7 @@ def action_demux(inputdir, in_tags):
                  for stream_index2 in sorted_streams[:sorted_stream_index]),
                 default=-1) + 1
 
-            if stream_dict.codec_type == 'subtitle':
+            if stream_dict.codec_type is CodecType.subtitle:
                 if my_splitext(stream_dict['file_name'])[1] == '.sub':
                     # ffmpeg doesn't read the .idx file?? Embed .sub/.idx into a .mkv first
                     tmp_stream_file_name = os.fspath(stream_dict.file_name) + '.mkv'
@@ -6926,7 +6948,7 @@ def action_demux(inputdir, in_tags):
                     '-itsoffset', stream_start_time,
                     ]
 
-            if stream_dict.codec_type == 'video':
+            if stream_dict.codec_type is CodecType.video:
 
                 if any(stream_file_base.upper().endswith(m)
                        for m in Stereo3DMode.full_side_by_side.exts + Stereo3DMode.half_side_by_side.exts):
@@ -7101,7 +7123,7 @@ def action_demux(inputdir, in_tags):
                     pass
                 else:
                     raise NotImplementedError(stream_file_ext)
-            elif stream_dict.codec_type == 'subtitle':
+            elif stream_dict.codec_type is CodecType.subtitle:
                 if '3d-plane' in stream_dict:
                     ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), '3d-plane=%d' % (stream_dict['3d-plane'],)]
 
