@@ -286,7 +286,8 @@ class Chapter(json.JSONEncodable, object):
         eChapterFlagEnabled = eChapterAtom.find('ChapterFlagEnabled')
         enabled = (not eChapterFlagEnabled) or {'0': False, '1': True}[eChapterFlagEnabled.text]
         #   <ChapterTimeEnd>00:07:36.522733333</ChapterTimeEnd>
-        end = eChapterAtom.find('ChapterTimeEnd').text
+        eChapterTimeEnd = end = eChapterAtom.find('ChapterTimeEnd')
+        end = eChapterTimeEnd.text if eChapterTimeEnd is not None else None
         # TODO multi-language
         #   <ChapterDisplay>
         eChapterDisplay = eChapterAtom.find('ChapterDisplay')
