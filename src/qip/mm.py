@@ -5251,17 +5251,18 @@ def get_audio_file_ffmpeg_stats(d):
             cache_file.file_name.stat().st_mtime >= d.file_name.stat().st_mtime
             ):
         out = cache_file.read()
-    elif shutil.which('ffmpeg'):
+    elif ffmpeg.which():
         app.log.info('Analyzing %s...', d.file_name)
         # TODO 16056 emby      20   0  289468   8712   7148 R   0.7  0.1   0:00.02 /opt/emby-server/bin/ffprobe -i file:/mnt/media1/Audiobooks/Various Artists/Enivrez-vous.m4b -threads 0 -v info -print_format json -show_streams -show_format
         try:
-            out = do_exec_cmd([
-                'ffmpeg',
-                '-i', d.file_name,
+            ffmpeg_args = [
+                '-i', d,
                 '-vn',
                 '-f', 'null',
                 '-y',
-                '/dev/null'], stderr=subprocess.STDOUT, dry_run=False)
+                '/dev/null',
+            ]
+            out = ffmpeg(*ffmpeg_args, dry_run=False).out
         except subprocess.CalledProcessError:
             # TODO ignore/report failure only?
             raise
@@ -5269,8 +5270,8 @@ def get_audio_file_ffmpeg_stats(d):
             if cache_file:
                 with cache_file.rename_temporarily(replace_ok=True):
                     cache_file.write(out)
-    else:
-        out = ''
+            else:
+                out = ''
     # {{{
     out = clean_cmd_output(out)
     parser = lines_parser(out.split('\n'))
