@@ -2000,7 +2000,11 @@ def action_rip_iso(rip_iso, device, in_tags):
         raise ValueError(f'File is not a {"|".join(sorted(iso_image_exts))}: {rip_iso}')
 
     iso_file = BinaryFile(rip_iso)
-    log_file = TextFile(rip_iso.with_suffix('.log'))
+    map_file = ddrescue.MapFile(rip_iso.with_suffix('.map'))
+    if not map_file.exists():
+        # Backward compatibility check
+        log_file = ddrescue.MapFile(rip_iso.with_suffix('.log'))
+        assert not log_file.exists(), f'{log_file} exists! Please rename to {map_file}.'
 
     if app.args.check_cdrom_ready:
         if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
@@ -2081,7 +2085,7 @@ def action_rip_iso(rip_iso, device, in_tags):
             # Skip the scraping phase
             '-n',
             device,
-            iso_file, log_file,
+            iso_file, map_file,
         ]
     elif stage == 2:
         ddrescue_args = [
@@ -2097,7 +2101,7 @@ def action_rip_iso(rip_iso, device, in_tags):
             ]
         ddrescue_args += [
             device,
-            iso_file, log_file,
+            iso_file, map_file,
         ]
     elif stage == 3:
         ddrescue_args = [
@@ -2108,13 +2112,24 @@ def action_rip_iso(rip_iso, device, in_tags):
             # Exit after 3 retry passes
             '-r', 3,
             device,
-            iso_file, log_file,
+            iso_file, map_file,
         ]
     else:
         raise NotImplementedError(f'Unsupported ripping stage {stage}')
 
-    with perfcontext('Extracting {iso_file}... (stage {stage})', log=True):
+    with perfcontext(f'Extracting {iso_file}... (stage {stage})', log=True):
         ddrescue(*ddrescue_args)
+
+    map_file.load()
+    map_file.compact_sblocks()
+    if map_file.is_finished():
+        if app.args.eject and device.is_block_device():
+            app.log.info('Ejecting...')
+            cmd = [
+                shutil.which('eject'),
+                device,
+            ]
+            out = do_spawn_cmd(cmd)
 
 def action_rip(rip_dir, device, in_tags):
     app.log.info('Ripping %s from %s...', rip_dir, device)
