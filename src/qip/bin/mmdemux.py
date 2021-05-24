@@ -1943,7 +1943,7 @@ def action_rip_iso(rip_iso, device, in_tags):
 
     if app.args.check_cdrom_ready:
         if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
-            raise Exception("CDROM not ready")
+            raise Exception('CDROM not ready')
 
     app.log.info('Identifying mounted media type...')
     out = dbg_exec_cmd(['dvd+rw-mediainfo', app.args.device], dry_run=False)
@@ -1974,7 +1974,7 @@ def action_rip_iso(rip_iso, device, in_tags):
             if discatt_dat_file.exists():
                 app.log.info('Decryption key already exists: %s', discatt_dat_file)
             else:
-                with perfcontext('Extracting decryption keys from {device}: {discatt_dat_file}', log=True):
+                with perfcontext(f'Extracting decryption keys from {device}: {discatt_dat_file}', log=True):
 
                     from qip.makemkv import makemkvcon
 
@@ -2176,14 +2176,13 @@ def action_rip(rip_dir, device, in_tags):
                 if device.is_block_device():
                     if app.args.check_cdrom_ready:
                         if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
-                            raise Exception("CDROM not ready")
+                            raise Exception('CDROM not ready')
                     source = f'dev:{device.resolve()}'  # makemkv is picky
                 elif device.is_dir():
                     source = f'file:{os.fspath(device)}'
                 elif device.suffix in iso_image_exts:
                     source = f'iso:{os.fspath(device)}'
                     discatt_dat_file = device.with_suffix('.discatt.dat')
-                    print(f'discatt_dat_file={discatt_dat_file!r}')
                     if discatt_dat_file.exists():
                         app.log.warning('%s exists. Perhaps you meant to create a decrypted backup using --backup and then --rip the backup?', discatt_dat_file)
                 else:
@@ -2441,7 +2440,7 @@ def action_backup(backup_dir, device, in_tags):
 
             if app.args.check_cdrom_ready:
                 if not cdrom_ready(device, timeout=app.args.cdrom_ready_timeout, progress_bar=True):
-                    raise Exception("CDROM not ready")
+                    raise Exception('CDROM not ready')
             try:
                 drive_info = makemkvcon.device_to_drive_info(device)
             except ValueError:
@@ -2791,13 +2790,13 @@ def skip_duplicate_streams(streams, mux_subtitles=True):
                             stream2.file_name,
                             stream1.file_name,
                             )
-            stream2['skip'] = f"Identical to stream #{stream1.pprint_index}"
+            stream2['skip'] = f'Identical to stream #{stream1.pprint_index}'
 
 def action_hb(inputfile, in_tags):
     app.log.info('HandBrake %s...', inputfile)
     inputfile = MediaFile.new_by_file_name(inputfile)
     inputfile_base, inputfile_ext = my_splitext(inputfile)
-    outputfile_name = Path(inputfile_base + ".hb.mkv")
+    outputfile_name = Path(inputfile_base + '.hb.mkv')
     if app.args.chain:
         app.args.mux_files += (outputfile_name,)
 
@@ -3880,7 +3879,7 @@ def action_verify(inputfile, in_tags):
         if not isinstance(inputfile, MediaFile):
             inputfile = MediaFile.new_by_file_name(inputfile)
         inputfile_base, inputfile_ext = my_splitext(inputfile)
-        outputdir = Path("%s" % (inputfile_base,) \
+        outputdir = Path('%s' % (inputfile_base,) \
                          if app.args.project is Auto else app.args.project)
 
         if outputdir.is_dir():
@@ -3921,32 +3920,6 @@ def action_verify(inputfile, in_tags):
                     stream_duration = None
                 else:
                     stream_duration = AnyTimestamp(stream_duration)
-
-            if False:
-                mediainfo_general_dict = None
-                mediainfo_track_dict = None
-                mediainfo_text_dict = None
-                for d in stream_dict.file.mediainfo_dict['media']['track']:
-                    if d['@type'] == 'General':
-                        assert mediainfo_general_dict is None
-                        mediainfo_general_dict = d
-                    elif d['@type'] == 'Audio':
-                        assert mediainfo_track_dict is None
-                        mediainfo_track_dict = d
-                    elif d['@type'] == 'Video':
-                        assert mediainfo_track_dict is None
-                        mediainfo_track_dict = d
-                    elif d['@type'] == 'Text':
-                        assert mediainfo_text_dict is None
-                        mediainfo_text_dict = d
-                    else:
-                        raise ValueError(d['@type'])
-                assert mediainfo_general_dict
-                assert mediainfo_track_dict
-                # ffprobe -f lavfi -i movie=Sentinel/title_t00/track-00-video.mp2v,readeia608 -show_entries frame=pkt_pts_time:frame_tags=lavfi.readeia608.0.cc,lavfi.readeia608.1.cc -of csv > Sentinel/title_t00/track-00-video.cc.csv
-                #assert not mediainfo_text_dict
-                app.log.debug('mediainfo_track_dict=%r', mediainfo_track_dict)
-                stream_duration = qip.utils.Timestamp(mediainfo_track_dict['Duration'])
 
             stream_start_time = AnyTimestamp(stream_dict['start_time'])
             stream_total_time = None if stream_duration is None else stream_start_time + stream_duration
@@ -4775,7 +4748,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 '-codec', 'copy',
                                 ] + ffmpeg_concat_args + [
                                 '-start_at_zero',
-                                '-f', ext_to_container(new_stream.file_name), new_stream.path.relative_to(cwd),
+                                '-f', ext_to_container(new_stream.file_name),
+                                new_stream.path.relative_to(cwd),
                                 ]
                             ffmpeg(*ffmpeg_args,
                                    cwd=cwd,
@@ -6306,7 +6280,7 @@ def external_subtitle_file_name(output_file, stream_file_name, stream_dict):
         pass
     # stream_file_name = stream_dict['file_name']
     external_stream_file_name = my_splitext(output_file)[0]
-    external_stream_file_name += "." + stream_dict.language.code3
+    external_stream_file_name += '.' + stream_dict.language.code3
     if stream_dict['disposition'].get('hearing_impaired', None):
         external_stream_file_name += '.hearing_impaired'
     if stream_dict['disposition'].get('visual_impaired', None):
@@ -7297,7 +7271,8 @@ def action_concat(concat_files, in_tags):
             '-codec', 'copy',
         ] + ffmpeg_concat_args + [
             '-start_at_zero',
-            '-f', ext_to_container(concat_file), concat_file,
+            '-f', ext_to_container(concat_file),
+            concat_file,
         ]
         with perfcontext('Concat w/ ffmpeg', log=True):
             ffmpeg(*ffmpeg_args,
@@ -7437,7 +7412,7 @@ def action_tag_episodes(episode_file_names, in_tags):
 
     l_series = tvdb.search(tags.tvshow)
     app.log.debug('l_series=%r', l_series)
-    assert l_series, "No series!"
+    assert l_series, 'No series!'
     i = 0
     if len(l_series) > 1 and app.args.interactive:
         i = app.radiolist_dialog(
@@ -7789,7 +7764,7 @@ def action_identify_files(file_names, in_tags):
             except KeyError:
                 l_series = tvdb.search(tags.tvshow)
                 app.log.debug('l_series=%r', l_series)
-                assert l_series, "No series!"
+                assert l_series, 'No series!'
                 i = 0
                 if len(l_series) > 1 and app.args.interactive:
                     i = app.radiolist_dialog(
@@ -7852,5 +7827,5 @@ def action_identify_files(file_names, in_tags):
         else:
             raise NotImplementedError(tags.type)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

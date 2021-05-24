@@ -581,7 +581,7 @@ class Executable(metaclass=abc.ABCMeta):
             stdin = stdin or subprocess.PIPE
             stdout = stdout or subprocess.PIPE
             stderr = stderr or subprocess.STDOUT  # Default from Executable._run
-            assert self.popen_func and self.popen_spawn, f'self={self!r}: popen_func={self.popen_func!r} and popen_spawn={self.popen_spawn!r}'
+            #assert self.popen_func and self.popen_spawn, f'self={self!r}: popen_func={self.popen_func!r} and popen_spawn={self.popen_spawn!r}'
             assert logfile is None
             assert no_status == False
             assert fd is None

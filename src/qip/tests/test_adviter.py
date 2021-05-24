@@ -16,6 +16,9 @@ import logging
 #logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
 
+import reprlib
+reprlib.aRepr.maxdict = 100
+
 test_dir = Path(__file__).parent.absolute()
 
 

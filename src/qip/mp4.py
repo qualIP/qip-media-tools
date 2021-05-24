@@ -502,7 +502,7 @@ class Mp4chapsFile(TextFile):
                     ))
                 else:
                     log.debug('TODO: %s', parser.line)
-                    parser.raiseValueError('Invalid MP4 chaoters line: {line!r}', input=self)
+                    parser.raiseValueError('Invalid MP4 chapters line: {line!r}', input=self)
 
     def create(self, file=None):
         if file is None:

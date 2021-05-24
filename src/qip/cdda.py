@@ -445,7 +445,7 @@ class CDTocFile(TextFile):
         # C: country code (upper case letters or digits)
         # O: owner code (upper case letters or digits)
         # Y: year (digits)
-        # S: serial number (digits) 
+        # S: serial number (digits)
         assert isinstance(value, str), (type(value), value)
         if value:
             assert re.search(r'^\S{12}$', value)
@@ -627,21 +627,21 @@ class CDTocFile(TextFile):
 
         # An optional CD-TEXT block that defines the CD-TEXT data for this track may follow. See the CD-TEXT section below for the syntax of the CD-TEXT block contents.
         # CD_TEXT { ... }
-        # At least one of the following statements must appear to specify the data for the current track. Lengths and start positions may be expressed in samples (1/44100 seconds) for audio tracks or in bytes for data tracks. It is also possible to give the length in blocks with the MSF format 'MM:SS:FF' specifying minutes, seconds and frames (0 <= 'FF' < 75) . A frame equals one block. 
-        # 
+        # At least one of the following statements must appear to specify the data for the current track. Lengths and start positions may be expressed in samples (1/44100 seconds) for audio tracks or in bytes for data tracks. It is also possible to give the length in blocks with the MSF format 'MM:SS:FF' specifying minutes, seconds and frames (0 <= 'FF' < 75) . A frame equals one block.
+        #
         # If more than one statement is used the track will be composed by concatenating the data in the specified order.
         # SILENCE <length>
-        #     Adds zero audio data of specified length to the current audio track. Useful to create silent pre-gaps. 
+        #     Adds zero audio data of specified length to the current audio track. Useful to create silent pre-gaps.
         # ZERO <length>
-        #     Adds zero data to data tracks. Must be used to define pre- or post-gaps between tracks of different mode. 
+        #     Adds zero data to data tracks. Must be used to define pre- or post-gaps between tracks of different mode.
         # DATAFILE "<filename>" [ <length> ]
-        #     Adds data from given file to the current data track. If <length> is omitted the actual file length will be used. 
+        #     Adds data from given file to the current data track. If <length> is omitted the actual file length will be used.
         # FIFO "<fifo path>" <length>
-        #     Adds data from specified FIFO path to the current audio or data track. <length> must specify the amount of data that will be read from the FIFO. The value is always in terms of bytes (scalar value) or in terms of the block length (MSF value). 
+        #     Adds data from specified FIFO path to the current audio or data track. <length> must specify the amount of data that will be read from the FIFO. The value is always in terms of bytes (scalar value) or in terms of the block length (MSF value).
         # START [ MM:SS:FF ]
         #     Defines the length of the pre-gap (position where index switches from 0 to 1). If the MSF value is omitted the current track length is used. If the current track length is not a multiple of the block length the pre-gap length will be rounded up to next block boundary.
-        # 
-        #     If no START statement is given the track will not have a pre-gap. 
+        #
+        #     If no START statement is given the track will not have a pre-gap.
         # PREGAP MM:SS:FF
         #     This is an alternate way to specify a pre-gap with zero audio data. It may appear before the first SILENCE, ZERO or FILE statement. Either PREGAP or START can be used within a track specification. It is equivalent to the sequence
         #     SILENCE MM:SS:FF
@@ -649,61 +649,61 @@ class CDTocFile(TextFile):
         #     for audio tracks or
         #     ZERO MM:SS:FF
         #     START
-        #     for data tracks. 
+        #     for data tracks.
         # Nothing prevents mixing 'DATAFILE'/'ZERO' and 'AUDIOFILE'/'SILENCE' statements within the same track. The results, however, are undefined.
-        # 
+        #
         # The end of a track specification may contain zero or more index increment statements:
         # INDEX MM:SS:FF
         #     Increments the index number at given position within the track. The first statement will increment from 1 to 2. The position is relative to the real track start, not counting an existing pre-gap.
 
         # CD-TEXT Blocks
-        # 
+        #
         # A CD-TEXT block may be placed in the global section to define data valid for the whole CD and in each track specification of a toc-file. The global section must define a language map that is used to map a language-number to country codes. Up to 8 different languages can be defined:
         # LANGUAGE_MAP { 0 : c1 1 : c2 ... 7 : c7 }
         #     The country code may be an integer value in the range 0..255 or one of the following countries (the corresponding integer value is placed in braces behind the token): EN(9, English)
-        #     It is just necessary to define a mapping for the used languages. 
+        #     It is just necessary to define a mapping for the used languages.
         # If no mapping exists for a language-number the data for this language will be ignored.
-        # 
+        #
         # For each language a language block must exist that defines the actual data for a certain language.
         # LANGUAGE language-number { cd-text-item cd-text-data cd-text-item cd-text-data ... }
-        #     Defines the CD-TEXT items for given language-number which must be defined in the language map. 
+        #     Defines the CD-TEXT items for given language-number which must be defined in the language map.
         # The cd-text-data may be either a string enclosed by " or binary data like
-        # 
+        #
         # { 0, 10, 255, ... }
-        # 
+        #
         # where each integer number must be in the range 0..255.
         # The cd-text-item may be one of the following:
         # TITLE
-        # 
+        #
         # String data: Title of CD or track.
         # PERFORMER
-        #     String data. 
+        #     String data.
         # SONGWRITER
-        #     String data. 
+        #     String data.
         # COMPOSER
-        #     String data. 
+        #     String data.
         # ARRANGER
-        #     String data. 
+        #     String data.
         # MESSAGE
-        #     String data. Message to the user. 
+        #     String data. Message to the user.
         # DISC_ID
-        #     String data: Should only appear in the global CD-TEXT block. The format is usually: XY12345 
+        #     String data: Should only appear in the global CD-TEXT block. The format is usually: XY12345
         # GENRE
-        # 
+        #
         # Mixture of binary data (genre code) and string data. Should only appear in the global CD-TEXT block. Useful entries will be created by gcdmaster.
         # TOC_INFO1
-        #     Binary data: Optional table of contents 1. Should only appear in the global CD-TEXT block. 
+        #     Binary data: Optional table of contents 1. Should only appear in the global CD-TEXT block.
         # TOC_INFO2
-        #     Binary data: Optional table of contents 2. Should only appear in the global CD-TEXT block. 
+        #     Binary data: Optional table of contents 2. Should only appear in the global CD-TEXT block.
         # UPC_EAN
-        #     String data: This item should only appear in the global CD-TEXT block. Was always an empty string on the CD-TEXT CDs I had access to. 
+        #     String data: This item should only appear in the global CD-TEXT block. Was always an empty string on the CD-TEXT CDs I had access to.
         # ISRC
-        # 
+        #
         # String data: ISRC code of track. The format is usually: CC-OOO-YY-SSSSS
         # SIZE_INFO
         #     Binary data: Contains summary about all CD-TEXT data and should only appear in the global CD-TEXT block. The data will be automatically (re)created when the CD-TEXT data is written.
-        # 
-        #     If one of the CD-TEXT items TITLE, PERFORMER, SONGWRITER, COMPOSER, ARRANGER, ISRC is defined for at least on track or in the global section it must be defined for all tracks and in the global section. If a DISC_ID item is defined in the global section, an ISRC entry must be defined for each track. 
+        #
+        #     If one of the CD-TEXT items TITLE, PERFORMER, SONGWRITER, COMPOSER, ARRANGER, ISRC is defined for at least on track or in the global section it must be defined for all tracks and in the global section. If a DISC_ID item is defined in the global section, an ISRC entry must be defined for each track.
 
     def add_track(self, *args, **kwargs):
         if len(args) == 1 and isinstance(args[0], CDTocFile.Track):
@@ -967,7 +967,7 @@ class CDDACueSheetFile(TextFile):
                         # C: country code (upper case letters or digits)
                         # O: owner code (upper case letters or digits)
                         # Y: year (digits)
-                        # S: serial number (digits) 
+                        # S: serial number (digits)
                         v = parser.match.group('isrc')
                         if v:  # and lang is CDTocFile.LanguageEnum.eng:
                             track.tags.isrc = v

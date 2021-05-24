@@ -43,6 +43,7 @@ Depends:
     libexpat1-dev,
     libdvdread-dev,
     libudfread-dev,
+# sudo add-apt-repository ppa:team-xbmc/ppa (https://pkgs.org/search/?q=udfread)
 Recommends:
     winetricks,
     q4wine,

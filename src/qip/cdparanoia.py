@@ -56,30 +56,30 @@ class Cdparanoia(Executable):
                 d.toc = self._parse_toc(parser)
             else:
                 # cdparanoia III release 10.2 (September 11, 2008)
-                # 
+                #
                 # Using cdda library version: 10.2
                 # Using paranoia library version: 10.2
                 # Checking /dev/cdrom for cdrom...
                 #     Testing /dev/cdrom for SCSI/MMC interface
                 # 	SG_IO device: /dev/sr1
-                # 
-                # CDROM model sensed sensed: ASUS BW-12B1ST   a 1.00 
-                #  
-                # 
+                #
+                # CDROM model sensed sensed: ASUS BW-12B1ST   a 1.00
+                #
+                #
                 # Checking for SCSI emulation...
                 #     Drive is ATAPI (using SG_IO host adaptor emulation)
-                # 
+                #
                 # Checking for MMC style command set...
                 #     Drive is MMC style
                 #     DMA scatter/gather table entries: 1
                 #     table entry size: 122880 bytes
                 #     maximum theoretical transfer: 52 sectors
                 #     Setting default read size to 27 sectors (63504 bytes).
-                # 
+                #
                 # Verifying CDDA command set...
                 #     Expected command set reads OK.
-                # 
-                # Attempting to set cdrom to full speed... 
+                #
+                # Attempting to set cdrom to full speed...
                 #     drive returned OK.
                 pass  # TODO
 

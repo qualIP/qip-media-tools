@@ -122,7 +122,7 @@ class MetadataFile(TextFile):
                     pass
                 elif parser.re_match(r'^(?P<key>[^=]+)=(?P<value>.*)'):
                     # [ffmpeg-1] Metadata tags are of the form ‘key=value’
-                    # [ffmpeg-1] Note that whitespace in metadata (e.g. ‘foo = bar’) is considered to be a part of the tag (in the example above key is ‘foo ’, value is ‘ bar’). 
+                    # [ffmpeg-1] Note that whitespace in metadata (e.g. ‘foo = bar’) is considered to be a part of the tag (in the example above key is ‘foo ’, value is ‘ bar’).
                     key = parser.match.group('key')
                     value = parser.match.group('value')
                     section_tags[key] = value
@@ -208,7 +208,7 @@ class MetadataFile(TextFile):
 class ConcatScriptFile(TextFile):
 
     ffconcat_version = 1.0
-    files = None
+    files = None  # Array of ConcatScriptFile.File or qip.File (file_name attribute required)
 
     class File(object):
 

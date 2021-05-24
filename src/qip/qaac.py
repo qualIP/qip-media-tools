@@ -103,7 +103,7 @@ class Qaac(Executable):
         #                          are taken care of. Others are just stored as UTF-8
         #                          string.
         # --long-tag <key>:<value>
-        #                       Set long tag (iTunes custom metadata) with 
+        #                       Set long tag (iTunes custom metadata) with
         #                       arbitrary key/value pair. Value is always stored as
         #                       UTF8 string.
     )

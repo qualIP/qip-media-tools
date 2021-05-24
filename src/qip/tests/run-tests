@@ -3,4 +3,5 @@
 set -euo pipefail
 set -x
 
+rm -Rf tmp.test_*
 python3 -m unittest "$@"

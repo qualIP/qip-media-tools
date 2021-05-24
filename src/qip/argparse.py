@@ -5,7 +5,7 @@ import sys as _sys
 import argparse as _argparse
 from argparse import *
 
-from .decorator import trace
+#from .decorator import trace
 def trace(func, **kwargs): return func
 
 from .utils import Constants as _Constants
