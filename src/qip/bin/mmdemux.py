@@ -1118,6 +1118,7 @@ def get_codec_encoding_delay(file, *, mediainfo_track_dict=None, ffprobe_stream_
             '.ac3',
             '.eac3',
             '.mp3',
+            # TODO '.flac',
             '.dts',
             '.truehd',
             '.aac',
@@ -1178,6 +1179,7 @@ def codec_name_to_ext(codec_name):
             'truehd': '.truehd',
             'vorbis': '.vorbis.ogg',
             'opus': '.opus.ogg',
+            'flac': '.flac',
             'aac': '.aac',
             'pcm_s16le': '.wav',
             'pcm_s24le': '.wav',
@@ -5646,6 +5648,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             '.opus',
                             '.opus.ogg',
                             #'.mp3',
+                            #'.flac',
                             )
 
                     stream_start_time = AnyTimestamp(stream_dict.get('start_time', 0))

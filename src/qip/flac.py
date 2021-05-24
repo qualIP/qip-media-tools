@@ -38,7 +38,7 @@ class FlacFile(SoundFile):
         # https://xiph.org/vorbis/doc/v-comment.html
         'title': 'title',
         'version': 'subtitle',  # TODO CHECK!
-        'album': 'album',
+        'album': 'albumtitle',
         'tracknumber': 'track',
         'artist': 'artist',
         'performer': 'performer',
