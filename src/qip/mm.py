@@ -1398,6 +1398,8 @@ class MediaFile(File):
                 return 'ringtone'
             if isinstance(self, SoundFile):
                 return 'normal'
+            if isinstance(self, SubtitleFile):
+                return 'subtitle'
         raise MissingMediaTagError(MediaTagEnum.type, file=self)
 
 class BinaryMediaFile(MediaFile, BinaryFile):
