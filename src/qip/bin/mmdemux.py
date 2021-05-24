@@ -1133,8 +1133,12 @@ def get_codec_encoding_delay(file, *, mediainfo_track_dict=None, ffprobe_stream_
     if not isinstance(MediaFile, file):
         file = MediaFile.new_by_file_name(file)
     # Try again with mediainfo_track_dict
-    assert len(file.mediainfo_dict['media']['track']) == 2
-    mediainfo_track_dict = file.mediainfo_dict['media']['track'][1]
+    try:
+        mediainfo_track_dict, = [e
+                                 for e in file.mediainfo_dict['media']['track']
+                                 if e['@type'] != 'General']
+    except ValueError:
+        raise AssertionError('Expected a single mediainfo track: {!r}'.format(file.mediainfo_dict['media']['track']))
     return get_codec_encoding_delay(file, mediainfo_track_dict=mediainfo_track_dict)
 
 still_image_exts = {
@@ -1441,14 +1445,34 @@ hdr_color_transfer_stems = {
 # 'smpte2085',  # ??
 # 'smpte2086',  # Metadata format, used in HDR10 & DolbyVision
 
+def sorted_ffprobe_streams(streams):
+    def ffprobe_stream_key(ffprobe_stream_dict):
+        return (
+            CodecType(ffprobe_stream_dict['codec_type']),
+            int(ffprobe_stream_dict.get('index', 0)),
+        )
+    return sorted(streams, key=ffprobe_stream_key)
+
+def sorted_mediainfo_tracks(tracks):
+    def mediainto_track_key(mediainto_track_dict):
+        return (
+            CodecType(mediainto_track_dict['@type']),
+            int(mediainto_track_dict.get('ID', 0)),
+        )
+    return sorted(tracks, key=mediainto_track_key)
+
 def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_track_dict=None):
     ffmpeg_hdr_args = ffmpeg.Options()
     assert codec
     if ffprobe_stream_json is None:
-        ffprobe_stream_json, = inputfile.ffprobe_dict['streams']
+        ffprobe_stream_json, = sorted_ffprobe_streams(inputfile.ffprobe_dict['streams'])
     if mediainfo_track_dict is None:
-        assert len(inputfile.mediainfo_dict['media']['track']) == 2
-        mediainfo_track_dict = inputfile.mediainfo_dict['media']['track'][1]
+        try:
+            mediainfo_track_dict, = [e
+                                     for e in inputfile.mediainfo_dict['media']['track']
+                                     if e['@type'] != 'General']
+        except ValueError:
+            raise AssertionError('Expected a single mediainfo track: {!r}'.format(inputfile.mediainfo_dict['media']['track']))
     # NOTE: mediainfo does not distinguish between SMPTE ST 2087 and SMPTE ST 2084; It always displays 'SMPTE ST 2086'.
     color_transfer = ffprobe_stream_json.get('color_transfer', '')
     if any(v in color_transfer
@@ -1529,8 +1553,12 @@ def pick_lossless_codec_ext(stream):
         pass
     # encode -- GPU
     if app.args.cuda:
-        assert len(stream.file.mediainfo_dict['media']['track']) == 2
-        mediainfo_track_dict = stream.file.mediainfo_dict['media']['track'][1]
+        try:
+            mediainfo_track_dict, = [e
+                                     for e in stream.file.mediainfo_dict['media']['track']
+                                     if e['@type'] != 'General']
+        except ValueError:
+            raise AssertionError('Expected a single mediainfo track: {!r}'.format(stream.file.mediainfo_dict['media']['track']))
         if True:
             return '.h265'  # Fast lossless (4K @ 50fps)
         if mediainfo_track_dict['BitDepth'] <= 8:
@@ -1770,7 +1798,12 @@ def estimate_stream_duration(inputfile=None, ffprobe_json=None):
 def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None):
 
     inputfile_base, inputfile_ext = my_splitext(inputfile)
-    inputfile.tags.update(inputfile.load_tags())
+    try:
+        loaded_tags = inputfile.load_tags()
+    except NotImplementedError as e:
+        app.log.warning(e)
+    else:
+        inputfile.tags.update(loaded_tags)
     inputfile.tags.pop('type', None)
 
     name_scan_str = Path(inputfile_base).name
@@ -1879,19 +1912,33 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None):
         done = True
 
     if inputfile.exists():
-        inputfile.tags.update(inputfile.load_tags())
+        try:
+            loaded_tags = inputfile.load_tags()
+        except NotImplementedError as e:
+            app.log.warning(e)
+        else:
+            inputfile.tags.update(inputfile.load_tags())
         if inputfile_ext in (
                 '.mkv',
                 '.webm',
                 ):
             mediainfo_video_track_dicts = [mediainfo_track_dict
-                    for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
-                    if mediainfo_track_dict['@type'] == 'Video']
+                                           for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
+                                           if mediainfo_track_dict['@type'] == 'Video']
             if len(mediainfo_video_track_dicts) > 1:
                 # TODO support angles!
                 mediainfo_video_track_dicts = mediainfo_video_track_dicts[:1]
-            assert len(mediainfo_video_track_dicts) == 1, "%d video tracks found" % (len(mediainfo_video_track_dicts),)
-            mediainfo_track_dict, = mediainfo_video_track_dicts
+            try:
+                mediainfo_track_dict, = mediainfo_video_track_dicts
+            except ValueError:
+                e = 'Expected a single mediainfo Video track: {!r}'.format(inputfile.mediainfo_dict['media']['track'])
+                if app.args.force:
+                    app.log.warning(e)
+                    mediainfo_track_dict = {
+                        '@type': 'Video',
+                    }
+                else:
+                    raise ValueError(f'{e} (try --force)')
             mediainfo_mediatype = mediainfo_track_dict.get('OriginalSourceMedium', None)
             if mediainfo_mediatype is None:
                 pass
@@ -2817,9 +2864,12 @@ def action_hb(inputfile, in_tags):
         else:
             raise ValueError('No video stream found!')
 
-        assert len(inputfile.mediainfo_dict['media']['track']) >= 2
-        mediainfo_track_dict = inputfile.mediainfo_dict['media']['track'][1]
-        assert mediainfo_track_dict['@type'] == 'Video'
+        try:
+            mediainfo_track_dict, = [e
+                                     for e in inputfile.mediainfo_dict['media']['track']
+                                     if e['@type'] == 'Video']
+        except ValueError:
+            raise AssertionError('Expected a single Video mediainfo track: {!r}'.format(inputfile.mediainfo_dict['media']['track']))
 
         #framerate = pick_framerate(inputfile, inputfile.ffprobe_dict, ffprobe_stream_dict, mediainfo_track_dict)
         field_order, input_framerate, framerate = analyze_field_order_and_framerate(
@@ -2914,14 +2964,17 @@ def mux_dict_from_file(inputfile, outputdir):
             | Mpeg2ContainerFile.get_common_extensions() \
             | Mpeg4ContainerFile.get_common_extensions() \
             | MatroskaFile.get_common_extensions() \
+            | SubtitleFile.get_common_extensions() \
             :
 
         attachment_index = 0  # First attachment is index 1
 
-        iter_ffprobe_stream_dicts = iter(inputfile.ffprobe_dict['streams'])
-        iter_mediainfo_track_dicts = iter(mediainfo_track_dict
-                                          for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
-                                          if mediainfo_track_dict['@type'] != 'General')
+        iter_ffprobe_stream_dicts = iter(sorted_ffprobe_streams(
+            inputfile.ffprobe_dict['streams']))
+        iter_mediainfo_track_dicts = iter(sorted_mediainfo_tracks(
+            mediainfo_track_dict
+            for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
+            if mediainfo_track_dict['@type'] != 'General'))
 
         with contextlib.ExitStack() as stream_dict_loop_exit_stack:
             iter_frames = None
@@ -2945,7 +2998,15 @@ def mux_dict_from_file(inputfile, outputdir):
                         app.log.debug('1:ffprobe_stream_dict = %r', ffprobe_stream_dict)
                         stream['index'] = int(ffprobe_stream_dict['index'])
 
-                        stream_codec_name = ffprobe_stream_dict['codec_name']
+                        try:
+                            stream_codec_name = ffprobe_stream_dict['codec_name']
+                        except KeyError:
+                            e = AssertionError('Stream codec name missing')
+                            if app.args.force:
+                                app.log.warning(e)
+                                continue  # skip stream!
+                            else:
+                                raise ValueError(f'{e} (try --force to skip)')
 
                         try:
                             stream['original_id'] = int(ffprobe_stream_dict['id'],
@@ -2954,36 +3015,66 @@ def mux_dict_from_file(inputfile, outputdir):
                             pass
                         stream['codec_type'] = ffprobe_stream_dict['codec_type']
 
+                        # Confirm codec_type (temporary/local)
                         if (
-                                stream.codec_type == 'video'
+                                stream.codec_type is CodecType.video
                                 and stream_codec_name == 'mjpeg'
                                 and ffprobe_stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
                             stream['codec_type'] = 'image'
-                            stream_file_ext = '.jpg'
-                            stream['attachment_type'] = my_splitext(ffprobe_stream_dict['tags']['filename'])[0]
-                            #app.log.debug('stream #%s: video -> %s %s [%s]', stream.pprint_index, stream.codec_type, stream_file_ext, stream['attachment_type'])
 
-                        if stream.codec_type == 'video':
-                            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-                            assert mediainfo_track_dict['@type'] == 'Video', f'mediainfo_track_dict={mediainfo_track_dict!r}'
-                        elif stream.codec_type == 'audio':
-                            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-                            assert mediainfo_track_dict['@type'] == 'Audio', f'mediainfo_track_dict={mediainfo_track_dict!r}'
-                        elif stream.codec_type == 'subtitle':
+                        if stream.codec_type is CodecType.video:
+                            try:
+                                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                            except StopIteration:
+                                e = AssertionError('Expected a mediainfo Video track')
+                                if app.args.force:
+                                    app.log.warning(e)
+                                    mediainfo_track_dict = {
+                                        '@type': 'Video',
+                                    }
+                                    mediainfo_track_dict = None  # TODO
+                                else:
+                                    raise ValueError(f'{e} (try --force)')
+                            else:
+                                assert CodecType(mediainfo_track_dict['@type']) is stream.codec_type, f'Stream #{stream.pprint_index} has codec type {stream.codec_type} but mediainfo track has {mediainfo_track_dict["@type"]}'
+                        elif stream.codec_type is CodecType.audio:
+                            try:
+                                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+                            except StopIteration:
+                                e = AssertionError('Expected a mediainfo Audio track')
+                                if app.args.force:
+                                    app.log.warning(e)
+                                    mediainfo_track_dict = {
+                                        '@type': 'Audio',
+                                    }
+                                    mediainfo_track_dict = None  # TODO
+                                else:
+                                    raise ValueError(f'{e} (try --force)')
+                            else:
+                                assert CodecType(mediainfo_track_dict['@type']) is stream.codec_type, f'Stream #{stream.pprint_index} has codec type {stream.codec_type} but mediainfo track has {mediainfo_track_dict["@type"]}'
+                        elif stream.codec_type is CodecType.subtitle:
                             try:
                                 mediainfo_track_dict = next(iter_mediainfo_track_dicts)
                             except StopIteration:
                                 # Example: ffprobe with large probeduration picks up a subtitle but not mediainfo
-                                pass
+                                e = AssertionError('Expected a mediainfo Text track')
+                                if True or app.args.force:
+                                    app.log.warning(e)
+                                    mediainfo_track_dict = {
+                                        '@type': 'Text',
+                                    }
+                                    mediainfo_track_dict = None  # TODO
+                                else:
+                                    raise ValueError(f'{e} (try --force)')
                             else:
-                                assert mediainfo_track_dict['@type'] == 'Text', f'mediainfo_track_dict={mediainfo_track_dict!r}'
-                        elif stream.codec_type == 'image':
+                                assert CodecType(mediainfo_track_dict['@type']) is stream.codec_type, f'Stream #{stream.pprint_index} has codec type {stream.codec_type} but mediainfo track has {mediainfo_track_dict["@type"]}'
+                        elif stream.codec_type is CodecType.image:
                             mediainfo_track_dict = None  # Not its own track
                             # General
                             # ...
                             # Cover                                    : Yes
                             # Attachments                              : cover.jpg
-                        elif stream.codec_type == 'data':
+                        elif stream.codec_type is CodecType.data:
                             if stream_codec_name == 'dvd_nav_packet':
                                 mediainfo_track_dict = None
                             else:
@@ -3036,7 +3127,7 @@ def mux_dict_from_file(inputfile, outputdir):
                     if stream.codec_type is CodecType.video:
                         if app.args.force_still_video:
                             EstimatedFrameCount = 1
-                        elif 'Duration' in mediainfo_track_dict:
+                        elif mediainfo_track_dict is not None and 'Duration' in mediainfo_track_dict:
                             # Test using mediainfo's Duration as ffmpeg's can be the whole length of the movie
                             try:
                                 EstimatedFrameCount = int(round_half_away_from_zero(
@@ -3724,26 +3815,54 @@ def action_mux(inputfile, in_tags,
 
     subtitle_counts = []
 
-    iter_mediainfo_track_dicts = iter(mediainfo_track_dict
-                                      for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
-                                      if mediainfo_track_dict['@type'] != 'General')
+    iter_mediainfo_track_dicts = iter(sorted_mediainfo_tracks(
+        mediainfo_track_dict
+        for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
+        if mediainfo_track_dict['@type'] != 'General'))
     for stream in sorted_stream_dicts(mux_dict['streams']):
         if app.args.dry_run and not stream.file.exists():
             app.log.warning('Stream #%s file does not exist: %s (ignoring due to dry-run but information may be incomplete)', stream.pprint_index, stream.file)
             continue
 
         if stream.codec_type is CodecType.video:
-            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-            assert mediainfo_track_dict['@type'] == 'Video'
+            try:
+                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+            except StopIteration:
+                e = AssertionError('Expected a mediainfo Video track')
+                if app.args.force:
+                    app.log.warning(e)
+                    mediainfo_track_dict = {
+                        '@type': 'Video',
+                    }
+                else:
+                    raise ValueError(f'{e} (try --force)')
+            assert CodecType(mediainfo_track_dict['@type']) is stream.codec_type, f'Stream #{stream.pprint_index} has codec type {stream.codec_type} but mediainfo track has {mediainfo_track_dict["@type"]}'
         elif stream.codec_type is CodecType.audio:
-            mediainfo_track_dict = next(iter_mediainfo_track_dicts)
-            assert mediainfo_track_dict['@type'] == 'Audio'
+            try:
+                mediainfo_track_dict = next(iter_mediainfo_track_dicts)
+            except StopIteration:
+                e = AssertionError('Expected a mediainfo Audio track')
+                if app.args.force:
+                    app.log.warning(e)
+                    mediainfo_track_dict = {
+                        '@type': 'Audio',
+                    }
+                else:
+                    raise ValueError(f'{e} (try --force)')
+            assert CodecType(mediainfo_track_dict['@type']) is stream.codec_type, f'Stream #{stream.pprint_index} has codec type {stream.codec_type} but mediainfo track has {mediainfo_track_dict["@type"]}'
         elif stream.codec_type is CodecType.subtitle:
             try:
                 mediainfo_track_dict = next(iter_mediainfo_track_dicts)
             except StopIteration:
                 # Example: ffprobe with large probeduration picks up a subtitle but not mediainfo
-                pass
+                if True or app.args.force:
+                    app.log.warning(e)
+                    mediainfo_track_dict = {
+                        '@type': 'Text',
+                    }
+                    mediainfo_track_dict = None  # TODO
+                else:
+                    raise ValueError(f'{e} (try --force)')
             else:
                 assert CodecType(mediainfo_track_dict['@type']) is stream.codec_type, f'Stream #{stream.pprint_index} has codec type {stream.codec_type} but mediainfo track has {mediainfo_track_dict["@type"]}'
         elif stream.codec_type is CodecType.image:
@@ -3772,15 +3891,28 @@ def action_mux(inputfile, in_tags,
                 mediainfo_stream_id = stream['original_id'] & 0xff
             except KeyError:
                 mediainfo_stream_id = stream.index + 1
-            mediainfo_track_dict, = (mediainfo_track_dict
+            try:
+                mediainfo_track_dict, = (
+                    mediainfo_track_dict
                     for mediainfo_track_dict in inputfile.mediainfo_dict['media']['track']
                     if mediainfo_stream_id == mediainfo_track_dict.get('ID', 0))
-            assert mediainfo_track_dict['@type'] == 'Video'
-            storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
-            display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
-            pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio
-            stream['display_aspect_ratio'] = str(display_aspect_ratio)
-            stream['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
+            except ValueError:
+                e = 'Expected a single mediainfo track with ID {}: {!r}'.format(mediainfo_stream_id, inputfile.mediainfo_dict['media']['track'])
+                if app.args.force:
+                    app.log.warning(e)
+                    mediainfo_track_dict = {
+                        '@type': 'Video',
+                    }
+                    mediainfo_track_dict = None  # TODO
+                else:
+                    raise ValueError(f'{e} (try --force)')
+            if mediainfo_track_dict is not None:
+                assert CodecType(mediainfo_track_dict['@type']) is stream.codec_type, f'Stream #{stream.pprint_index} has codec type {stream.codec_type} but mediainfo track has {mediainfo_track_dict["@type"]}'
+                storage_aspect_ratio = Ratio(mediainfo_track_dict['Width'], mediainfo_track_dict['Height'])
+                display_aspect_ratio = Ratio(mediainfo_track_dict['DisplayAspectRatio'])
+                pixel_aspect_ratio = display_aspect_ratio / storage_aspect_ratio
+                stream['display_aspect_ratio'] = str(display_aspect_ratio)
+                stream['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
 
         if mux_subtitles and stream.codec_type is CodecType.subtitle:
             stream_forced = stream['disposition'].get('forced', None)
@@ -4734,8 +4866,13 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         except KeyError:
                             sub_stream0_ffprobe_stream_json, = sub_stream0.file.ffprobe_dict['streams']
 
-                            assert len(sub_stream0.file.mediainfo_dict['media']['track']) >= 2
-                            sub_stream0_mediainfo_track_dict = sub_stream0.file.mediainfo_dict['media']['track'][1]
+                            try:
+                                sub_stream0_mediainfo_track_dict, = [e
+                                                                     for e in sub_stream0.file.mediainfo_dict['media']['track']
+                                                                     if e['@type'] != 'General']
+                            except ValueError:
+                                raise AssertionError('Expected a single mediainfo track: {!r}'.format(sub_stream0.file.mediainfo_dict['media']['track']))
+                            assert sub_stream0_mediainfo_track_dict['@type'] == 'Video', 'Expected a mediainfo Video track: {!r}'.format(sub_stream0_mediainfo_track_dict)
                             assert CodecType(sub_stream0_mediainfo_track_dict['@type']) is sub_stream0.codec_type, f'Stream #{sub_stream0.pprint_index} has codec type {sub_stream0.codec_type} but mediainfo track has {sub_stream0_mediainfo_track_dict["@type"]}'
 
                             sub_stream0_field_order, sub_stream0_input_framerate, sub_stream0_framerate = analyze_field_order_and_framerate(
@@ -4804,31 +4941,12 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         app.log.verbose('Stream #%s %s [%s] OK', stream_dict.pprint_index, stream_file_ext, stream_dict.language)
                         break
 
-                    mediainfo_general_dict = None
-                    mediainfo_track_dict = None
-                    mediainfo_text_dict = None
-                    mediainfo_menu_dict = None
-                    for d in stream_dict.file.mediainfo_dict['media']['track']:
-                        if d['@type'] == 'General':
-                            assert mediainfo_general_dict is None
-                            mediainfo_general_dict = d
-                        elif d['@type'] in ('Video', 'Image'):
-                            assert mediainfo_track_dict is None
-                            mediainfo_track_dict = d
-                        elif d['@type'] == 'Text':
-                            if False:
-                                # There can be multiple Closed Caption tracks embedded in a video stream
-                                assert mediainfo_text_dict is None
-                                mediainfo_text_dict = d
-                        elif d['@type'] == 'Menu':
-                            assert mediainfo_menu_dict is None
-                            mediainfo_menu_dict = d
-                        else:
-                            raise ValueError(d['@type'])
-                    assert mediainfo_general_dict
-                    assert mediainfo_track_dict
-                    # ffprobe -f lavfi -i movie=Sentinel/title_t00/track-00-video.mpeg2.mp2v,readeia608 -show_entries frame=pkt_pts_time:frame_tags=lavfi.readeia608.0.cc,lavfi.readeia608.1.cc -of csv > Sentinel/title_t00/track-00-video.cc.csv
-                    #assert not mediainfo_text_dict
+                    try:
+                        mediainfo_track_dict, = [e
+                                                 for e in stream_dict.file.mediainfo_dict['media']['track']
+                                                 if e['@type'] == 'Video']
+                    except ValueError:
+                        raise AssertionError('Expected a single Video mediainfo track: {!r}'.format(stream_dict.file.mediainfo_dict['media']['track']))
 
                     field_order, input_framerate, framerate = analyze_field_order_and_framerate(
                         stream_dict=stream_dict,
