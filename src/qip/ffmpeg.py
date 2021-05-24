@@ -783,13 +783,16 @@ class _Ffmpeg(Executable):
 
         return super().build_cmd(*args, **kwargs) + out_file_args
 
-    def input_args(self, inputfile):
+    def input_args(self, inputfile, attach=False):
         if not isinstance(inputfile, File):
             inputfile = File.new_by_file_name(inputfile)
         args = []
         kwargs = {}
         args += self.kwargs_to_cmdargs(**inputfile.decode_ffmpeg_args())
-        args += ['-i', inputfile]
+        args += [
+            '-attach' if attach else '-i',
+            inputfile,
+        ]
         return args
 
 class Ffmpeg(_Ffmpeg):

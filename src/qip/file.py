@@ -150,6 +150,24 @@ class File(object):
         default='',
         type=propex.test_in(('', 't', 'b')))
 
+    mime_type = propex(
+        name='mime_type',
+        type=str)
+
+    @mime_type.initter
+    def mime_type(self):
+        from qip.exec import dbg_exec_cmd
+        try:
+            mime_type = dbg_exec_cmd(
+                ['file', '--brief', '--mime-type', self],
+                encoding='utf-8')
+        except subprocess.CalledProcessError as e:
+            raise AttributeError
+        mime_type = mime_type.strip()
+        if not mime_type:
+            raise AttributeError
+        return mime_type
+
     open_encoding = None
 
     @contextmanager

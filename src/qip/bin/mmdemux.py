@@ -3178,7 +3178,6 @@ def mux_dict_from_file(inputfile, outputdir):
                             and ffprobe_stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
                         stream['codec_type'] = 'image'
                         stream_file_ext = '.jpg'
-                        stream['attachment_type'] = my_splitext(ffprobe_stream_dict['tags']['filename'])[0]
                     elif (
                         stream.codec_type is CodecType.video
                         and EstimatedFrameCount == 1):
@@ -3219,6 +3218,16 @@ def mux_dict_from_file(inputfile, outputdir):
                         #         Playback length: 97m:00.139s
                         #         Average bitrate: 181.8 kb/s, w/o overhead: 180.7 kb/s
                         # Logical stream 1 ended
+
+                    if stream.codec_type is CodecType.image:
+                        try:
+                            stream['mime_type'] = ffprobe_stream_dict['tags']['mimetype']
+                        except KeyError:
+                            pass
+                        try:
+                            stream['attachment_type'] = my_splitext(ffprobe_stream_dict['tags']['filename'])[0]
+                        except KeyError:
+                            pass
 
                     try:
                         stream_time_base = Fraction(ffprobe_stream_dict['time_base'])
@@ -3279,7 +3288,13 @@ def mux_dict_from_file(inputfile, outputdir):
 
                     if stream_start_time and stream.codec_type is CodecType.subtitle:
                         # ffmpeg estimates the start_time if it is low enough but the actual time indices will be correct
-                        app.log.warning('Correcting %s stream #%s start time %s to 0 based on experience', stream.codec_type, stream.pprint_index, stream_start_time)
+                        # ffmpeg just reuses the mininum start time if it can't determine it by probing.
+                        # Actually using this start time will further offset the subtitles in the output.
+                        app.log.warning('Correcting %s stream #%s start time %s to 0 (harmful ffmpeg estimate)', stream.codec_type, stream.pprint_index, stream_start_time)
+                        stream_start_time = qip.utils.Timestamp(0)
+                    if stream_start_time and stream.codec_type is CodecType.image:
+                        # An attached image has no start time.
+                        app.log.debug('Correcting %s stream #%s start time %s to 0 (attached image)', stream.codec_type, stream.pprint_index, stream_start_time)
                         stream_start_time = qip.utils.Timestamp(0)
                     if stream_start_time:
                         app.log.warning('%s stream #%s start time is %s', stream.codec_type.title(), stream.pprint_index, stream_start_time)
@@ -4668,6 +4683,16 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
             return CodecType(self['codec_type'])
         except KeyError:
             raise AttributeError
+
+    @property
+    def mime_type(self):
+        try:
+            return self['mime_type']
+        except KeyError:
+            try:
+                return self.file.mime_type
+            except AttributeError:
+                raise AttributeError
 
     @property
     def language(self):
@@ -7077,6 +7102,13 @@ def action_demux(inputdir, in_tags):
                 ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'language=%s' % (stream_dict.language.code3,),]
             if stream_title:
                 ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'title=%s' % (stream_title,),]
+            if stream_dict.codec_type is CodecType.image:
+                ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'mimetype=%s' % (stream_dict.mime_type,),]
+            if stream_dict.codec_type is CodecType.image:
+                ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'filename=%s%s' % (
+                    attachment_type,
+                    stream_dict.file_name.suffix,
+                )]
             display_aspect_ratio = stream_dict.get('display_aspect_ratio', None)
             if display_aspect_ratio:
                 ffmpeg_output_args += ['-aspect:%d' % (stream_dict['_temp'].out_index,), display_aspect_ratio]

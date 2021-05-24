@@ -943,19 +943,16 @@ class MatroskaFile(BinaryMediaFile):
                     '-f', 'concat', '-safe', '0', '-i', concat_file,
                 ]
             else:
-                ffmpeg_input_cmd += [
-                    '-i', inputfiles[0],
-                ]
+                ffmpeg_input_cmd += ffmpeg.input_args(inputfiles[0])
             ffmpeg_output_cmd += [
                 '-map', '0:a',
             ]
 
             if not picture_added and picture is not None:
-                ffmpeg_input_cmd += [
-                    '-i', picture,
-                ]
+                ffmpeg_input_cmd += ffmpeg.input_args(picture, attach=True)
                 ffmpeg_output_cmd += [
-                    '-map', '1:v',
+                    '-metadata:s:1', 'mimetype={}'.format(picture.mime_type),
+                    '-metadata:s:1', f'filename=cover{picture.file_name.suffix}',
                 ]
                 picture_added = True
 
@@ -1016,7 +1013,7 @@ class MatroskaFile(BinaryMediaFile):
             if not tags_added and output_file.tags is not None:
                 log.info('Adding tags...')
                 tags = copy.copy(output_file.tags)
-                tags.picture = None
+                tags.picture = None  # Already added
                 output_file.write_tags(tags=tags, run_func=do_exec_cmd)
                 tags_added = True
 
