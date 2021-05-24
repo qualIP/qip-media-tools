@@ -1830,6 +1830,18 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None):
         name_scan_str = inputfile.tags.title
         # done = False
     m = not done and (
+        re.match(r'^(?P<name>.+)\.(?P<language>[a-z]{2,3})$', name_scan_str)
+    )
+    if m:
+        d = m.groupdict()
+        d = {k: v and v.strip() for k, v in d.items()}
+        try:
+            inputfile.tags.language = d['language']
+        except TypeError:
+            pass
+        else:
+            name_scan_str = d['name']
+    m = not done and (
         # TVSHOW S01E02 TITLE
         # TVSHOW S01E02-03 TITLE
         # TVSHOW S01E02
@@ -1892,7 +1904,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None):
                 d.update(m.groupdict())
         if 'title' in d:
             # TITLE (1987)
-            m = re.match('^(?P<title>.+) \((?P<date>\d{4})\)$', d['title'])
+            m = re.match(r'^(?P<title>.+) \((?P<date>\d{4})\)$', d['title'])
             if m:
                 d.update(m.groupdict())
         for tag in (
