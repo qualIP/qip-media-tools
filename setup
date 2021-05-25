@@ -79,6 +79,7 @@ fi
 
 PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
 maybe_sudo=$([[ "$USER" = "root" ]] || echo sudo)
+lsb_codename=$(lsb_release -cs 2>/dev/null)
 
 print_h2() {
     echo
@@ -163,17 +164,37 @@ need_docker() {
             echo "See https://www.docker.com"
             echo
 
-            if true ; then
-                echo "Following Docker install instructions for debian:"
-                echo "    https://docs.docker.com/engine/install/debian/"
-                echo
-                $maybe_sudo apt-get install apt-transport-https ca-certificates curl gnupg lsb-release
-                curl -fsSL https://download.docker.com/linux/debian/gpg \
-                    | $maybe_sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
-                    | $maybe_sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-                $maybe_sudo apt-get update
-            fi
+            case "$lsb_codename" in
+                bullseye|buster)
+                    echo "Following Docker install instructions for Debian $lsb_codename:"
+                    echo "    https://docs.docker.com/engine/install/debian/"
+                    echo
+                    $maybe_sudo apt-get install apt-transport-https ca-certificates curl gnupg lsb-release
+                    curl -fsSL https://download.docker.com/linux/debian/gpg \
+                        | $maybe_sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
+                        | $maybe_sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                    $maybe_sudo apt-get update
+                    ;;
+
+                hirsute|groovy|focal|bionic|xental)
+                    echo "Following Docker install instructions for Ubuntu $lsb_codename:"
+                    echo "    https://docs.docker.com/engine/install/ubuntu/"
+                    echo
+                    $maybe_sudo apt-get install apt-transport-https ca-certificates curl gnupg lsb-release
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+                        | $maybe_sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+                        | $maybe_sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                    $maybe_sudo apt-get update
+                    ;;
+
+                *)
+                    echo "No special instructions known for release codename '$lsb_codename'"
+                    echo
+                    ;;
+            esac
+
             install_package docker-ce
 
             if test_prog_installed docker ; then
@@ -321,6 +342,7 @@ echo "Installation target: $( \
 echo "Installation prefix: $PREFIX"
 echo "Prompt mode: $($OPT_YES && echo "Answer yes" || echo "Prompt")"
 echo "Clean mode: $($OPT_CLEAN && echo "Clean" || echo "No clean")"
+echo "LSB release codename: $lsb_codename"
 
 echo
 echo "Run "'`'"$0 --help"'`'" for more options."

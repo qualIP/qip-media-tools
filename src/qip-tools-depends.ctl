@@ -35,7 +35,7 @@ Depends:
     libtesseract-dev,
     lockfile-progs,
     ccextractor,
-    udisks2,
+    icoutils,
     libdvdcss2,
     libavcodec-dev,
     libavdevice-dev,
@@ -52,7 +52,6 @@ Recommends:
     sox,
     gddrescue,
     safecopy,
-    icoutils,
     mp4v2-utils,
     python3-bs4,
 # NOTE: mp4v2-utils: https://www.deb-multimedia.org
