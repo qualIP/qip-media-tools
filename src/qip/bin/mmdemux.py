@@ -3699,6 +3699,22 @@ def action_mux(inputfile, in_tags,
                     app.log.warning('Not muxing %s stream #%s...', stream.codec_type, stream.pprint_index)
                     continue
 
+                if len(streams) == 1 \
+                        and stream.codec_type is CodecType.subtitle \
+                        and isinstance(inputfile, SubtitleFile):
+                    with perfcontext('Original used for %s stream #%s' % (stream.codec_type, stream.pprint_index,), log=True):
+                        if not app.args.dry_run:
+                            qip.utils.progress_copy2_link(inputfile, outputdir / stream_file_name)
+                    if stream_file_ext == '.sub':
+                        inputfile_idx = inputfile.file_name.with_suffix('.idx')
+                        if inputfile_idx.exists():
+                            with perfcontext('Original .idx used for %s stream #%s' % (stream.codec_type, stream.pprint_index,), log=True):
+                                if not app.args.dry_run:
+                                    qip.utils.progress_copy2_link(
+                                        inputfile_idx,
+                                        outputdir / Path(stream_file_name).with_suffix(inputfile_idx.suffix))
+                    continue
+
                 if stream.codec_type is CodecType.subtitle \
                         and stream_file_ext in (
                             '.sub',
