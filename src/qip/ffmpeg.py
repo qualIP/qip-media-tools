@@ -272,7 +272,7 @@ class ConcatScriptFile(TextFile):
                 esc_file = Path(esc_file).resolve()
             esc_file = os.fspath(esc_file).replace(r'\\', '\\\\').replace("'", r"'\''")
             print(f'file \'{esc_file}\'', file=file)
-            if file_entry.duration is not None:
+            if getattr(file_entry, 'duration', None) is not None:
                 print(f'duration {Timestamp(file_entry.duration)}', file=file)
 
     @classmethod
@@ -291,7 +291,7 @@ class ConcatScriptFile(TextFile):
         files_table = [
             (i,
              os.fspath(f),
-             f.duration.canonical_str(precision=3) if f.duration is not None else '',
+             f.duration.canonical_str(precision=3) if getattr(f, 'duration', None) is not None else '',
              )
             for i, f in enumerate(files, start=1)]
         print(
