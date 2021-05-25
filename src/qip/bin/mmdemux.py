@@ -3674,7 +3674,7 @@ def action_mux(inputfile, in_tags,
 
             elif stream.codec_type is CodecType.subtitle:
 
-                if stream['disposition'].get('forced', None):
+                if stream.is_forced:
                     has_forced_subtitle = True
 
             elif stream.codec_type is CodecType.image:
@@ -3969,7 +3969,7 @@ def action_mux(inputfile, in_tags,
                 stream['pixel_aspect_ratio'] = str(pixel_aspect_ratio)  # invariable
 
         if mux_subtitles and stream.codec_type is CodecType.subtitle:
-            stream_forced = stream['disposition'].get('forced', None)
+            stream_forced = stream.is_forced
             # TODO Detect closed_caption
             if isinstance(stream.file, PgsFile):
                 palette = qip.pgs.pgs_segment_to_YCbCr_palette(pgs_segment=None)
@@ -4836,6 +4836,23 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
             stream_characteristics['title'] = stream_title
 
         return stream_characteristics
+
+    def is_external_subtitle(self, webm=False):
+        if self.codec_type is not CodecType.subtitle:
+            return False
+        if True in app.args.external_subtitles:
+            return True
+        if self.file_name.suffix in app.args.external_subtitles:
+            return True
+        if ('forced' if self.is_forced else 'non-forced') in app.args.external_subtitles:
+            return True
+        if webm is True and ext_to_codec(self.file_name.suffix) not in webm_codec_names:
+            return True
+        return False
+
+    @property
+    def is_forced(self):
+        return self['disposition'].get('forced', False)
 
     def optimize(self, /, *, target_codec_names, stats):
         stream_dict = self
@@ -6686,7 +6703,7 @@ def action_demux(inputdir, in_tags):
                     stream_dict['disposition']['default'] = not stream_dict['disposition'].get('default', None)
                     update_mux_conf = True
                 elif ns.action == 'forced':
-                    stream_dict['disposition']['forced'] = not stream_dict['disposition'].get('forced', None)
+                    stream_dict['disposition']['forced'] = not stream_dict.is_forced
                     update_mux_conf = True
                 elif ns.action == 'hearing_impaired':
                     stream_dict['disposition']['hearing_impaired'] = not stream_dict['disposition'].get('hearing_impaired', None)
@@ -6886,7 +6903,7 @@ def action_demux(inputdir, in_tags):
                 mkvmerge_args += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
                 if stream_dict.language is not isolang('und'):
                     mkvmerge_args += ['--language', '0:%s' % (stream_dict.language.code3,)]
-                stream_forced = stream_dict['disposition'].get('forced', None)
+                stream_forced = stream_dict.is_forced
                 mkvmerge_args += ['--forced-track', '%d:%s' % (0, ('true' if stream_forced else 'false'))]
                 if stream_title is not None:
                     mkvmerge_args += ['--track-name', '%d:%s' % (0, stream_title)]
