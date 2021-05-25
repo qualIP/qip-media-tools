@@ -538,7 +538,9 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # size=       0kB time=01:03:00.94 bitrate=   0.0kbits/s speed=2.17e+07x
             # [info] size= 1408536kB time=00:20:52.03 bitrate=9216.0kbits/s speed=48.1x
             # frame= 2235 fps=221 q=-0.0 size= 1131482kB time=00:01:14.60 bitrate=124237.6kbits/s dup=447 drop=0 speed=7.37x
-            (fr'^(?:\[info\]\s)?(?:frame= *(?P<frame>\d+) +fps= *(?P<fps>\S+) +q= *(?P<q>\S+) )?L?size= *(?:N/A|(?P<size>\S+)) +time= *(?P<time>\S+) +bitrate= *(?:N/A|(?P<bitrate>\S+))(?: +dup= *(?P<dup>\S+))?(?: +drop= *(?P<drop>\S+))? +speed= *(?P<speed>\S+) *{re_eol}', self.progress_line),
+            # frame= 7068 fps=0.0 q=-1.0 q=-1.0 size=  126208kB time=00:04:58.13 bitrate=3467.9kbits/s speed= 595x    '
+            # [info] frame=21054 fps=0.0 q=-1.0 size=  244736kB time=00:14:38.08 bitrate=2283.2kbits/s speed=1.75e+03x
+            (fr'^(?:\[info\]\s)?(?:frame= *(?P<frame>\d+) +fps= *(?P<fps>\S+) +q= *(?P<q>\S+)(?: +q= *(?P<q2>\S+))? )?L?size= *(?:N/A|(?P<size>\S+)) +time= *(?P<time>\S+) +bitrate= *(?:N/A|(?P<bitrate>\S+))(?: +dup= *(?P<dup>\S+))?(?: +drop= *(?P<drop>\S+))? +speed= *(?P<speed>\S+) *{re_eol}', self.progress_line),
 
             # [Parsed_cropdetect_1 @ 0x56473433ba40] x1:0 x2:717 y1:0 y2:477 w:718 h:478 x:0 y:0 pts:504504000 t:210.210000 crop=718:478:0:0
             (fr'^\[Parsed_cropdetect\S* @ \S+\]\s(?:\[info\]\s)?x1:(?P<x1>\S+) x2:(?P<x2>\S+) y1:(?P<y1>\S+) y2:(?P<y2>\S+) w:(?P<w>\S+) h:(?P<h>\S+) x:(?P<x>\S+) y:(?P<y>\S+) pts:(?P<pts>\S+) t:(?P<time>\S+) crop=(?P<crop>\S+) *{re_eol}', self.parsed_cropdetect_line),
@@ -557,7 +559,14 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [info]     Stream #0:0: Video: h264 (High), 1 reference frame, yuv420p(progressive, left), 1920x1080 (1920x1088) [SAR 1:1 DAR 16:9], 24.08 fps, 23.98 tbr, 1200k tbn, 47.95 tbc
             # [info]     Stream #0:0: Video: vc1 (Advanced), 1 reference frame (WVC1 / 0x31435657), yuv420p(bt709, progressive, left), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 23.98 tbn, 47.95 tbc
             # [info]     Stream #0:0: Video: ffv1, 1 reference frame (FFV1 / 0x31564646), yuv420p(left), 720x480, SAR 8:9 DAR 4:3, 23.98 fps, 23.98 tbr, 1k tbn, 1k tbc (default)'
-            (fr'^(?:\[info\]\s)? *Stream #(?P<stream_no>\S+): (?P<stream_type>Video): (?P<format1>[^,]+)(?:, (?P<num_ref_frames>\d+) reference frame(?: \([^)]+\))?)?, (?P<format2>[^(,]+(?:\([^)]+\))?), (?P<width>\d+)x(?P<height>\d+)[, ][^\r\n]*{re_eol}', self.start_stream_info_section),
+            (fr'^(?:\[info\]\s)? *Stream #(?P<stream_no>\S+)(?:\((?P<language>\w{3})\))?: (?P<stream_type>Video): (?P<format1>[^,]+)(?:, (?P<num_ref_frames>\d+) reference frame(?: \([^)]+\))?)?, (?P<format2>[^(,]+(?:\([^)]+\))?), (?P<width>\d+)x(?P<height>\d+)[, ][^\r\n]*{re_eol}', self.start_stream_info_section),
+            # [info]     Stream #0:1(eng): Audio: opus ([255][255][255][255] / 0xFFFFFFFF), 48000 Hz, 5.1, fltp, delay 312 (default)
+            # [info]     Stream #0:2(fra): Audio: opus ([255][255][255][255] / 0xFFFFFFFF), 48000 Hz, 5.1, fltp, delay 312
+            (fr'^(?:\[info\]\s)? *Stream #(?P<stream_no>\S+)(?:\((?P<language>\w{3})\))?: (?P<stream_type>Audio): (?P<format1>[^,]+)(?: \(\[\d+\]\[\d+\]\[\d+\]\[\d+\] / 0x[0-9A-Fa-f]+\))?, (?P<sample_rate>\d+) Hz, (?P<channel_layout>\S+), (?P<sample_fmt>(?:[us]\d+|flt|dbl)p?), delay (?P<delay>\d+)(?: \((?P<disposition>default)\))?[^\r\n]*{re_eol}', self.start_stream_info_section),
+            # [info]     Stream #0:3(eng): Subtitle: hdmv_pgs_subtitle ([255][255][255][255] / 0xFFFFFFFF), 1920x1080
+            # [info]     Stream #0:4(fra): Subtitle: hdmv_pgs_subtitle ([255][255][255][255] / 0xFFFFFFFF), 1920x1080
+            # [info]     Stream #0:5(fra): Subtitle: webvtt (forced)
+            (fr'^(?:\[info\]\s)? *Stream #(?P<stream_no>\S+)(?:\((?P<language>\w{3})\))?: (?P<stream_type>Subtitle): (?P<format1>[^,]+)(?: \(\[\d+\]\[\d+\]\[\d+\]\[\d+\] / 0x[0-9A-Fa-f]+\))?(?:, (?P<width>\d+)x(?P<height>\d+))?(?: \((?P<disposition>forced)\))?[^\r\n]*{re_eol}', self.start_stream_info_section),
 
             (fr'^(?:\[warning\]\s)?Overriding aspect ratio with stream copy may produce invalid files{re_eol}', self.generic_debug_line),
             (fr'^(?:\[warning\]\s)?Output file is empty, nothing was encoded \(check -ss / -t / -frames parameters if used\){re_eol}', functools.partial(self.generic_error, level=logging.WARNING, error_tag='output-file-empty-nothing-encoded')),
@@ -581,9 +590,17 @@ class _FfmpegSpawnMixin(_SpawnMixin):
 
             # [stream_segment,ssegment @ 0x55d20668d080] [warning] Non-monotonous DTS in output stream 0:0; previous: 75717, current: 75717; changing to 75718. This may result in incorrect timestamps in the output file.
             # [ipod @ 0x564125e0a940] Non-monotonous DTS in output stream 0:0; previous: 1554006132, current: 1554005644; changing to 1554006133. This may result in incorrect timestamps in the output file.
+            # [ipod @ 0x55b1ace8a280] [warning] Non-monotonous DTS in output stream 0:0; previous: 1628578383, current: 1628577279; changing to 1628578384. This may result in incorrect timestamps in the output file.
             (fr'^(?:\[\S+ @ \w+\]\s)?(?:\[warning\]\s)? *Non-monotonous DTS in output stream (?P<stream>\S+); previous: (?P<previous_dts>\d+), current: (?P<current_dts>\d+); changing to (?P<changing_dts>\d+)\. This may result in incorrect timestamps in the output file\.{re_eol}', self.generic_debug_line),
             # [stream_segment,ssegment @ 0x55842aa56b40] [verbose] segment:'Labyrinth4K/Labyrinth (1986)/track-00-video-chap02.h265' starts with packet stream:0 pts:6000 pts_time:250.25 frame:6000
             (fr'^(?:\[\S+ @ \w+\]\s)?(?:\[verbose\]\s)? *segment:\'(?P<segment_file>.+)\' starts with packet stream:(?P<stream>\S+) pts:(?P<pts>\S+) pts_time:(?P<pts_time>\S+) frame:(?P<frame>\S+){re_eol}', self.start_segment_file),
+
+            # [NULL @ 0x555ff5d3b1c0] sample/frame number mismatch in adjacent frames
+            # TODO Re-open https://trac.ffmpeg.org/ticket/5937 ?
+            (fr'^(?:\[\S+ @ \w+\]\s)?sample/frame number mismatch in adjacent frames{re_eol}', self.generic_debug_line),
+
+            # [ac3 @ 0x563251c008c0] Estimating duration from bitrate, this may be inaccurate
+            (fr'^(?:\[\S+ @ \w+\]\s)?Estimating duration from bitrate, this may be inaccurate{re_eol}', self.generic_debug_line),
 
             (fr'^\[info\]\s[^\r\n]*?{re_eol}', self.unknown_info_line),
             (fr'^\[verbose\]\s[^\r\n]*?{re_eol}', self.unknown_verbose_line),
