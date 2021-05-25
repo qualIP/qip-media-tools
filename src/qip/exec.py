@@ -914,10 +914,10 @@ class Executable(metaclass=abc.ABCMeta):
 
     def _popen(self, *args, popen_func=None, dry_run=False,
                cwd=None,
-               stdin=None, stdout=None, stderr=None,
+               stdin=None, stdout=None, stderr=None, errors=None,
                text=None, encoding=None, bufsize=-1,
                **kwargs):
-        text_mode, encoding, errors = self.get_text_mode_info(text=text, encoding=encoding)
+        text_mode, encoding, errors = self.get_text_mode_info(text=text, encoding=encoding, errors=errors)
         """p1 = myexe1.popen([...], stdout=subprocess.PIPE)
            p2 = myexe2.popen([...], stdin=p1.stdout, stdout=myfile.fp)
         """

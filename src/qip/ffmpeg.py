@@ -80,6 +80,8 @@ Timestamp.MAX = Timestamp('99:59:59.99999999')
 class MetadataFile(TextFile):
     # [ffmpeg-1]: https://ffmpeg.org/ffmpeg-formats.html#Metadata-1
 
+    open_encoding = 'utf-8'
+
     version = 1
     section = None
 
