@@ -3484,6 +3484,9 @@ def mux_dict_from_file(inputfile, outputdir):
                 if original_source_description:
                     stream['original_source_description'] = ', '.join(original_source_description)
 
+                if stream.language is isolang('und') \
+                        and inputfile.tags.language is not None:
+                    stream['language'] = str(inputfile.tags.language)
                 mux_dict['streams'].append(stream)
 
     else:
