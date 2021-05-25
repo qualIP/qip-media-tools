@@ -4795,7 +4795,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
         return None
 
-    def identifying_characteristics(self, mkvmerge=False):
+    def identifying_characteristics(self, webm=False):
         stream_characteristics = collections.OrderedDict()
         stream_characteristics['type'] = self.codec_type
         stream_characteristics['language'] = self.language
@@ -4824,38 +4824,32 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
             if disposition:
                 stream_characteristics['disposition'] = '+'.join(disposition)
 
-        if not mkvmerge:
-            # TODO remove mkvmerge distinction!
+        if self.codec_type is CodecType.audio:
+            if self['disposition'].get('comment', None):
+                if stream_title is None:
+                    stream_title = 'Commentary'
+            elif self['disposition'].get('karaoke', None):
+                if stream_title is None:
+                    stream_title = 'Karaoke'
+            elif self['disposition'].get('dub', None):
+                if stream_title is None:
+                    stream_title = 'Dub'
+            elif self['disposition'].get('clean_effects', None):
+                if stream_title is None:
+                    stream_title = 'Clean Effects'
+            elif self['disposition'].get('original', None):
+                if stream_title is None:
+                    stream_title = 'Original'
+            elif app.args.audio_track_titles:
+                if stream_title is None:
+                    stream_title = self.language.name
 
-            if self.codec_type is CodecType.audio:
-                if self['disposition'].get('comment', None):
-                    if stream_title is None:
-                        stream_title = 'Commentary'
-                elif self['disposition'].get('karaoke', None):
-                    if stream_title is None:
-                        stream_title = 'Karaoke'
-                elif self['disposition'].get('dub', None):
-                    if stream_title is None:
-                        stream_title = 'Dub'
-                elif self['disposition'].get('clean_effects', None):
-                    if stream_title is None:
-                        stream_title = 'Clean Effects'
-                elif self['disposition'].get('original', None):
-                    if stream_title is None:
-                        stream_title = 'Original'
-                elif app.args.audio_track_titles:
-                    if stream_title is None:
-                        stream_title = self.language.name
-
-            if self.codec_type is CodecType.subtitle:
-                if app.args.external_subtitles and my_splitext(self['file_name'])[1] != '.vtt':
-                    stream_characteristics += ('external',)
-                    try:
-                        stream_characteristics += (
-                            ('suffix', self['external_stream_file_name_suffix']),
-                        )
-                    except KeyError:
-                        pass
+        if self.is_external_subtitle(webm=webm):
+            stream_characteristics['external'] = True
+            try:
+                stream_characteristics['suffix'] = self['external_stream_file_name_suffix']
+            except KeyError:
+                pass
 
         if stream_title is not None:
             stream_characteristics['title'] = stream_title
@@ -6060,256 +6054,282 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                 elif stream_dict.codec_type is CodecType.subtitle:
 
-                    ok_exts = (
-                            '.vtt',
-                            )
+                    ok_exts = ( '.vtt',)
 
-                    if stream_file_ext in ('.vtt',):
+                    if stream_file_ext in ok_exts:
                         app.log.verbose('Stream #%s %s (%s) [%s] OK', stream_dict.pprint_index, stream_file_ext, stream_dict.get('subtitle_count', '?'), stream_dict.language)
                         break
 
-                    if False and stream_file_ext in ('.sup',):
-                        new_stream_file_ext = '.sub'
-                        new_stream['file_name'] = stream_file_base + new_stream_file_ext
-                        app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
+                    if stream_file_ext in text_subtitle_exts:
+                        # Text
 
-                        if False:
+                        # NOTE:
+                        #  WebVTT format exported by SubtitleEdit is same as ffmpeg .srt->.vtt except ffmpeg's timestamps have more 0-padding
+                        if stream_file_ext in ('.srt', '.ass'):
+                            new_stream_file_ext = '.vtt'
+                            new_stream['file_name'] = stream_file_base + new_stream_file_ext
+                            app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
+
                             with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                                 ffmpeg_args = default_ffmpeg_args + [
                                 ] + ffmpeg.input_args(stream_dict.file) + [
-                                    '-scodec', 'dvdsub',
-                                    '-map', '0',
-                                    ]
-                                ffmpeg_args += [
-                                    '-f', 'mpeg', new_stream.path,
+                                    '-f', ext_to_container(new_stream.path),
+                                    new_stream.path,
                                     ]
                                 ffmpeg(*ffmpeg_args,
                                        # TODO progress_bar_max=stream_dict.estimated_duration,
                                        # TODO progress_bar_title=,
-                                       slurm=app.args.slurm,
+                                       #slurm=app.args.slurm,
                                        dry_run=app.args.dry_run,
                                        y=app.args.yes)
-                        else:
-                            with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream.file_name), log=True):
-                                # https://www.videohelp.com/software/BDSup2Sub
-                                # https://github.com/mjuhasz/BDSup2Sub/wiki/Command-line-Interface
-                                cmd = [
-                                    'bdsup2sub',
-                                    # TODO --forced-only
-                                    '--language', stream_dict.language.code2,
-                                    '--output', new_stream.path,
-                                    stream_dict.path,
-                                    ]
-                                out = do_spawn_cmd(cmd)
 
-                        done_optimize_iter(new_stream=new_stream)
-                        # continue
-
-                    if stream_file_ext in ('.sup', '.sub',):
-                        if app.args.external_subtitles is True \
-                                or (app.args.external_subtitles == 'non-forced' and not stream_dict['disposition'].get('forced', None)):
-                            app.log.verbose('Stream #%s %s (%s) [%s] -> EXTERNAL', stream_dict.pprint_index, stream_file_ext, stream_dict.get('subtitle_count', '?'), stream_dict.language)
-                            return
-
-                        new_stream_file_ext = '.srt'
-                        new_stream['file_name'] = stream_file_base + new_stream_file_ext
-                        if app.args.batch:
-                            app.log.warning('BATCH MODE SKIP: Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
-                            do_chain = False
-                            global_stats.num_batch_skips += 1
-                            stats.this_num_batch_skips += 1
-                            return
-                        app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
-
-                        if False:
-                            subrip_matrix = app.args.subrip_matrix
-                            if subrip_matrix is Auto:
-                                subrip_matrix_dir = Path.home() / '.cache/SubRip/Matrices'
-                                if not app.args.dry_run:
-                                    os.makedirs(subrip_matrix_dir, exist_ok=True)
-
-                                subrip_matrix = 'dry_run_matrix.sum' if app.args.dry_run else None
-                                # ~/tools/installs/SubRip/CLI.txt
-                                cmd = [
-                                    'SubRip', '/FINDMATRIX',
-                                    '--use-idx-file-offsets',
-                                    '--',
-                                    stream_dict.path,
-                                    subrip_matrix_dir,
-                                    ]
-                                try:
-                                    with perfcontext('SubRip /FINDMATRIX', log=True):
-                                        out = do_spawn_cmd(cmd)
-                                except subprocess.CalledProcessError:
-                                    raise  # Seen errors before
-                                else:
-                                    if not app.args.dry_run:
-                                        m = re.search(r'^([A-Z]:\\.*\.sum)\r*$', out, re.MULTILINE)
-                                        if m:
-                                            subrip_matrix = m.group(1)
-                                            cmd = [
-                                                'winepath', '-u', subrip_matrix,
-                                            ]
-                                            subrip_matrix = do_exec_cmd(cmd)
-                                            subrip_matrix = byte_decode(subrip_matrix)
-                                            subrip_matrix = subrip_matrix.strip()
-                                        m = re.search(r'^FindMatrix: no \'good\' matrix files found\.', out, re.MULTILINE)
-                                        if m:
-                                            pass  # Ok
-                                        else:
-                                            raise ValueError(out)
-                                if not subrip_matrix:
-                                    for i in range(1000):
-                                        subrip_matrix = subrip_matrix_dir / '%03d.sum' % (i,)
-                                        if not subrip_matrix.exists():
-                                            break
-                                    else:
-                                        raise ValueError('Can\'t determine a new matrix name under %s' % (subrip_matrix_dir,))
-
-                            with perfcontext('SubRip /AUTOTEXT', log=True):
-                                # ~/tools/installs/SubRip/CLI.txt
-                                cmd = [
-                                    'SubRip', '/AUTOTEXT',
-                                    '--subtitle-language', stream_dict.language.code3,
-                                    '--',
-                                    stream_dict.path,
-                                    new_stream.path,
-                                    subrip_matrix,
-                                    ]
-                                do_spawn_cmd(cmd)
-
-                        else:
-                            while True:
-                                from qip.subtitleedit import SubtitleEdit
-                                subtitleedit_args = []
-                                if False:
-                                    subtitleedit_args += [
-                                        '/convert',
-                                        stream_dict.path,
-                                        'subrip',  # format
-                                    ]
-                                else:
-                                    subtitleedit_args += [
-                                        stream_dict.path,
-                                    ]
-                                    if True:
-                                        app.log.warning('Invoking %s: Please run OCR and save as SubRip (.srt) format: %s',
-                                                        SubtitleEdit.name,
-                                                        new_stream.path)
-                                with perfcontext('Convert %s -> %s w/ SubtitleEdit' % (stream_file_ext, new_stream.file_name), log=True):
-                                    SubtitleEdit(*subtitleedit_args,
-                                                 language=stream_dict.language,
-                                                 seed_file_name=new_stream.path,
-                                                 dry_run=app.args.dry_run,
-                                                 )
-                                if not new_stream.path.is_file():
-                                    try:
-                                        raise OSError(errno.ENOENT, f'No such file: {new_stream.path}')
-                                    except OSError as e:
-                                        if not app.args.interactive:
-                                            raise
-
-                                        do_retry = False
-
-                                        with app.need_user_attention():
-                                            from prompt_toolkit.formatted_text import FormattedText
-                                            from prompt_toolkit.completion import WordCompleter
-                                            completer = None
-
-                                            def setup_parser(in_err):
-                                                nonlocal completer
-                                                parser = argparse.NoExitArgumentParser(
-                                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                                    description=str(in_err),
-                                                    add_help=False, usage=argparse.SUPPRESS,
-                                                    )
-                                                subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
-                                                subparser = subparsers.add_parser('help', aliases=('h', '?'), help='print this help')
-                                                subparser = subparsers.add_parser('skip', aliases=('s',), help='skip this stream -- done')
-                                                subparser = subparsers.add_parser('continue', aliases=('c', 'retry'), help='continue/retry processing this stream -- done')
-                                                subparser = subparsers.add_parser('quit', aliases=('q',), help='quit')
-                                                completer = WordCompleter([name for name in subparsers._name_parser_map.keys() if len(name) > 1])
-                                                return parser
-                                            parser = setup_parser(e)
-
-                                            print('')
-                                            app.print(
-                                                FormattedText([
-                                                    ('class:error', str(e)),
-                                                ]))
-                                            while True:
-                                                print(new_stream)
-                                                while True:
-                                                    c = app.prompt(completer=completer, prompt_mode='error')
-                                                    if c.strip():
-                                                        break
-                                                try:
-                                                    ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
-                                                except (argparse.ArgumentError, ValueError) as e:
-                                                    app.log.error(e)
-                                                    print('')
-                                                    continue
-                                                except argparse.ParserExitException as e:
-                                                    if e.status:
-                                                        app.log.error(e)
-                                                        print('')
-                                                    continue
-                                                if ns.action == 'help':
-                                                    print(parser.format_help())
-                                                elif ns.action == 'skip':
-                                                    do_skip = ns.comment or True
-                                                    break
-                                                elif ns.action == 'continue':
-                                                    do_retry = True
-                                                    break
-                                                elif ns.action == 'quit':
-                                                    raise
-                                                else:
-                                                    app.log.error('Invalid input: %r' % (ns.action,))
-
-                                        if do_retry:
-                                            continue
-                                break
-
-                        if not do_skip:
-                            cmd = [
-                                Path(__file__).with_name('fix-subtitles'),
-                                new_stream.path,
-                                ]
-                            out = dbg_exec_cmd(cmd, encoding='utf-8')
-                            if not app.args.dry_run:
-                                out = clean_cmd_output(out)
-                                new_stream.file.write(out)
-                                if False and app.args.interactive:
-                                    edfile(new_stream.path)
-
-                        done_optimize_iter(new_stream=new_stream, do_skip=do_skip)
-                        if do_skip:
-                            return
-                        else:
+                            done_optimize_iter(new_stream=new_stream)
                             continue
 
-                    # NOTE:
-                    #  WebVTT format exported by SubtitleEdit is same as ffmpeg .srt->.vtt except ffmpeg's timestamps have more 0-padding
-                    if stream_file_ext in ('.srt', '.ass'):
-                        new_stream_file_ext = '.vtt'
-                        new_stream['file_name'] = stream_file_base + new_stream_file_ext
-                        app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
+                    elif stream_file_ext in graphic_subtitle_exts:
 
-                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
-                            ffmpeg_args = default_ffmpeg_args + [
-                            ] + ffmpeg.input_args(stream_dict.file) + [
-                                '-f', 'webvtt', new_stream.path,
-                                ]
-                            ffmpeg(*ffmpeg_args,
-                                   # TODO progress_bar_max=stream_dict.estimated_duration,
-                                   # TODO progress_bar_title=,
-                                   #slurm=app.args.slurm,
-                                   dry_run=app.args.dry_run,
-                                   y=app.args.yes)
+                        if {
+                                True,
+                                stream_file_ext,
+                                ('forced' if stream_dict.is_forced else 'non-forced'),
+                        } & app.args.ocr_subtitles:
+                            # OCR: Graphical -> Text
 
-                        done_optimize_iter(new_stream=new_stream)
-                        continue
+                            new_stream_file_ext = '.srt'
+                            new_stream['file_name'] = stream_file_base + new_stream_file_ext
+                            if app.args.batch:
+                                app.log.warning('BATCH MODE SKIP: Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
+                                do_chain = False
+                                global_stats.num_batch_skips += 1
+                                stats.this_num_batch_skips += 1
+                                return
+                            app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
+
+                            if False:
+                                subrip_matrix = app.args.subrip_matrix
+                                if subrip_matrix is Auto:
+                                    subrip_matrix_dir = Path.home() / '.cache/SubRip/Matrices'
+                                    if not app.args.dry_run:
+                                        os.makedirs(subrip_matrix_dir, exist_ok=True)
+
+                                    subrip_matrix = 'dry_run_matrix.sum' if app.args.dry_run else None
+                                    # ~/tools/installs/SubRip/CLI.txt
+                                    cmd = [
+                                        'SubRip', '/FINDMATRIX',
+                                        '--use-idx-file-offsets',
+                                        '--',
+                                        stream_dict.path,
+                                        subrip_matrix_dir,
+                                        ]
+                                    try:
+                                        with perfcontext('SubRip /FINDMATRIX', log=True):
+                                            out = do_spawn_cmd(cmd)
+                                    except subprocess.CalledProcessError:
+                                        raise  # Seen errors before
+                                    else:
+                                        if not app.args.dry_run:
+                                            m = re.search(r'^([A-Z]:\\.*\.sum)\r*$', out, re.MULTILINE)
+                                            if m:
+                                                subrip_matrix = m.group(1)
+                                                cmd = [
+                                                    'winepath', '-u', subrip_matrix,
+                                                ]
+                                                subrip_matrix = do_exec_cmd(cmd)
+                                                subrip_matrix = byte_decode(subrip_matrix)
+                                                subrip_matrix = subrip_matrix.strip()
+                                            m = re.search(r'^FindMatrix: no \'good\' matrix files found\.', out, re.MULTILINE)
+                                            if m:
+                                                pass  # Ok
+                                            else:
+                                                raise ValueError(out)
+                                    if not subrip_matrix:
+                                        for i in range(1000):
+                                            subrip_matrix = subrip_matrix_dir / '%03d.sum' % (i,)
+                                            if not subrip_matrix.exists():
+                                                break
+                                        else:
+                                            raise ValueError('Can\'t determine a new matrix name under %s' % (subrip_matrix_dir,))
+
+                                with perfcontext('SubRip /AUTOTEXT', log=True):
+                                    # ~/tools/installs/SubRip/CLI.txt
+                                    cmd = [
+                                        'SubRip', '/AUTOTEXT',
+                                        '--subtitle-language', stream_dict.language.code3,
+                                        '--',
+                                        stream_dict.path,
+                                        new_stream.path,
+                                        subrip_matrix,
+                                        ]
+                                    do_spawn_cmd(cmd)
+
+                            else:
+                                while True:
+                                    from qip.subtitleedit import SubtitleEdit
+                                    subtitleedit_args = []
+                                    if False:
+                                        subtitleedit_args += [
+                                            '/convert',
+                                            stream_dict.path,
+                                            'subrip',  # format
+                                        ]
+                                    else:
+                                        subtitleedit_args += [
+                                            stream_dict.path,
+                                        ]
+                                        if True:
+                                            app.log.warning('Invoking %s: Please run OCR and save as SubRip (.srt) format: %s',
+                                                            SubtitleEdit.name,
+                                                            new_stream.path)
+                                    with perfcontext('Convert %s -> %s w/ SubtitleEdit' % (stream_file_ext, new_stream.file_name), log=True):
+                                        SubtitleEdit(*subtitleedit_args,
+                                                     language=stream_dict.language,
+                                                     seed_file_name=new_stream.path,
+                                                     dry_run=app.args.dry_run,
+                                                     )
+                                    if not new_stream.path.is_file():
+                                        try:
+                                            raise OSError(errno.ENOENT, f'No such file: {new_stream.path}')
+                                        except OSError as e:
+                                            if not app.args.interactive:
+                                                raise
+
+                                            do_retry = False
+
+                                            with app.need_user_attention():
+                                                from prompt_toolkit.formatted_text import FormattedText
+                                                from prompt_toolkit.completion import WordCompleter
+                                                completer = None
+
+                                                def setup_parser(in_err):
+                                                    nonlocal completer
+                                                    parser = argparse.ArgumentParser(
+                                                        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                                        description=str(in_err),
+                                                        add_help=False, usage=argparse.SUPPRESS,
+                                                        exit_on_error=False,
+                                                        )
+                                                    subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
+                                                    subparser = subparsers.add_parser('help', aliases=('h', '?'), help='print this help')
+                                                    subparser = subparsers.add_parser('skip', aliases=('s',), help='skip this stream -- done')
+                                                    subparser.add_argument('comment', nargs='?')
+                                                    subparser = subparsers.add_parser('continue', aliases=('c', 'retry'), help='continue/retry processing this stream -- done')
+                                                    subparser = subparsers.add_parser('quit', aliases=('q',), help='quit')
+                                                    completer = WordCompleter([name for name in subparsers._name_parser_map.keys() if len(name) > 1])
+                                                    return parser
+                                                parser = setup_parser(e)
+
+                                                print('')
+                                                app.print(
+                                                    FormattedText([
+                                                        ('class:error', str(e)),
+                                                    ]))
+                                                while True:
+                                                    print(new_stream)
+                                                    while True:
+                                                        c = app.prompt(completer=completer, prompt_mode='error')
+                                                        if c.strip():
+                                                            break
+                                                    try:
+                                                        ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
+                                                    except (argparse.ArgumentError, ValueError) as e:
+                                                        if isinstance(e, argparse.ParserExitException) and e.status == 0:
+                                                            # help?
+                                                            pass
+                                                        else:
+                                                            app.log.error(e)
+                                                            print('')
+                                                        continue
+                                                    if ns.action == 'help':
+                                                        print(parser.format_help())
+                                                    elif ns.action == 'skip':
+                                                        do_skip = ns.comment or True
+                                                        break
+                                                    elif ns.action == 'continue':
+                                                        do_retry = True
+                                                        break
+                                                    elif ns.action == 'quit':
+                                                        raise
+                                                    else:
+                                                        app.log.error('Invalid input: %r' % (ns.action,))
+
+                                            if do_retry:
+                                                continue
+                                    break
+
+                            if not do_skip:
+                                cmd = [
+                                    Path(__file__).with_name('fix-subtitles'),
+                                    new_stream.path,
+                                    ]
+                                out = dbg_exec_cmd(cmd, encoding='utf-8')
+                                if not app.args.dry_run:
+                                    out = clean_cmd_output(out)
+                                    new_stream.file.write(out)
+                                    if False and app.args.interactive:
+                                        edfile(new_stream.path)
+
+                            done_optimize_iter(new_stream=new_stream, do_skip=do_skip)
+                            if do_skip:
+                                return
+                            else:
+                                continue
+
+                        else:
+                            # Graphical
+
+                            if stream_dict.is_external_subtitle():
+                                # External
+                                app.log.verbose('Stream #%s %s (%s) [%s] -> EXTERNAL', stream_dict.pprint_index, stream_file_ext, stream_dict.get('subtitle_count', '?'), stream_dict.language)
+                                return
+
+                            for new_stream_file_ext in (
+                                '.sup',
+                                '.sub',
+                            ):
+                                if new_stream_file_ext in app.args.external_subtitles:
+                                    break
+                            else:
+                                new_stream_file_ext = None
+
+                            if new_stream_file_ext:
+                                new_stream['file_name'] = stream_file_base + new_stream_file_ext
+                                app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
+
+                                if False:
+                                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
+                                        ffmpeg_args = default_ffmpeg_args + [
+                                        ] + ffmpeg.input_args(stream_dict.file) + [
+                                            '-scodec', 'dvdsub',
+                                            '-map', '0',
+                                            ]
+                                        ffmpeg_args += [
+                                            '-f', 'mpeg', new_stream.path,
+                                            ]
+                                        ffmpeg(*ffmpeg_args,
+                                               # TODO progress_bar_max=stream_dict.estimated_duration,
+                                               # TODO progress_bar_title=,
+                                               slurm=app.args.slurm,
+                                               dry_run=app.args.dry_run,
+                                               y=app.args.yes)
+                                else:
+                                    with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream.file_name), log=True):
+                                        # https://www.videohelp.com/software/BDSup2Sub
+                                        # https://github.com/mjuhasz/BDSup2Sub/wiki/Command-line-Interface
+                                        cmd = [
+                                            'bdsup2sub',
+                                            # TODO --forced-only
+                                            '--language', stream_dict.language.code2,
+                                            '--output', new_stream.path,
+                                            stream_dict.path,
+                                            ]
+                                        out = do_spawn_cmd(cmd)
+
+                                done_optimize_iter(new_stream=new_stream)
+                                # continue
+
+                            # Graphical subtitle not OCR'd and not converted. Expect to embed as-is.
+                            app.log.verbose('Stream #%s %s (%s) [%s] -> EMBED?', stream_dict.pprint_index, stream_file_ext, stream_dict.get('subtitle_count', '?'), stream_dict.language)
+                            return
 
                     raise ValueError('Unsupported subtitle extension %r' % (stream_file_ext,))
 
@@ -6355,18 +6375,7 @@ def action_optimize(inputdir, in_tags):
     app.log.info('Optimizing %s...', inputdir)
     do_chain = app.args.chain
 
-    target_codec_names = set((
-        'vp8', 'vp9',
-        'opus',
-        'webvtt',
-    ))
-
-    if not app.args.webm:
-        target_codec_names |= set((
-            'png', 'mjpeg',
-        ))
-    if app.args.ffv1:
-        target_codec_names.add('ffv1')
+    target_codec_names = get_target_codec_names(webm=app.args.webm)
 
     mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
 
@@ -6521,13 +6530,13 @@ def action_extract_music(inputdir, in_tags):
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_dict.codec_type,))
 
-def external_subtitle_file_name(output_file, stream_file_name, stream_dict):
+def external_subtitle_file_name(output_file_name_stem, stream_file_name, stream_dict):
     try:
         return stream_dict['external_stream_file_name']
     except KeyError:
         pass
     # stream_file_name = stream_dict['file_name']
-    external_stream_file_name = my_splitext(output_file)[0]
+    external_stream_file_name = os.fspath(output_file_name_stem)
     external_stream_file_name += '.' + stream_dict.language.code3
     if stream_dict['disposition'].get('hearing_impaired', None):
         external_stream_file_name += '.hearing_impaired'
@@ -6571,21 +6580,53 @@ def action_demux(inputdir, in_tags):
     use_mkvmerge = False
     webm = app.args.webm
 
-    output_file = MkvFile(
-        inputdir.with_suffix(inputdir.suffix + '.demux' + ('.webm' if webm else '.mkv'))
-        if app.args.output_file is Auto else app.args.output_file)
+    if app.args.output_file is Auto:
+        output_file_name_stem = inputdir.with_suffix(inputdir.suffix + '.demux')
+    else:
+        output_file_name_stem = app.args.output_file.stem
+        if webm is Auto:
+            webm = app.args.output_file.suffix == '.webm'
+
     attachment_counts = collections.defaultdict(lambda: 0)
 
     external_stream_file_names_seen = set()
     estimated_duration = None
+
+    for stream_dict in mux_dict['streams']:
+        stream_dict['_temp'] = types.SimpleNamespace(
+            stream_characteristics=None,
+            post_process_subtitle=False,
+            out_index=-1,
+            unknown_language_warned=False,
+            external=False,
+        )
+
+    sorted_streams = sorted_stream_dicts(mux_dict['streams'])
+    enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
 
     def handle_StreamCharacteristicsSeenError(e):
         nonlocal mux_dict
         nonlocal stream_dict
         nonlocal sorted_streams
         nonlocal enumerated_sorted_streams
+        return interactive_edit_stream_dict(
+            mux_dict=mux_dict,
+            stream_dict=stream_dict,
+            sorted_streams=sorted_streams,
+            enumerated_sorted_streams=enumerated_sorted_streams,
+            e=e)
+
+    def interactive_edit_stream_dict(mux_dict,
+                                     stream_dict=None,
+                                     sorted_streams=None,
+                                     enumerated_sorted_streams=None,
+                                     e=None):
         in_err = e
         update_mux_conf = False
+        if sorted_streams is None:
+            sorted_streams = sorted_stream_dicts(mux_dict['streams'])
+        if stream_dict is None:
+            stream_dict = sorted_streams[0]
 
         if not app.args.interactive:
             raise
@@ -6714,8 +6755,9 @@ def action_demux(inputdir, in_tags):
                                 update_mux_conf = False
                             sorted_stream_index = i
                             stream_dict = d
-                            enumerated_sorted_streams.send(sorted_stream_index)
-                            if stream_dict.get('skip', False):
+                            if enumerated_sorted_streams is not None:
+                                enumerated_sorted_streams.send(sorted_stream_index)
+                            if stream_dict.skip:
                                 app.log.warning('Stream #%s skip cancelled', stream_dict.pprint_index)
                                 del stream_dict['skip']
                                 update_mux_conf = True
@@ -6807,88 +6849,153 @@ def action_demux(inputdir, in_tags):
         if update_mux_conf:
             mux_dict.save()
 
+    for sorted_stream_index, stream_dict in enumerated_sorted_streams:
+        if stream_dict.skip:
+            continue
+
+        if stream_dict.codec_type not in (CodecType.video, CodecType.image, CodecType.data) \
+            and stream_dict.language is isolang('und'):
+            if not stream_dict['_temp'].unknown_language_warned:
+                stream_dict['_temp'].unknown_language_warned = True
+                try:
+                    raise StreamLanguageUnknownError(stream=stream_dict)
+                except StreamLanguageUnknownError as e:
+                    handle_StreamCharacteristicsSeenError(e)
+                    continue
+
+        stream_characteristics = stream_dict.identifying_characteristics(webm=webm)
+
+        if stream_characteristics in (
+                stream_dict2['_temp'].stream_characteristics
+                for stream_dict2 in sorted_streams[:sorted_stream_index]
+                if not stream_dict2.skip):
+            try:
+                raise StreamCharacteristicsSeenError(stream=stream_dict,
+                                                     stream_characteristics=stream_characteristics)
+            except StreamCharacteristicsSeenError as e:
+                handle_StreamCharacteristicsSeenError(e)
+                continue
+        stream_dict['_temp'].stream_characteristics = stream_characteristics
+
+    if webm is Auto:
+        for stream_dict in mux_dict['streams']:
+            if stream_dict.skip:
+                continue
+            if stream_dict.is_external_subtitle(webm=False):
+                # External
+                continue
+            if stream_dict.codec_type is CodecType.image:
+                # attachments not supported
+                # External -- This should not block creating a webm.
+                continue
+
+            def filter_ghost_ffprobe_stream_dicts(ffprobe_stream_dicts):
+                has_subtitle = False
+                for ffprobe_stream_dict in ffprobe_stream_dicts:
+                    codec_type = ffprobe_stream_dict['codec_type']
+                    if codec_type == 'subtitle':
+                        has_subtitle = True
+                    if has_subtitle and codec_type == 'video' and 'codec_name' not in ffprobe_stream_dict:
+                        # Video with unknown codec_name. See `test/The Terminal (2004).SD.fra.sub`.
+                        app.log.warning('Skipping ffprobe ghost stream (subtitle followed by %s with no codec name)', codec_type)
+                        continue
+                    yield ffprobe_stream_dict
+
+            ffprobe_stream_json, = filter_ghost_ffprobe_stream_dicts(stream_dict.file.ffprobe_dict['streams'])
+            stream_codec_name = ffprobe_stream_json['codec_name']
+            if stream_codec_name not in webm_codec_names:
+                app.log.warning('Stream #%s: Disabling webm format due to %s codec', stream_dict.pprint_index, stream_codec_name)
+                webm = False
+                break
+
+    # Write external files
+    sorted_streams = sorted_stream_dicts(mux_dict['streams'])
+    enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
+    for sorted_stream_index, stream_dict in enumerated_sorted_streams:
+        if stream_dict.skip:
+            continue
+
+        if stream_dict.is_external_subtitle(webm=webm):
+            # and my_splitext(stream_dict['file_name'])[1] != '.vtt':
+            stream_file_names = [stream_dict.file_name]
+            if stream_dict.file_name.suffix == '.sub':
+                stream_file_names.append(stream_dict.file_name.with_suffix('.idx'))
+            try:
+                for stream_file_name in stream_file_names:
+                    external_stream_file_name = external_subtitle_file_name(
+                        output_file_name_stem=output_file_name_stem,
+                        stream_file_name=stream_file_name,
+                        stream_dict=stream_dict)
+                    app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
+                    if external_stream_file_name in external_stream_file_names_seen:
+                        raise StreamExternalSubtitleAlreadyCreated(stream=stream_dict,
+                                                                   external_stream_file_name=external_stream_file_name)
+                    external_stream_file_names_seen.add(external_stream_file_name)
+                    if not app.args.dry_run:
+                        shutil.copyfile(inputdir / stream_file_name,
+                                        external_stream_file_name,
+                                        follow_symlinks=True)
+            except StreamExternalSubtitleAlreadyCreated as e:
+                raise  # TODO
+                handle_StreamCharacteristicsSeenError(e)
+                continue
+            continue
+
+        if webm and stream_dict.codec_type is CodecType.image:
+            # attachments not supported
+            # External
+            attachment_type = stream_dict['attachment_type']
+            attachment_counts[attachment_type] += 1
+            external_stream_file_name = output_file_name_stem.parent / '{type}{num_suffix}{ext}'.format(
+                type=attachment_type,
+                num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
+                ext=my_splitext(stream_dict.file_name)[1],
+            )
+            app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_dict.file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
+            if not app.args.dry_run:
+                shutil.copyfile(stream_dict.path,
+                                external_stream_file_name,
+                                follow_symlinks=True)
+            continue
+
+    output_file = MkvFile(
+        os.fspath(output_file_name_stem) + ('.webm' if webm else '.mkv')
+        if app.args.output_file is Auto else app.args.output_file)
+
     if use_mkvmerge:
+        video_angle = 0
+
         mkvmerge_args = []
         if webm:
             mkvmerge_args += [
                 '--webm',
             ]
         mkvmerge_args += [
-            '-o', output_file,
             '--no-track-tags',
             '--no-global-tags',
             ]
         # --title handled with write_tags
-        video_angle = 0
-
-        for stream_dict in mux_dict['streams']:
-            stream_dict['_temp'] = types.SimpleNamespace(
-                stream_characteristics=None,
-                post_process_subtitle=False,
-                out_index=-1,
-                unknown_language_warned=False,
-            )
 
         sorted_streams = sorted_stream_dicts(mux_dict['streams'])
         enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
         for sorted_stream_index, stream_dict in enumerated_sorted_streams:
             if stream_dict.skip:
                 continue
-
-            if stream_dict.codec_type not in (CodecType.video, CodecType.image, CodecType.data) \
-                and stream_dict.language is isolang('und'):
-                if not stream_dict['_temp'].unknown_language_warned:
-                    stream_dict['_temp'].unknown_language_warned = True
-                    try:
-                        raise StreamLanguageUnknownError(stream=stream_dict)
-                    except StreamLanguageUnknownError as e:
-                        handle_StreamCharacteristicsSeenError(e)
-                        continue
-
-            stream_characteristics = stream_dict.identifying_characteristics(mkvmerge=True)
-
-            if stream_characteristics in (
-                    stream_dict2['_temp'].stream_characteristics
-                    for stream_dict2 in sorted_streams[:sorted_stream_index]
-                    if not stream_dict2.skip):
-                try:
-                    raise StreamCharacteristicsSeenError(stream=stream_dict,
-                                                         stream_characteristics=stream_characteristics)
-                except StreamCharacteristicsSeenError as e:
-                    handle_StreamCharacteristicsSeenError(e)
-                    continue
-            stream_dict['_temp'].stream_characteristics = stream_characteristics
+            if stream_dict.is_external_subtitle(webm=webm):
+                # External
+                continue
+            if webm and stream_dict.codec_type is CodecType.image:
+                # attachments not supported
+                # External
+                continue
+            stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
+            stream_title = stream_dict.get('title', None)
 
             if stream_dict.codec_type is CodecType.subtitle:
-                if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
-                    stream_file_names = [stream_dict.file_name]
-                    if my_splitext(stream_dict['file_name'])[1] == '.sub':
-                        stream_file_names.append(my_splitext(stream_dict.file_name)[0] + '.idx')
-                    for stream_file_name in stream_file_names:
-                        external_stream_file_name = external_subtitle_file_name(
-                            output_file=output_file,
-                            stream_file_name=stream_file_name,
-                            stream_dict=stream_dict)
-                        app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
-                        if external_stream_file_name in external_stream_file_names_seen:
-                            raise ValueError(f'Stream {stream_dict.pprint_index} External subtitle file already created: {external_stream_file_name}')
-                        external_stream_file_names_seen.add(external_stream_file_name)
-                        if not app.args.dry_run:
-                            shutil.copyfile(inputdir / stream_file_name,
-                                            external_stream_file_name,
-                                            follow_symlinks=True)
-                    continue
                 if webm:
                     # mkvmerge does not yet support subtitles of webm files due to standard not being finalized
                     stream_dict['_temp'].post_process_subtitle = True
                     continue
-
-        sorted_streams = sorted_stream_dicts(mux_dict['streams'])
-        enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
-        for sorted_stream_index, stream_dict in enumerated_sorted_streams:
-            if stream_dict.skip:
-                continue
-            stream_title = stream_dict.get('title', None)
 
             stream_dict['_temp'].out_index = max(
                 (stream_index2['_temp'].out_index
@@ -6897,28 +7004,12 @@ def action_demux(inputdir, in_tags):
 
             if stream_dict.codec_type is CodecType.image:
                 attachment_type = stream_dict['attachment_type']
-                if webm:
-                    # attachments not supported
-                    stream_dict['_temp'].out_index = -1
-                    attachment_counts[attachment_type] += 1
-                    external_stream_file_name = output_file.file_name.parent / '{type}{num_suffix}{ext}'.format(
-                        type=attachment_type,
-                        num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
-                        ext=my_splitext(stream_dict.file_name)[1],
-                    )
-                    app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_dict.file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
-                    if not app.args.dry_run:
-                        shutil.copyfile(stream_dict.path,
-                                        external_stream_file_name,
-                                        follow_symlinks=True)
-                    continue
-                else:
-                    mkvmerge_args += [
-                        # '--attachment-description', <desc>
-                        '--attachment-mime-type', byte_decode(dbg_exec_cmd(['file', '--brief', '--mime-type', stream_dict.path])).strip(),
-                        '--attachment-name', '%s%s' % (attachment_type, my_splitext(stream_dict.file_name)[1]),
-                        '--attach-file', stream_dict.path,
-                        ]
+                mkvmerge_args += [
+                    # '--attachment-description', <desc>
+                    '--attachment-mime-type', stream_dict.mime_type,
+                    '--attachment-name', '%s%s' % (attachment_type, my_splitext(stream_dict.file_name)[1]),
+                    '--attach-file', stream_dict.path,
+                    ]
             else:
                 if stream_dict.codec_type is CodecType.video:
                     display_aspect_ratio = Ratio(stream_dict.get('display_aspect_ratio', None))
@@ -6941,77 +7032,15 @@ def action_demux(inputdir, in_tags):
             mkvmerge_args += ['--chapters', inputdir / mux_dict['chapters']['file_name']]
         else:
             mkvmerge_args += ['--no-chapters']
+        mkvmerge_args += [
+            '-o', output_file,
+        ]
         with perfcontext('Merge w/ mkvmerge', log=True):
             mkvmerge(*mkvmerge_args)
 
-        if any(stream_dict['_temp'].post_process_subtitle
-               for stream_dict in sorted_streams):
-            num_inputs = 0
-            noss_file_name = os.fspath(output_file.file_name) + '.noss%s' % ('.webm' if webm else '.mkv',)
-            if not app.args.dry_run:
-                shutil.move(output_file.file_name, noss_file_name)
-            num_inputs += 1
-            ffmpeg_args = default_ffmpeg_args + [
-            ] + ffmpeg.input_args(noss_file_name) + [
-                ]
-            option_args = [
-                '-map', str(num_inputs-1),
-                ]
-            for stream_dict in sorted_streams:
-                if not stream_dict['_temp'].post_process_subtitle:
-                    continue
-                if stream_dict.skip:
-                    continue
-
-                stream_dict['_temp'].out_index = max(
-                    (stream_index2['_temp'].out_index
-                     for stream_index2 in sorted_streams),
-                    default=-1) + 1
-
-                num_inputs += 1
-                ffmpeg_args += ffmpeg.input_args(stream_dict.file)
-                option_args += [
-                    '-map', str(num_inputs-1),
-                    ]
-                if stream_dict.language is not isolang('und'):
-                    #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_dict.language.code3)]
-                    option_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'language=%s' % (stream_dict.language.code3,),]
-
-                disposition_flags = []
-                if stream_dict['disposition'].get('default', None):
-                    disposition_flags.append('default')
-                if stream_dict['disposition'].get('forced', None):
-                    disposition_flags.append('forced')
-                ffmpeg_output_args += [
-                    '-disposition:%d' % (stream_dict['_temp'].out_index,),
-                    '+'.join(disposition_flags or ['0']),
-                    ]
-
-                # TODO --tags
-            option_args += [
-                '-codec', 'copy',
-                ]
-            ffmpeg_args += option_args
-            # Note on -f webm:
-            #  By forcing webm format, encoding of target display width/height will
-            #  be used instead of of aspect ratio with DisplayUnits=3 in mkv
-            #  headers (see mkvinfo). Some players, like VLC, exhibit playback
-            #  issues with images stretched vertically, a lot.
-            ffmpeg_args += [
-                '-f', ext_to_container(my_splitext(output_file)[1]),
-                output_file,
-                ]
-            with perfcontext('Merge subtitles w/ ffmpeg', log=True):
-                ffmpeg(*ffmpeg_args,
-                       progress_bar_max=estimated_duration,
-                       progress_bar_title=f'Merge subtitles w/ ffmpeg',
-                       dry_run=app.args.dry_run,
-                       y=app.args.yes)
-            raise NotImplementedError('BUG: unable to synchronize timestamps before and after adding subtitles, ffmpeg shifts video by 7ms (due to pre-skip of opus streams) and of vtts')
-            if not app.args.dry_run:
-                os.unlink(noss_file_name)
-
     else:  # !use_mkvmerge
+        video_angle = 0
+
         ffmpeg_input_args = []
         ffmpeg_output_args = []
         ffmpeg_output_args += [
@@ -7026,105 +7055,29 @@ def action_demux(inputdir, in_tags):
         has_opus_streams = any(
                 my_splitext(stream_dict['file_name'])[1] in ('.opus', '.opus.ogg')
                 for stream_dict in mux_dict['streams'])
-        video_angle = 0
-
-        for stream_dict in mux_dict['streams']:
-            stream_dict['_temp'] = types.SimpleNamespace(
-                stream_characteristics=None,
-                out_index=-1,
-                external=False,
-                unknown_language_warned=False,
-            )
 
         sorted_streams = sorted_stream_dicts(mux_dict['streams'])
         enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
         for sorted_stream_index, stream_dict in enumerated_sorted_streams:
             if stream_dict.skip:
                 continue
-            stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
-
-            if stream_dict.codec_type not in (CodecType.video, CodecType.image, CodecType.data) \
-                and stream_dict.language is isolang('und'):
-                if not stream_dict['_temp'].unknown_language_warned:
-                    stream_dict['_temp'].unknown_language_warned = True
-                    try:
-                        raise StreamLanguageUnknownError(stream=stream_dict)
-                    except StreamLanguageUnknownError as e:
-                        handle_StreamCharacteristicsSeenError(e)
-                        continue
-
-            if stream_dict.codec_type is CodecType.subtitle:
-                if app.args.external_subtitles and my_splitext(stream_dict['file_name'])[1] != '.vtt':
-                    stream_file_names = [stream_dict.file_name]
-                    if my_splitext(stream_dict['file_name'])[1] == '.sub':
-                        stream_file_names.append(my_splitext(stream_dict.file_name)[0] + '.idx')
-                    try:
-                        for stream_file_name in stream_file_names:
-                            external_stream_file_name = external_subtitle_file_name(
-                                output_file=output_file,
-                                stream_file_name=stream_file_name,
-                                stream_dict=stream_dict)
-                            app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
-                            if external_stream_file_name in external_stream_file_names_seen:
-                                raise StreamExternalSubtitleAlreadyCreated(stream=stream_dict,
-                                                                           external_stream_file_name=external_stream_file_name)
-                            external_stream_file_names_seen.add(external_stream_file_name)
-                            if not app.args.dry_run:
-                                shutil.copyfile(inputdir / stream_file_name,
-                                                external_stream_file_name,
-                                                follow_symlinks=True)
-                    except StreamExternalSubtitleAlreadyCreated as e:
-                        handle_StreamCharacteristicsSeenError(e)
-                        continue
-                    stream_dict['_temp'].external = True
-                    continue
-
-            stream_characteristics = stream_dict.identifying_characteristics(mkvmerge=False)
-
-            if stream_characteristics in (
-                    stream_dict2['_temp'].stream_characteristics
-                    for stream_dict2 in sorted_streams[:sorted_stream_index]
-                    if not stream_dict2.skip):
-                try:
-                    raise StreamCharacteristicsSeenError(stream=stream_dict,
-                                                         stream_characteristics=stream_characteristics)
-                except StreamCharacteristicsSeenError as e:
-                    handle_StreamCharacteristicsSeenError(e)
-                    continue
-            stream_dict['_temp'].stream_characteristics = stream_characteristics
-
-        sorted_streams = sorted_stream_dicts(mux_dict['streams'])
-        enumerated_sorted_streams = qip.utils.advenumerate(sorted_streams)
-        for sorted_stream_index, stream_dict in enumerated_sorted_streams:
-            if stream_dict.skip:
+            if stream_dict.is_external_subtitle(webm=webm):
+                # External
                 continue
-            if stream_dict['_temp'].external:
-                # Already processed
+            if webm and stream_dict.codec_type is CodecType.image:
+                # attachments not supported
+                # External
                 continue
             stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
             stream_title = stream_dict.get('title', None)
-
-            if stream_dict.codec_type is CodecType.image:
-                attachment_type = stream_dict['attachment_type']
-                if webm:
-                    # attachments not supported
-                    attachment_counts[attachment_type] += 1
-                    external_stream_file_name = output_file.file_name.parent / '{type}{num_suffix}{ext}'.format(
-                        type=attachment_type,
-                        num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
-                        ext=my_splitext(stream_dict.file_name)[1],
-                    )
-                    app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_dict.file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
-                    if not app.args.dry_run:
-                        shutil.copyfile(stream_dict.path,
-                                        external_stream_file_name,
-                                        follow_symlinks=True)
-                    continue
 
             stream_dict['_temp'].out_index = max(
                 (stream_index2['_temp'].out_index
                  for stream_index2 in sorted_streams[:sorted_stream_index]),
                 default=-1) + 1
+
+            if stream_dict.codec_type is CodecType.image:
+                attachment_type = stream_dict['attachment_type']
 
             if stream_dict.codec_type is CodecType.subtitle:
                 if my_splitext(stream_dict['file_name'])[1] == '.sub':
@@ -7133,7 +7086,7 @@ def action_demux(inputdir, in_tags):
                     mkvmerge_args = [
                         '-o', inputdir / tmp_stream_file_name,
                         stream_dict.path,
-                        '%s.idx' % (my_splitext(stream_dict.file_name)[0],),
+                        stream_dict.path.with_suffix('.idx'),
                     ]
                     mkvmerge(*mkvmerge_args)
                     stream_dict = copy.copy(stream_dict)
@@ -7145,6 +7098,10 @@ def action_demux(inputdir, in_tags):
                 if k in (
                         'closed_caption',
                 ):
+                    continue
+                if k in (
+                        'attached_pic',
+                ) and stream_dict.codec_type is CodecType.image:
                     continue
                 if v:
                     disposition_flags.append(k)
@@ -7358,11 +7315,16 @@ def action_demux(inputdir, in_tags):
                 if '3d-plane' in stream_dict:
                     ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), '3d-plane=%d' % (stream_dict['3d-plane'],)]
 
-            ffmpeg_input_args += ffmpeg.input_args(stream_dict.file)
-            # Include all streams from this input file:
-            ffmpeg_output_args += [
-                '-map', stream_dict['_temp'].out_index,
-                ]
+            ffmpeg_input_args += ffmpeg.input_args(
+                stream_dict.file,
+                attach=stream_dict.codec_type is CodecType.image)
+            if stream_dict.codec_type is CodecType.image:
+                pass  # -attach ... -map 6: [fatal] Invalid input file index: 6.
+            else:
+                # Include all streams from this input file:
+                ffmpeg_output_args += [
+                    '-map', stream_dict['_temp'].out_index,
+                    ]
         ffmpeg_output_args += [
             '-f', ext_to_container(output_file),
             output_file,
@@ -7381,6 +7343,73 @@ def action_demux(inputdir, in_tags):
                 for chap in chapters_xml_file.chapters:
                     chap.offset(time_offset)
             output_file.write_chapters(chapters_xml_file.chapters, log=True)
+
+    if any(stream_dict['_temp'].post_process_subtitle
+           for stream_dict in sorted_streams):
+        num_inputs = 0
+        noss_file_name = os.fspath(output_file.file_name) + '.noss%s' % ('.webm' if webm else '.mkv',)
+        if not app.args.dry_run:
+            shutil.move(output_file.file_name, noss_file_name)
+        num_inputs += 1
+        ffmpeg_args = default_ffmpeg_args + [
+        ] + ffmpeg.input_args(noss_file_name) + [
+            ]
+        option_args = [
+            '-map', str(num_inputs-1),
+            ]
+        for stream_dict in sorted_streams:
+            if not stream_dict['_temp'].post_process_subtitle:
+                continue
+            if stream_dict.skip:
+                continue
+
+            stream_dict['_temp'].out_index = max(
+                (stream_index2['_temp'].out_index
+                 for stream_index2 in sorted_streams),
+                default=-1) + 1
+
+            num_inputs += 1
+            ffmpeg_args += ffmpeg.input_args(stream_dict.file)
+            option_args += [
+                '-map', str(num_inputs-1),
+                ]
+            if stream_dict.language is not isolang('und'):
+                #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_dict.language.code3)]
+                option_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'language=%s' % (stream_dict.language.code3,),]
+
+            disposition_flags = []
+            if stream_dict['disposition'].get('default', None):
+                disposition_flags.append('default')
+            if stream_dict.is_forced:
+                disposition_flags.append('forced')
+            ffmpeg_output_args += [
+                '-disposition:%d' % (stream_dict['_temp'].out_index,),
+                '+'.join(disposition_flags or ['0']),
+                ]
+
+            # TODO --tags
+        option_args += [
+            '-codec', 'copy',
+            ]
+        ffmpeg_args += option_args
+        # Note on -f webm:
+        #  By forcing webm format, encoding of target display width/height will
+        #  be used instead of of aspect ratio with DisplayUnits=3 in mkv
+        #  headers (see mkvinfo). Some players, like VLC, exhibit playback
+        #  issues with images stretched vertically, a lot.
+        ffmpeg_args += [
+            '-f', ext_to_container(output_file),
+            output_file,
+            ]
+        with perfcontext('Merge subtitles w/ ffmpeg', log=True):
+            ffmpeg(*ffmpeg_args,
+                   progress_bar_max=estimated_duration,
+                   progress_bar_title=f'Merge subtitles w/ ffmpeg',
+                   dry_run=app.args.dry_run,
+                   y=app.args.yes)
+        raise NotImplementedError('BUG: unable to synchronize timestamps before and after adding subtitles, ffmpeg shifts video by 7ms (due to pre-skip of opus streams) and of vtts')
+        if not app.args.dry_run:
+            os.unlink(noss_file_name)
 
     output_file.write_tags(tags=mux_dict['tags'],
             dry_run=app.args.dry_run,
