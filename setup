@@ -107,7 +107,7 @@ test_package_installed() {
     local v
 
     echo -n "$package package installed? "
-    v=$(dpkg -s "$package" | sed -n -e 's/^Version: //p ; T ; q' 2> /dev/null || true)
+    v=$(dpkg -s "$package" 2> /dev/null | sed -n -e 's/^Version: //p ; T ; q' || true)
     if [[ -n "$v" ]] ; then
         echo "Yes: $v"
     else
@@ -137,7 +137,8 @@ test_python_module_installed() {
     local v=
 
     echo -n "Python module $module installed? "
-    v=$($PYTHON -c "import importlib ; print(importlib.util.find_spec('${module}') is not None)")
+    # v=$($PYTHON -c "import importlib ; print(importlib.util.find_spec('${module}') is not None)" 2> /dev/null)
+    v=$($PYTHON -c "import ${module} ; print(True)" 2> /dev/null)
     if [[ "$v" = "True" ]] ; then
         echo " Yes"
     else
@@ -161,11 +162,24 @@ need_docker() {
             echo
             echo "See https://www.docker.com"
             echo
+
+            if true ; then
+                echo "Following Docker install instructions for debian:"
+                echo "    https://docs.docker.com/engine/install/debian/"
+                echo
+                $maybe_sudo apt-get install apt-transport-https ca-certificates curl gnupg lsb-release
+                curl -fsSL https://download.docker.com/linux/debian/gpg \
+                    | $maybe_sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
+                    | $maybe_sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                $maybe_sudo apt-get update
+            fi
             install_package docker-ce
+
             if test_prog_installed docker ; then
                 _has_docker=true
             else
-                echo "docker-ce installed by docker is not found!" >&2
+                echo "docker installed by docker-ce is not found!" >&2
                 exit 1
             fi
         fi
@@ -177,9 +191,14 @@ need_docker() {
                     : #echo "You are part of the docker group."
                 else
                     echo
-                    echo "You are not part of the docker group. You probably need to run"
-                    echo '`'"sudo adduser $USER docker"'`'" to be added to the group then start"
-                    echo "a new login session."
+                    echo "You are not part of the docker group. You probably need to run the"
+                    echo "following command to be added to the group:"
+                    echo
+                    echo "    sudo adduser $USER docker"
+                    echo
+                    echo "Once done, please start a new login session (or reboot) for the change to"
+                    echo "be effective."
+                    echo
                 fi
                 echo "Please fix the issue and run $0 again."
                 exit 1
@@ -276,7 +295,7 @@ install_package() {
     set -- apt-get install $package
     [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
 
-    if ! $ask || ask_yes_no "Install $1 package ($*)?" ; then
+    if ! $ask || ask_yes_no "Install $package package ($*)?" ; then
         (set -x && "$@") || exit 1
     else
         return 1
@@ -351,10 +370,11 @@ if $OPT_INSTALL ; then
             if $OPT_DEVELOP ; then
                 (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py develop --user)
             elif $OPT_USER ; then
-                (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py develop --user)
+                (set -x ; cd "$src_pyav_dir" ; $PIP install . --user)
             else
-                (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py develop --system)
+                (set -x ; cd "$src_pyav_dir" ; $PREFIX_SUDO $PIP install . --system)
             fi
+            test_python_module_installed av
         fi
     fi
 else
@@ -365,7 +385,7 @@ else
         if $OPT_USER ; then
             (set -x ; $PIP uninstall --user "av")
         else
-            (set -x ; $PIP uninstall --system "av")
+            (set -x ; $PREFIX_SUDO $PIP uninstall --system "av")
         fi
         $OPT_CLEAN && (set -x && $MAKE -C "$src_pyav_dir" clean)
     fi
