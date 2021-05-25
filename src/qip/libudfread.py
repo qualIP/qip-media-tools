@@ -28,7 +28,7 @@ class udf_reader(object):
               ),
         fdel=None)
 
-    def __init__(self, /, udf_image_path, open: bool=True):
+    def __init__(self, udf_image_path, open: bool=True):
         self.udf_image_path = udf_image_path
         super().__init__()
         if open:
@@ -70,7 +70,7 @@ class udf_reader(object):
         return f'{self.__class__.__name__}()'
 
     @property
-    def closed(self, /):
+    def closed(self):
         return self.handle is None
 
     def get_volume_id(self):
@@ -182,42 +182,42 @@ class udf_file_io(io.IOBase):
         f = getattr(super(), '__exit__', None)
         return f(*exc) if f else None
 
-    def __iter__(self, /):
+    def __iter__(self):
         raise io.UnsupportedOperation('__iter__')
 
-    def __next__(self, /):
+    def __next__(self):
         raise io.UnsupportedOperation('__next__')
 
-    def __repr__(self, /):
+    def __repr__(self):
         return f'<{self.__class__.__name__} name={self.name!r}>'
 
-    def close(self, /):
+    def close(self):
         if not self.closed:
             try:
                 self.udf.closefile(self.udf_file_handle)
             finally:
                 self.udf_file_handle = None
 
-    def fileno(self, /):
+    def fileno(self):
         raise io.UnsupportedOperation('fileno')
 
-    def flush(self, /):
+    def flush(self):
         pass
 
-    def isatty(self, /):
+    def isatty(self):
         return False
 
-    def readable(self, /):
+    def readable(self):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         return True
 
-    def readline(self, size=-1, /):
+    def readline(self, size=-1):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         raise io.UnsupportedOperation('readline')
 
-    def readlines(self, hint=-1, /):
+    def readlines(self, hint=-1):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         raise io.UnsupportedOperation('readlines')
@@ -227,27 +227,27 @@ class udf_file_io(io.IOBase):
             raise ValueError('I/O operation on closed file')
         return libudfread_swig.udfread_file_seek(self.udf_file_handle, offset, whence)
 
-    def seekable(self, /):
+    def seekable(self):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         return True
 
-    def tell(self, /):
+    def tell(self):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         return libudfread_swig.udfread_file_tell(self.udf_file_handle)
 
-    def truncate(self, /, size=None):
+    def truncate(self, size=None):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         raise io.UnsupportedOperation('truncate')
 
-    def writable(self, /):
+    def writable(self):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         return False
 
-    def writelines(self, lines, /):
+    def writelines(self, lines):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         raise io.UnsupportedOperation('writelines')
@@ -260,7 +260,7 @@ class udf_file_io(io.IOBase):
     def is_text(self):
         return 't' in self.open_mode
 
-    def read(self, size=-1, /):
+    def read(self, size=-1):
         if self.closed:
             raise ValueError('I/O operation on closed file')
         buf = '' if self.is_text else b''
@@ -296,25 +296,25 @@ class UdfDirEntry(object):
         self.dirent = dirent
         super().__init__()
 
-    def __fspath__(self, /):
+    def __fspath__(self):
         return self.path
 
-    def __repr__(self, /):
+    def __repr__(self):
         return f'<{self.__class__.__name__} {os.fspath(self)!r}>'
 
-    def inode(self, /):
+    def inode(self):
         return None
 
-    def is_dir(self, /, *, follow_symlinks=True):
+    def is_dir(self, *, follow_symlinks=True):
         return self.dirent.d_type == libudfread_swig.UDF_DT_DIR
 
-    def is_file(self, /, *, follow_symlinks=True):
+    def is_file(self, *, follow_symlinks=True):
         return self.dirent.d_type == libudfread_swig.UDF_DT_REG
 
-    def is_symlink(self, /, *, follow_symlinks=True):
+    def is_symlink(self, *, follow_symlinks=True):
         return False
 
-    def stat(self, /, *, follow_symlinks=True):
+    def stat(self, *, follow_symlinks=True):
         size = None
         if self.is_file(follow_symlinks=follow_symlinks):
             with self.dir.open_at(self.dirent.d_name) as fp:

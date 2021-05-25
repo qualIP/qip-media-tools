@@ -4358,7 +4358,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
 
     mux_file_lock = None
 
-    def __init__(self, /, mux_file_name, *, in_tags=None, load=True):
+    def __init__(self, mux_file_name, *, in_tags=None, load=True):
         self.mux_file_lock = threading.RLock()
         if mux_file_name is None:
             self.mux_file_name = None
@@ -4389,7 +4389,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
         return skip or False
 
 
-    def load(self, /, *, in_tags=None):
+    def load(self, *, in_tags=None):
         mux_file = JsonFile.new_by_file_name(self.mux_file_name)
         self.data = mux_file.read_json()
 
@@ -4415,7 +4415,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
             if in_tags is not None:
                 mux_tags.update(in_tags)
 
-    def save(self, /, *, mux_file_name=None):
+    def save(self, *, mux_file_name=None):
         mux_file = JsonFile.new_by_file_name(mux_file_name or self.mux_file_name)
 
         with self.mux_file_lock:
@@ -4428,7 +4428,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
             with mux_file.rename_temporarily(replace_ok=True):
                 mux_file.write_json(mux_dict)
 
-    def print_streams_summary(self, /, *, current_stream=None, current_stream_index=None):
+    def print_streams_summary(self, *, current_stream=None, current_stream_index=None):
         table = []
         if self.skip:
             print('NOTE: Globally set as skipped.')
@@ -4504,7 +4504,7 @@ def sorted_stream_dicts(stream_dicts):
 @functools.total_ordering
 class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
-    def __init__(self, /, stream_dict, parent):
+    def __init__(self, stream_dict, parent):
         self.parent = parent
         super().__init__(stream_dict)
 
@@ -4590,7 +4590,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
         except AttributeError:
             return self.data
 
-    def save(self, /):
+    def save(self):
         with self.mux_dict.mux_file_lock:
             try:
                 del self._data_backup
@@ -4873,7 +4873,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
     def is_forced(self):
         return self['disposition'].get('forced', False)
 
-    def optimize(self, /, *, target_codec_names, stats):
+    def optimize(self, *, target_codec_names, stats):
         stream_dict = self
         with self.two_stage_commit_context():
 

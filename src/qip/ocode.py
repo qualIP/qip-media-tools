@@ -37,7 +37,7 @@ class Syntax(collections.namedtuple('Syntax', (
         'stop',
 ))):
 
-    def Formatter(self, /, *args, **kwargs):
+    def Formatter(self, *args, **kwargs):
         return Formatter(syntax=self, *args, **kwargs)
 
 # This syntax table is not used, but is helpful as a debugging aid.
@@ -145,12 +145,12 @@ class Formatter(object):
     lvl = None
     file = None
 
-    def __init__(self, /, syntax, file=None):
+    def __init__(self, syntax, file=None):
         self.syntax = syntax
         self.lvl = 0
         self.file = file
 
-    def printf(self, /, fmt, *args, **kwargs):
+    def printf(self, fmt, *args, **kwargs):
         if fmt is not None:
             try:
                 print(fmt.format(**kwargs) % args,
@@ -162,12 +162,12 @@ class Formatter(object):
                           fmt, args, kwargs, self.file, e)
                 raise
 
-    def INDENT(self, /):
+    def INDENT(self):
         if self.syntax.indent is not None:
             self.printf(self.syntax.indent * self.lvl)
 
     @contextlib.contextmanager
-    def generic_indent_context(self, /,
+    def generic_indent_context(self,
                                format_open, format_close, *,
                                lvl_inc=1,
                                **kwargs):
@@ -182,7 +182,7 @@ class Formatter(object):
         self.printf(format_close, **kwargs)
 
     #@contextlib.contextmanager
-    def START(self, /, name):
+    def START(self, name):
         self.INDENT()
         self.printf(self.syntax.head, name=name)
         return self.generic_indent_context(
@@ -191,14 +191,14 @@ class Formatter(object):
             lvl_inc=1 if self.syntax.start else 0,
             name=name)
 
-    def DEF(self, /, name, format, *args):
+    def DEF(self, name, format, *args):
         self.INDENT()
         self.printf(self.syntax.defn, name)
         self.printf(format, *args)
         self.printf(self.syntax.defn_sep)
 
     #@contextlib.contextmanager
-    def HASH(self, /, name):
+    def HASH(self, name):
         if self.lvl:
             format_open = self.syntax.hash_inner
             format_close = self.syntax.return_hash_inner
@@ -213,7 +213,7 @@ class Formatter(object):
             name=name)
 
     #@contextlib.contextmanager
-    def ARRAY(self, /, name):
+    def ARRAY(self, name):
         if self.lvl:
             format_open = self.syntax.array_inner
             format_close = self.syntax.return_array_inner
@@ -225,7 +225,7 @@ class Formatter(object):
             format_close,
             name=name)
 
-    def ADEF(self, /, format, *args):
+    def ADEF(self, format, *args):
         self.INDENT()
         self.printf(format, *args)
         self.printf(self.syntax.adef_sep)

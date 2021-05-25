@@ -946,7 +946,7 @@ class StreamTransform(object):
         for line in self.file:
             yield line
 
-    #def writelines(self, lines, /):
+    #def writelines(self, lines):
     #    if self.closed:
     #        raise ValueError('I/O operation on closed file')
     #    return self.fp.writelines(lines)

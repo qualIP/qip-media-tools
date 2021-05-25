@@ -141,7 +141,7 @@ class Namespace(_argparse.Namespace, _AttributeHolder, metaclass=_NamespaceMeta)
 
 class _ActionsContainer(_argparse._ActionsContainer):
 
-    def __init__(self, /, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # register actions

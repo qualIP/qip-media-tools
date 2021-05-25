@@ -25,7 +25,7 @@ class dvd_reader(object):
               ),
         fdel=None)
 
-    def __init__(self, /, device, open: bool=True):
+    def __init__(self, device, open: bool=True):
         self.device = device
         super().__init__()
         if open:
@@ -67,12 +67,12 @@ class dvd_reader(object):
     def __repr__(self):
         return f'{self.__class__.__name__}({os.fspath(self.device)!r})'
 
-    def open_ifo(self, /, ifo_idx: int):
+    def open_ifo(self, ifo_idx: int):
         ifo = dvd_ifo(dvd=self, ifo_idx=ifo_idx, open=True)
         return ifo
 
     @property
-    def closed(self, /):
+    def closed(self):
         return self.handle is None
 
     def OpenFile(self, title, domain):
@@ -101,7 +101,7 @@ class dvd_ifo(object):
     ifo_idx: int = None
     handle = None  # "ifo_handle *"
 
-    def __init__(self, /, dvd: dvd_reader, ifo_idx: int, open: bool=True):
+    def __init__(self, dvd: dvd_reader, ifo_idx: int, open: bool=True):
         self.dvd = dvd
         self.ifo_idx = ifo_idx
         super().__init__()
@@ -145,7 +145,7 @@ class dvd_ifo(object):
     def __repr__(self):
         return f'{self.__class__.__name__}({self.dvd!r}, {self.ifo_idx!r})'
 
-    def __getattr__(self, /, name):
+    def __getattr__(self, name):
         if not name.startswith('_'):
             handle = self.handle
             if handle is not None:

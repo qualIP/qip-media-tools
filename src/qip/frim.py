@@ -21,7 +21,7 @@ class _FRIMExecutable(Executable):
     kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
 
     @classmethod
-    def kwargs_to_cmdargs(cls, /, **kwargs):
+    def kwargs_to_cmdargs(cls, **kwargs):
         cmdargs = []
         for k, v in kwargs.items():
             if v in (None, False):

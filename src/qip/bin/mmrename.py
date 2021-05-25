@@ -154,7 +154,7 @@ def estimate_stream_duration(inputfile=None, ffprobe_json=None):
 
 class FileRenameSubstitutionsMap(collections.UserDict):
 
-    def __init__(self, /, inputfile):
+    def __init__(self, inputfile):
         self._inputfile = inputfile
         super().__init__()
 

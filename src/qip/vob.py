@@ -36,7 +36,7 @@ class VobFile(MultiFile, BinaryMediaFile):
         else:
             return 'VTS_{title:02d}_{{n}}.VOB'.format(title=title)
 
-    def __init__(self, /, *, file_name=None, dvd_reader=None, vts=None, menu=None):
+    def __init__(self, *, file_name=None, dvd_reader=None, vts=None, menu=None):
         if file_name is None and dvd_reader is not None and vts is not None:
             file_name = '{dvd_reader.device}:/VIDEO_TS/{pat}'.format(
                 dvd_reader=dvd_reader,
@@ -72,7 +72,7 @@ class VobFile(MultiFile, BinaryMediaFile):
         assert encoding is None
         return True
 
-    def open_index(self, /, file_index):
+    def open_index(self, file_index):
         if not self.dvd_reader:
             return super().open_index(file_index=file_index)
         if self.fp and self.file_index == file_index:
