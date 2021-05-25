@@ -4455,11 +4455,12 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
                    else [])
             )
             original_source_description = stream_dict.get('original_source_description', None)
-            try:
-                size = stream_dict.file.getsize()
-            except Exception as e:
-                app.log.debug('Failed to get size from %s: %s', stream_dict, e)
-                size = None
+            size = None
+            if self.mux_file_name:  # else there may not be exported stream files to look at
+                try:
+                    size = stream_dict.file.getsize()
+                except Exception as e:
+                    app.log.debug('Failed to get size from %s: %s', stream_dict, e)
             table.append([stream_index, codec_type, original_source_description, size, extension, language, title, disposition])
         if table:
             print('')
