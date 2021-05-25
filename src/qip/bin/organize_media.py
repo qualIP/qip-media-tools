@@ -31,6 +31,7 @@ from qip.exec import *
 from qip.file import *
 from qip.mm import *
 from qip.mm import MediaFile
+from qip.matroska import MatroskaFile
 from qip.parser import *
 from qip.utils import byte_decode
 import qip.mm
@@ -366,7 +367,7 @@ def organize_music(inputfile, *, suggest_tags, dbtype='music'):
     dst_file_base += format_part_suffix(inputfile, which=all_part_names - {'disk', 'track'})
 
     dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
-    dst_file_base += inputfile.file_name.suffix
+    dst_file_base += get_dst_suffix(inputfile)
 
     return dst_dir / dst_file_base
 
@@ -436,7 +437,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
     dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
-    dst_file_base += inputfile.file_name.suffix
+    dst_file_base += get_dst_suffix(inputfile)
 
     return dst_dir / dst_file_base
 
@@ -485,6 +486,13 @@ def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
         }[contenttype]
     except KeyError:
         raise ValueError(f'contenttype = {contenttype}')
+
+def get_dst_suffix(inputfile):
+    suffix = inputfile.file_name.suffix
+    if app.args.media_library_app == 'plex':
+        if isinstance(inputfile, MatroskaFile) and suffix != '.mkv':
+            suffix = '.mkv'
+    return suffix
 
 def organize_inline_musicvideo(inputfile, *, suggest_tags):
 
@@ -610,7 +618,7 @@ def organize_movie(inputfile, *, suggest_tags, orig_type):
 
     dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
 
-    dst_file_base += inputfile.file_name.suffix
+    dst_file_base += get_dst_suffix(inputfile)
 
     return dst_dir / dst_file_base
 
@@ -771,7 +779,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
     if app.args.media_library_app != 'mmdemux':
         dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
-    dst_file_base += inputfile.file_name.suffix
+    dst_file_base += get_dst_suffix(inputfile)
 
     return dst_dir / dst_file_base
 
