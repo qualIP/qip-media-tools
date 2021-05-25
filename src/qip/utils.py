@@ -279,14 +279,40 @@ def humanbytes(B):
       return '{0:.2f}TB'.format(B/TB)
 
 class Constants(enum.Enum):
-    Auto = 1
-    NotSet = 2
+    # None = 'None'
+    # False = 'False'
+    # True = 'True'
+    Auto = 'Auto'
+    NotSet = 'NotSet'
 
     def __str__(self):
         return self.name
 
     def __repr__(self):
         return self.name
+
+Auto = Constants.Auto
+NotSet = Constants.NotSet
+
+Constants._value2member_map_.update({
+    None: None,
+    'None': None,
+    'none': None,
+    False: False,
+    'False': False,
+    'false': False,
+    True: True,
+    'True': True,
+    'true': True,
+    Auto: Auto,
+    'Auto': Auto,
+    'auto': Auto,
+    NotSet: NotSet,
+    'NotSet': NotSet,
+    'Notset': NotSet,
+    'notset': NotSet,
+    'not-set': NotSet,
+})
 
 
 class KwVarsObject(object):
