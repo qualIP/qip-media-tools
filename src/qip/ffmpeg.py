@@ -1289,6 +1289,16 @@ def str_to_bool(value):
         return True
     raise ValueError(value)
 
+class unit_value(collections.namedtuple(
+        'unit_value',
+        (
+            'val',
+            'unit',
+        ),
+        )):
+    pass
+
+
 class Ffprobe(_Ffmpeg):
 
     name = 'ffprobe'
@@ -1563,6 +1573,249 @@ class Ffprobe(_Ffmpeg):
                     yield frame
                     continue
                 raise ValueError('Unrecognized line %d: %s' % (parser.line_no, line))
+
+    class PrintContext(object):
+
+        file = None
+        display_optional_fields = True
+        section_str = ''
+        section_unique_name = ''
+        nokey = False
+        show_all_entries = True
+        entries_to_show = None
+        show_value_unit = False
+        use_value_prefix = False
+        use_byte_value_binary_prefix = False
+        use_value_sexagesimal_format = False
+
+        unit_second_str = "s"
+        unit_hertz_str = "Hz"
+        unit_byte_str = "byte"
+        unit_bit_per_second_str = "bit/s"
+
+        def __init__(self, file=None, pretty=False):
+            self.file = file
+            self.entries_to_show = set()
+            if pretty:
+                self.show_value_unit = True
+                self.use_value_prefix = True
+                self.use_byte_value_binary_prefix = True
+                self.use_value_sexagesimal_format = True
+
+        def get_file(self):
+            file = self.file
+            if file is None:
+                file = sys.stdout
+            return file
+
+        def print_fmt(self, k, f, *args):
+            return self.writer_print_string(k, f % args)
+
+        def print_int(self, k, v):
+            return self.writer_print_integer(k, v)
+
+        def print_q(self, k, v, s):
+            return self.writer_print_rational(k, v, s)
+
+        def print_str(self, k, v):
+            return self.writer_print_string(k, v)
+
+        def print_str_opt(self, k, v):
+            return self.writer_print_string(k, v, optional=True)
+
+        def print_str_validate(self, k, v):
+            return self.writer_print_string(k, v, validate=True)
+
+        def print_time(self, k, v, tb):
+            return self.writer_print_time(k, v, tb, is_duration=False)
+
+        def print_ts(self, k, v):
+            return self.writer_print_ts(k, v, is_duration=False)
+
+        def print_duration_time(self, k, v, tb):
+            return self.writer_print_time(k, v, tb, is_duration=True)
+
+        def print_duration_ts(self, k, v):
+            return self.writer_print_ts(k, v, is_duration=True)
+
+        def print_val(self, k, v, u):
+            uv = unit_value(v, u)
+            return self.writer_print_string(k, self.value_string(uv))
+
+        def print_color_range(self, color_range):
+            if color_range is None:
+                self.print_str_opt("color_range", "unknown")
+            else:
+                self.print_str("color_range", color_range)
+
+        def print_color_space(self, color_space):
+            if color_space is None:
+                self.print_str_opt("color_space", "unknown")
+            else:
+                self.print_str("color_space", color_space)
+
+        def print_primaries(self, color_primaries):
+            if color_primaries is None:
+                self.print_str_opt("color_primaries", "unknown")
+            else:
+                self.print_str("color_primaries", color_primaries)
+
+        def print_color_trc(self, color_trc):
+            if color_trc is None:
+                self.print_str_opt("color_transfer", "unknown")
+            else:
+                self.print_str("color_transfer", color_trc)
+
+        def print_chroma_location(self, chroma_location):
+            if chroma_location is None:
+                self.print_str_opt("chroma_location", "unknown")
+            else:
+                self.print_str("chroma_location", chroma_location)
+
+        def value_string(self, uv):
+            show_float = 0
+
+            if uv.unit == self.unit_second_str:
+                vald = uv.val
+                show_float = 1
+            else:
+                vald = vali = uv.val
+
+            if uv.unit == self.unit_second_str and self.use_value_sexagesimal_format:
+                secs  = vald
+                mins  = int(secs / 60)
+                secs  = int(secs - mins * 60)
+                hours = int(mins / 60)
+                mins %= 60
+                buf = '%d:%02d:%09.6f' % (hours, mins, secs)
+            else:
+                prefix_string = ""
+
+                if self.use_value_prefix and vald > 1:
+                    if uv.unit == self.unit_byte_str and self.use_byte_value_binary_prefix:
+                        index = int(math.log2(vald)) // 10
+                        index = self.av_clip(index, 0, len(self.si_prefixes) - 1)
+                        vald /= self.si_prefixes[index].bin_val
+                        prefix_string = self.si_prefixes[index].bin_str
+                    else:
+                        index = int(math.log10(vald)) // 3
+                        index = self.av_clip(index, 0, len(self.si_prefixes) - 1)
+                        vald /= self.si_prefixes[index].dec_val
+                        prefix_string = self.si_prefixes[index].dec_str
+                    vali = vald
+
+                if show_float or (self.use_value_prefix and vald != int(vald)):
+                    buf = '%f' % (vald,)
+                else:
+                    buf = '%d' % (vali,)
+                buf += '%s%s%s' % (
+                    ' ' if (prefix_string or self.show_value_unit) else '',
+                    prefix_string,
+                    uv.unit if self.show_value_unit else '')
+
+            return buf
+
+        def writer_print_time(self, key, ts, time_base, *, is_duration):
+            if (not is_duration and ts is None) or (is_duration and ts == 0):
+                self.writer_print_string(key, "N/A", optional=True)
+            else:
+                d = ts * float(time_base)
+                uv = unit_value(d, self.unit_second_str)
+                buf = self.value_string(uv)
+                self.writer_print_string(key, buf)
+
+        def writer_print_ts(self, key, ts, is_duration):
+            if (not is_duration and ts is None) or (is_duration and ts == 0):
+                self.writer_print_string(key, 'N/A', optional=True)
+            else:
+                self.writer_print_integer(key, ts)
+
+        def writer_print_string(self, key, val, *, optional=False, validate=False):
+            ret = 0
+
+            if optional and not self.display_optional_fields:
+                return 0
+
+            if self.show_all_entries or key in entries_to_show:
+                if validate:
+                    ret, key1 = validate_string(key)
+                    assert ret >= 0, f'Invalid key=value string combination {key}={val!r} in section {self.section_unique_name}'
+                    ret, val1 = validate_string(val)
+                    assert ret >= 0, f'Invalid key=value string combination {key}={val!r} in section {self.section_unique_name}'
+                    self._print_string(key1, val1)
+                else:
+                    self._print_string(key, val)
+                # wctx->nb_item[wctx->level]++
+
+            return ret
+
+        def writer_print_integer(self, key, val):
+            if self.show_all_entries or key in self.entries_to_show:
+                self._print_integer(key, val)
+                # wctx->nb_item[wctx->level]++
+
+        def writer_print_rational(self, key, q, sep):
+            buf = "%d%s%d" % (q.numerator, sep, q.denominator)
+            self.writer_print_string(key, buf)
+
+        def _default_print_str(self, key, value):
+            file = self.get_file()
+            if not self.nokey:
+                print('%s%s=' % (self.section_str, key), end='', file=file)
+            print(value, file=file)
+
+        _print_string = _default_print_str
+
+        def _default_print_int(self, key, value):
+            file = self.get_file()
+            if not self.nokey:
+                print('%s%s=' % (self.section_str, key), end='', file=file)
+            print("%d" % (value,), file=file)
+
+        _print_integer = _default_print_int
+
+        @staticmethod
+        def av_clip(a, amin, amax):
+            """
+            Clip a signed integer value into the amin-amax range.
+            @param a value to clip
+            @param amin minimum value of the clip range
+            @param amax maximum value of the clip range
+            @return clipped value
+            """
+            assert amin <= amax, f'Invalid amin({amin}) > amax({amax})'
+            if a < amin:
+                return amin
+            elif a > amax:
+                return amax
+            else:
+                return a
+
+        class SIPrefix(collections.namedtuple(
+                'SIPrefix',
+                (
+                    'bin_val',
+                    'dec_val',
+                    'bin_str',
+                    'dec_str',
+                ),
+        )):
+            pass
+
+        si_prefixes = [
+            SIPrefix(1.0, 1.0, "", ""),
+            SIPrefix(1.024e3, 1e3, "Ki", "K"),
+            SIPrefix(1.048576e6, 1e6, "Mi", "M"),
+            SIPrefix(1.073741824e9, 1e9, "Gi", "G"),
+            SIPrefix(1.099511627776e12, 1e12, "Ti", "T"),
+            SIPrefix(1.125899906842624e15, 1e15, "Pi", "P"),
+        ]
+
+        @classmethod
+        def get_si_prefix_index(cls, v):
+            index = cls.av_clip(v, 0, ord('z') - ord('E') + 1 - 1)
+            print(f'get_si_prefix_index({v}) -> {index}')
+            return index
 
 ffprobe = Ffprobe()
 
