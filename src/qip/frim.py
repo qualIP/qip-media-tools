@@ -12,7 +12,7 @@ import functools
 import logging
 log = logging.getLogger(__name__)
 
-from .exec import Executable, do_spawn_cmd, do_srun_cmd
+from .exec import Executable, do_spawn_cmd
 
 class _FRIMExecutable(Executable):
 

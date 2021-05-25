@@ -906,7 +906,7 @@ class Ffmpeg(_Ffmpeg):
              **kwargs):
         args = list(args)
 
-        if run_func or dry_run:
+        if run_func:
             slurm = False
 
         if slurm:
@@ -919,6 +919,12 @@ class Ffmpeg(_Ffmpeg):
             try:
                 idx = args.index("-f")
             except ValueError:
+                slurm = False
+
+        if slurm:
+            try:
+                from .slurm import do_srun_cmd
+            except ImportError:
                 slurm = False
 
         run_kwargs = {}
@@ -942,10 +948,8 @@ class Ffmpeg(_Ffmpeg):
             # args = <options...> -i pipe:0 <options...>
 
             run_func = do_srun_cmd
-            run_kwargs['chdir'] = '/'
             run_kwargs['stdin_file'] = stdin_file.resolve()
             run_kwargs['stdout_file'] = stdout_file.resolve()
-            run_kwargs['stderr_file'] = '/dev/stderr'
             if slurm_cpus_per_task is None:
                 threads = None
                 try:
@@ -962,7 +966,6 @@ class Ffmpeg(_Ffmpeg):
             if slurm_cpus_per_task is not None:
                 run_kwargs['slurm_cpus_per_task'] = slurm_cpus_per_task
             run_kwargs['slurm_mem'] = '500M'
-            run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', stdout_file.name))
 
         else:
             run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
@@ -1154,9 +1157,6 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
         elif run_func:
             log.debug('Custom run_func provided; Disabling slurm.')
             slurm = False
-        elif dry_run:
-            log.debug('Dry-run; Disabling slurm.')
-            slurm = False
 
         try:
             idx = args.index("-passlogfile")
@@ -1166,15 +1166,19 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
             log.debug('-passlogfile provided; Disabling slurm.')
             slurm = False
 
+        if slurm:
+            try:
+                from .slurm import do_srun_cmd
+            except ImportError:
+                slurm = False
+
         with contextlib.ExitStack() as stack:
 
             run_kwargs = {}
             if slurm:
                 run_func = do_srun_cmd
-                run_kwargs['chdir'] = '/'
                 run_kwargs['stdin_file'] = stdin_file.resolve()
                 run_kwargs['stdout_file'] = stdout_file.resolve()
-                run_kwargs['stderr_file'] = '/dev/stderr'
                 threads = None
                 try:
                     threads = kwargs['threads']
@@ -1190,7 +1194,6 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
                 run_kwargs['slurm_mem'] = '500M'
                 if not dry_run:
                     run_kwargs['slurm_tmp'] = stdin_file.stat().st_size * 1.5
-                run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', stdout_file.name))
             else:
                 run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
                 args = [

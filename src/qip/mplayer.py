@@ -12,7 +12,7 @@ import os
 import re
 log = logging.getLogger(__name__)
 
-from .exec import Executable, do_spawn_cmd, do_srun_cmd
+from .exec import Executable, do_spawn_cmd
 
 class Mplayer(Executable):
 
@@ -27,7 +27,7 @@ class Mplayer(Executable):
     #        **kwargs):
     #    args = list(args)
     #
-    #    if run_func or dry_run:
+    #    if run_func:
     #        slurm = False
     #
     #    if slurm:
@@ -45,6 +45,12 @@ class Mplayer(Executable):
     #        except ValueError:
     #            # cache required to avoid seek errors with stdin
     #            args = ['-cache', 8192] + args
+    #
+    #    if slurm:
+    #        try:
+    #            from .slurm import do_srun_cmd
+    #        except ImportError:
+    #            slurm = False
     #
     #    run_kwargs = {}
     #
@@ -67,14 +73,11 @@ class Mplayer(Executable):
     #        args[idx_out_file] = '-'
     #
     #        run_func = do_srun_cmd
-    #        run_kwargs['chdir'] = '/'
     #        run_kwargs['stdin_file'] = in_file.resolve()
     #        run_kwargs['stdout_file'] = out_file.resolve()
-    #        run_kwargs['stderr_file'] = '/dev/stderr'
     #        if slurm_cpus_per_task is not None:
     #            run_kwargs['slurm_cpus_per_task'] = slurm_cpus_per_task
     #        run_kwargs['slurm_mem'] = '500M'
-    #        run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', out_file.name))
     #
     #    else:
     #        run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)

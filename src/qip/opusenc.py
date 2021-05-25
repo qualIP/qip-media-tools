@@ -44,10 +44,15 @@ class Opusenc(Executable):
                     or '--save-range' in args):
                 slurm = False
 
+        if slurm:
+            try:
+                from .slurm import do_srun_cmd
+            except ImportError:
+                slurm = False
+
         run_kwargs = {}
 
         if slurm:
-
             # out_file is always last
             out_file = Path(args[-1])
             args[-1] = '-'
@@ -57,19 +62,13 @@ class Opusenc(Executable):
             args[-2] = '-'
 
             run_func = do_srun_cmd
-            run_kwargs['chdir'] = '/'
             run_kwargs['stdin_file'] = in_file.resolve()
             run_kwargs['stdout_file'] = out_file.resolve()
-            run_kwargs['stderr_file'] = '/dev/stderr'
             run_kwargs['slurm_cpus_per_task'] = 1
             run_kwargs['slurm_mem'] = '500M'
-            run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', out_file.name))
 
         else:
             run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
-            #if not dry_run:
-            #    run_kwargs['stdin'] = open(os.fspath(in_file), "rb")
-            #    run_kwargs['stdout'] = open(os.fspath(out_file), "w")
 
         if run_kwargs:
             run_func = functools.partial(run_func, **run_kwargs)
