@@ -4146,7 +4146,7 @@ def action_verify(inputfile, in_tags):
                 else:
                     stream_duration = AnyTimestamp(stream_duration)
 
-            stream_start_time = AnyTimestamp(stream_dict['start_time'])
+            stream_start_time = stream_dict.start_time
             stream_total_time = None if stream_duration is None else stream_start_time + stream_duration
             stream_duration_table.append([stream_dict.file, stream_start_time, stream_duration, stream_total_time])
     print('')
@@ -4743,6 +4743,14 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
             return self['field_order']
         except KeyError:
             raise AttributeError
+
+    @property
+    def start_time(self):
+        try:
+            start_time = self['start_time']
+        except KeyError:
+            raise AttributeError
+        return None if start_time is None else AnyTimestamp(start_time)
 
     @contextlib.contextmanager
     def two_stage_commit_context(self):
@@ -5888,7 +5896,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             #'.flac',
                             )
 
-                    stream_start_time = AnyTimestamp(stream_dict.get('start_time', 0))
+                    stream_start_time = stream_dict.start_time or AnyTimestamp(0)
 
                     if stream_file_ext in ok_exts \
                             and not stream_start_time:
@@ -7159,7 +7167,7 @@ def action_demux(inputdir, in_tags):
             if display_aspect_ratio:
                 ffmpeg_output_args += ['-aspect:%d' % (stream_dict['_temp'].out_index,), display_aspect_ratio]
 
-            stream_start_time = AnyTimestamp(stream_dict.get('start_time', None) or 0)
+            stream_start_time = stream_dict.start_time or AnyTimestamp(0)
             if stream_start_time:
                 codec_encoding_delay = get_codec_encoding_delay(stream_dict.file)
                 stream_start_time += codec_encoding_delay
