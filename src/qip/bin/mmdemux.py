@@ -3332,22 +3332,26 @@ def mux_dict_from_file(inputfile, outputdir):
 
                     master_display = ''  # SMPTE 2086 mastering data
                     if stream.codec_type is CodecType.video:
-                        color_primaries = ColorSpaceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
-                        if color_primaries:
-                            master_display += color_primaries.master_display_str()
-                        luminance = LuminanceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
-                        if luminance:
-                            master_display += luminance.master_display_str()
+                        if mediainfo_track_dict is not None:
+                            color_primaries = ColorSpaceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
+                            if color_primaries:
+                                master_display += color_primaries.master_display_str()
+                        if mediainfo_track_dict is not None:
+                            luminance = LuminanceParams.from_mediainfo_track_dict(mediainfo_track_dict=mediainfo_track_dict)
+                            if luminance:
+                                master_display += luminance.master_display_str()
                         if master_display:
                             stream['master_display'] = master_display
-                        try:
-                            stream['max_cll'] = int(mediainfo_track_dict['MaxCLL'])
-                        except KeyError:
-                            pass
-                        try:
-                            stream['max_fall'] = int(mediainfo_track_dict['MaxFALL'])
-                        except KeyError:
-                            pass
+                        if mediainfo_track_dict is not None:
+                            try:
+                                stream['max_cll'] = int(mediainfo_track_dict['MaxCLL'])
+                            except KeyError:
+                                pass
+                        if mediainfo_track_dict is not None:
+                            try:
+                                stream['max_fall'] = int(mediainfo_track_dict['MaxFALL'])
+                            except KeyError:
+                                pass
                         try:
                             stream['color_transfer'] = ffprobe_stream_dict['color_transfer']
                         except KeyError:
@@ -3412,16 +3416,21 @@ def mux_dict_from_file(inputfile, outputdir):
                         original_source_description.append(ffprobe_stream_dict['profile'])
                     except KeyError:
                         pass
-                    try:
-                        original_source_description.append(f'%dbits' % (mediainfo_track_dict['BitDepth'],))
-                    except KeyError:
-                        pass
-                    try:
-                        original_source_description.append(mediainfo_track_dict['HDR_Format'])
-                    except KeyError:
-                        pass
+                    if mediainfo_track_dict is not None:
+                        try:
+                            original_source_description.append(f'%dbits' % (mediainfo_track_dict['BitDepth'],))
+                        except KeyError:
+                            pass
+                    if mediainfo_track_dict is not None:
+                        try:
+                            original_source_description.append(mediainfo_track_dict['HDR_Format'])
+                        except KeyError:
+                            pass
                     original_source_description.append('%sx%s' % (ffprobe_stream_dict['width'], ffprobe_stream_dict['height']))
-                    original_source_description.append(ffprobe_stream_dict['display_aspect_ratio'])
+                    try:
+                        original_source_description.append(ffprobe_stream_dict['display_aspect_ratio'])
+                    except KeyError:
+                        pass
                 elif stream.codec_type is CodecType.audio:
                     try:
                         original_source_description.append(ffprobe_stream_dict['profile'])
