@@ -882,13 +882,15 @@ class Executable(metaclass=abc.ABCMeta):
                        cwd=cwd,
                        dry_run=dry_run,
                        **run_func_kwargs)
+        t1 = time.time()
+
         if isinstance(out, collections.abc.Mapping):
             for k, v in out.items():
                 setattr(d, k, v)
         else:
             d.out = out
-        t1 = time.time()
         d.elapsed_time = t1 - t0
+
         return d
 
     def run(self, *args, **kwargs):
