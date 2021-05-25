@@ -30,7 +30,7 @@ from .exec import Executable
 from .ffmpeg import ffmpeg
 from .file import XmlFile
 from .img import ImageFile, PngFile
-from .mm import MediaTagEnum, BinaryMediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters, parse_time_duration
+from .mm import MediaTagEnum, MediaFile, BinaryMediaFile, SoundFile, MovieFile, taged, AlbumTags, ContentType, Chapters, parse_time_duration
 from .utils import KwVarsObject, byte_decode
 
 
@@ -233,7 +233,7 @@ class MatroskaChaptersFile(XmlFile):
                         e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
                     e.text = str(ffmpeg.Timestamp(0))
                     chapters_xml_io = io.StringIO()
-                    cls.write_xml(chapters_xml, file=chapters_xml_io)
+                    cls.write_xml(self=None, xml=chapters_xml, file=chapters_xml_io)
                     chapters_out = chapters_xml_io.getvalue()
                 break
         return chapters_out
@@ -907,6 +907,15 @@ class MatroskaFile(BinaryMediaFile):
         chapters_added = False
         tags_added = False
         picture_added = False
+        if picture is None:
+            picture = self.tags.picture
+        if picture is not None:
+            if not isinstance(picture, MediaFile):
+                picture = MediaFile.new_by_file_name(picture)
+            if not picture.exists():
+                raise FileNotFoundError(errno.ENOENT,
+                                        os.strerror(errno.ENOENT),
+                                        f'Picture file not found: {picture}')
         with contextlib.ExitStack() as exit_stack:
 
             if show_progress_bar:
@@ -928,7 +937,7 @@ class MatroskaFile(BinaryMediaFile):
 
             if len(inputfiles) > 1:
                 concat_file = ffmpeg.ConcatScriptFile.NamedTemporaryFile()
-                exit_stack.enter(concat_file)
+                exit_stack.enter_context(concat_file)
                 concat_file.files = inputfiles
                 log.info('Writing %s...', concat_file)
                 concat_file.create(absolute=True)

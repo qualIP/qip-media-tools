@@ -31,6 +31,7 @@ from .exec import Executable
 from .file import cache_url, TextFile
 from .img import ImageFile, PngFile
 from .mm import AudiobookFile
+from .mm import MediaFile
 from .mm import BinaryMediaFile
 from .mm import Chapter, Chapters
 from .mm import MovieFile
@@ -137,6 +138,15 @@ class Mpeg4ContainerFile(BinaryMediaFile):
         chapters_added = False
         tags_added = False
         picture_added = False
+        if picture is None:
+            picture = self.tags.picture
+        if picture is not None:
+            if not isinstance(picture, MediaFile):
+                picture = MediaFile.new_by_file_name(picture)
+            if not picture.exists():
+                raise FileNotFoundError(errno.ENOENT,
+                                        os.strerror(errno.ENOENT),
+                                        f'Picture file not found: {picture}')
 
         assert self.fp is None  # Writing using file name
 
@@ -269,7 +279,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             inputfiles_names = [inputfile.file_name for inputfile in inputfiles]
             if len(inputfiles_names) > 1:
                 concat_file = ffmpeg.ConcatScriptFile.NamedTemporaryFile()
-                exit_stack.enter(concat_file)
+                exit_stack.enter_context(concat_file)
                 concat_file.files = inputfiles
                 log.info('Writing %s...', concat_file)
                 concat_file.create(absolute=True)
@@ -387,11 +397,17 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 chapters_added = True
 
             if not tags_added and m4b.tags is not None:
-                log.info('Adding tags...')
                 tags = copy.copy(m4b.tags)
-                tags.picture = None
+                if picture is not None:
+                    tags.picture = picture
+                if tags.picture is not None:
+                    log.info('Adding tags and picture...')
+                else:
+                    log.info('Adding tags...')
                 m4b.write_tags(tags=tags)
                 tags_added = True
+                if tags.picture is not None:
+                    picture_added = True
 
             if not picture_added and picture is not None:
                 log.info('Adding picture...')
