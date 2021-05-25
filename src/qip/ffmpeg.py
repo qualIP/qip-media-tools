@@ -77,6 +77,33 @@ class Timestamp(_BaseTimestamp):
 
 Timestamp.MAX = Timestamp('99:59:59.99999999')
 
+class TimestampInterval(object):
+
+    start = None
+    end = None
+    start_is_offset = False
+    end_is_offset = False
+
+    def __init__(self, start, end, start_is_offset=False, end_is_offset=False):
+        self.start = start
+        self.end = end
+        self.start_is_offset = start_is_offset
+        self.end_is_offset = end_is_offset
+        super().__init__()
+
+    def __str__(self):
+        s = ''
+        if self.start is not None:
+            if self.start_is_offset:
+                s += '+'
+                s += str(self.start)
+        if self.end is not None:
+            s += '%'
+            if self.end_is_offset:
+                s += '+'
+                s += str(self.end)
+        return s
+
 class MetadataFile(TextFile):
     # [ffmpeg-1]: https://ffmpeg.org/ffmpeg-formats.html#Metadata-1
 
@@ -722,6 +749,7 @@ class FfmpegOptions(collections.UserList):
 class _Ffmpeg(Executable):
 
     Timestamp = Timestamp
+    TimestampInterval = TimestampInterval
     ConcatScriptFile = ConcatScriptFile
     MetadataFile = MetadataFile
     Options = FfmpegOptions
