@@ -648,32 +648,6 @@ class TempFile(File):
         return tmpfile
 
 
-@contextmanager
-def write_to_temp_context(file, *, suffix='.tmp', open_mode=None, text=None, open=True):
-    if isinstance(file, (str, os.PathLike)):
-        file = TextFile(file) if text else BinaryFile(file)
-    assert isinstance(file, File)
-    assert not file.fp
-    assert file.file_name
-    assert suffix
-    if open_mode is None:
-        if text is not None:
-            open_mode = 't' if text else 'b'
-        else:
-            open_mode = file.open_mode
-    else:
-        if text is not None:
-            raise TypeError('Both open_mode and text provided')
-    with TempFile(file_name=file.file_name.with_suffix(file.file_name.suffix + suffix), open_mode=open_mode) as tmp_file:
-        if open:
-            file.fp = tmp_file.fp = tmp_file.open('w')
-        try:
-            yield tmp_file
-        finally:
-            file.fp = None
-        tmp_file.close()
-        tmp_file.move(file.file_name)
-        tmp_file.delete = False
 
 
 class ConfigFile(File):
