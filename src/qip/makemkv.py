@@ -471,6 +471,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^Cells (?P<cell_no1>\d+)-(?P<cell_no2>\d+|end) were skipped due to cell commands \(structure protection\?\){re_eol}', True),
             (fr'^Cells (?P<cell_no1>\d+)-(?P<cell_no2>\d+|end) were removed from (?P<from>title start|title end){re_eol}', True),
             (fr'^Title #(?P<title_no>{re_title_no}) \((?P<time>[0-9:]+)\) was skipped due to navigation error{re_eol}', True),
+            (fr'^File \\"(?P<file>.+)\\" was skipped{re_eol}', True),
             (fr'^Jumped to cell (?P<cell_no1>\d+) from cell (?P<cell_no2>\d+) due to cell commands \(structure protection\?\){re_eol}', True),
             (fr'^CellWalk algorithm failed \(structure protection is too tough\?\), trying CellTrim algorithm{re_eol}', self.generic_warning),
             (fr'^CellTrim algorithm failed since title has only (?P<num_chapters>\d+) chapters{re_eol}', self.generic_warning),
