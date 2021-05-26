@@ -230,10 +230,15 @@ class File(object):
             for suffix in cls.get_default_extensions():
                 break
 
+        kwargs = {}
+        if errors is not None:
+            # Python 3.7 compat: tempfile.NamedTemporaryFile does not support `errors` argument
+            kwargs['errors'] = errors
+
         tmp_fp = tempfile.NamedTemporaryFile(
             mode=mode, buffering=buffering, encoding=encoding, newline=newline,
             suffix=suffix, prefix=prefix, dir=dir, delete=delete,
-            errors=errors)
+            **kwargs)
 
         file = cls.new_by_file_name(file_name=tmp_fp.name)
         assert isinstance(file, cls)
