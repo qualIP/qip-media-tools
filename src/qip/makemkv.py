@@ -545,6 +545,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^Backing up disc into folder \\"(?P<file_out>[^\r\n]+)\\"{re_eol}', True),
             (fr'^Backup done\.?{re_eol}', self.backup_done_line),
             (fr'^Backup failed\.?{re_eol}', self.generic_error),
+            (fr'^Automatic checking for updates is enabled, you may disable it in preferences if you don\'t want MakeMKV to contact web server\.{re_eol}', self.generic_warning),
             (fr'[^\r\n]*?{re_eol}', self.unknown_line),
         ])
         # TODO
