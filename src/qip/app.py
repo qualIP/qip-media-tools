@@ -23,6 +23,7 @@ import urllib
 from . import argparse
 from .propex import propex
 from .xdg import XdgResource
+from .utils import is_term_dark
 
 HAVE_ARGCOMPLETE = False
 try:
@@ -42,10 +43,16 @@ DEFAULT_ROOT_LOG_FORMAT = '%(asctime)s %(name)s %(levelname)s %(message)s'
 DEFAULT_APP_LOG_FORMAT = '%(asctime)s %(levelname)s %(message)s'
 
 if HAVE_COLOREDLOGS:
+    dark = is_term_dark()
     DEFAULT_LEVEL_STYLES = coloredlogs.DEFAULT_LEVEL_STYLES
     DEFAULT_LEVEL_STYLES.update(
             debug=dict(color='magenta', bold=getattr(coloredlogs, 'CAN_USE_BOLD_FONT', True)),
             )
+    DEFAULT_FIELD_STYLES = coloredlogs.DEFAULT_FIELD_STYLES
+    DEFAULT_FIELD_STYLES.update(
+        # white+bold is visible on light and dark backgrounds
+        levelname=dict(color='white', bold=True),
+    )
 
 def addLoggingLevelName(level, levelName):
     logging.addLevelName(level, levelName)
@@ -510,9 +517,11 @@ class App(XdgResource):
                 enable_suspend=True,
             )
 
+            dark = is_term_dark()
+
             from prompt_toolkit.styles import Style
             self.prompt_style = Style.from_dict({
-                '': '#ffffff',
+                '': '#ffffff bg:#000000' if dark else '#000000 bg:#ffffff',
                 'app': '#884444',
                 'mode': '#663333',
                 'cue': '#00aa00',

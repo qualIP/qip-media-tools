@@ -25,6 +25,7 @@ __all__ = (
     'dict_from_swig_obj',
     'replace_html_entities',
     'StreamTransform',
+    'is_term_dark',
 )
 
 from _collections_abc import _check_methods
@@ -964,3 +965,21 @@ class StreamTransform(object):
             prefix = ' ' * indent
         return cls(file,
                    transform=functools.partial(textwrap.indent, prefix=prefix))
+
+def is_term_dark(default=False):
+    # TODO support other methods
+    # Interesting thread: https://stackoverflow.com/questions/2507337/how-to-determine-a-terminals-background-color
+
+    try:
+        fg, bg = (int(e) for e in os.environ['COLORFGBG'].split(';'))
+    except KeyError:
+        # No COLORFGBG environment
+        pass
+    except ValueError:
+        # Not two values or not integers
+        pass
+    else:
+        # If background color is 0 to 6 or 8, it is dark.
+        return 0 <= bg <= 6 or bg == 8
+
+    return default
