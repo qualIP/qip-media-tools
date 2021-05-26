@@ -857,7 +857,7 @@ class MatroskaFile(BinaryMediaFile):
                                      keep_picture_file_name)
 
     @classmethod
-    @functools.lru_cache
+    @functools.lru_cache()
     def _lru_prep_picture(cls,
                           src_picture : Path,
                           keep_picture_file_name):

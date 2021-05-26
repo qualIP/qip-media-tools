@@ -673,7 +673,7 @@ def cache_url(url, cache_dict={}):
     return temp_file.file_name
 
 
-@functools.lru_cache
+@functools.lru_cache()
 def _lru_cache_url(url, suffix):
     req = urllib.request.Request(url)
     from qip.app import app
