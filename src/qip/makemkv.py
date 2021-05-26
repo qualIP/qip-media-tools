@@ -230,6 +230,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
     title_count = None
     num_tiltes_saved = None
     num_tiltes_failed = None
+    num_titles_skipped_length_below_min = 0
     num_errors = 0
     progress_bar = None
     on_progress_bar_line = False
@@ -339,6 +340,10 @@ class MakemkvconSpawnBase(_SpawnMixin):
         log.info(str)
         return True
 
+    def title_skipped_length_below_min(self, str):
+        self.num_titles_skipped_length_below_min += 1
+        return True
+
     def generic_error(self, str):
         str = byte_decode(str).rstrip('\r\n')
         if self.on_progress_bar_line:
@@ -387,7 +392,12 @@ class MakemkvconSpawnBase(_SpawnMixin):
         if self.on_progress_bar_line:
             print('')
             self.on_progress_bar_line = False
-        app.log.info(byte_decode(str))
+        str = byte_decode(str).rstrip('\r\n')
+        str = str.rstrip('.')
+        if self.num_titles_skipped_length_below_min > 0:
+            str += f', {self.num_titles_skipped_length_below_min} skipped'
+        str += '.'
+        app.log.info(str)
         v = int(self.match.group('num_tiltes_saved'))
         assert self.num_tiltes_saved in (v, None)
         self.num_tiltes_saved = v
@@ -454,7 +464,7 @@ class MakemkvconSpawnBase(_SpawnMixin):
             (fr'^MakeMKV v[^\r\n]+ started{re_eol}', True),
             (fr'^Operation successfully completed{re_eol}', True),
             (fr'^Saving (?P<title_count>\d+) titles into directory (?P<dest_dir>[^\r\n]+){re_eol}', self.saving_titles_count),
-            (fr'^Title #(?P<title_no>{re_title_no}) has length of (?P<length>\d+) seconds which is less than minimum title length of (?P<min_length>\d+) seconds and was therefore skipped{re_eol}', True),
+            (fr'^Title #(?P<title_no>{re_title_no}) has length of (?P<length>\d+) seconds which is less than minimum title length of (?P<min_length>\d+) seconds and was therefore skipped{re_eol}', self.title_skipped_length_below_min),
             (fr'^Title (?P<title_no1>{re_title_no})(?: in VTS (?P<vts_no>\d+))? is equal to title (?P<title_no2>{re_title_no}) and was skipped{re_eol}', True),
             (fr'^(?P<stream_type>Audio|Subtitle) stream #(?P<stream_no>{re_stream_no}) is identical to stream #(?P<stream_no2>{re_stream_no}) and was skipped{re_eol}', True),
             (fr'^(?P<stream_type>Audio|Subtitle) stream #(?P<stream_no>{re_stream_no}) looks empty and was skipped{re_eol}', True),

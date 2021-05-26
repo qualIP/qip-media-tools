@@ -2275,16 +2275,23 @@ def action_rip(rip_dir, device, in_tags):
                         tmp_profile_xml_file.flush()
                         tmp_profile_xml_file.seek(0)
 
-                        with perfcontext('Ripping w/ makemkvcon', log=True):
-                            rip_info = makemkvcon.mkv(
-                                source=source,
-                                dest_dir=rip_dir,
-                                minlength=int(minlength),
-                                profile=tmp_profile_xml_file,
-                                #retry_no_cd=device.is_block_device(),
-                                noscan=True,
-                                robot=True,
-                            )
+                        try:
+                            with perfcontext('Ripping w/ makemkvcon', log=True):
+                                rip_info = makemkvcon.mkv(
+                                    source=source,
+                                    dest_dir=rip_dir,
+                                    minlength=int(minlength),
+                                    profile=tmp_profile_xml_file,
+                                    #retry_no_cd=device.is_block_device(),
+                                    noscan=True,
+                                    robot=True,
+                                )
+                        except SpawnedProcessError as e:
+                            if 'Failed to open disc' in e.spawn.errors_seen and \
+                                    e.spawn.num_titles_skipped_length_below_min > 0:
+                                app.log.warning('Failed to open disc, probably because %d titles were too short and skipped (try --min-length)',
+                                                e.spawn.num_titles_skipped_length_below_min)
+                            raise
 
                 finally:
                     if not app.args.dry_run and settings_changed:
