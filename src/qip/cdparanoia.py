@@ -41,7 +41,8 @@ class Cdparanoia(Executable):
             retry_no_audio_cd=False,
             **kwargs):
         args = ['--query']
-        assert isinstance(verbose, bool)
+        if not isinstance(verbose, bool):
+            raise TypeError(verbose)
         if verbose:
             args += ['--verbose']
         if device:
@@ -52,7 +53,7 @@ class Cdparanoia(Executable):
             if parser.line == '':
                 pass
             elif parser.line == 'Table of contents (audio tracks only):':
-                assert not hasattr(d, 'toc')
+                assert not hasattr(d, 'toc'), 'toc already defined'
                 d.toc = self._parse_toc(parser)
             else:
                 # cdparanoia III release 10.2 (September 11, 2008)
@@ -98,7 +99,7 @@ class Cdparanoia(Executable):
                 #   1.    16503 [03:40.03]        0 [00:00.00]    no   no  2
                 #   1.    16503 [03:40.03]        0 [00:00.00]    OK   no  2
                 track_no = int(parser.match.group('track_no'))
-                assert track_no == len(toc.tracks) + 1
+                assert track_no == len(toc.tracks) + 1, f'Incorrect track number ({track_no}), expected {len(toc.tracks) + 1}'
                 track = toc.add_track(
                         length=int(parser.match.group('length')),
                         begin=int(parser.match.group('begin')),

@@ -86,12 +86,12 @@ class ConfigParser(configparser.ConfigParser):
 
     def read(self, file_name=None, filenames=None, no_exists_ok=False, **kwargs):
         if file_name is not None and filenames is not None:
-            assert TypeError('Both file_name and filenames provided')
+            raise TypeError('Both file_name and filenames provided')
         if filenames is None:
             if file_name is None:
                 file_name = self.file_name
             if file_name is None:
-                assert TypeError('No file_name or filenames provided')
+                raise TypeError('No file_name or filenames provided')
             filenames = [self.file_name]
         read_ok = super().read(filenames=filenames, **kwargs)
         if not no_exists_ok and not read_ok:
@@ -104,7 +104,7 @@ class ConfigParser(configparser.ConfigParser):
         if file_name is not None:
             file_name = Path(file_name)
             if fp is not None:
-                assert TypeError('Both file_name and fp provided')
+                raise TypeError('Both file_name and fp provided')
             file_name.parent.mkdir(parents=True, exist_ok=True)
             config_file = TextFile(file_name)
             with config_file.rename_temporarily(replace_ok=True):
@@ -113,7 +113,7 @@ class ConfigParser(configparser.ConfigParser):
         elif fp is not None:
             pass
         else:
-            assert TypeError('No file_name or fp provided')
+            raise TypeError('No file_name or fp provided')
         return super().write(fp=fp, **kwargs)
 
 def _resolved_Path(path):
@@ -306,7 +306,7 @@ class App(XdgResource):
             reprlib.aRepr.maxdict = 100
 
     def default_config_file(self):
-        assert self.xdg_resource
+        assert self.xdg_resource, f'Invalid XDG resource name: {self.xdg_resource}'
         config_file1 = self.save_config_path() / 'config'
         return config_file1
 

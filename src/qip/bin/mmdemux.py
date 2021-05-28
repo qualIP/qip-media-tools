@@ -416,7 +416,7 @@ def ffprobe_iter_av_frames(file, stream_index=0):
                                         ):
         if ff_frame.stream_index != stream_index:
             continue
-        # assert frame.media_type == 'video'
+        # assert frame.media_type == 'video', f'frame media type not video: {frame.media_type}'
 
         av_stream = types.SimpleNamespace(
             index=ff_frame.stream_index,
@@ -446,7 +446,7 @@ def iter_av_frames(file, stream_index=0, max_analyze_duration=100 * 1000000):
         for av_stream in av_file.streams:
             if av_stream.index != stream_index:
                 continue
-            # assert av_stream.type == 'video'
+            # assert av_stream.type == 'video', f'frame media type not video: {frame.media_type}'
             av_packets = av_file.demux(av_stream)
             for av_packet in av_packets:
                 for av_frame in av_packet.decode():
@@ -620,9 +620,9 @@ def analyze_field_order_and_framerate(
                     else:
                         # ends with pulldown
                         app.log.warning('Detected field order %s at %s (%.3f) fps based on temporal pattern near end of analysis section %r', field_order, framerate, framerate, temporal_pattern)
-                        assert input_framerate == FrameRate(30000, 1001)  # Only verified case so far
-                        assert framerate == FrameRate(24000, 1001)  # Only verified case so far
-                        # assert framerate == original_framerate * result_framerate_ratio
+                        assert input_framerate == FrameRate(30000, 1001), f'Input framerate not 30000/1001: {input_framerate}'  # Only verified case so far
+                        assert framerate == FrameRate(24000, 1001), f'Target framerate not 24000/1001: {framerate}'  # Only verified case so far
+                        # assert framerate == original_framerate * result_framerate_ratio, f'framerate({framerate} not original_framerate({original_framerate}) * result_framerate_ratio({result_framerate_ratio}): {original_framerate * result_framerate_ratio}'
                     break
 
             if field_order is None:
@@ -1463,7 +1463,7 @@ def sorted_mediainfo_tracks(tracks):
 
 def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_track_dict=None):
     ffmpeg_hdr_args = ffmpeg.Options()
-    assert codec
+    assert codec, f'codec not known'
     if ffprobe_stream_json is None:
         ffprobe_stream_json, = sorted_ffprobe_streams(inputfile.ffprobe_dict['streams'])
     if mediainfo_track_dict is None:
@@ -1484,8 +1484,8 @@ def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_
         ):
             # https://developers.google.com/media/vp9/hdr-encoding
             need_2pass = True
-            assert mediainfo_track_dict['BitDepth'] == 10 # avc @ profile High, hevc @ profile Main 10, ??
-            assert ffprobe_stream_json['pix_fmt'] == 'yuv420p10le'
+            assert mediainfo_track_dict['BitDepth'] == 10, 'BitDepth not 10: {}'.format(mediainfo_track_dict['BitDepth'])  # avc @ profile High, hevc @ profile Main 10, ??
+            assert ffprobe_stream_json['pix_fmt'] == 'yuv420p10le', 'pix_fmt not yuv420p10le: {}'.format(ffprobe_stream_json['pix_fmt'])
             ffmpeg_hdr_args.set_option('-pix_fmt', 'yuv420p10le')
             ffmpeg_hdr_args.set_option('-color_primaries', ffmpeg.get_option_value('color_primaries', ffprobe_stream_json['color_primaries']))
             ffmpeg_hdr_args.set_option('-color_trc', ffmpeg.get_option_value('color_trc', ffprobe_stream_json['color_transfer']))
@@ -1503,8 +1503,8 @@ def get_hdr_codec_args(*, inputfile, codec, ffprobe_stream_json=None, mediainfo_
                 'libx265',
         ):
             # https://x265.readthedocs.io
-            assert mediainfo_track_dict['BitDepth'] == 10
-            assert ffprobe_stream_json['pix_fmt'] == 'yuv420p10le'
+            assert mediainfo_track_dict['BitDepth'] == 10, 'BitDepth not 10: {}'.format(mediainfo_track_dict['BitDepth'])
+            assert ffprobe_stream_json['pix_fmt'] == 'yuv420p10le', 'pix_fmt not yuv420p10le: {}'.format(ffprobe_stream_json['pix_fmt'])
             ffmpeg_hdr_args.set_option('-pix_fmt', 'yuv420p10le')
             ffmpeg_hdr_args.append_colon_option('-x265-params', 'hdr-opt=1')
             ffmpeg_hdr_args.append_colon_option('-x265-params', 'colorprim={}'.format(ffmpeg.get_option_value('color_primaries', ffprobe_stream_json['color_primaries'])))
@@ -2405,8 +2405,8 @@ def action_rip(rip_dir, device, in_tags):
         with os.scandir(rip_dir) as it:
             for entry in it:
                 entry_path = rip_dir / entry.name
-                assert entry_path.suffix in ('.mkv', '.webm', '.m2p')
-                assert entry.is_file()
+                assert entry_path.suffix in ('.mkv', '.webm', '.m2p'), f'Unexpected file type: {entry_path}'
+                assert entry.is_file(), f'{entry} is not a file'
                 app.args.mux_files += (entry_path,)
 
 def action_pick_title_streams(backup_dir, in_tags):
@@ -2432,7 +2432,7 @@ def action_pick_title_streams(backup_dir, in_tags):
     time_offset = qip.utils.Timestamp(0)
     titles = sorted(disc_info.spawn.titles.values(),
                     key=operator.attrgetter('stream_nos', 'id'))
-    assert len(titles) > 0
+    assert len(titles) > 0, f'No titles found'
     stream_nos = ()
 
     def pick_a_title(titles):
@@ -2605,8 +2605,8 @@ def action_backup(backup_dir, device, in_tags):
         with os.scandir(backup_dir) as it:
             for entry in it:
                 entry_path = backup_dir / entry.name
-                assert entry_path.suffix in ('.mkv', '.webm', '.m2p')
-                assert entry.is_file()
+                assert entry_path.suffix in ('.mkv', '.webm', '.m2p'), f'Unexpected file type: {entry_path}'
+                assert entry.is_file(), f'{entry} is not a file'
                 app.args.mux_files += (entry_path,)
 
 def pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainfo_track_dict):
@@ -2629,21 +2629,21 @@ def pick_field_order(stream_file_name, ffprobe_json, ffprobe_stream_json, mediai
         return ffprobe_field_order
 
     elif (mediainfo_scantype, mediainfo_scanorder) == ('Interlaced', 'Top Field First'):
-        assert ffprobe_field_order in ('tt', 'tb'), (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+        assert ffprobe_field_order in ('tt', 'tb'), f'Unexpected field order: mediainfo scan type={mediainfo_scantype}, order={mediainfo_scanorder}, ffprobe field order={ffprobe_field_order}'
         # ‘tt’ Interlaced video, top field coded and displayed first
         # ‘tb’ Interlaced video, top coded first, bottom displayed first
         # https://ffmpeg.org/ffmpeg-filters.html#yadif
         return ffprobe_field_order
 
     elif (mediainfo_scantype, mediainfo_scanorder) == ('Interlaced', 'Bottom Field First'):
-        assert ffprobe_field_order in ('bb', 'bt'), (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+        assert ffprobe_field_order in ('bb', 'bt'), f'Unexpected field order: mediainfo scan type={mediainfo_scantype}, order={mediainfo_scanorder}, ffprobe field order={ffprobe_field_order}'
         # ‘bb’ Interlaced video, bottom field coded and displayed first
         # ‘bt’ Interlaced video, bottom coded first, top displayed first
         # https://ffmpeg.org/ffmpeg-filters.html#yadif
         return ffprobe_field_order
 
     elif (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'):
-        assert ffprobe_field_order == 'progressive', (mediainfo_scantype, mediainfo_scanorder, ffprobe_field_order)
+        assert ffprobe_field_order == 'progressive', f'Unexpected field order: mediainfo scan type={mediainfo_scantype}, order={mediainfo_scanorder}, ffprobe field order={ffprobe_field_order}'
         return '23pulldown'
 
     else:
@@ -2697,12 +2697,12 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
     else:
         assert mediainfo_original_framerate is None \
             or mediainfo_framerate == mediainfo_original_framerate, \
-            (ffprobe_r_framerate, rounded_ffprobe_avg_framerate, mediainfo_framerate, mediainfo_original_framerate)
+            f'mediainfo_framerate({mediainfo_framerate}) != mediainfo_original_framerate{mediainfo_original_framerate}'
         if framerate != mediainfo_framerate:
             if field_order == 'progressive':
                 pass
             elif field_order == '23pulldown':
-                assert (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown')
+                assert (mediainfo_scantype, mediainfo_scanorder) == ('Progressive', '2:3 Pulldown'), f'Unexpected field order: mediainfo scan type={mediainfo_scantype}, order={mediainfo_scanorder}, framerate={mediainfo_framerate}, ffprobe field order={ffprobe_field_order}, framerate={framerate}'
                 # Rely on mediainfo's framerate
                 return mediainfo_framerate
             else:
@@ -3731,7 +3731,7 @@ def action_mux(inputfile, in_tags,
                         mencoder_args += [
                             inputfile,
                         ]
-                        assert stream_file_name.endswith('.sub')
+                        assert stream_file_name.endswith('.sub'), f'{stream_file_name} does not end with \'.sub\''
                         mencoder_args += [
                             '-nosound',
                             '-ovc', 'frameno',
@@ -3946,7 +3946,7 @@ def action_mux(inputfile, in_tags,
             mediainfo_track_dict = None  # Not its own track
         elif stream.codec_type is CodecType.data:
             mediainfo_track_dict = None  # Not its own track
-            assert stream.skip
+            assert stream.skip, f'Internal error: data stream not being skipped'
         else:
             raise NotImplementedError(stream.codec_type)
 
@@ -4116,9 +4116,11 @@ def action_verify(inputfile, in_tags):
                 raise OSError(errno.EEXIST, f'Directory exists: {outputdir}')
 
     if not dir_existed:
-        assert action_mux(inputfile, in_tags=in_tags,
+        if not action_mux(inputfile, in_tags=in_tags,
                           mux_attached_pic=False,
-                          mux_subtitles=False)
+                          mux_subtitles=False):
+            return False
+
     inputdir = outputdir
 
     mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
@@ -4313,8 +4315,8 @@ def action_chop(inputfile, *, in_tags=None, chaps=None, chop_chaps=None):
     if chaps is None:
         chaps = inputfile.load_chapters()
     chaps = list(chaps)
-    assert len(chaps) > 1
-    assert chaps[0].start == 0
+    assert len(chaps) > 1, f'Need multiple chapters, found {len(chaps)}.'
+    assert chaps[0].start == 0, f'First chapter start time not 0: {chaps[0].start}'
 
     chapter_stream_file_ext = inputfile_ext
 
@@ -4904,7 +4906,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     stream_dict.replace_data(new_stream)
                 else:
                     test_out_file(new_stream.path)
-                    assert new_stream.path != stream_dict.path
+                    assert new_stream.path != stream_dict.path, f'Wrong stream path: {new_stream.path} != {stream_dict.path}'
                     temp_files.append(stream_dict.path)
                     new_stream.setdefault('original_file_name', stream_dict['file_name'])
                     stream_dict.replace_data(new_stream)
@@ -4979,7 +4981,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                                      if e['@type'] != 'General']
                             except ValueError:
                                 raise AssertionError('Expected a single mediainfo track: {!r}'.format(sub_stream0.file.mediainfo_dict['media']['track']))
-                            assert sub_stream0_mediainfo_track_dict['@type'] == 'Video', 'Expected a mediainfo Video track: {!r}'.format(sub_stream0_mediainfo_track_dict)
+                            assert sub_stream0_mediainfo_track_dict['@type'] == 'Video', f'Expected a mediainfo Video track: {sub_stream0_mediainfo_track_dict!r}'
                             assert CodecType(sub_stream0_mediainfo_track_dict['@type']) is sub_stream0.codec_type, f'Stream #{sub_stream0.pprint_index} has codec type {sub_stream0.codec_type} but mediainfo track has {sub_stream0_mediainfo_track_dict["@type"]}'
 
                             sub_stream0_field_order, sub_stream0_input_framerate, sub_stream0_framerate = analyze_field_order_and_framerate(
@@ -4988,7 +4990,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 ffprobe_stream_json=sub_stream0_ffprobe_stream_json,
                                 mediainfo_track_dict=sub_stream0_mediainfo_track_dict)
 
-                            assert sub_stream0_input_framerate or sub_stream0_framerate
+                            assert sub_stream0_input_framerate or sub_stream0_framerate, f'First sub-stream framerate unknown'
                             new_stream['framerate'] = sub_stream0['framerate'] = str(sub_stream0_input_framerate or sub_stream0_framerate)
                         try:
                             new_stream['field_order'] = sub_stream0['field_order']
@@ -5066,7 +5068,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         new_stream['field_order'] = stream_dict['field_order'] = field_order
 
                     if expected_framerate is not None:
-                        assert framerate == expected_framerate, (framerate, expected_framerate)
+                        assert framerate == expected_framerate, f'framerate({framerate}) not as expected({expected_framerate})'
                     display_aspect_ratio = Ratio(stream_dict['display_aspect_ratio'])
 
                     lossless = False
@@ -5079,9 +5081,9 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         if stereo_3d_mode is Stereo3DMode.multiview_encoding:
                             raise NotImplementedError('MVC')  # TODO MVC->MVC may undergo modifications below that would lose the MVC encoding
                         # .MVC -> FRIMDecode -> SBS/TAB/ALT
-                        assert field_order == 'progressive'
+                        assert field_order == 'progressive', f'Field order not progressive: {field_order}'
 
-                        assert ffprobe_stream_json['pix_fmt'] == 'yuv420p'
+                        assert ffprobe_stream_json['pix_fmt'] == 'yuv420p', 'pix_fmt not yuv420p: {}'.format(ffprobe_stream_json['pix_fmt'])
                         frimdecode_fmt = 'i420'
                         if stream_dict.is_hdr():
                             raise NotImplementedError('HDR support not implemented')
@@ -5110,7 +5112,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                         ffmpeg_enc_args = [] + default_ffmpeg_args
                         force_input_framerate = getattr(app.args, 'force_input_framerate', None)
-                        assert force_input_framerate or input_framerate or framerate
+                        assert force_input_framerate or input_framerate or framerate, f'framerate unknown'
                         expected_framerate = force_input_framerate or input_framerate or framerate
                         if stereo_3d_mode is Stereo3DMode.alternate_frame:
                             expected_framerate *= 2
@@ -5219,7 +5221,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
 
                             if stream_file_ext in ('.y4m', '.yuv'):
-                                assert framerate == FrameRate(30000, 1001)
+                                assert framerate == FrameRate(30000, 1001), f'Unexpected framerate for y4m/yuv 23pulldown: {framerate}'
                                 framerate = FrameRate(24000, 1001)
                                 app.log.verbose('23pulldown y4m framerate correction: %s', framerate)
 
@@ -5352,7 +5354,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                             stream_dict.file.close()
                                 if not app.args.dry_run:
                                     p4.communicate()
-                                    assert p4.returncode == 0
+                                    assert p4.returncode == 0, f'ffmpeg return {p4.returncode}'
 
                             expected_framerate = framerate
 
@@ -5375,7 +5377,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
 
                             if stream_file_ext in ('.y4m', '.yuv'):
-                                assert framerate == FrameRate(30000, 1001)
+                                assert framerate == FrameRate(30000, 1001), f'Unexpected framerate for y4m/yuv 23pulldown: {framerate}'
                                 framerate = FrameRate(24000, 1001)
                                 app.log.verbose('23pulldown %s framerate correction: %s', stream_file_ext, framerate)
 
@@ -5814,7 +5816,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             chapter_lossless = True
                             app.log.verbose('All chapters...')
 
-                            assert 'concat_streams' not in new_stream
+                            assert 'concat_streams' not in new_stream, f'New stream already contains concat sub-streams'
                             new_stream['file_name'] = stream_dict['file_name']  # Restore!
                             new_stream['concat_streams'] = []
 
@@ -5834,7 +5836,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 stream_chapter_file_name = stream_chapter_file_name_pat % (chap.no,)
                                 if not (stream_dict.inputdir / stream_chapter_file_name).exists():
                                     stream_chapter_file_name2 = stream_chapter_file_name_pat % (chaps[-2].no,)
-                                    assert (stream_dict.inputdir / stream_chapter_file_name2).exists()
+                                    if not (stream_dict.inputdir / stream_chapter_file_name2).exists():
+                                        raise OSError(errno.ENOENT, 'File not found: {stream_dict.inputdir / stream_chapter_file_name2}')
                                     app.log.warning('Stream #%s chapter %s not outputted!', stream_dict.pprint_index, chap)
                                     chaps.pop(-1)
 
@@ -6022,7 +6025,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         continue
 
                     if True:
-                        assert stream_file_ext not in ok_exts
+                        assert stream_file_ext not in ok_exts, f'stream file extension already in ok_exts: {stream_file_ext}'
                         # Hopefully ffmpeg supports it!
                         new_stream_file_ext = '.opus.ogg'
                         new_stream['file_name'] = stream_file_base + new_stream_file_ext
@@ -7253,7 +7256,7 @@ def action_demux(inputdir, in_tags):
                         ffmpeg_args += [
                                 inputdir / tmp_stream_file_name,
                             ]
-                        assert estimated_duration is None or float(estimated_duration) > 0.0
+                        assert estimated_duration is None or float(estimated_duration) > 0.0, f'Bad estimated duration: {estimated_duration}'
                         ffmpeg(
                             *ffmpeg_args,
                             progress_bar_max=estimated_duration,
@@ -7281,7 +7284,7 @@ def action_demux(inputdir, in_tags):
                             '-codec', 'copy',
                             inputdir / tmp_stream_file_name,
                         ]
-                    assert estimated_duration is None or float(estimated_duration) > 0.0
+                    assert estimated_duration is None or float(estimated_duration) > 0.0, f'Bad estimated duration: {estimated_duration}'
                     ffmpeg(
                         *ffmpeg_args,
                         progress_bar_max=estimated_duration,
@@ -7299,7 +7302,7 @@ def action_demux(inputdir, in_tags):
                             '-codec', 'copy',
                             inputdir / tmp_stream_file_name,
                         ]
-                    assert estimated_duration is None or float(estimated_duration) > 0.0
+                    assert estimated_duration is None or float(estimated_duration) > 0.0, f'Bad estimated duration: {estimated_duration}'
                     ffmpeg(
                         *ffmpeg_args,
                         progress_bar_max=estimated_duration,
@@ -7690,7 +7693,7 @@ def action_tag_episodes(episode_file_names, in_tags):
         raise ValueError('Missing season number')
 
     tags.type = tags.deduce_type()
-    assert str(tags.type) == 'tvshow'
+    assert str(tags.type) == 'tvshow', f'Type not tvshow: {tags.type}'
 
     global tvdb
     if tvdb is None:
@@ -7704,7 +7707,7 @@ def action_tag_episodes(episode_file_names, in_tags):
 
     l_series = tvdb.search(tags.tvshow)
     app.log.debug('l_series=%r', l_series)
-    assert l_series, 'No series!'
+    assert l_series, f'No series found'
     i = 0
     if len(l_series) > 1 and app.args.interactive:
         i = app.radiolist_dialog(
@@ -8039,7 +8042,7 @@ def action_identify_files(file_names, in_tags):
         print('tags=%r' % (dict(tags),))
 
         tags.type = tags.deduce_type()
-        assert str(tags.type) == 'tvshow'
+        assert str(tags.type) == 'tvshow', f'Type not tvshow: {tags.type}'
 
         if str(tags.type) == 'tvshow':
             if not tags.tvshow:
@@ -8056,7 +8059,7 @@ def action_identify_files(file_names, in_tags):
             except KeyError:
                 l_series = tvdb.search(tags.tvshow)
                 app.log.debug('l_series=%r', l_series)
-                assert l_series, 'No series!'
+                assert l_series, f'No series found'
                 i = 0
                 if len(l_series) > 1 and app.args.interactive:
                     i = app.radiolist_dialog(

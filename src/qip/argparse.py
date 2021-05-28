@@ -164,18 +164,18 @@ class _ActionsContainer(_argparse._ActionsContainer):
         kwargs = self._get_optional_kwargs(*args, **kwargs)
 
         option_strings = kwargs.pop('option_strings')
-        assert option_strings
+        assert option_strings, f'Invalid option_strings: {option_strings}'
         try:
             neg_option_strings = kwargs.pop('neg_option_strings')
         except KeyError:
             long_option_strings = [option_string
                                    for option_string in option_strings
                                    if len(option_string) > 1 and option_string[1] in self.prefix_chars]
-            assert long_option_strings
+            assert long_option_strings, f'Invalid long_option_strings: {long_option_strings}'
             neg_option_strings = [
                 f'{option_string[:2]}no{option_string[1]}{option_string[2:]}'
                 for option_string in long_option_strings]
-        assert neg_option_strings
+        assert neg_option_strings, f'Invalid neg_option_strings: {neg_option_strings}'
 
         help = kwargs.pop('help', None)
         neg_help = kwargs.pop('neg_help', None)

@@ -23,7 +23,7 @@ CDDA_BYTES_PER_SECOND = CDDA_SAMPLE_RATE * CDDA_BYTES_PER_SAMPLE
 CDDA_SECTORS_PER_SECOND = CDDA_BYTES_PER_SECOND // CDDA_BYTES_PER_SECTOR
 # 1 timecode frame = 1 sector
 CDDA_TIMECODE_FRAME_PER_SECOND = CDDA_SECTORS_PER_SECOND
-assert CDDA_TIMECODE_FRAME_PER_SECOND == 75
+assert CDDA_TIMECODE_FRAME_PER_SECOND == 75, 'CDDA_TIMECODE_FRAME_PER_SECOND not 75: {CDDA_TIMECODE_FRAME_PER_SECOND}'
 
 CDDA_1X_SPEED = CDDA_BYTES_PER_SECOND
 
@@ -47,7 +47,7 @@ class MSF(object):
                 mm = int(m.group('mm'))
                 ss = int(m.group('ss'))
                 ff = int(m.group('ff'))
-                assert ff < CDDA_TIMECODE_FRAME_PER_SECOND
+                assert ff < CDDA_TIMECODE_FRAME_PER_SECOND, f'Invalid CDDA timecode: {ff}'
                 frames = ((mm * 60) + ss) * CDDA_TIMECODE_FRAME_PER_SECOND + ff
             else:
                 m = re.search('(?P<f>\d+)$', value)
@@ -190,7 +190,7 @@ class CDToc(object):
 
     def add_track(self, *args, **kwargs):
         if len(args) == 1 and isinstance(args[0], CDToc.Track):
-            assert not kwargs
+            assert not kwargs, f'Extraneous kwargs: {kwargs}'
             track = args[0]
         else:
             track = CDToc.Track(*args, parent=self, **kwargs)
@@ -351,19 +351,20 @@ class CDTocFile(TextFile):
     def cmd__session_type(self, *, value, dest, lang):
         assert isinstance(value, str), (type(value), value)
         assert isinstance(dest, CDTocFile), (type(dest), dest)
-        assert value
+        assert value, f'Invalid session_type value: {value!r}'
         if value:
             self.session_type = CDTocFile.SessionTypeEnum(value)
 
     def sec_CD_TEXT(self, *, parser, value, dest, lang):
-        assert value is None
+        assert value is None, f'Invalid CD_TEXT value: {value!r}'
         for statement in self.iter_cdtoc_statements(parser=parser, top=False):
             self.handle_statement(statement=statement, parser=parser, dest=dest, lang=lang)
 
-    def sec_LANGUAGE_MAP(self, *, parser, value, dest, lang):
-        assert value is None
+    def sec_LANGUAGE_MAP(self, *, parser, value, dest, lang, top=False):
+        assert value is None, f'Invalid LANGUAGE_MAP value: {value!r}'
         while True:
-            assert parser.advance()
+            if not parser.advance():
+                raise ValueError('Incomplete toc LANGUAGE_MAP')
             parser.line = parser.line.strip()
             if not parser.line:
                 pass
@@ -386,7 +387,7 @@ class CDTocFile(TextFile):
             self.handle_statement(statement=statement, parser=parser, dest=dest, lang=lang)
 
     def sec_TRACK(self, *, parser, value, dest, lang):
-        assert lang is None
+        assert lang is None, f'Invalid TRACK value: {value}'
         assert isinstance(dest, CDTocFile), (type(dest), dest)
         mode, sub_channel_mode = value
         track = CDTocFile.Track(
@@ -430,7 +431,7 @@ class CDTocFile(TextFile):
             if value:
                 dest.tags.genre = value
         elif isinstance(value, bytearray):
-            assert value == b'\0\0\0'
+            assert value == b'\0\0\0', f'Invalid GENRE value: {value!r}'
         else:
             raise ValueError(value)
 
@@ -477,12 +478,12 @@ class CDTocFile(TextFile):
         dest.pre_emphasis = value
 
     def cmd_TWO_CHANNEL_AUDIO(self, *, value, dest, lang):
-        assert value is None
+        assert value is None, f'Invalid TWO_CHANNEL_AUDIO value: {value!r}'
         assert isinstance(dest, CDTocFile.Track), (type(dest), dest)
         dest.audio_channels = 2
 
     def cmd_FOUR_CHANNEL_AUDIO(self, *, value, dest, lang):
-        assert value is None
+        assert value is None, f'Invalid FOUR_CHANNEL_AUDIO value: {value!r}'
         assert isinstance(dest, CDTocFile.Track), (type(dest), dest)
         dest.audio_channels = 4
 
@@ -593,9 +594,9 @@ class CDTocFile(TextFile):
                     parser.line = parser.line.strip()
                     full_line += parser.line
                     log.debug('line=%r', full_line)
-                assert full_line[-1] == '}'
+                assert full_line.endswith('}'), 'Binary data lines do not end with \'}\': {full_line!r}'
                 m = re.search(r'^(?P<cmd>[A-Z][A-Z_]*)\s+\{(?P<bin_data>\s*\d+(?:\s*,\s*\d+)*\s*)?\}$', full_line)
-                assert m
+                assert m, 'Invalid binary data: {full_line!r}'
                 cmd = m.group('cmd')
                 bin_data = m.group('bin_data') or ''
                 value = bytearray(int(e) for e in bin_data.split(','))
@@ -707,7 +708,7 @@ class CDTocFile(TextFile):
 
     def add_track(self, *args, **kwargs):
         if len(args) == 1 and isinstance(args[0], CDTocFile.Track):
-            assert not kwargs
+            assert not kwargs, 'Extraneous kwargs'
             track = args[0]
         else:
             track = CDToc.Track(*args, parent=self, **kwargs)
@@ -854,7 +855,7 @@ class CDDACueSheetFile(TextFile):
 
     class Index(object):
         def __init__(self, number, position):
-            #assert position
+            #assert position, f'Invalid position: {position!r}'
             self.number = int(number)
             self.position = MSF(position)
 
@@ -923,7 +924,7 @@ class CDDACueSheetFile(TextFile):
                 self.tags.disks = int(parser.match.group('value'))
             elif parser.re_search(r'^TRACK\s+(?P<track_no>\d\d)\s+(?P<type>AUDIO|MODE1/2352)$'):
                 track_no=int(parser.match.group('track_no'))
-                assert track_no == len(self.tracks) + 1
+                assert track_no == len(self.tracks) + 1, f'Incorrect track number ({track_no}), expected {len(self.tracks) + 1}'
                 track = CDDACueSheetFile.Track(
                         cue_file=self,
                         type=parser.match.group('type'),
@@ -939,7 +940,7 @@ class CDDACueSheetFile(TextFile):
                                 number=parser.match.group('number'),
                                 position=parser.match.group('position'),
                                 )
-                        assert index.number not in track.indexes
+                        assert index.number not in track.indexes, 'INDEX value not correct: {index.number}'
                         track.indexes[index.number] = index
                     elif parser.re_search(r'^TITLE\s+"(?P<value>.*)"$'):
                         v = parser.match.group('value')
@@ -1081,10 +1082,10 @@ class CDDACueSheetFile(TextFile):
     def sectors(self):  # leadout
         sectors = self._sectors
         if sectors is None:
-            assert len(self.files) == 1
+            assert len(self.files) == 1, f'Expected only a single file, got {len(self.files)}'
             bin_file = BinaryFile(self.file_name.parent / self.files[0].name)
             size = bin_file.getsize()
-            assert (size % CDDA_BYTES_PER_SECTOR) == 0
+            assert (size % CDDA_BYTES_PER_SECTOR) == 0, f'File size({size}) not a multiple of CDDA sectors size({CDDA_BYTES_PER_SECTOR})'
             sectors = size // CDDA_BYTES_PER_SECTOR
         return sectors
 
