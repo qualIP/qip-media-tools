@@ -55,6 +55,8 @@ class CSubtitleEdit(XdgExecutable):
         if language:
             import xml.etree.ElementTree as ET
             settings_xml = self.read_settings_xml()
+            if settings_xml is None:
+                settings_xml = ET.ElementTree(ET.fromstring('<Settings />'))
             if not dry_run:
                 bDidSomething = False
                 settings_root = settings_xml.getroot()
@@ -76,6 +78,8 @@ class CSubtitleEdit(XdgExecutable):
             import xml.etree.ElementTree as ET
             from qip.mono import mono
             mwf_config_xml = mono.read_mwf_config_xml()
+            if mwf_config_xml is None:
+                mwf_config_xml = ET.ElementTree(ET.fromstring('<MWFConfig />'))
             if not dry_run:
                 bDidSomething = False
                 mwf_config_root = mwf_config_xml.getroot()
