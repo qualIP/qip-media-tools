@@ -32,7 +32,7 @@ $OPT_X && set -x
 # Workaround a bug in mono with some old terminfo databases
 export TERM=xterm
 
-if [ "${#edit_args[@]}" != 0 ] ; then
+if [[ "${#edit_args[@]}" != 0 ]] ; then
     ~/SubtitleEdit-edit-Settings \
         "${edit_args[@]}"
 fi
@@ -41,10 +41,10 @@ mono ~/SubtitleEdit/SubtitleEdit.exe "$@" &
 SUBTITLEEDIT_PID=$!
 
 while true ; do
-    status=`cat /proc/$SUBTITLEEDIT_PID/status || true`
-    if [ -z "$status" ] ; then
+    status=$(</proc/$SUBTITLEEDIT_PID/status) 2>/dev/null || true
+    if [[ -z "$status" ]] ; then
         break
-    elif echo "$status" | grep -q "^Status: Z" ; then
+    elif grep -q "^Status: Z" <<<"$status" ; then
         kill -9 $SUBTITLEEDIT_PID || true
         break
     fi
