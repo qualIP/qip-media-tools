@@ -12,7 +12,6 @@ __all__ = (
     'BmpFile',
 )
 
-import copy
 import datetime
 import decimal
 import enum

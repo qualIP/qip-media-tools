@@ -9,6 +9,7 @@
 
 from pathlib import Path
 import argparse
+import copy
 import decimal
 import errno
 import functools
@@ -279,7 +280,7 @@ def main():
         for file_name in file_names:
             mm_file = MediaFile.new_by_file_name(file_name)
             orig_tags = mm_file.load_tags()
-            tags = orig_tags.copy()
+            tags = copy.copy(orig_tags)
 
             books = gc.search_books(tags.albumtitle or tags.title, search_field='title')
             if not books:

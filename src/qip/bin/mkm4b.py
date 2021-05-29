@@ -61,7 +61,7 @@ def times_1000(v):
 # get_audio_file_chapters {{{
 
 def get_audio_file_chapters(snd_file, chapter_naming_format):
-    chaps = []
+    chaps = Chapters()
     if not chaps and app.args.OverDrive_MediaMarkers:
         if hasattr(snd_file, 'OverDrive_MediaMarkers'):
             chaps = parse_OverDrive_MediaMarkers(snd_file.OverDrive_MediaMarkers)
@@ -158,7 +158,7 @@ def parse_OverDrive_MediaMarkers(xml):
             marker[tag] = value
         if bKeep:
             markers.append(marker)
-    chaps = []
+    chaps = Chapters()
     for marker in markers:
         chap = qip.mm.Chapter(
             start=marker['Time'], end=None,

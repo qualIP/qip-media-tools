@@ -11,7 +11,6 @@ from fractions import Fraction
 from pathlib import Path
 import collections
 import contextlib
-import copy
 import errno
 import functools
 import logging

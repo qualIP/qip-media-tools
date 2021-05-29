@@ -4386,6 +4386,11 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
                 #'tags': ...,
             })
 
+    def __copy__(self):
+        other = self.__class__(mux_file_name=self.mux_file_name, load=False)
+        other.data = copy.copy(self.data)
+        return other
+
     def __json_encode__(self):
         return self.data
 
@@ -4527,6 +4532,9 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
             if concat_streams and not isinstance(concat_streams[0], MmdemuxStream):
                 self['concat_streams'] = concat_streams = \
                     [MmdemuxStream(e, parent=self) for e in (concat_streams)]
+
+    def __copy__(self):
+        return self.__class__(self.data, parent=self.parent)
 
     def new_sub_stream(self, sub_stream_index, sub_stream_file_name):
         sub_stream_dict = {k: v
