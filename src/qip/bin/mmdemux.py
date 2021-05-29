@@ -6731,7 +6731,7 @@ def action_demux(inputdir, in_tags):
                     break
                 elif ns.action == 'open':
                     try:
-                        if stream_dict.codec_type in ('subtitle',):
+                        if stream_dict.codec_type in (CodecType.subtitle,):
                             from qip.subtitleedit import SubtitleEdit
                             subtitleedit_args = [
                                 stream_dict.path,
@@ -6910,10 +6910,10 @@ def action_demux(inputdir, in_tags):
             def filter_ghost_ffprobe_stream_dicts(ffprobe_stream_dicts):
                 has_subtitle = False
                 for ffprobe_stream_dict in ffprobe_stream_dicts:
-                    codec_type = ffprobe_stream_dict['codec_type']
-                    if codec_type == 'subtitle':
+                    codec_type = CodecType(ffprobe_stream_dict['codec_type'])
+                    if codec_type is CodecType.subtitle:
                         has_subtitle = True
-                    if has_subtitle and codec_type == 'video' and 'codec_name' not in ffprobe_stream_dict:
+                    if has_subtitle and codec_type is CodecType.video and 'codec_name' not in ffprobe_stream_dict:
                         # Video with unknown codec_name. See `test/The Terminal (2004).SD.fra.sub`.
                         app.log.warning('Skipping ffprobe ghost stream (subtitle followed by %s with no codec name)', codec_type)
                         continue
