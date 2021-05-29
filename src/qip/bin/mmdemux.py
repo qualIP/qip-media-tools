@@ -5973,7 +5973,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                     ]
                                 else:
                                     raise NotImplementedError('Unsupported sample format %r with %d bits per raw sample' % (audio_samplefmt, bits_per_raw_sample))
-                            elif audio_samplefmt in ('fltp',):
+                            elif audio_samplefmt in ('flt', 'fltp'):
                                 try:
                                     bits_per_raw_sample = int(stream_dict.file.ffprobe_dict['streams'][0]['bits_per_raw_sample'])
                                 except KeyError:
