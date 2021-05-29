@@ -4914,7 +4914,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     stream_dict.replace_data(new_stream)
                 else:
                     test_out_file(new_stream.path)
-                    assert new_stream.path != stream_dict.path, f'Wrong stream path: {new_stream.path} != {stream_dict.path}'
+                    assert new_stream.path != stream_dict.path, f'Internal error: Identical new and old stream paths ({new_stream.path})'
                     temp_files.append(stream_dict.path)
                     new_stream.setdefault('original_file_name', stream_dict['file_name'])
                     stream_dict.replace_data(new_stream)
@@ -5923,10 +5923,23 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     channels = stream_dict.file.ffprobe_dict['streams'][0]['channels']
                     channel_layout = stream_dict.file.ffprobe_dict['streams'][0].get('channel_layout', None)
 
+                    limit_duration = getattr(app.args, 'limit_duration', None)
+
                     # opusenc supports Wave, AIFF, FLAC, Ogg/FLAC, or raw PCM.
                     opusenc_formats = ('.wav', '.aiff', '.flac', '.ogg', '.pcm')
-                    if stream_file_ext not in ok_exts + opusenc_formats \
-                            or stream_start_time:
+                    if (
+                            stream_start_time  # Need transformation
+                            or (
+                                stream_file_ext not in ok_exts
+                                and (
+                                    stream_file_ext not in opusenc_formats
+                                    or (
+                                        limit_duration  # opusenc can't limit duration
+                                        and stream_file_ext != '.wav'  # Avoid loop
+                                    )
+                                )
+                            )
+                    ):
                         new_stream_file_ext = '.wav'
                         new_stream['file_name'] = stream_file_base + new_stream_file_ext
                         app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
@@ -5936,6 +5949,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             ] + ffmpeg.input_args(stream_dict.file) + [
                                 # '-channel_layout', channel_layout,
                                 ]
+                            if limit_duration:
+                                ffmpeg_args += ['-t', ffmpeg.Timestamp(limit_duration)]
                             ffmpeg_args += [
                                 '-start_at_zero',
                                 #'-codec', 'pcm_s16le',
