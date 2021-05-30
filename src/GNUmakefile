@@ -37,20 +37,20 @@ develop: swig-targets
 	python3 setup.py develop --user
 	#echo Execute: ln -s $(CURDIR)/qip ~/.local/lib/pythonX.X/site-packages/qip
 
-FILE_DEPS_PACKAGE_DEB = qip-tools-depends_$(DEPS_PACKAGE_VER)_all.deb
-.PHONY: build-qip-tools-depends
-build-qip-tools-depends: $(FILE_DEPS_PACKAGE_DEB)
-$(FILE_DEPS_PACKAGE_DEB): qip-tools-depends.ctl
+FILE_DEPS_PACKAGE_DEB = qip-media-tools-depends_$(DEPS_PACKAGE_VER)_all.deb
+.PHONY: build-qip-media-tools-depends
+build-qip-media-tools-depends: $(FILE_DEPS_PACKAGE_DEB)
+$(FILE_DEPS_PACKAGE_DEB): qip-media-tools-depends.ctl
 	which equivs-build || $(maybe_sudo) apt-get install equivs
 	equivs-build $<
 
-.PHONY: install-qip-tools-depends
-install-qip-tools-depends: $(FILE_DEPS_PACKAGE_DEB)
+.PHONY: install-qip-media-tools-depends
+install-qip-media-tools-depends: $(FILE_DEPS_PACKAGE_DEB)
 	$(maybe_sudo) dpkg -i $(FILE_DEPS_PACKAGE_DEB) || $(maybe_sudo) apt-get --fix-broken install
 
-.PHONY: uninstall-qip-tools-depends
-uninstall-qip-tools-depends:
-	$(maybe_sudo) apt-get purge qip-tools-depends || true
+.PHONY: uninstall-qip-media-tools-depends
+uninstall-qip-media-tools-depends:
+	$(maybe_sudo) apt-get purge qip-media-tools-depends || true
 
 .PHONY: swig-targets
 all: swig-targets
@@ -63,9 +63,9 @@ clean-all: clean-dl
 .PHONY: clean
 clean:
 	rm -Rf build/
-	rm -f qip-tools-depends_*.deb
-	rm -f qip-tools-depends_*.buildinfo
-	rm -f qip-tools-depends_*.changes
+	rm -f qip-media-tools-depends_*.deb
+	rm -f qip-media-tools-depends_*.buildinfo
+	rm -f qip-media-tools-depends_*.changes
 
 .PHONY: clean-dl
 clean-dl:

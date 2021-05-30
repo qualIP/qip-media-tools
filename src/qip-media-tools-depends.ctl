@@ -6,7 +6,7 @@ Priority: optional
 # Homepage: <enter URL here; no default>
 Standards-Version: 3.9.2
 
-Package: qip-tools-depends
+Package: qip-media-tools-depends
 Version: 1.0
 Maintainer: Jean-Sebastien Trottier <jst@qualipsoft.com>
 # Pre-Depends: <comma-separated list of packages>

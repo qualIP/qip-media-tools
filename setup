@@ -354,20 +354,20 @@ ask_yes_no "Ready to proceed?"
 print_h2 "Package dependencies"
 echo "qualIP's Media Tools require several 3rd-party application packages"
 echo "available in most Linux distributions."
-echo "A small dependency-only package, \"qip-tools-depends\" is used to all"
-echo "required applications are installed."
+echo "A small dependency-only package, \"qip-media-tools-depends\" is used to"
+echo "make sure all required applications are installed."
 echo
 if $OPT_INSTALL ; then
-    if $OPT_REINSTALL || ! test_package_installed qip-tools-depends ; then
-        if ask_yes_no "Install qip-tools-depends package?" ; then
-            (set -x && $MAKE -C src install-qip-tools-depends)
+    if $OPT_REINSTALL || ! test_package_installed qip-media-tools-depends ; then
+        if ask_yes_no "Install qip-media-tools-depends package?" ; then
+            (set -x && $MAKE -C src install-qip-media-tools-depends)
         fi
     fi
 else
-    if test_package_installed qip-tools-depends \
-            && ask_yes_no "Uninstall qip-tools-depends package?" \
+    if test_package_installed qip-media-tools-depends \
+            && ask_yes_no "Uninstall qip-media-tools-depends package?" \
         ; then
-        (set -x && $MAKE -C src uninstall-qip-tools-depends)
+        (set -x && $MAKE -C src uninstall-qip-media-tools-depends)
     fi
 fi
 
