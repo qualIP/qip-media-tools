@@ -1515,10 +1515,12 @@ class MediaTagEnum(enum.Enum):
     title = 'title'  # STR  Set the song title
     subtitle = 'subtitle'  # STR
     parttitle = 'parttitle'  # STR  Set the part title
+    originaltitle = 'originaltitle'  # STR  Set the original song title
+
+    # TODO originalartist = 'originalartist'
+    performer = 'performer'  # STR  Set the performer information. e.g.: reader (audiobooks), conductor, orchestra, soloists
     composer = 'composer'  # STR  Set the composer information (writer)
     publisher = 'publisher'  # STR  Set the publisher information
-    originaltitle = 'originaltitle'  # STR  Set the original song title
-    # TODO originalartist = 'originalartist'
 
     date = 'date'  # None|MediaTagDate
     year = 'year'  # NUM  Set the release date (*from date)
@@ -1563,6 +1565,9 @@ class MediaTagEnum(enum.Enum):
     language = 'language'  # STR  None|IsoLang
 
     copyright = 'copyright'  # STR  Set the copyright information
+    license = 'license'  # License information, for example, 'All Rights Reserved', 'Any Use Permitted', a URL to a license such as a Creative Commons license (e.g. "creativecommons.org/licenses/by/4.0/"), or similar.
+    record_label = 'record_label'  # A record label, or record company, is a brand or trademark of music recordings and music videos, or the company that owns it.
+
     encodedby = 'encodedby'  # STR  Set the name of the person or company who encoded the file
     tool = 'tool'  # STR  Set the software used for encoding
 
@@ -1582,6 +1587,7 @@ class MediaTagEnum(enum.Enum):
     sorttitle = 'sorttitle'
     sortsubtitle = 'sortsubtitle'
     sortparttitle = 'sortparttitle'
+    sortperformer = 'sortperformer'
     sortcomposer = 'sortcomposer'
     sorttvshow = 'sorttvshow'
 
@@ -4438,6 +4444,7 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
     # title = mp4v2 song
     ["Name",                   "©nam",                     "utf-8",                    "title",                    "TT2",                      "TIT2",           ["Song", 'song', "Title", "name"]],
     ["Artist",                 "©ART",                     "utf-8",                    "artist",                   "TP1",                      "TPE1",           []],
+    ["Performer",              None,                       None,                       "performer",                "TP3",                      "TPE3",           ['reader', 'conductor', 'orchestra', 'soloist']],
     # composer = mp4v2 writer
     ["Composer",               "©wrt",                     "utf-8",                    "composer",                 "TCM",                      "TCOM",           ["writer"]],
     ["Comment",                "©cmt",                     "utf-8",                    "comment",                  "COM",                      "COMM",           []],
@@ -5108,6 +5115,78 @@ class ArgparseGenreListAction(argparse.Action):
 
 # }}}
 
+def argparse_add_tags_arguments(parser, tags, exclude=()):
+    if 'grouping' not in exclude:
+        parser.add_argument('--grouping', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'albumartist' not in exclude:
+        parser.add_argument('--albumartist', '-R', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'albumtitle' not in exclude:
+        parser.add_argument('--albumtitle', '--album', '-A', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'artist' not in exclude:
+        parser.add_argument('--artist', '-a', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'copyright' not in exclude:
+        parser.add_argument('--copyright', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'title' not in exclude:
+        parser.add_argument('--title', '--song', '-s', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'subtitle' not in exclude:
+        parser.add_argument('--subtitle', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'genre' not in exclude:
+        parser.add_argument('--genre', '-g', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'performer' not in exclude:
+        parser.add_argument('--performer', '--reader', '--conductor', '--soloist', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'writer' not in exclude:
+        parser.add_argument('--writer', '--composer', '-w', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'date' not in exclude:
+        parser.add_argument('--date', '--year', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'type' not in exclude:
+        parser.add_argument('--type', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'mediatype' not in exclude:
+        parser.add_argument('--mediatype', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='Physical Media Type (%s)' % (', '.join((str(e) for e in qip.mm.MediaType)),))
+    if 'contenttype' not in exclude:
+        parser.add_argument('--contenttype', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
+    if 'comment' not in exclude:
+        parser.add_argument('--comment', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'part' not in exclude:
+        parser.add_argument('--part', dest='part_slash_parts', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'parttitle' not in exclude:
+        parser.add_argument('--parttitle', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'disk' not in exclude:
+        parser.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'track' not in exclude:
+        parser.add_argument('--track', dest='track_slash_tracks', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'picture' not in exclude:
+        parser.add_argument('--picture', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'tvshow' not in exclude:
+        parser.add_argument('--tvshow', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'season' not in exclude:
+        parser.add_argument('--season', dest='season_slash_seasons', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'episode' not in exclude:
+        parser.add_argument('--episode', dest='episode_slash_episodes', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'language' not in exclude:
+        parser.add_argument('--language', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'country' not in exclude:
+        parser.add_argument('--country', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'compilation' not in exclude:
+        parser.add_argument('--compilation', '-K', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'sort-grouping' not in exclude:
+        parser.add_argument('--sort-grouping', dest='sortgrouping', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'sort-albumartist' not in exclude:
+        parser.add_argument('--sort-albumartist', dest='sortalbumartist', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'sort-albumtitle' not in exclude:
+        parser.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'sort-artist' not in exclude:
+        parser.add_argument('--sort-artist', dest='sortartist', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'sort-title' not in exclude:
+        parser.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'sort-performer' not in exclude:
+        parser.add_argument('--sort-performer', '--sort-reader', '--sort-conductor', '--sort-soloist', dest='sortperformer', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'sort-composer' not in exclude:
+        parser.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'sort-tvshow' not in exclude:
+        parser.add_argument('--sort-tvshow', dest='sorttvshow', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    if 'xid' not in exclude:
+        parser.add_argument('--xid', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+
 def date_to_year(date):
     m = re.match('^(\d{4})(?:\d\d?-\d\d?)?$', date)
     if m:
@@ -5347,7 +5426,7 @@ class Operon(Executable):
             #TagArgInfo('isrc', MediaTagEnum.XXXJST, STR, 'ISRC'),
             #TagArgInfo('labelid', MediaTagEnum.XXXJST, STR, 'Label ID'),
             TagArgInfo('language', MediaTagEnum.language, isolang, 'Language'),
-            #TagArgInfo('license', MediaTagEnum.XXXJST, STR, 'License'),
+            TagArgInfo('license', MediaTagEnum.license, STR, 'License'),
             #TagArgInfo('location', MediaTagEnum.XXXJST, STR, 'Location'),
             #TagArgInfo('lyricist', MediaTagEnum.XXXJST, STR, 'Lyricist'),
             #TagArgInfo('organization', MediaTagEnum.XXXJST, STR, 'Organization'),
@@ -5355,14 +5434,14 @@ class Operon(Executable):
             #TagArgInfo('originalartist', MediaTagEnum.XXXJST, STR, 'Original Artist'),
             #TagArgInfo('originaldate', MediaTagEnum.XXXJST, STR, 'Original Release Date'),
             TagArgInfo('part', MediaTagEnum.subtitle, STR, 'Subtitle'),
-            #TagArgInfo('performer', MediaTagEnum.XXXJST, STR, 'Performer'),
-            #TagArgInfo('performersort', MediaTagEnum.XXXJST, STR, 'Performer (Sort)'),
+            TagArgInfo('performer', MediaTagEnum.performer, STR, 'Performer'),
+            TagArgInfo('performersort', MediaTagEnum.sortperformer, STR, 'Performer (Sort)'),
             #TagArgInfo('recordingdate', MediaTagEnum.XXXJST, STR, 'Recording Date'),
             TagArgInfo('releasecountry', MediaTagEnum.country, isocountry, 'Release Country'),
             TagArgInfo('title', MediaTagEnum.title, STR, 'Title'),
             TagArgInfo('tracknumber', MediaTagEnum.track_slash_tracks, STR, 'Track'),
             #TagArgInfo('version', MediaTagEnum.XXXJST, STR, 'Version'),
-            #TagArgInfo('website', MediaTagEnum.XXXJST, STR, 'Website'),
+            #TagArgInfo('website', MediaTagEnum.XXXJST, STR, 'Website'),  # TODO
             )
 
     @classmethod
