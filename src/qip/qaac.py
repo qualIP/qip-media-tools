@@ -87,7 +87,7 @@ class Qaac(Executable):
     tag_args_info = (
         # Tagging options:
         #  (same value is set to all files, so use with care for multiple files)
-        TagArgInfo(None, '--title', SoundTagEnum.artist, STR, 'Set the title'),
+        TagArgInfo(None, '--title', SoundTagEnum.title, STR, 'Set the title'),
         TagArgInfo(None, '--artist', SoundTagEnum.artist, STR, 'Set the artist'),
         TagArgInfo(None, '--band', SoundTagEnum.albumartist, STR, 'Set the album artist'),
         TagArgInfo(None, '--album', SoundTagEnum.albumtitle, STR, 'Set the album title'),
