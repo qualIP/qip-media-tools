@@ -4,10 +4,17 @@
 
 *qualIP's Media Tools* is a collection of tools centered on extraction and conversion of multimedia files:
 
-  - Movies
-  - Music
-  - Audiobooks
+  - Movies -- 3D, HDR, DVD, BD, Matroska, WebM, ...
+  - Music -- M4A, FLAC, ...
+  - Audiobooks -- M4B, MKA, ...
 
+## HOWTOs
+
+  - [mmdemux proposed workflow](doc/HOWTO-mmdemux-workflow.md)
+  - [Ripping a 3D Movie](doc/HOWTO-rip-3D-movie.md)
+  - Soon: Ripping audiobooks from audio CDs
+  - Soon: Rip a DVD/BD's main title to .mkv files
+  - More in the works...
 
 ## mmdemux
 
@@ -59,6 +66,96 @@ organization schemes are supported to be compatible with your favourite media
 library application, such as Plex or Emby.
 
 
+# Installation
+
+Supported systems:
+
+  - Linux Debian 10 (buster), 11 (bullseye)
+  - Linux Ubuntu 20.04.2 LTS (focal)
+
+Support for more systems will be added soon. Feel free to contribute, it's
+mostly a question of identifying and installing the right os-specific
+packages.
+
+Clone the source code and run `setup`:
+
+    $ git clone https://github.com/qualIP/qip-media-tools.git
+    $ cd qip-media-tools
+    $ ./setup
+
+    This program will help you install qualIP's Media Tools and its
+    dependencies.
+    Sudo access will be required to install certain tools.
+
+
+    ## System Information
+
+    Installation mode: Install
+    Installation target: System
+    Installation prefix: /usr/local
+    Prompt mode: Prompt
+    Clean mode: No clean
+    LSB release codename: bullseye
+
+    Run `../setup --help` for more options.
+
+    Ready to proceed? [Y/n]
+
+Installation requires installing and building many tools. This process includes:
+
+  - Installing system packages (qip-media-tools-depends and build dependencies)
+  - Installing docker and will require you to be added to the `docker` group,
+    if you're not already.
+  - Compiling and installing 3rd party applications (MakeMKV) and some in their
+    own docker (Wine, SubtitleEdit, FRIM, qaac).
+
+This process *will* take a long time, even hours.
+
+More options:
+
+    $ ./setup --help
+    Usage: ./setup [options...]
+    Options:
+      -h, --help          Print this help and exit
+      -y, --yes           Answer yes to all prompts (unattended)
+
+      --install           Install (default)
+      --reinstall         Reinstall even if already installed
+      --uninstall         Uninstall instead of installing
+
+      --user              Select user installation target (~/.local)
+      --system            Select system installation target (/usr/local)
+      --develop           Select development installation target (~/.local)
+      --prefix PREFIX     Specify custom installation prefix
+
+      --clean             Clean build artifacts after installing/uninstalling
+      --no-clean          Do not clean build artifacts (default)
+
+For a quick and unattended install at the system level (available to all users). Try this:
+
+    $ sudo ./setup --yes
+
+If you're not setup to run docker yet, the install may stop and request you to
+enable docker and re-login before starting setup again to resume:
+
+    You don't seem to be able to run docker commands.
+    Try:
+
+        docker info
+
+    You are not part of the docker group. You probably need to run the
+    following command to be added to the group:
+
+        sudo adduser $USER docker
+
+    Once done, please start a new login session (or reboot) for the change to
+    be effective.
+
+    Please fix the issue and run ./setup again.
+
+Installation completes:
+
+    All done. Enjoy!
 
 # Donations
 

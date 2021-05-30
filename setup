@@ -208,8 +208,11 @@ need_docker() {
             if ! (set -x && docker info) ; then
                 echo
                 echo "You don't seem to be able to run docker commands."
+                echo "Try:"
+                echo
+                echo "    docker info"
                 if groups | grep -qw docker ; then
-                    : #echo "You are part of the docker group."
+                    : #echo ; echo "You are part of the docker group."
                 else
                     echo
                     echo "You are not part of the docker group. You probably need to run the"
