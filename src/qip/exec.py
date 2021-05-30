@@ -519,9 +519,9 @@ class Args(object):
     def new_from(cls, other):
         if isinstance(other, Args):
             return Args(*other.args, **other.keywords)
-        if isinstance(other, collections.Mapping):
+        if isinstance(other, collections.abc.Mapping):
             return Args(**other)
-        if isinstance(other, collections.Sequence):
+        if isinstance(other, collections.abc.Sequence):
             return Args(*other)
         raise TypeError(other)
 

@@ -59,7 +59,7 @@ class Qaac(Executable):
             assert 'o' not in kwargs
             kwargs['o'] = output_file_name
         args += self.kwargs_to_cmdargs(**kwargs)
-        if isinstance(file_name, (str, os.PathLike)) or not isinstance(file_name, collections.Sequence):
+        if isinstance(file_name, (str, os.PathLike)) or not isinstance(file_name, collections.abc.Sequence):
             file_names = [file_name]
         else:
             file_names = file_name

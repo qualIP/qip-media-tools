@@ -1976,7 +1976,7 @@ def action_rip(rip_dir, device, in_tags):
                                  show_chapters=True)
                 rip_titles = filter(None, dvd_info.titles)
                 rip_titles = list(rip_titles) ; app.log.debug('1:rip_titles=%r', rip_titles)
-                if app.args.rip_titles_list and isinstance(app.args.rip_titles_list, collections.Sequence):
+                if app.args.rip_titles_list and isinstance(app.args.rip_titles_list, collections.abc.Sequence):
                     app.log.debug('4:rip_titles_list=%r', app.args.rip_titles_list)
                     def _filter(dvd_title):
                         if dvd_title.title_no in app.args.rip_titles_list:

@@ -1868,7 +1868,7 @@ for e in Stereo3DMode:
 
 # }}}
 
-class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMapping):
+class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.MutableMapping):
 
     def __init__(self, dict=None, **kwargs):
         if dict is not None:
@@ -1886,7 +1886,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
     def __json_encode_vars__(self):
         d = collections.OrderedDict()
         for k, v in self.items():
-            if v is not None and not isinstance(v, (str, int, list, tuple, collections.Mapping, json.JSONEncodable)):
+            if v is not None and not isinstance(v, (str, int, list, tuple, collections.abc.Mapping, json.JSONEncodable)):
                 v = str(v)
             d[k.value] = v
         return d
@@ -2348,7 +2348,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
     @xids.setter
     def xids(self, value):
-        if isinstance(value, str) or not isinstance(value, collections.Sequence):
+        if isinstance(value, str) or not isinstance(value, collections.abc.Sequence):
             value = (value,)
         for xid in value:
             xid = ITunesXid(xid)

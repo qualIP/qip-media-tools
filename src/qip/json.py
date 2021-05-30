@@ -13,7 +13,6 @@ __all__ = (
         'JSONDecoder',
         )
 
-import collections
 import datetime
 import importlib
 

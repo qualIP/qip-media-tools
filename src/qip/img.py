@@ -7,7 +7,6 @@ __all__ = (
     'ImageType',
 )
 
-import collections
 import copy
 import datetime
 import decimal

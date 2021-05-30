@@ -515,12 +515,12 @@ class TypedKeyDict(abc.ABC):
             return False
         return super().__contains__(key)
 
-    update = collections.MutableMapping.update
+    update = collections.abc.MutableMapping.update
 
     @classmethod
     def __subclasshook__(cls, C):
         if cls is TypedKeyDict:
-            if C is not TypedKeyDict and not issubclass(C, collections.Mapping):
+            if C is not TypedKeyDict and not issubclass(C, collections.abc.Mapping):
                 return NotImplemented
             for B in C.__mro__:
                 if "_sanitize_key" in B.__dict__:
@@ -543,7 +543,7 @@ class TypedValueDict(abc.ABC):
     @classmethod
     def __subclasshook__(cls, C):
         if cls is TypedValueDict:
-            if C is not TypedValueDict and not issubclass(C, collections.MutableMapping):
+            if C is not TypedValueDict and not issubclass(C, collections.abc.MutableMapping):
                 return NotImplemented
             for B in C.__mro__:
                 if "_sanitize_value" in B.__dict__:

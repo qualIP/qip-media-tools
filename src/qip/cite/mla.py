@@ -566,7 +566,7 @@ def cite_tvshow(*,
             else:
                 cite += f'season {season}'
         if episode is not None:
-            if not isinstance(episode, collections.Iterable) or isinstance(episode, str):
+            if not isinstance(episode, collections.abc.Iterable) or isinstance(episode, str):
                 episode = (episode,)
             episode = list(str(e) for e in episode)
             if episode and episode != ['0']:
