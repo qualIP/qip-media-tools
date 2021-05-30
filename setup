@@ -10,7 +10,7 @@ OPT_USER=false
 OPT_DEVELOP=false
 OPT_INSTALL=true
 OPT_REINSTALL=false
-OPT_CLEAN=true
+OPT_CLEAN=false
 MAKE=${MAKE:-make -j}
 PREFIX=${PREFIX:-/usr/local}
 PYTHON=python3
@@ -63,8 +63,8 @@ if $OPT_HELP ; then
     echo "  --develop           Select development installation target (~/.local)"
     echo "  --prefix PREFIX     Specify custom installation prefix"
     echo
-    echo "  --clean             Clean build artifacts after installing/uninstalling (default)"
-    echo "  --no-clean          Do not clean build artifacts"
+    echo "  --clean             Clean build artifacts after installing/uninstalling (use less space)"
+    echo "  --no-clean          Do not clean build artifacts (faster re-builds) (default)"
     exit 0
 fi
 
