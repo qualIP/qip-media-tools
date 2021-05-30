@@ -169,7 +169,7 @@ need_docker() {
                     echo "Following Docker install instructions for Debian $lsb_codename:"
                     echo "    https://docs.docker.com/engine/install/debian/"
                     echo
-                    $maybe_sudo apt-get install apt-transport-https ca-certificates curl gnupg lsb-release
+                    $maybe_sudo apt-get install $($OPT_YES && echo -y) apt-transport-https ca-certificates curl gnupg lsb-release
                     curl -fsSL https://download.docker.com/linux/debian/gpg \
                         | $maybe_sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
                     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
@@ -181,7 +181,7 @@ need_docker() {
                     echo "Following Docker install instructions for Ubuntu $lsb_codename:"
                     echo "    https://docs.docker.com/engine/install/ubuntu/"
                     echo
-                    $maybe_sudo apt-get install apt-transport-https ca-certificates curl gnupg lsb-release
+                    $maybe_sudo apt-get install $($OPT_YES && echo -y) apt-transport-https ca-certificates curl gnupg lsb-release
                     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
                         | $maybe_sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
                     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
@@ -316,7 +316,7 @@ install_package() {
         esac
     done
 
-    set -- apt-get install $package
+    set -- apt-get install $($OPT_YES && echo -y) $package
     [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
 
     if ! $ask || ask_yes_no "Install $package package ($*)?" ; then

@@ -46,7 +46,7 @@ $(FILE_DEPS_PACKAGE_DEB): qip-media-tools-depends.ctl
 
 .PHONY: install-qip-media-tools-depends
 install-qip-media-tools-depends: $(FILE_DEPS_PACKAGE_DEB)
-	$(maybe_sudo) dpkg -i $(FILE_DEPS_PACKAGE_DEB) || $(maybe_sudo) apt-get --fix-broken install
+	$(maybe_sudo) dpkg -i $(FILE_DEPS_PACKAGE_DEB) || $(maybe_sudo) apt-get -y --fix-broken install
 
 .PHONY: uninstall-qip-media-tools-depends
 uninstall-qip-media-tools-depends:
