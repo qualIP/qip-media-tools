@@ -10,6 +10,7 @@ import re
 import sys
 import traceback
 import urllib
+import configparser
 
 from . import argparse
 
@@ -58,13 +59,18 @@ addLoggingLevelName((logging.INFO + logging.DEBUG) // 2, "VERBOSE")
 
 class App(object):
 
-    log = logging.getLogger('__main__')
-    parser = None
     prog = None
     descripton = None
     version = None
     contact = None
+
+    log = logging.getLogger('__main__')
+
+    init_parser = None
+    parser = None
     args = None
+    config_parser = None
+
     cache_dir = None
     _user_agent = None
     _ureg = None
@@ -134,7 +140,19 @@ class App(object):
                             #"-w",
                             "--write-out-config-file",
                             ]
+
+        parser_parents = []
+        if allow_config_file:
+            self.init_parser = argparse.ArgumentParser(
+                description=description,
+                add_help=False
+                )
+            self.init_parser.add_argument("--config", "-c", dest='config_file', default=None, help="Specify config file", metavar="FILE")
+            self.init_parser.add_argument("--no-config", default=argparse.SUPPRESS, action='store_false', help="Disable config file")
+            parser_parents.append(self.init_parser)
+
         self.parser = argparse.ArgumentParser(
+            parents=parser_parents,
             fromfile_prefix_chars=fromfile_prefix_chars,
             prog=self.prog,
             description=description,
@@ -166,11 +184,70 @@ class App(object):
         if HAVE_COLOREDLOGS:
             coloredlogs.set_level(level)
 
-    def parse_args(self, **kwargs):
+    def default_config_file(self):
+        config_home = os.environ.get('XDG_CONFIG_HOME', None) \
+            or os.path.expanduser('~/.config')
+        config_file = f'{config_home}/{self.prog}/config'
+        if not os.path.exists(config_file):
+            config_file = os.path.expanduser(f'~/.{self.prog}rc')
+        return config_file
+
+    def parse_args(self, args=None, namespace=None):
         if HAVE_ARGCOMPLETE:
             argcomplete.autocomplete(self.parser)
-        self.args = self.parser.parse_args(**kwargs)
+
+        if args is None:
+            # args default to the system args
+            args = sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+
+        remaining_args = args
+
+        config_args = []
+
+        if self.init_parser:
+            namespace, remaining_args = self.init_parser.parse_known_args(
+                args=remaining_args,
+                namespace=namespace)
+            if namespace.config_file is None:
+                config_file = self.default_config_file()
+                if config_file and os.path.exists(config_file):
+                    namespace.config_file = config_file
+
+            if namespace.config_file:
+                self.read_config_file(namespace.config_file)
+                try:
+                    options_config = self.config_parser["options"]
+                except KeyError:
+                    pass
+                else:
+                    for k, v in options_config.items():
+                        option_string = f'--{k}'
+                        action = self.parser._option_string_actions[option_string]
+                        if True:
+                            if action.nargs == 0:
+                                assert v is None, f'{option_string} takes no argument'
+                            else:
+                                assert v is not None, f'{option_string} takes an argument'
+                            config_args.append(option_string)
+                            if v is not None:
+                                config_args.append(v)
+                        else:
+                            argument_values = [] if v is None else [v]
+                            action(self.parser, namespace, argument_values, option_string)
+
+        namespace = self.parser.parse_args(
+            args=config_args + remaining_args,
+            namespace=namespace)
+
+        self.args = namespace
         return self.args
+
+    def read_config_file(self, config_file):
+        self.config_parser = configparser.SafeConfigParser(allow_no_value=True)
+        self.config_parser.read([config_file])
 
     @property
     def user_agent(self):

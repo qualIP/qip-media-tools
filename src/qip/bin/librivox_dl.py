@@ -37,7 +37,7 @@ def main():
     app.parser.add_argument('--version', '-V', action='version')
 
     pgroup = app.parser.add_argument_group('Program Control')
-    pgroup.add_argument('--continue', '-c', dest='_continue', action='store_true', help='continue previous download')
+    pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue previous download')
     pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')

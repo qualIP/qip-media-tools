@@ -39,7 +39,7 @@ def main():
     app.parser.add_argument('--version', '-V', action='version')
 
     pgroup = app.parser.add_argument_group('Program Control')
-    pgroup.add_argument('--continue', '-c', dest='_continue', action='store_true', help='continue creating RIP')
+    pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue creating RIP')
     #pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
     pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
     #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
