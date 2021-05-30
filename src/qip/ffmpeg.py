@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'ffmpeg',
@@ -182,7 +184,6 @@ class _FfmpegSpawnMixin(_SpawnMixin):
                 d[k] = None if d[k] is None else int(byte_decode(d[k]))
             except KeyError:
                 pass
-        log.debug('streams_info=%r', self.streams_info)
         self.print_line(str, level=logging.DEBUG)
         return True
 
@@ -199,8 +200,8 @@ class _FfmpegSpawnMixin(_SpawnMixin):
                 d[k] = None if d[k] is None else int(byte_decode(d[k]))
             except KeyError:
                 pass
-        log.debug('streams_info=%r', self.streams_info)
         self.print_line(str, level=logging.DEBUG)
+        print('', end='', flush=True)
         return True
 
     def progress_line(self, str):
@@ -208,7 +209,8 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             if self.progress_bar_max:
                 if isinstance(self.progress_bar_max, _BaseTimestamp):
                     if Timestamp(byte_decode(self.match.group('time'))).seconds >= 0.0:
-                        self.progress_bar.goto(Timestamp(byte_decode(self.match.group('time'))).seconds)
+                        v = Timestamp(byte_decode(self.match.group('time'))).seconds
+                        self.progress_bar.goto(v)
                 else:
                     if int(self.match.group('frame')) >= 0:
                         self.progress_bar.goto(int(self.match.group('frame')))
@@ -240,7 +242,8 @@ class _FfmpegSpawnMixin(_SpawnMixin):
                 self.progress_bar.crop = self.cropdetect_result
                 if isinstance(self.progress_bar_max, _BaseTimestamp):
                     if Timestamp(byte_decode(self.match.group('time'))).seconds >= 0.0:
-                        self.progress_bar.goto(Timestamp(byte_decode(self.match.group('time'))).seconds)
+                        v = Timestamp(byte_decode(self.match.group('time'))).seconds
+                        self.progress_bar.goto(v)
                 else:
                     # self.progress_bar.goto(int(self.match.group('frame')))
                     self.progress_bar.next()
@@ -1133,5 +1136,3 @@ class Ffprobe(_Ffmpeg):
                 raise ValueError('Unrecognized line %d: %s' % (parser.line_no, line))
 
 ffprobe = Ffprobe()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et

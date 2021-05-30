@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 import sys as _sys
 import argparse as _argparse

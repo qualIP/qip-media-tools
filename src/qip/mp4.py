@@ -1,5 +1,5 @@
-
-# https://en.wikipedia.org/wiki/MPEG-4_Part_14
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = (
     'Mpeg4ContainerFile',
@@ -9,6 +9,8 @@ __all__ = (
     'M4rFile',
     'mp4chaps',
 )
+
+# https://en.wikipedia.org/wiki/MPEG-4_Part_14
 
 from pathlib import Path
 import copy
@@ -34,8 +36,6 @@ import qip.cdda as cdda
 from .img import ImageFile
 from .utils import byte_decode, Timestamp as _BaseTimestamp
 from .exec import Executable
-
-# https://en.wikipedia.org/wiki/MPEG-4_Part_14
 
 class Mpeg4ContainerFile(BinaryMediaFile):
 

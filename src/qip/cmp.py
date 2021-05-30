@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 __all__ = [
         'strcmp',
         'genericcmp',
@@ -100,5 +103,3 @@ def dictionarycmp(left, right):
     if diff == 0:
         diff = secondaryDiff
     return diff
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

@@ -1,5 +1,5 @@
-# Based on ocode.c from the original lsdvd:
-#     lsdvd 0.18 - GPL Copyright (c) 2002-2005, 2014 "Written" by Chris Phillips <acid_kewpie@users.sf.net>
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = (
     'debug_syntax',
@@ -8,6 +8,9 @@ __all__ = (
     'ruby_syntax',
     'xml_syntax',
 )
+
+# Based on ocode.c from the original lsdvd:
+#     lsdvd 0.18 - GPL Copyright (c) 2002-2005, 2014 "Written" by Chris Phillips <acid_kewpie@users.sf.net>
 
 import collections
 import contextlib
@@ -226,4 +229,3 @@ class Formatter(object):
         self.INDENT()
         self.printf(format, *args)
         self.printf(self.syntax.adef_sep)
-

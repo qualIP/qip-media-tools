@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 # PYTHON_ARGCOMPLETE_OK
 
 #if __name__ == "__main__":
@@ -625,6 +627,19 @@ global_stats = types.SimpleNamespace(
 def _resolved_Path(path):
     return Path(path).resolve()
 
+def _mux_dir_Path(path):
+    path = Path(path)
+    mux_file = path / 'mux.json'
+    if mux_file.exists():
+        return path
+    if path.is_file():
+        inputfile_base, inputfile_ext = my_splitext(path)
+        path2 = Path(inputfile_base)
+        mux_file2 = path2 / 'mux.json'
+        if mux_file2.exists():
+            return path2
+    raise OSError(errno.EEXIST, 'No such file', os.fspath(mux_file))
+
 class NumericTextArea(TextArea):
 
     def __init__(self, *args, **kwargs):
@@ -708,12 +723,12 @@ def main():
 
     pgroup = app.parser.add_argument_group('Video Control')
     xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_bool_argument('--crop', default=Auto, help='cropping video')
+    xgroup.add_bool_argument('--crop', default=True, help='cropping video')  # XXXJST TODO Auto is too restrictive!
     xgroup.add_argument('--crop-wh', default=argparse.SUPPRESS, type=int, nargs=2, help='force cropping dimensions (centered)')
     xgroup.add_argument('--crop-whlt', default=argparse.SUPPRESS, type=int, nargs=4, help='force cropping dimensions')
     pgroup.add_bool_argument('--parallel-chapters', default=False, help='per-chapter parallel processing')
     pgroup.add_argument('--cropdetect-duration', type=AnyTimestamp, default=qip.utils.Timestamp(300), help='cropdetect duration (seconds)')
-    pgroup.add_bool_argument('--cropdetect-skip-frame-nokey', default=True, help='cropdetect skipping of non-key frames')
+    pgroup.add_bool_argument('--cropdetect-skip-frame-nokey', default=False, help='cropdetect skipping of non-key frames (faster but less accurate)')
     pgroup.add_argument('--cropdetect-seek', type=AnyTimestamp, default=qip.utils.Timestamp(0), help='cropdetect seek / skip (seconds)')
     pgroup.add_argument('--cropdetect-limit', type=int, choices=range(0,256), default=24, help='cropdetect higher black value threshold / limit')
     pgroup.add_argument('--cropdetect-round', type=int, choices=range(0,1000), default=2, help='cropdetect width/height rouding factor')
@@ -778,17 +793,17 @@ def main():
     pgroup.add_argument('--hb', dest='hb_files', nargs='+', default=(), type=Path, help='files to run through HandBrake')
     pgroup.add_argument('--mux', dest='mux_files', nargs='+', default=(), type=Path, help='files to mux')
     pgroup.add_argument('--verify', dest='verify_files', nargs='+', default=(), type=Path, help='files to verify')
-    pgroup.add_argument('--update', dest='update_dirs', nargs='+', default=(), type=Path, help='directories to update mux parameters for')
-    pgroup.add_argument('--combine', dest='combine_dirs', nargs='+', default=(), type=Path, help='directories to combine')
-    pgroup.add_argument('--chop', dest='chop_dirs', nargs='+', default=(), type=Path, help='files/directories to chop into chapters')
-    pgroup.add_argument('--extract-music', dest='extract_music_dirs', nargs='+', default=(), type=Path, help='directories to extract music from')
-    pgroup.add_argument('--optimize', dest='optimize_dirs', nargs='+', default=(), type=Path, help='directories to optimize')
-    pgroup.add_argument('--demux', dest='demux_dirs', nargs='+', default=(), type=Path, help='directories to demux')
+    pgroup.add_argument('--update', dest='update_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to update mux parameters for')
+    pgroup.add_argument('--combine', dest='combine_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to combine')
+    pgroup.add_argument('--chop', dest='chop_dirs', nargs='+', default=(), type=_mux_dir_Path, help='files/directories to chop into chapters')
+    pgroup.add_argument('--extract-music', dest='extract_music_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to extract music from')
+    pgroup.add_argument('--optimize', dest='optimize_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to optimize')
+    pgroup.add_argument('--demux', dest='demux_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to demux')
     pgroup.add_argument('--concat', dest='concat_files', nargs='+', default=(), type=Path, help='files to concat')
     pgroup.add_argument('--tag-episodes', dest='tag_episodes_files', nargs='+', default=(), type=Path, help='files to tag based on tvshow episodes')
     pgroup.add_argument('--identify', dest='identify_files', nargs='+', default=(), type=Path, help='identify files')
-    pgroup.add_argument('--pick-title-streams', dest='pick_title_streams_dirs', nargs='+', default=(), type=Path, help='directories to pick title streams from')
-    pgroup.add_argument('--status', '--print', dest='status_dirs', nargs='+', default=(), type=Path, help='directories to print the status of')
+    pgroup.add_argument('--pick-title-streams', dest='pick_title_streams_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to pick title streams from')
+    pgroup.add_argument('--status', '--print', dest='status_dirs', nargs='+', default=(), type=_mux_dir_Path, help='directories to print the status of')
 
     app.parse_args()
 
@@ -2131,7 +2146,7 @@ def chop_chapters(chaps,
     ffmpeg_args += [
         chapter_file_name_pat,
     ]
-    with perfcontext('Chop w/ ffmpeg segment muxer'):
+    with perfcontext('Chop w/ ffmpeg segment muxer', log=True):
         ffmpeg(*ffmpeg_args,
                progress_bar_max=estimate_stream_duration(inputfile=inputfile),
                progress_bar_title=f'Split {inputfile} into {len(chaps)} chapters w/ ffmpeg',
@@ -2164,7 +2179,7 @@ def chop_chapters(chaps,
                 chopped_file,
                 '--chapters', chapters_xml_file,
             ]
-            with perfcontext('add chapters w/ mkvpropedit'):
+            with perfcontext('Add chapters w/ mkvpropedit', log=True):
                 do_spawn_cmd(cmd)
 
     return chapter_file_name_pat
@@ -2184,7 +2199,7 @@ def chop_chapters(chaps,
                 chap.no,
                 stream_file_ext)
 
-            with perfcontext('Chop w/ ffmpeg'):
+            with perfcontext('Chop w/ ffmpeg', log=True):
                 ffmpeg_args = default_ffmpeg_args + [
                     '-start_at_zero', '-copyts',
                     '-i', inputdir / stream_file_name,
@@ -2291,7 +2306,7 @@ def action_hb(inputfile, in_tags):
             frame_rate=framerate,
             )
 
-        with perfcontext('Convert w/ HandBrake'):
+        with perfcontext('Convert w/ HandBrake', log=True):
             out = HandBrake(
                    # Dimensions
                    # crop='<top:bottom:left:right>',
@@ -2784,7 +2799,7 @@ def action_mux(inputfile, in_tags,
                                         'vp9',
                                         ))):
                             app.log.info('Extract %s stream #%s: %s', stream.codec_type, stream.pprint_index, output_track_file_name)
-                            with perfcontext('extract track #%s w/ ffmpeg' % (stream.pprint_index,)):
+                            with perfcontext('Extract track #%s w/ ffmpeg' % (stream.pprint_index,), log=True):
                                 force_format = None
                                 try:
                                     force_format = ext_to_container(stream_file_ext)
@@ -2910,13 +2925,13 @@ def action_mux(inputfile, in_tags,
                 mux_dict['streams'].append(stream)
 
         if mkvextract_tracks_args:
-            with perfcontext('extract tracks w/ mkvextract'):
+            with perfcontext('Extract tracks w/ mkvextract', log=True):
                 cmd = [
                     'mkvextract', 'tracks', inputfile,
                     ] + mkvextract_tracks_args
                 do_spawn_cmd(cmd)
         if mkvextract_attachments_args:
-            with perfcontext('extract attachments w/ mkvextract'):
+            with perfcontext('Extract attachments w/ mkvextract', log=True):
                 cmd = [
                     'mkvextract', 'attachments', inputfile,
                     ] + mkvextract_attachments_args
@@ -3448,7 +3463,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
             print(tabulate(table,
                            headers=[
                                'Index',
-                               'Codec',
+                               'Type',
                                'Original',
                                'Size',
                                'Extension',
@@ -3867,7 +3882,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                         # Concat
                         ffmpeg_concat_args = []
-                        with perfcontext('Concat %s w/ ffmpeg' % (new_stream.file_name,)):
+                        with perfcontext('Concat %s w/ ffmpeg' % (new_stream.file_name,), log=True):
                             cwd = concat_list_file.file_name.parent  # Certain characters (like '?') confuse the concat protocol
                             ffmpeg_args = [] + default_ffmpeg_args
                             try:
@@ -4053,7 +4068,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             new_stream.path,
                         ]
 
-                        with perfcontext('MVC -> FRIMDecode -> SBS/TAB/ALT'):
+                        with perfcontext('MVC -> FRIMDecode -> SBS/TAB/ALT', log=True):
                             p1 = FRIMDecode.popen(*frimdecode_args,
                                                   stdout=subprocess.PIPE,
                                                   stderr=open('/dev/stdout', 'wb'),
@@ -4183,7 +4198,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 new_stream.path,
                             ]
 
-                            with perfcontext('Pullup w/ -> .y4m' + (' -> yuvcorrect' if use_yuvcorrect else '') + ' -> yuvkineco -> .ffv1'):
+                            with perfcontext('Pullup w/ -> .y4m' + (' -> yuvcorrect' if use_yuvcorrect else '') + ' -> yuvkineco -> .ffv1', log=True):
                                 if ffmpeg_dec_args:
                                     p1 = ffmpeg.popen(*ffmpeg_dec_args,
                                                       stdout=subprocess.PIPE,
@@ -4270,7 +4285,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 new_stream.path,
                             ]
 
-                            with perfcontext('Pullup w/ -> ffmpeg -> .ffv1'):
+                            with perfcontext('Pullup w/ -> ffmpeg -> .ffv1', log=True):
                                 ffmpeg(*ffmpeg_args,
                                        slurm=app.args.slurm,
                                        #slurm_cpus_per_task=2, # ~230-240%
@@ -4309,7 +4324,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 '-o', new_stream.path,
                             ]
                             expected_framerate = framerate
-                            with perfcontext('Pullup w/ mencoder'):
+                            with perfcontext('Pullup w/ mencoder', log=True):
                                 mencoder(*mencoder_args,
                                          #slurm=app.args.slurm,
                                          dry_run=app.args.dry_run)
@@ -4505,13 +4520,6 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     if force_constant_framerate:
                         video_filter_specs.append(f'fps=fps={framerate}')
 
-
-
-
-
-
-
-
                     pad_video = app.args.pad_video
                     if pad_video is None:
                         if stream_file_ext in still_image_exts:
@@ -4657,7 +4665,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             raise NotImplementedError('--pad-video and --force-constant-framerate')
                         concat_list_file = ffmpeg.ConcatScriptFile(new_stream.inputdir / f'{new_stream.file_name}.concat.txt')
                         ffmpeg_concat_args = []
-                        with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_ext, new_stream.file_name)):
+                        with perfcontext('Convert %s chapters to %s in parallel w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             chapter_stream_file_ext = {
                                     '.mpeg2': '.mpegts',
                                     '.mpeg2.mp2v': '.mpegts',
@@ -4801,7 +4809,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                         # Concat
                         ffmpeg_concat_args = []
-                        with perfcontext('Concat %s w/ ffmpeg' % (new_stream.file_name,)):
+                        with perfcontext('Concat %s w/ ffmpeg' % (new_stream.file_name,), log=True):
                             cwd = concat_list_file.file_name.parent  # Certain characters (like '?') confuse the concat protocol
                             ffmpeg_args = default_ffmpeg_args + [
                                 '-f', 'concat', '-safe', '0',
@@ -4845,7 +4853,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 '.av1.ivf',
                                 # '.ffv1.mkv',  # no need for better compression
                         ):
-                            with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name)):
+                            with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                                 ffmpeg.run2pass(*ffmpeg_args,
                                                 slurm=app.args.slurm,
                                                 progress_bar_max=stream_dict.estimated_duration,
@@ -4853,7 +4861,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                                 dry_run=app.args.dry_run,
                                                 y=app.args.yes)
                         else:
-                            with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name)):
+                            with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                                 ffmpeg(*ffmpeg_args,
                                        progress_bar_max=stream_dict.estimated_duration,
                                        progress_bar_title=f'Convert {stream_dict.codec_type} stream {stream_dict.pprint_index} {stream_file_ext} -> {new_stream_file_ext} w/ ffmpeg',
@@ -4896,7 +4904,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         new_stream['file_name'] = stream_file_base + new_stream_file_ext
                         app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
 
-                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name)):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg_args = default_ffmpeg_args + [
                                 '-i', stream_dict.path,
                                 # '-channel_layout', channel_layout,
@@ -4984,7 +4992,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             pass
                         audio_bitrate = audio_bitrate // 1000
 
-                        with perfcontext('Convert %s -> %s w/ opusenc' % (stream_file_ext, new_stream.file_name)):
+                        with perfcontext('Convert %s -> %s w/ opusenc' % (stream_file_ext, new_stream.file_name), log=True):
                             opusenc_args = [
                                 '--vbr',
                                 '--bitrate', str(audio_bitrate),
@@ -5011,7 +5019,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         if channels > 2:
                             raise NotImplementedError('Conversion not supported as ffmpeg does not respect the number of channels and channel mapping')
 
-                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name)):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg_args = default_ffmpeg_args + [
                                 '-i', stream_dict.path,
                                 '-c:a', 'opus',
@@ -5052,7 +5060,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
 
                         if False:
-                            with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name)):
+                            with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                                 ffmpeg_args = default_ffmpeg_args + [
                                     '-i', stream_dict.path,
                                     '-scodec', 'dvdsub',
@@ -5068,7 +5076,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                        dry_run=app.args.dry_run,
                                        y=app.args.yes)
                         else:
-                            with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream.file_name)):
+                            with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream.file_name), log=True):
                                 # https://www.videohelp.com/software/BDSup2Sub
                                 # https://github.com/mjuhasz/BDSup2Sub/wiki/Command-line-Interface
                                 cmd = [
@@ -5116,7 +5124,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                     subrip_matrix_dir,
                                     ]
                                 try:
-                                    with perfcontext('SubRip /FINDMATRIX'):
+                                    with perfcontext('SubRip /FINDMATRIX', log=True):
                                         out = do_spawn_cmd(cmd)
                                 except subprocess.CalledProcessError:
                                     raise  # Seen errors before
@@ -5144,7 +5152,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                     else:
                                         raise ValueError('Can\'t determine a new matrix name under %s' % (subrip_matrix_dir,))
 
-                            with perfcontext('SubRip /AUTOTEXT'):
+                            with perfcontext('SubRip /AUTOTEXT', log=True):
                                 # ~/tools/installs/SubRip/CLI.txt
                                 cmd = [
                                     'SubRip', '/AUTOTEXT',
@@ -5174,7 +5182,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                         app.log.warning('Invoking %s: Please run OCR and save as SubRip (.srt) format: %s',
                                                         SubtitleEdit.name,
                                                         new_stream.path)
-                                with perfcontext('Convert %s -> %s w/ SubtitleEdit' % (stream_file_ext, new_stream.file_name)):
+                                with perfcontext('Convert %s -> %s w/ SubtitleEdit' % (stream_file_ext, new_stream.file_name), log=True):
                                     SubtitleEdit(*subtitleedit_args,
                                                  language=stream_dict.language,
                                                  seed_file_name=new_stream.path,
@@ -5276,7 +5284,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         new_stream['file_name'] = stream_file_base + new_stream_file_ext
                         app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
 
-                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name)):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg_args = default_ffmpeg_args + [
                                 '-i', stream_dict.path,
                                 '-f', 'webvtt', new_stream.path,
@@ -5311,7 +5319,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         new_stream['file_name'] = stream_file_base + new_stream_file_ext
                         app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
 
-                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name)):
+                        with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True):
                             ffmpeg_args = default_ffmpeg_args + [
                                 '-i', stream_dict.path,
                                 ]
@@ -5425,7 +5433,7 @@ def action_extract_music(inputdir, in_tags):
                                 chap.no,
                                 stream_file_ext)))
 
-                    with perfcontext('Chop w/ ffmpeg'):
+                    with perfcontext('Chop w/ ffmpeg', log=True):
                         ffmpeg_args = default_ffmpeg_args + [
                             '-start_at_zero', '-copyts',
                             '-i', stream_dict.path,
@@ -5477,7 +5485,7 @@ def action_extract_music(inputdir, in_tags):
                     audio_bitrate = min(audio_bitrate, int(stream_dict.file.ffprobe_dict['streams'][0]['bit_rate']))
                     audio_bitrate = audio_bitrate // 1000
 
-                    with perfcontext('Convert %s -> %s w/ M4aFile.encode' % (stream_chapter_tmp_file.file_name, '.m4a')):
+                    with perfcontext('Convert %s -> %s w/ M4aFile.encode' % (stream_chapter_tmp_file.file_name, '.m4a'), log=True):
                         m4a.encode(inputfiles=[stream_chapter_tmp_file],
                                    target_bitrate=audio_bitrate,
                                    yes=app.args.yes,
@@ -5623,12 +5631,12 @@ def action_demux(inputdir, in_tags):
                 try:
                     ns = parser.parse_args(args=shlex.split(c, posix=os.name == 'posix'))
                 except argparse.ArgumentError as e:
-                    app.log.error(e);
+                    app.log.error(e)
                     print('')
                     continue
                 except argparse.ParserExitException as e:
                     if e.status:
-                        app.log.error(e);
+                        app.log.error(e)
                         print('')
                     continue
                 if ns.action == 'help':
@@ -5895,7 +5903,7 @@ def action_demux(inputdir, in_tags):
             cmd += ['--chapters', inputdir / mux_dict['chapters']['file_name']]
         else:
             cmd += ['--no-chapters']
-        with perfcontext('mkvmerge'):
+        with perfcontext('Merge w/ mkvmerge', log=True):
             do_spawn_cmd(cmd)
 
         if any(stream_dict['_temp'].post_process_subtitle
@@ -5958,7 +5966,7 @@ def action_demux(inputdir, in_tags):
                 '-f', ext_to_container(my_splitext(output_file)[1]),
                 output_file,
                 ]
-            with perfcontext('merge subtitles w/ ffmpeg'):
+            with perfcontext('Merge subtitles w/ ffmpeg', log=True):
                 ffmpeg(*ffmpeg_args,
                        progress_bar_max=estimated_duration,
                        progress_bar_title=f'Merge subtitles w/ ffmpeg',
@@ -6291,7 +6299,7 @@ def action_demux(inputdir, in_tags):
             output_file,
             ]
         ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args + ffmpeg_output_args
-        with perfcontext('merge w/ ffmpeg'):
+        with perfcontext('Merge w/ ffmpeg', log=True):
             ffmpeg(*ffmpeg_args,
                    progress_bar_max=estimated_duration,
                    progress_bar_title='Merge w/ ffmpeg',
@@ -6318,7 +6326,7 @@ def action_demux(inputdir, in_tags):
                 output_file,
                 '--chapters', chapters_xml_file,
             ]
-            with perfcontext('add chapters w/ mkvpropedit'):
+            with perfcontext('Add chapters w/ mkvpropedit', log=True):
                 do_spawn_cmd(cmd)
 
     output_file.write_tags(tags=mux_dict['tags'],
@@ -6470,7 +6478,7 @@ def action_concat(concat_files, in_tags):
         '-start_at_zero',
         '-f', ext_to_container(concat_file), concat_file,
     ]
-    with perfcontext('Concat w/ ffmpeg'):
+    with perfcontext('Concat w/ ffmpeg', log=True):
         ffmpeg(*ffmpeg_args,
                progress_bar_max=chaps.chapters[-1].end,
                progress_bar_title=f'Concat w/ ffmpeg',
@@ -6482,7 +6490,7 @@ def action_concat(concat_files, in_tags):
         concat_file,
         '--chapters', chapters_xml_file,
     ]
-    with perfcontext('add chapters w/ mkvpropedit'):
+    with perfcontext('Add chapters w/ mkvpropedit', log=True):
         do_spawn_cmd(cmd)
 
     return True

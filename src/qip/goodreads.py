@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 """Goodreads API Access
 
 See: https://www.goodreads.com/api/keys
@@ -274,5 +277,3 @@ description={book.description}
         tags.pprint()
 
     main()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et

@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'safecopy',
@@ -77,5 +79,3 @@ class Safecopy(Executable):
         return d
 
 safecopy = Safecopy()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

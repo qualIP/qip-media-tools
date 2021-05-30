@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = (
     'propex',
@@ -606,5 +608,3 @@ class propex(object):
         return '{}(name={!r}, ...)'.format(
             self.__class__.__name__,
             self.__name__)
-
-# vim: ft=python et sw=4

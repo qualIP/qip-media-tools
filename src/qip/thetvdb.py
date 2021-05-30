@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 """TheTVDB API Access
 
 See: https://api.thetvdb.com/swagger
@@ -117,5 +120,3 @@ if __name__ == "__main__":
             print('{seriesName} [{language}], {network}, {firstAired}, {status} (#{id})'.format_map(d_series))
 
     main()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

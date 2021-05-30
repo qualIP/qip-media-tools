@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'FRIMEncode',
@@ -71,5 +73,3 @@ class _FRIMTranscode(_FRIMExecutable):
     name = 'FRIMTranscode'
 
 FRIMTranscode = _FRIMTranscode()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

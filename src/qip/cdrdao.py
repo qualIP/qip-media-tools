@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'cdrdao',
@@ -22,7 +24,7 @@ class Cdrdao(Executable):
         if fast_toc:
             args += ['--fast-toc']
         if device:
-            args += ['--device', str(device)]
+            args += ['--device', device]
         assert isinstance(with_cddb, bool)
         if with_cddb:
             args += ['--with-cddb']
@@ -32,5 +34,3 @@ class Cdrdao(Executable):
         return self._run(*args, **kwargs)
 
 cdrdao = Cdrdao()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

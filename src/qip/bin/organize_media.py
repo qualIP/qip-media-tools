@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 # PYTHON_ARGCOMPLETE_OK
 
 # https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes
@@ -932,5 +934,3 @@ def organize(inputfile):
 
 if __name__ == "__main__":
     main()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

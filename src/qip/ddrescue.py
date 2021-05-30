@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'ddrescue',
@@ -17,5 +19,3 @@ class Ddrescue(Executable):
     kwargs_to_cmdargs = Executable.kwargs_to_cmdargs_gnu_getopt
 
 ddrescue = Ddrescue()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

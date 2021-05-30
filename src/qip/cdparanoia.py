@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'cdparanoia',
@@ -43,7 +45,7 @@ class Cdparanoia(Executable):
         if verbose:
             args += ['--verbose']
         if device:
-            args += ['--force-cdrom-device', str(device)]
+            args += ['--force-cdrom-device', device]
         d = self.run_wrapper(*args, retry_no_audio_cd=retry_no_audio_cd, **kwargs)
         parser = lines_parser(self.clean_cmd_output(d.out).splitlines())
         while parser.advance():
@@ -112,5 +114,3 @@ class Cdparanoia(Executable):
         return toc
 
 cdparanoia = Cdparanoia()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

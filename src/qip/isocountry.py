@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'IsoCountry',
@@ -407,5 +409,3 @@ def isocountry(v):
         return v  # Unique!
     else:
         raise TypeError(v)
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

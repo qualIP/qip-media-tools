@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 """The Movie DB API Access
 
 See: https://developers.themoviedb.org/3/getting-started/introduction

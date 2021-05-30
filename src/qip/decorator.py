@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 import functools
 import sys
@@ -204,5 +206,3 @@ def func_once(func):
             decorated._once_result = func(*args, **kwargs)
             return decorated._once_result
     return decorated
-
-# vim: ft=python ts=8 sw=4 et

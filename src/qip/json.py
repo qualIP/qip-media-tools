@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = (
         'JsonFile',
@@ -12,8 +14,8 @@ __all__ = (
         )
 
 import collections
-import importlib
 import datetime
+import importlib
 
 from json import JSONEncoder as _JSONEncoder
 from json import JSONDecoder as _JSONDecoder

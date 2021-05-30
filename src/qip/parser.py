@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 __all__ = [
         'lines_parser',
         ]
@@ -43,5 +46,3 @@ class lines_parser(object):
     def __iter__(self):
         while self.advance():
             yield self.line
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

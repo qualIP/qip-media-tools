@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 __all__ = [
         'app',
         ]
@@ -741,5 +744,3 @@ class App(XdgResource):
 
 
 app = App()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et

@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 __all__ = [
         'ThreadPool',
         ]
@@ -99,5 +102,3 @@ if __name__ == "__main__":
     # the currently running batch of workers is finished.
     pool.map(wait_delay, delays)
     pool.wait_completion()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

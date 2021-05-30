@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 __all__ = (
     'beep',
     'humanbytes',
@@ -799,5 +802,3 @@ def dict_from_swig_obj(obj):
                 and not callable(getattr(obj, name))
         )
     }
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'SpawnedProcessError',
@@ -1474,5 +1476,3 @@ def clean_file_name(file_name, keep_ext=True, extra=''):
     # }}}
     file_name = name + extra + ext
     return file_name
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et

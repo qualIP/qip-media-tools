@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = (
     'Mpeg2ContainerFile',
@@ -63,5 +65,3 @@ class Mp2File(Mpeg2ContainerFile, SoundFile):
 
 
 Mpeg2ContainerFile._build_extension_to_class_map()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

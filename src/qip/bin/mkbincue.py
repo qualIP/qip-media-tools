@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 # PYTHON_ARGCOMPLETE_OK
 
 #if __name__ == "__main__":
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
+from pathlib import Path
 import argparse
 import collections
 import functools
@@ -14,9 +17,9 @@ import pexpect
 import re
 import shutil
 import subprocess
-import types
-import time
 import sys
+import time
+import types
 logging.basicConfig(level=logging.DEBUG)
 
 from qip.app import app
@@ -30,6 +33,9 @@ from qip.mm import *
 from qip.utils import byte_decode
 import qip.cdda as cdda
 import qip.mm
+
+def _resolved_Path(path):
+    return Path(path).resolve()
 
 @app.main_wrapper
 def main():
@@ -46,16 +52,18 @@ def main():
     app.parser.add_argument('--version', '-V', action='version')
 
     pgroup = app.parser.add_argument_group('Program Control')
-    pgroup.add_argument('--continue', dest='_continue', action='store_true', help='continue creating RIP')
-    #pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
-    pgroup.add_argument('--dry-run', '-n', action='store_true', help='dry-run mode')
-    #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
-    pgroup.add_bool_argument('--save-temps', help='saving intermediate files')
+    #pgroup.add_bool_argument('--interactive', '-i', help='interactive mode')
+    pgroup.add_bool_argument('--dry-run', '-n', help='dry-run mode')
+    #pgroup.add_bool_argument('--yes', '-y', help='answer "yes" to all prompts', neg_help='do not answer prompts')
+    pgroup.add_bool_argument('--save-temps', default=False,
+                             help='do not delete intermediate files',
+                             neg_help='delete intermediate files')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
     xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
     xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
+    pgroup.add_bool_argument('--continue', dest='_continue', help='continue mode')
 
     pgroup = app.parser.add_argument_group('Tools Control')
     # TODO pgroup.add_argument('--device-cache-size', dest='device_cache_size', default=None, help='cache size for your device (MB)')
@@ -74,7 +82,7 @@ def main():
     pgroup = app.parser.add_argument_group('Options')
     pgroup.add_bool_argument('--beep', default=False, help='beep when done')
     pgroup.add_argument('--eject', default=False, action='store_true', help='eject cdrom when done')
-    pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
+    pgroup.add_argument('--device', default=Path(os.environ.get('CDROM', '/dev/cdrom')), type=_resolved_Path, help='specify alternate cdrom device')
 
     pgroup = app.parser.add_argument_group('Tags')
     qip.mm.argparse_add_tags_arguments(pgroup, in_tags,
@@ -134,7 +142,7 @@ def consecutive_ranges(numbers):
         yield (start, end)
 
 def mkbincue(file_name_prefix, in_tags):
-    file_name_prefix = in_tags.format(file_name_prefix)
+    file_name_prefix = in_tags.format(os.fspath(file_name_prefix))
 
     toc_file = CDTocFile(file_name_prefix + '.toc')
     cue_file = CDDACueSheetFile(file_name_prefix + '.cue')
@@ -739,5 +747,3 @@ def mkbincue(file_name_prefix, in_tags):
 
 if __name__ == "__main__":
     main()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

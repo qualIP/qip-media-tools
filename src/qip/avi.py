@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = (
     'AviFile',
@@ -31,5 +33,3 @@ class AviFile(MovieFile):
 
 
 AviFile._build_extension_to_class_map()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

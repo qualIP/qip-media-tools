@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 def _PyType_Lookup(cls, name, default=None):
     '''Internal API to look for a name through the MRO.
 
@@ -29,5 +32,3 @@ def _PyType_Lookup(cls, name, default=None):
             break
 
     return res
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

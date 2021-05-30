@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 __all__ = [
         'LibrivoxBook',
         'LibrivoxIndexFile',
@@ -94,5 +97,3 @@ class LibrivoxBook(object):
 
     def __init__(self, book_id):
         self.book_id = book_id
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

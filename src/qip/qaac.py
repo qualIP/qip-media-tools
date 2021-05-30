@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
 
 __all__ = [
         'qaac',
@@ -121,5 +123,3 @@ class Qaac(Executable):
         self(*(tagargs + (file_name,)), **kwargs)
 
 qaac = Qaac()
-
-# vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 __all__ = (
         'perfcontext',
         )
@@ -9,7 +12,9 @@ from .app import app
 from .utils import Timestamp
 
 @contextmanager
-def perfcontext(name):
+def perfcontext(name, log=False):
+    if log:
+        app.log.info('%s...', name)
     t0 = time.perf_counter()
     try:
         yield

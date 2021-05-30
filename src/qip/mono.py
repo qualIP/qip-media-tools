@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
 __all__ = [
         'mono',
         ]
@@ -45,4 +48,3 @@ class Mono(Executable):
                 dst=self.mwf_config_file_name)
 
 mono = Mono()
-
