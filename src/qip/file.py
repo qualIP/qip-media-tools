@@ -9,10 +9,6 @@ __all__ = [
         'HtmlFile',
         'XmlFile',
         'TempFile',
-        'write_to_temp_context',
-        'safe_write_file',
-        'safe_write_file_eval',
-        'safe_read_file',
         ]
 
 from contextlib import contextmanager
@@ -37,6 +33,7 @@ from qip.propex import propex
 from qip.decorator import func_once
 
 _osPath = type(Path(''))
+
 
 def toPath(value):
     if type(value) is _osPath:
@@ -86,6 +83,7 @@ def hashfile(afile, hasher, blocksize=65536,
             progress_bar.finish()
     return hasher
     # [(fname, hashfile(open(fname, 'rb'), hashlib.md5())) for fname in fnamelst]
+
 
 class _argparse_type(object):
 
@@ -152,6 +150,8 @@ class File(object):
         default='',
         type=propex.test_in(('', 't', 'b')))
 
+    open_encoding = None
+
     @contextmanager
     def rename_temporarily(self, *, suffix='.tmp',
                            unlink_except=True,
@@ -198,8 +198,9 @@ class File(object):
 
     @classmethod
     def NamedTemporaryFile(cls, mode=None, buffering=-1, encoding=None, newline=None, suffix=None, prefix=None, dir=None, delete=True, *, errors=None):
-        '''NamedTemporaryFile(mode='w+b', buffering=-1, encoding=, newline=None, suffix=None, prefix=None, dir=None, delete=True, *, errors=None)'''
+        '''NamedTemporaryFile(mode='w+b', buffering=-1, encoding=None, newline=None, suffix=None, prefix=None, dir=None, delete=True, *, errors=None)'''
 
+        encoding = encoding or cls.open_encoding
         if mode is None:
             if encoding is None and errors is None:
                 # Class default
@@ -218,6 +219,7 @@ class File(object):
 
         file = cls.new_by_file_name(file_name=tmp_fp.name)
         assert isinstance(file, cls)
+        file.open_encoding = encoding
         file.open_mode = 'b' if 'b' in mode else 't'
         file.fp = tmp_fp
         return file
@@ -300,14 +302,18 @@ class File(object):
             return md5
 
     def download(self, url, md5=None, overwrite=False):
+        assert self.fp is None, f'File is already opened: {self}'
         self.assert_file_name_defined()
         if not overwrite and self.exists():
             return False
         log.info('Downloading %s...' % (url,))
         #log.info('Downloading %s to %s...' % (url, self))
-        with write_to_temp_context(self, open=False) as tmp_file:
-            urllib.request.urlretrieve(url, filename=tmp_file.file_name)
+        with self.rename_temporarily(replace_ok=True):
+            urllib.request.urlretrieve(url, filename=self.file_name)
             if md5:
+                # write -> read
+                self.flush()
+                self.seek(0)
                 file_md5 = tmp_file.md5.hexdigest()
                 if file_md5 != md5:
                     raise ValueError('MD5 hash of %s is %s, expected %s' % (tmp_file, file_md5, md5))
@@ -334,7 +340,7 @@ class File(object):
         with self.open(mode='w') as dstfp:
             for other_file in other_files:
                 with other_file.open() as srcfp:
-                    dstfp.write(srcfp.read())
+                    shutil.copyfileobj(srcfp, dstfp)
 
     fp = propex(
         name='fp',
@@ -377,6 +383,7 @@ class File(object):
            p2 = myexe2.popen([...], stdin=p1)
         """
         assert 'r' in mode
+        encoding = encoding or self.open_encoding
         if not shutil.which('pv'):
             return self.open(mode=mode, encoding=encoding)
         assert not self.fp
@@ -396,13 +403,15 @@ class File(object):
 
     def open(self, mode='r', encoding=None, **kwargs):
         assert self.fp is None, f'File is already opened: {self}'
+        encoding = encoding or self.open_encoding
         self.assert_file_name_defined()
         if 't' not in mode and 'b' not in mode:
             mode += self.open_mode
         return self.file_name.open(mode=mode, encoding=encoding, **kwargs)
 
     def fdopen(self, fd, mode='r', encoding=None):
-        assert not self.fp
+        assert self.fp is None, f'File is already opened: {self}'
+        encoding = encoding or self.open_encoding
         if 't' not in mode and 'b' not in mode:
             mode += self.open_mode
         return os.fdopen(fd, mode=mode, encoding=encoding)
@@ -530,6 +539,7 @@ class File(object):
     def decode_ffmpeg_args(self, **kwargs):
         return kwargs
 
+
 class TextFile(File):
 
     _common_extensions = (
@@ -538,12 +548,16 @@ class TextFile(File):
 
     open_mode = 't'
 
+    open_encoding = 'utf-8'
+
     def read(self):
         return str(super().read())
+
 
 class BinaryFile(File):
 
     open_mode = 'b'
+
 
 class HtmlFile(TextFile):
 
@@ -552,11 +566,32 @@ class HtmlFile(TextFile):
         '.htm',
     )
 
+
 class XmlFile(TextFile):
 
     _common_extensions = (
         '.xml',
     )
+
+    def write_xml(self, xml, file=None, encoding=None, xml_declaration=True):
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('w') as file:
+                return self.write_xml(xml,
+                                      file=file,
+                                      encoding=encoding,
+                                      xml_declaration=xml_declaration)
+        if encoding is None:
+            encoding=getattr(file, 'encoding', None) or 'utf-8'
+        # ElementTree wants 'unicode' instead of 'utf-8'!
+        xml_encoding = {
+            'utf-8': 'unicode',
+        }.get(encoding, encoding)
+        xml.write(file,
+                  xml_declaration=xml_declaration,
+                  encoding=xml_encoding)
+
 
 class TempFile(File):
 
@@ -645,6 +680,7 @@ def cache_url(url, cache_dict={}):
     temp_file = _lru_cache_url(url, Path(purl.path).suffix)
     return temp_file.file_name
 
+
 @functools.lru_cache
 def _lru_cache_url(url, suffix):
     req = urllib.request.Request(url)
@@ -675,41 +711,6 @@ def _lru_cache_url(url, suffix):
 
     return temp_file
 
-# safe_write_file {{{
-
-def safe_write_file(file, content, **kwargs):
-    def body(fp):
-        fp.write(content)
-    safe_write_file_eval(file, body, **kwargs)
-
-# }}}
-# safe_write_file_eval {{{
-
-def safe_write_file_eval(file, body, *, text=False, encoding='utf-8'):
-    file = toPath(file)
-    if (
-            not os.access(file, os.W_OK) and
-            (file.exists() or
-                not os.access(file.parent, os.W_OK))):
-        pass # XXXJST TODO: raise Exception('couldn\'t open "%s"' % (file,))
-    with TempFile(file.with_suffix(file.suffix + '.tmp')) as tmp_file:
-        open_kwargs = {}
-        if text:
-            open_kwargs['encoding'] = encoding
-        with tmp_file.open(mode='wt' if text else "wb",
-                           **open_kwargs) as fp:
-            ret = body(fp)
-        shutil.move(tmp_file.file_name, file)
-        tmp_file.delete = False
-    return ret
-
-# }}}
-# safe_read_file {{{
-
-def safe_read_file(file, *, encoding='utf-8'):
-    return open(os.fspath(file), mode='r', encoding=encoding).read()
-
-# }}}
 
 @func_once
 def load_all_file_types():
@@ -727,7 +728,6 @@ def load_all_file_types():
     import qip.mp3
     import qip.mp4
     import qip.pgs
-    import qip.vob
     import qip.wav
 
 File._build_extension_to_class_map()

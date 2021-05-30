@@ -426,8 +426,7 @@ class ImageTagsCache(dict):
         image_tags = None
         if tags_file.exists():
             app.log.info('Reading %s...', tags_file)
-            with tags_file.open('r', encoding='utf-8') as fp:
-                image_tags = ImageTags.json_load(fp)
+            image_tags = ImageTags.json_load(tags_file)
         self[key] = image_tags
         return image_tags
 

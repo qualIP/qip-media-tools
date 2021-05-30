@@ -119,8 +119,7 @@ def bincuerip(cue_file, *, format, yes=False):
     tags_file = json.JsonFile(cue_file.file_name.with_suffix('.tags'))
     if tags_file.exists():
         app.log.info('Reading %s...', tags_file)
-        with tags_file.open('r', encoding='utf-8') as fp:
-            album_tags = AlbumTags.json_load(fp)
+        album_tags = AlbumTags.json_load(tags_file)
         try:
             type_ = album_tags.deduce_type()
         except MissingMediaTagError:

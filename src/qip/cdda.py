@@ -258,6 +258,8 @@ class CDTocFile(TextFile):
         '.toc',
     )
 
+    open_encoding = 'utf-8'
+
     tags = None
     session_type = None
     files = None
@@ -716,7 +718,7 @@ class CDTocFile(TextFile):
         if file is None:
             file = self.fp
         if file is None:
-            with self.open('w', encoding='utf-8') as file:
+            with self.open('w') as file:
                 return self.create(file=file)
         if self.tags.barcode:
             print('CATALOG "%s"' % (self.tags.barcode,), file=file)
@@ -754,6 +756,8 @@ class CDDACueSheetFile(TextFile):
     _common_extensions = (
         '.cue',
     )
+
+    open_encoding = 'utf-8'
 
     files = None
     tracks = None
@@ -998,7 +1002,7 @@ class CDDACueSheetFile(TextFile):
         if file is None:
             file = self.fp
         if file is None:
-            with self.open('w', encoding='utf-8') as file:
+            with self.open('w') as file:
                 return self.create(file=file)
         cur_file = None
         for cmd, tag_enum in (

@@ -62,6 +62,7 @@ class VobFile(MultiFile, BinaryMediaFile):
         )
 
     def open(self, mode='r', encoding=None, **kwargs):
+        encoding = encoding or self.open_encoding
         if not self.dvd_reader:
             return super().open(mode=mode, encoding=encoding, **kwargs)
         if 't' not in mode and 'b' not in mode:
@@ -92,14 +93,16 @@ class VobFile(MultiFile, BinaryMediaFile):
             raise FileNotFoundError(errno.ENOENT,
                                     os.strerror(errno.ENOENT),
                                     f'File w/ index {file_index}')
-        new_fp = open(file_name,
-                      mode=self.open_mode,
-                      encoding=self.open_encoding)
+        new_file = BinaryFile(file_name)
+        new_file.open_mode = self.open_mode
+        new_file.open_encoding = self.open_encoding
+        new_file.fp = new_file.open()
         try:
             if self.fp:
                 self.close()
         finally:
-            self.file_index, self.fp = file_index, new_fp
+            self.file_index, self.fp = file_index, new_file.fp
+            new_file.fp = None
 
     def get_multifile_file_name(self, n):
         self.assert_file_name_defined()

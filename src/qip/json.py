@@ -24,13 +24,40 @@ from json import loads as _loads
 from json import dump as _dump
 from json import dumps as _dumps
 
-from .file import TextFile as _TextFile
+from .file import File as _File, TextFile as _TextFile
 
 class JsonFile(_TextFile):
 
     _common_extensions = (
         '.json',
     )
+
+    def read_json(self, file=None, **kwargs):
+        """Wrapper around `json.load`"""
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('r') as file:
+                return self.read_json(file=file)
+        return load(file, **kwargs)
+
+    def write_json(self, obj, file=None, end='\n',
+                   indent=2, sort_keys=True, ensure_ascii=False,
+                   **kwargs):
+        """Wrapper around `json.dump`"""
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('w') as file:
+                return self.write_json(obj, file=file, end=end,
+                                       indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii,
+                                       **kwargs)
+        ret = dump(obj, file,
+                   indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii,
+                   **kwargs)
+        if end:
+            file.write(end)
+        return ret
 
 class JSONEncodable(object):
 
@@ -51,12 +78,12 @@ class JSONEncodable(object):
         return self
 
     def json_dump(self, fp):
-        o = self.__json_prepare_dump__()
-        return dump(o, fp, indent=2, sort_keys=True, ensure_ascii=False)
+        obj = self.__json_prepare_dump__()
+        return dump(obj, fp, indent=2, sort_keys=True, ensure_ascii=False)
 
     def json_dumps(self):
-        o = self.__json_prepare_dump__()
-        return dumps(o, indent=2, sort_keys=True, ensure_ascii=False)
+        obj = self.__json_prepare_dump__()
+        return dumps(obj, indent=2, sort_keys=True, ensure_ascii=False)
 
     @classmethod
     def __subclasshook__(cls, C):
@@ -97,6 +124,12 @@ class JSONDecodable(object):
         return obj
 
 def load(fp, cls=None, **kwargs):
+    if isinstance(fp, _File):
+        file = fp
+        fp = file.fp
+        if fp is None:
+            with file.open('r') as fp:
+                return load(fp, cls=cls, **kwargs)
     if cls is None:
         cls = JSONDecoder
     return _load(fp, cls=cls, **kwargs)
@@ -107,6 +140,12 @@ def loads(s, cls=None, **kwargs):
     return _loads(s, cls=cls, **kwargs)
 
 def dump(obj, fp, cls=None, **kwargs):
+    if isinstance(fp, _File):
+        file = fp
+        fp = file.fp
+        if fp is None:
+            with file.open('w') as fp:
+                return dump(obj, fp, cls=cls, **kwargs)
     if cls is None:
         cls = JSONEncoder
     return _dump(obj, fp, cls=cls, **kwargs)

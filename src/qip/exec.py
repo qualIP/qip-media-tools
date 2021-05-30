@@ -40,6 +40,7 @@ __all__ = [
 from pathlib import Path
 import abc
 import collections
+import contextlib
 import enum
 import errno
 import functools
@@ -65,7 +66,7 @@ import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
 from qip.app import app  # Also setup log.verbose
-from qip.utils import byte_decode
+from qip.utils import byte_decode, prettyxml
 from qip.xdg import XdgResource
 
 _mswindows = (sys.platform == "win32")
@@ -328,7 +329,6 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
         log.verbose('CMD (dry-run): %s%s',
                     list2cmdline(cmd),
                     log_append)
-        import contextlib
         p = types.SimpleNamespace()
         pcm = contextlib.nullcontext(p)
         scm = contextlib.nullcontext(None)
@@ -351,7 +351,6 @@ def do_popen_spawn_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
         log.verbose('CMD (dry-run): %s%s',
                     list2cmdline(cmd),
                     log_append)
-        import contextlib
         p = types.SimpleNamespace()
         pcm = contextlib.nullcontext(p)
         scm = contextlib.nullcontext(None)
@@ -1336,43 +1335,47 @@ def edfile(file):
         modified = True
     return modified
 
-def edvar(value, *, json=None, suffix=None, encoding='utf-8',
+def edvar(value, *, json=None, suffix=None, encoding=None,
           preserve_whitespace_tags=None):
-    from qip.file import TempFile
-    import tempfile
     orig_value = value
 
     xml = False
     if json is None:
         json = False
         if isinstance(value, str):
-            suffix = suffix or '.txt'
+            pass
         elif isinstance(value, ET.ElementTree):
             xml = True
-            from qip.utils import prettyxml
-            suffix = suffix or '.xml'
             value = prettyxml(value, preserve_whitespace_tags=preserve_whitespace_tags)
         else:
             json = True
-            suffix = suffix or '.json'
 
-    with TempFile.mkstemp(suffix=suffix, text=True, open=True) as tmp_file:
+    if json:
+        from qip.json import JsonFile
+        tmp_file_cls = JsonFile
+    elif xml:
+        from qip.file import XmlFile
+        tmp_file_cls = XmlFile
+    else:
+        from qip.file import TextFile
+        tmp_file_cls = TextFile
+
+    with tmp_file_cls.NamedTemporaryFile(suffix=suffix, encoding=encoding) as tmp_file:
 
         if json:
-            import qip.json
-            qip.json.dump(value, tmp_file.fp, indent=2, sort_keys=True, ensure_ascii=False)
-            print('', file=tmp_file.fp)
+            tmp_file.write_json(value, indent=2, sort_keys=True, ensure_ascii=False)
         else:
             tmp_file.write(value)
 
-        tmp_file.close()
+        # write -> read
+        tmp_file.flush()
+        tmp_file.seek(0)
 
         if not edfile(tmp_file):
             return (False, orig_value)
 
-        tmp_file.fp = tmp_file.open(mode='r', encoding=encoding)
         if json:
-            new_value = qip.json.load(tmp_file.fp)
+            new_value = tmp_file.read_json()
         else:
             new_value = tmp_file.read()
 
@@ -1386,91 +1389,100 @@ def edvar(value, *, json=None, suffix=None, encoding='utf-8',
 def eddiffvar(value1, value2, *,
               json1=None, json2=None,
               suffix1=None, suffix2=None,
-              encoding1='utf-8', encoding2='utf-8',
+              encoding1=None, encoding2=None,
               preserve_whitespace_tags=None):
-    from qip.file import TempFile
-    import tempfile
-    from contextlib import ExitStack
-    exit_stack = ExitStack()
+    with contextlib.ExitStack() as exit_stack:
 
-    orig_value1 = value1
+        orig_value1 = value1
 
-    xml1 = False
-    if json1 is None:
-        json1 = False
-        if isinstance(value1, str):
-            suffix1 = suffix1 or '.txt'
-        elif isinstance(value1, ET.ElementTree):
-            xml1 = True
-            from qip.utils import prettyxml
-            suffix1 = suffix1 or '.xml'
-            value1 = prettyxml(value1, preserve_whitespace_tags=preserve_whitespace_tags)
+        xml1 = False
+        if json1 is None:
+            json1 = False
+            if isinstance(value1, str):
+                pass
+            elif isinstance(value1, ET.ElementTree):
+                xml1 = True
+                value = prettyxml(value1, preserve_whitespace_tags=preserve_whitespace_tags)
+            else:
+                json1 = True
+
+        if json1:
+            from qip.json import JsonFile
+            tmp_file_cls1 = JsonFile
+        elif xml1:
+            from qip.file import XmlFile
+            tmp_file_cls1 = XmlFile
         else:
-            json1 = True
-            suffix1 = suffix1 or '.json'
+            from qip.file import TextFile
+            tmp_file_cls1 = TextFile
 
-    orig_value2 = value2
+        orig_value2 = value2
 
-    xml2 = False
-    if json2 is None:
-        json2 = False
-        if isinstance(value2, str):
-            suffix2 = suffix2 or '.txt'
-        elif isinstance(value2, ET.ElementTree):
-            xml2 = True
-            from qip.utils import prettyxml
-            suffix2 = suffix2 or '.xml'
-            value2 = prettyxml(value2, preserve_whitespace_tags=preserve_whitespace_tags)
+        xml2 = False
+        if json2 is None:
+            json2 = False
+            if isinstance(value2, str):
+                pass
+            elif isinstance(value2, ET.ElementTree):
+                xml2 = True
+                value = prettyxml(value2, preserve_whitespace_tags=preserve_whitespace_tags)
+            else:
+                json2 = True
+
+        if json2:
+            from qip.json import JsonFile
+            tmp_file_cls2 = JsonFile
+        elif xml2:
+            from qip.file import XmlFile
+            tmp_file_cls2 = XmlFile
         else:
-            json2 = True
-            suffix2 = suffix2 or '.json'
+            from qip.file import TextFile
+            tmp_file_cls2 = TextFile
 
-    tmp_file1 = TempFile.mkstemp(suffix=suffix1, text=True, open=True)
-    exit_stack.enter_context(tmp_file1)
+        tmp_file1 = tmp_file_cls1.NamedTemporaryFile(suffix=suffix1, encoding=encoding1)
+        exit_stack.enter_context(tmp_file1)
 
-    if json1:
-        import qip.json
-        qip.json.dump(value1, tmp_file1.fp, indent=2, sort_keys=True, ensure_ascii=False)
-        print('', file=tmp_file1.fp)
-    else:
-        tmp_file1.write(value1)
+        if json1:
+            tmp_file1.write_json(value1, indent=2, sort_keys=True, ensure_ascii=False)
+        else:
+            tmp_file1.write(value1)
 
-    tmp_file1.close()
+        # write -> read
+        tmp_file1.flush()
+        tmp_file1.seek(0)
 
-    tmp_file2 = TempFile.mkstemp(suffix=suffix2, text=True, open=True)
-    exit_stack.enter_context(tmp_file2)
+        tmp_file2 = tmp_file_cls2.NamedTemporaryFile(suffix=suffix2, encoding=encoding2)
+        exit_stack.enter_context(tmp_file2)
 
-    if json2:
-        import qip.json
-        qip.json.dump(value2, tmp_file2.fp, indent=2, sort_keys=True, ensure_ascii=False)
-        print('', file=tmp_file2.fp)
-    else:
-        tmp_file2.write(value2)
+        if json2:
+            tmp_file2.write_json(value2, indent=2, sort_keys=True, ensure_ascii=False)
+        else:
+            tmp_file2.write(value2)
 
-    tmp_file2.close()
+        # write -> read
+        tmp_file2.flush()
+        tmp_file2.seek(0)
 
-    if not eddiff([tmp_file1, tmp_file2]):
-        return (False, orig_value1, orig_value2)
+        if not eddiff([tmp_file1, tmp_file2]):
+            return (False, orig_value1, orig_value2)
 
-    tmp_file1.fp = tmp_file1.open(mode='r', encoding=encoding1)
-    if json1:
-        new_value1 = qip.json.load(tmp_file1.fp)
-    else:
-        new_value1 = tmp_file1.read()
+        if json1:
+            new_value1 = tmp_file1.read_json()
+        else:
+            new_value1 = tmp_file1.read()
 
-    if xml1:
-        new_value1 = ET.ElementTree(ET.fromstring(new_value1))
+        if xml1:
+            new_value1 = ET.ElementTree(ET.fromstring(new_value1))
 
-    tmp_file2.fp = tmp_file2.open(mode='r', encoding=encoding2)
-    if json2:
-        new_value2 = qip.json.load(tmp_file2.fp)
-    else:
-        new_value2 = tmp_file2.read()
+        if json2:
+            new_value2 = tmp_file2.read_json()
+        else:
+            new_value2 = tmp_file2.read()
 
-    if xml2:
-        new_value2 = ET.ElementTree(ET.fromstring(new_value2))
+        if xml2:
+            new_value2 = ET.ElementTree(ET.fromstring(new_value2))
 
-    return (True, new_value1, new_value2)
+        return (True, new_value1, new_value2)
 
 def eddiff(files):
     files = [Path(file) for file in files]

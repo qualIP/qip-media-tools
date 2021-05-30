@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 from .perf import perfcontext
 from .exec import *
-from .exec import _SpawnMixin, spawn as _exec_spawn, popen_spawn as _exec_popen_spawn
+from .exec import _SpawnMixin, spawn as _exec_spawn, popen_spawn as _exec_popen_spawn, arg2cmdarg
 from .parser import lines_parser
 from .utils import byte_decode, Timestamp as _BaseTimestamp, Ratio, round_half_up, StreamTransform, Constants, grouper
 from qip.file import *
@@ -145,7 +145,7 @@ class MetadataFile(TextFile):
         if file is None:
             file = self.fp
         if file is None:
-            with self.open('w', encoding='utf-8') as file:
+            with self.open('w') as file:
                 return self.create(file=file)
         print(f';FFMETADATA{self.version}', file=file)
         for section, section_tags in self.sections:
@@ -233,7 +233,7 @@ class ConcatScriptFile(TextFile):
         if file is None:
             file = self.fp
         if file is None:
-            with self.open('w', encoding='utf-8') as file:
+            with self.open('w') as file:
                 return self.create(file=file, absolute=absolute)
         if self.ffconcat_version is not None:
             print(f'ffconcat version {self.ffconcat_version}', file=file)
@@ -756,7 +756,7 @@ class _Ffmpeg(Executable):
             else:
                 cmdargs.append('--' + k)
             if v is not True:
-                cmdargs.append(str(v))
+                cmdargs.append(arg2cmdarg(v))
         return cmdargs
 
     def build_cmd(self, *args, **kwargs):
@@ -1344,7 +1344,7 @@ class Ffprobe(_Ffmpeg):
         from qip.parser import lines_parser
         ffprobe_args = list(default_ffmpeg_args) + [
             '-loglevel', 'level+error', '-hide_banner',
-            '-i', str(file),
+            '-i', file,
             '-show_frames',
         ]
         error_lines = []
@@ -1475,12 +1475,11 @@ class Ffprobe(_Ffmpeg):
                         cmd=subprocess.list2cmdline(ffprobe_args),
                         output='\n'.join(error_lines))
 
-
     def iter_packets(self, file, *, dry_run=False):
         from qip.parser import lines_parser
         ffprobe_args = [
             '-loglevel', 'panic', '-hide_banner',
-            '-i', str(file),
+            '-i', file,
             '-show_packets',
         ]
         with self.popen(*ffprobe_args,

@@ -99,9 +99,10 @@ class ConfigParser(configparser.ConfigParser):
             if fp is not None:
                 assert TypeError('Both file_name and fp provided')
             file_name.parent.mkdir(parents=True, exist_ok=True)
-            from qip.file import write_to_temp_context
-            with write_to_temp_context(file_name, text=True) as tmp_file:
-                return self.write(fp=tmp_file.fp, **kwargs)
+            config_file = TextFile(file_name)
+            with config_file.rename_temporarily(replace_ok=True):
+                with config_file.open('w') as fp:
+                    return self.write(fp=fp, **kwargs)
         elif fp is not None:
             pass
         else:

@@ -669,13 +669,10 @@ def bincuetags(cue_file):
                             tags_filei = tags_file
                         else:
                             tags_filei = json.JsonFile('{}.{}'.format(tags_file.file_name, i))
-                        with tags_filei.open('w', encoding='utf-8') as fp:
-                            album_tags.json_dump(fp)
-                            fp.write('\n')
+                        album_tags.json_dump(tags_filei)
                         edcmd.append(tags_filei.file_name)
                     subprocess.call(edcmd)
-                    with tags_file.open('r', encoding='utf-8') as fp:
-                        album_tags_list[0] = AlbumTags.json_load(fp)
+                    album_tags_list[0] = AlbumTags.json_load(tags_file)
                     for i, album_tags in enumerate(album_tags_list, start=1):
                         if i == 1:
                             continue
@@ -697,9 +694,7 @@ def bincuetags(cue_file):
         cleanup_album_tags(album_tags)
 
     app.log.info('Writing %s...', tags_file)
-    with tags_file.open('w', encoding='utf-8') as fp:
-        album_tags.json_dump(fp)
-        fp.write('\n')
+    tags_file.write_json(album_tags)
 
     app.log.info('DONE!')
 

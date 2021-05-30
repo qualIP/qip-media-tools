@@ -26,7 +26,6 @@ from pathlib import Path
 import argparse
 import enum
 import itertools
-import json
 import logging
 import os
 import socket
@@ -35,6 +34,7 @@ import types
 log = logging.getLogger(__name__)
 
 from qip.app import app
+from qip import json
 from qip.cdrom import cdrom_ready, read_dvd_title
 from qip.ffmpeg import ffmpeg
 from qip.isolang import isolang, IsoLang
@@ -156,7 +156,8 @@ def main():
     elif app.args.format == 'xml':
         ocode_print(xml_syntax, dvd_info)
     elif app.args.format == 'json':
-        json.dump(json_encode(dvd_info), sys.stdout, indent=2, ensure_ascii=False)
+        json.dump(json_encode(dvd_info), sys.stdout,
+                  indent=2, sort_keys=True, ensure_ascii=False)
         print()
     else:
         raise NotImplementedError(app.args.format)

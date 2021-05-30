@@ -30,6 +30,7 @@ from qip.collections import OrderedSet
 from qip.isolang import isolang
 from qip.ffmpeg import ffmpeg
 from qip.configobj import ConfigObj
+from qip.file import TextFile
 
 class MakemkvSettingsConfigObj(ConfigObj):
 
@@ -796,9 +797,10 @@ class Makemkvcon(Executable):
     def write_settings_conf(self, settings):
         if settings.filename is None:
             settings.filename = os.fspath(self.settings_file_name)
-        from qip.file import write_to_temp_context
-        with write_to_temp_context(settings.filename, text=False) as tmp_file:
-            return settings.write(tmp_file.fp)
+        settings_file = TextFile(settings.filename)
+        with settings_file.rename_temporarily(replace_ok=True):
+            with settings_file.open('w') as fp:
+                return settings.write(fp)
 
     def build_cmd(self, *args, **kwargs):
         args = list(args)
@@ -851,7 +853,7 @@ class Makemkvcon(Executable):
             '-f', self.appdata_tar_file_name,
             profile_file_name,
         ]
-        profile_xml = dbg_exec_cmd(cmd, encoding='utf-8')
+        profile_xml = dbg_exec_cmd(cmd, encoding='utf-8-sig')
         profile_xml = ET.ElementTree(ET.fromstring(profile_xml))
         return profile_xml
 

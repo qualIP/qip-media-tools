@@ -41,13 +41,10 @@ class CSubtitleEdit(XdgExecutable):
         return settings_xml
 
     def save_settings_xml(self, settings_xml):
-        from qip.file import TempFile
-        settings_file = File.new_by_file_name(self.save_config_path() / self.settings_file_name)
+        from qip.file import XmlFile
+        settings_file = XmlFile(self.save_config_path() / self.settings_file_name)
         with settings_file.rename_temporarily(replace_ok=True):
-            with settings_file.open(mode='w') as fp:
-                settings_xml.write(fp,
-                                   xml_declaration=True,
-                                   encoding='unicode')
+            settings_file.write_xml(settings_xml)
 
     def _run(self, *args,
              language=None, seed_file_name=None,

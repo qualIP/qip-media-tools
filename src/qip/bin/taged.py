@@ -128,7 +128,7 @@ def main():
                 app.args.import_file = json.JsonFile(file_name='<stdin>')
         if isinstance(app.args.import_file, json.JsonFile):
             if import_content is None:
-                import_content = json.load(app.args.import_file.fp)
+                import_content = app.args.import_file.read_json()
                 app.args.import_file.close()
             else:
                 import_content = json.loads(import_content)

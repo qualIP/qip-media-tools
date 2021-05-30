@@ -104,7 +104,6 @@ from qip.ffmpeg import ffmpeg, ffprobe
 from qip.file import *
 from qip.frim import FRIMDecode
 from qip.handbrake import *
-from qip.img import ImageFile
 from qip.isolang import isolang
 from qip.matroska import *
 from qip.mediainfo import *
@@ -113,18 +112,36 @@ from qip.ccextractor import ccextractor
 from qip.mplayer import mplayer
 from qip.mkvmerge import mkvmerge
 from qip.mm import *
-from qip.mm import MediaFile, MovieFile, Chapter, Chapters, FrameRate
+from qip.mm import Chapter, Chapters, FrameRate
 from qip.mp2 import *
 from qip.mp4 import *
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
-from qip.pgs import PgsFile
 from qip.propex import propex
 from qip.udisksctl import udisksctl
 from qip.utils import byte_decode, Ratio, round_half_away_from_zero, dict_from_swig_obj
 import qip.mm
 import qip.utils
 Auto = qip.utils.Constants.Auto
+
+from qip.json import JsonFile
+from qip.file import File
+from qip.file import XmlFile
+from qip.file import BinaryFile
+from qip.file import TextFile
+from qip.mm import MediaFile
+from qip.mm import MovieFile
+from qip.mm import SoundFile
+from qip.mm import SubtitleFile
+from qip.mp2 import VobFile
+from qip.mp2 import Mpeg2ContainerFile
+from qip.matroska import MatroskaFile
+from qip.matroska import MatroskaChaptersFile
+from qip.matroska import MkvFile
+from qip.mp4 import M4aFile
+from qip.mp4 import Mpeg4ContainerFile
+from qip.img import ImageFile
+from qip.pgs import PgsFile
 
 tmdb = None
 tvdb = None
@@ -2017,11 +2034,11 @@ def action_rip(rip_dir, device, in_tags):
                     makemkvcon.write_settings_conf(makemkvcon_settings)
                 try:
 
-                    with TempFile.mkstemp(text=True, suffix='.profile.xml') as tmp_profile_xml_file:
-                        profile_xml.write(tmp_profile_xml_file.file_name,
-                            #encoding='unicode',
-                            xml_declaration=True,
-                            )
+                    with XmlFile.NamedTemporaryFile(suffix='.profile.xml') as tmp_profile_xml_file:
+                        tmp_profile_xml_file.write_xml(profile_xml)
+                        # write -> read
+                        tmp_profile_xml_file.flush()
+                        tmp_profile_xml_file.seek(0)
 
                         with perfcontext('Ripping w/ makemkvcon', log=True):
                             rip_info = makemkvcon.mkv(
@@ -2101,7 +2118,7 @@ def action_rip(rip_dir, device, in_tags):
                             raise Exception(f'Output file does not exist: {output_file}')
 
                     if dvd_title.chapters:
-                        chapters_xml_file = XmlFile(rip_dir / 'title_t{:02d}.chapters.xml'.format(dvd_title.title_no))
+                        chapters_xml_file = MatroskaChaptersFile(rip_dir / 'title_t{:02d}.chapters.xml'.format(dvd_title.title_no))
                         with perfcontext(f'Extracting chapters from title #{dvd_title.title_no}: {chapters_xml_file}', log=True):
                             chaps = Chapters()
                             for chap_idx, dvd_chapter in enumerate(dvd_title.chapters):
@@ -2112,11 +2129,8 @@ def action_rip(rip_dir, device, in_tags):
                                     title='Chapter {:02d}'.format(chap_idx + 1),  # Same format as MakeMKV
                                 )
                                 chaps.append(chap)
-                            chapters_xml = chaps.to_mkv_xml()
-                            sXml = qip.utils.prettyxml(chapters_xml,  # TODO: !DOCTYPE is lost!
-                                                       preserve_whitespace_tags=Chapters.MKV_XML_VALUE_TAGS)
-                            with chapters_xml_file.open('w') as chapters_xml_file.fp:
-                                chapters_xml_file.fp.write(sXml)
+                            chapters_xml_file.chapters = chaps
+                            chapters_xml_file.create()
                     else:
                         app.log.info('No chapters for title #{dvd_title.title_no}')
 
@@ -2536,7 +2550,6 @@ def chop_chapters(chaps,
         ffmpeg(*ffmpeg_args,
                progress_bar_max=estimate_stream_duration(inputfile=inputfile),
                progress_bar_title=f'Split {inputfile} into {len(chaps)} chapters w/ ffmpeg',
-               encoding='utf-8',
                dry_run=app.args.dry_run,
                y=app.args.yes)
 
@@ -2549,24 +2562,7 @@ def chop_chapters(chaps,
             sub_chaps -= Chapter(
                 start=sub_chaps.chapters[0].start, end=None,
                 no=sub_chaps.chapters[0].no - 1)
-            chapters_xml = sub_chaps.to_mkv_xml()
-            if False and app.args.interactive:
-                chapters_xml = edvar(chapters_xml,
-                                     preserve_whitespace_tags=Chapters.MKV_XML_VALUE_TAGS)[1]
-            chapters_xml_file = TempFile.mkstemp(suffix='.chapters.xml', open=True, text=True)
-            chapters_xml.write(chapters_xml_file.fp,
-                               xml_declaration=True,
-                               encoding='unicode',  # Force string
-                               )
-            chapters_xml_file.close()
-
-            cmd = [
-                'mkvpropedit',
-                chopped_file,
-                '--chapters', chapters_xml_file,
-            ]
-            with perfcontext('Add chapters w/ mkvpropedit', log=True):
-                do_spawn_cmd(cmd)
+            chopped_file.write_chapters(sub_chaps, log=True)
 
     return chapter_file_name_pat
 
@@ -3680,22 +3676,22 @@ def action_mux(inputfile, in_tags,
                              stream.language)
                 stream['disposition']['forced'] = True
 
-    chapters_aux_file = XmlFile(inputfile.file_name.with_suffix('.chapters.xml'))
+    chapters_aux_file = MatroskaChaptersFile(inputfile.file_name.with_suffix('.chapters.xml'))
     if chapters_aux_file.exists():
-        output_chapters_file_name = outputdir / 'chapters.xml'
+        chapters_xml_file = MatroskaChaptersFile(outputdir / 'chapters.xml')
         if not remux:
             if not app.args.dry_run:
                 shutil.copyfile(chapters_aux_file,
-                                output_chapters_file_name,
+                                chapters_xml_file,
                                 follow_symlinks=True)
-        mux_dict['chapters']['file_name'] = os.fspath(output_chapters_file_name.relative_to(outputdir))
+        mux_dict['chapters']['file_name'] = os.fspath(chapters_xml_file.file_name.relative_to(outputdir))
     if inputfile.ffprobe_dict['chapters']:
-        output_chapters_file_name = outputdir / 'chapters.xml'
+        chapters_xml_file = MatroskaChaptersFile(outputdir / 'chapters.xml')
         if not remux:
-            chapters_out = inputfile.load_chapters(return_raw_xml=True)
+            chapters_xml_file.chapters = inputfile.load_chapters()
             if not app.args.dry_run:
-                safe_write_file(output_chapters_file_name, byte_decode(chapters_out), text=True)
-        mux_dict['chapters']['file_name'] = os.fspath(output_chapters_file_name.relative_to(outputdir))
+                chapters_xml_file.create()
+        mux_dict['chapters']['file_name'] = os.fspath(chapters_xml_file.file_name.relative_to(outputdir))
 
     if not app.args.dry_run or remux:
         mux_dict.save(mux_file_name=outputdir / ('mux%s.json' % ('.remux' if remux else '',)))
@@ -4036,8 +4032,8 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
 
 
     def load(self, /, *, in_tags=None):
-        with open(self.mux_file_name, 'r') as fp:
-            self.data = json.load(fp)
+        mux_file = JsonFile.new_by_file_name(self.mux_file_name)
+        self.data = mux_file.read_json()
 
         self.data['streams'] = [MmdemuxStream(e, parent=self) for e in self.data['streams']]
 
@@ -4062,7 +4058,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
                 mux_tags.update(in_tags)
 
     def save(self, /, *, mux_file_name=None):
-        mux_file = json.JsonFile.new_by_file_name(mux_file_name or self.mux_file_name)
+        mux_file = JsonFile.new_by_file_name(mux_file_name or self.mux_file_name)
 
         with self.mux_file_lock:
             # Remove _temp
@@ -4072,8 +4068,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
                 stream_dict.pop('_temp', None)
 
             with mux_file.rename_temporarily(replace_ok=True):
-                with mux_file.open('w') as fp:
-                    json.dump(mux_dict, fp, indent=2, sort_keys=True, ensure_ascii=False)
+                mux_file.write_json(mux_dict)
 
     def print_streams_summary(self, /, *, current_stream=None, current_stream_index=None):
         table = []
@@ -4626,7 +4621,6 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                    cwd=cwd,
                                    progress_bar_max=stream_dict.estimated_duration,
                                    progress_bar_title=f'Concat {stream_dict.codec_type} stream #{stream_dict.pprint_index} w/ ffmpeg',
-                                   encoding='utf-8',
                                    dry_run=app.args.dry_run,
                                    y=app.args.yes)
 
@@ -5608,7 +5602,6 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             ffmpeg(*ffmpeg_args,
                                    progress_bar_max=stream_dict.estimated_duration,
                                    progress_bar_title=f'Convert {stream_dict.codec_type} stream {stream_dict.pprint_index} {stream_file_ext} -> {new_stream_file_ext} w/ ffmpeg',
-                                   encoding='utf-8',
                                    slurm=app.args.slurm,
                                    slurm_cpus_per_task=2, # ~230-240%
                                    dry_run=app.args.dry_run,
@@ -6992,28 +6985,12 @@ def action_demux(inputdir, in_tags):
                    dry_run=app.args.dry_run,
                    y=app.args.yes)
         if mux_dict.get('chapters', None):
-            chapters_xml_file = TextFile(inputdir / mux_dict['chapters']['file_name'])
+            chapters_xml_file = MatroskaChaptersFile(inputdir / mux_dict['chapters']['file_name'])
+            chapters_xml_file.load()
             if time_offset:
-                chapters_xml = ET.parse(chapters_xml_file.file_name)
-                chapters_root = chapters_xml.getroot()
-                for eEditionEntry in chapters_root.findall('EditionEntry'):
-                    for chapter_no, eChapterAtom in enumerate(eEditionEntry.findall('ChapterAtom'), start=1):
-                        for tag in ('ChapterTimeStart', 'ChapterTimeEnd'):
-                            e = eChapterAtom.find(tag)
-                            e.text = str(AnyTimestamp(e.text) + time_offset)
-                chapters_xml_file = TempFile.mkstemp(suffix='.chapters.xml', open=True, text=True)
-                chapters_xml.write(chapters_xml_file.fp,
-                                   xml_declaration=True,
-                                   encoding='unicode',  # Force string
-                                   )
-                chapters_xml_file.close()
-            cmd = [
-                'mkvpropedit',
-                output_file,
-                '--chapters', chapters_xml_file,
-            ]
-            with perfcontext('Add chapters w/ mkvpropedit', log=True):
-                do_spawn_cmd(cmd)
+                for chap in chapters_xml_file.chapters:
+                    chap.offset(time_offset)
+            output_file.write_chapters(chapters_xml_file.chapters, log=True)
 
     output_file.write_tags(tags=mux_dict['tags'],
             dry_run=app.args.dry_run,
@@ -7136,49 +7113,40 @@ def action_concat(concat_files, in_tags):
                        title=re.sub(r'\.demux$', '', my_splitext(inputfile.file_name.name)[0]),
                        )
         chaps.append(chap)
-    chapters_xml = chaps.to_mkv_xml()
     if app.args.interactive:
+        chapters_xml = chaps.to_mkv_xml()
         chapters_xml = edvar(chapters_xml,
                              preserve_whitespace_tags=Chapters.MKV_XML_VALUE_TAGS)[1]
-    chapters_xml_file = TempFile.mkstemp(suffix='.chapters.xml', open=True, text=True)
-    chapters_xml.write(chapters_xml_file.fp,
-                       xml_declaration=True,
-                       encoding='unicode',  # Force string
-                       )
-    chapters_xml_file.close()
+        chaps = Chapters.from_mkv_xml(chapters_xml)
 
-    concat_list_temp_file = TempFile.mkstemp(suffix='.concat.lst', open=True, text=True)
-    safe_concat = False
-    concat_list_file = ffmpeg.ConcatScriptFile(concat_list_temp_file)
-    concat_list_file.files += [
-        concat_list_file.File(inputfile.file_name.resolve())  # absolute
-        for inputfile in concat_files]
-    concat_list_file.create()
+    with ffmpeg.ConcatScriptFile.NamedTemporaryFile() as concat_list_file:
+        safe_concat = False
+        concat_list_file.files += [
+            concat_list_file.File(inputfile.file_name.resolve())  # absolute
+            for inputfile in concat_files]
+        concat_list_file.create()
+        # write -> read
+        concat_list_file.flush()
+        concat_list_file.seek(0)
 
-    ffmpeg_concat_args = []
-    ffmpeg_args = default_ffmpeg_args + [
-        '-f', 'concat', '-safe', 1 if safe_concat else 0,
-        # TODO -r
-    ] + ffmpeg.input_args(concat_list_file) + [
-        '-codec', 'copy',
-    ] + ffmpeg_concat_args + [
-        '-start_at_zero',
-        '-f', ext_to_container(concat_file), concat_file,
-    ]
-    with perfcontext('Concat w/ ffmpeg', log=True):
-        ffmpeg(*ffmpeg_args,
-               progress_bar_max=chaps.chapters[-1].end,
-               progress_bar_title=f'Concat w/ ffmpeg',
-               dry_run=app.args.dry_run,
-               y=app.args.yes)
+        ffmpeg_concat_args = []
+        ffmpeg_args = default_ffmpeg_args + [
+            '-f', 'concat', '-safe', 1 if safe_concat else 0,
+            # TODO -r
+        ] + ffmpeg.input_args(concat_list_file) + [
+            '-codec', 'copy',
+        ] + ffmpeg_concat_args + [
+            '-start_at_zero',
+            '-f', ext_to_container(concat_file), concat_file,
+        ]
+        with perfcontext('Concat w/ ffmpeg', log=True):
+            ffmpeg(*ffmpeg_args,
+                   progress_bar_max=chaps.chapters[-1].end,
+                   progress_bar_title=f'Concat w/ ffmpeg',
+                   dry_run=app.args.dry_run,
+                   y=app.args.yes)
 
-    cmd = [
-        'mkvpropedit',
-        concat_file,
-        '--chapters', chapters_xml_file,
-    ]
-    with perfcontext('Add chapters w/ mkvpropedit', log=True):
-        do_spawn_cmd(cmd)
+    concat_file.write_chapters(chaps, log=True)
 
     return True
 

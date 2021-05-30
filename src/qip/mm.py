@@ -5068,8 +5068,7 @@ class AlbumTagsCache(dict):
         album_tags = None
         if tags_file.exists():
             app.log.info('Reading %s...', tags_file)
-            with tags_file.open('r', encoding='utf-8') as fp:
-                album_tags = AlbumTags.json_load(fp)
+            album_tags = AlbumTags.json_load(tags_file)
         self[key] = album_tags
         return album_tags
 
@@ -5080,8 +5079,7 @@ class TrackTagsCache(dict):
         track_tags = None
         if tags_file.exists():
             app.log.info('Reading %s...', tags_file)
-            with tags_file.open('r', encoding='utf-8') as fp:
-                track_tags = TrackTags.json_load(fp)
+            track_tags = TrackTags.json_load(tags_file)
         self[key] = track_tags
         return track_tags
 
@@ -5106,12 +5104,13 @@ def get_track_tags_from_tags_file(snd_file):
 
 def get_audio_file_sox_stats(d):
     cache_file = app.mk_cache_file(str(d.file_name) + '.soxstats')
+    cache_file = cache_file and TextFile(cache_file)
     if (
             cache_file and
             cache_file.exists() and
-            cache_file.stat().st_mtime >= d.file_name.stat().st_mtime
+            cache_file.file_name.stat().st_mtime >= d.file_name.stat().st_mtime
             ):
-        out = safe_read_file(cache_file)
+        out = cache_file.read()
     elif shutil.which('sox') and d.file_name.suffix in get_sox_app_support().extensions_can_read:
         app.log.info('Analyzing %s...', d.file_name)
         # NOTE --ignore-length: see #251 soxi reports invalid rate (M instead of K) for some VBR MP3s. (https://sourceforge.net/p/sox/bugs/251/)
@@ -5122,7 +5121,8 @@ def get_audio_file_sox_stats(d):
             raise
         else:
             if cache_file:
-                safe_write_file(cache_file, out)
+                with cache_file.rename_temporarily(replace_ok=True):
+                    cache_file.write(out)
     else:
         out = ''
     # {{{
@@ -5186,12 +5186,13 @@ def get_audio_file_sox_stats(d):
 
 def get_audio_file_ffmpeg_stats(d):
     cache_file = app.mk_cache_file(str(d.file_name) + '.ffmpegstats')
+    cache_file = cache_file and TextFile(cache_file)
     if (
             cache_file and
             cache_file.exists() and
-            cache_file.stat().st_mtime >= d.file_name.stat().st_mtime
+            cache_file.file_name.stat().st_mtime >= d.file_name.stat().st_mtime
             ):
-        out = safe_read_file(cache_file)
+        out = cache_file.read()
     elif shutil.which('ffmpeg'):
         app.log.info('Analyzing %s...', d.file_name)
         # TODO 16056 emby      20   0  289468   8712   7148 R   0.7  0.1   0:00.02 /opt/emby-server/bin/ffprobe -i file:/mnt/media1/Audiobooks/Various Artists/Enivrez-vous.m4b -threads 0 -v info -print_format json -show_streams -show_format
@@ -5208,7 +5209,8 @@ def get_audio_file_ffmpeg_stats(d):
             raise
         else:
             if cache_file:
-                safe_write_file(cache_file, out)
+                with cache_file.rename_temporarily(replace_ok=True):
+                    cache_file.write(out)
     else:
         out = ''
     # {{{

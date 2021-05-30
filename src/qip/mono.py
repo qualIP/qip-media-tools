@@ -36,15 +36,9 @@ class Mono(Executable):
         return mwf_config_xml
 
     def save_mwf_config_xml(self, mwf_config_xml):
-        from qip.file import TempFile
-        with TempFile(self.mwf_config_file_name.with_suffix(self.mwf_config_file_name.suffix + '.tmp')) as tmp_file:
-            tmp_file.fp = tmp_file.open(mode='wt', encoding='utf-8')
-            mwf_config_xml.write(tmp_file.fp,
-                                 #xml_declaration=True,
-                                 encoding='unicode')
-            tmp_file.close()
-            os.replace(
-                src=tmp_file.file_name,
-                dst=self.mwf_config_file_name)
+        from qip.file import XmlFile
+        config_file = XmlFile(self.mwf_config_file_name)
+        with config_file.rename_temporarily(replace_ok=True):
+            config_file.write_xml(mwf_config_xml)
 
 mono = Mono()

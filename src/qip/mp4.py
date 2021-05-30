@@ -92,13 +92,13 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 picture = PngFile.NamedTemporaryFile()
             if src_picture.resolve() != picture.file_name.resolve():
                 log.info('Writing new picture %s...', picture)
-            from .ffmpeg import ffmpeg
-            ffmpeg_args = []
-            if True:  # yes
-                ffmpeg_args += ['-y']
-            ffmpeg_args += ['-i', src_picture]
-            ffmpeg_args += ['-an', str(picture)]
-            ffmpeg(*ffmpeg_args)
+                from .ffmpeg import ffmpeg
+                ffmpeg_args = []
+                if True:  # yes
+                    ffmpeg_args += ['-y']
+                ffmpeg_args += ['-i', src_picture]
+                ffmpeg_args += ['-an', picture]
+                ffmpeg(*ffmpeg_args)
             src_picture = picture
 
         if ipod_compat and shutil.which('gm'):
@@ -108,7 +108,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 picture = PngFile.NamedTemporaryFile()
             log.info('Writing iPod-compatible picture %s...', picture)
             cmd = [shutil.which('gm'),
-                    'convert', str(src_picture),
+                    'convert', src_picture,
                     '-resize', 'x480>',
                     str(picture)]
             do_exec_cmd(cmd)
@@ -133,7 +133,6 @@ class Mpeg4ContainerFile(BinaryMediaFile):
         from .parser import lines_parser
         from .qaac import qaac
         from .ffmpeg import ffmpeg
-        from .file import safe_read_file
         m4b = self
         chapters_added = False
         tags_added = False
@@ -145,258 +144,261 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             if progress_bar_max is None:
                 progress_bar_max = expected_duration
 
-        log.info('Writing %s...', m4b)
-        use_qaac_cmd = False
-        use_qaac_intermediate = False
-        ffmpeg_cmd = []
-        ffmpeg_input_cmd = []
-        ffmpeg_output_cmd = []
-        qaac_cmd = [qaac.which()]
-        qaac_cmd += ['--threading']
-        if yes:
-            ffmpeg_cmd += ['-y']
-        else:
-            if self.exists():
-                raise OSError(errno.EEXIST, f'File exists: {self}')
+        with contextlib.ExitStack() as exit_stack:
 
-        ffmpeg_cmd += ['-stats']
-        qaac_cmd += ['--verbose']
-        ffmpeg_output_cmd += ['-vn']
-        ffmpeg_format = 'ipod'
-        bCopied = False
-        bitrate = force_input_bitrate
-        if bitrate is None:
-            # bitrate = ... {{{
-            audio_type = [inputfile.audio_type for inputfile in inputfiles]
-            audio_type = sorted(set(audio_type))
-            if (
-                    not force_encode and
-                    len(audio_type) == 1 and audio_type[0] in (
-                        mm.AudioType.aac,
-                        mm.AudioType.lc_aac,
-                        mm.AudioType.he_aac,
-                        mm.AudioType.ac3,
-                        )):
-                # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
-                ffmpeg_output_cmd += ['-c:a', 'copy']
-                bCopied = True
-                ffmpeg_format = 'ipod'  # See codec_ipod_tags @ ffmpeg/libavformat/movenc.c
-            elif (
-                    not force_encode and
-                    not ipod_compat and
-                    len(audio_type) == 1 and audio_type[0] in (
-                        mm.AudioType.mp2,
-                        mm.AudioType.mp3,
-                        )):
-                # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
-                ffmpeg_output_cmd += ['-c:a', 'copy']
-                bCopied = True
-                ffmpeg_format = 'mp4'
+            log.info('Writing %s...', m4b)
+            use_qaac_cmd = False
+            use_qaac_intermediate = False
+            ffmpeg_cmd = []
+            ffmpeg_input_cmd = []
+            ffmpeg_output_cmd = []
+            qaac_cmd = [qaac.which()]
+            qaac_cmd += ['--threading']
+            if yes:
+                ffmpeg_cmd += ['-y']
             else:
-                # TODO select preferred encoder based on bitrate: https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio
-                kbitrate = [target_bitrate]
-                if kbitrate[0] is None:
-                    def get_kbitrate(inputfile):
-                        try:
-                            bitrate = inputfile.bitrate
-                        except AttributeError:
-                            inputfile.extract_info()
-                            bitrate = inputfile.bitrate
-                        return round(bitrate / 1000.0 / 16.0) * 16
-                    kbitrate = [get_kbitrate(inputfile) for inputfile in inputfiles]
-                    kbitrate = sorted(set(kbitrate))
-                    kbitrate = [kbitrate[0]]  # TODO
-                if len(kbitrate) == 1:
-                    kbitrate = kbitrate[0]
-                    if use_qaac:
-                        use_qaac_cmd = True
-                        if len(audio_type) == 1 and audio_type[0] in (
-                                mm.AudioType.mp2,
-                                mm.AudioType.mp3,
-                                mm.AudioType.dts,
-                        ):
-                            use_qaac_intermediate = True
-                            ffmpeg_format = 'wav'
-                        qaac_cmd += ['--no-smart-padding']  # Like iTunes
-                        # qaac_cmd += ['--ignorelength']
-                        if kbitrate >= 256:
-                            qaac_cmd += qaac.Preset.itunes_plus.cmdargs
-                        elif kbitrate >= 192:
-                            qaac_cmd += qaac.Preset.high_quality192.cmdargs
-                        elif kbitrate >= 128:
-                            qaac_cmd += qaac.Preset.high_quality.cmdargs
-                        elif kbitrate >= 96:
-                            qaac_cmd += qaac.Preset.high_quality96.cmdargs
-                        else:
-                            qaac_cmd += qaac.Preset.spoken_podcast.cmdargs
-                    else:
-                        if False and kbitrate >= 160:
-                            # http://wiki.hydrogenaud.io/index.php?title=FAAC
-                            log.info('NOTE: Using recommended high-quality LC-AAC libfaac settings; If it fails, try: --bitrate %dk', kbitrate)
-                            ffmpeg_output_cmd += ['-c:a', 'libfaac', '-q:a', '330', '-cutoff', '15000']  # 100% ~= 128k, 330% ~= ?
-                        elif kbitrate > 64:
-                            log.info('NOTE: Using recommended high-quality LC-AAC libfdk_aac settings; If it fails, try: --bitrate %dk', kbitrate)
-                            ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-b:a', '%dk' % (kbitrate,)]
-                        elif kbitrate >= 48:
-                            log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 64k settings; If it fails, try: --bitrate %dk', kbitrate)
-                            ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he', '-b:a', '64k']
-                            if itunes_compat:
-                                ffmpeg_output_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
-                        elif True:
-                            log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 32k settings; If it fails, try: --bitrate %dk', kbitrate)
-                            ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he_v2', '-b:a', '32k']
-                            if itunes_compat:
-                                ffmpeg_output_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
-                        else:
-                            bitrate = '%dk' % (kbitrate,)
+                if self.exists():
+                    raise OSError(errno.EEXIST, f'File exists: {self}')
+
+            ffmpeg_cmd += ['-stats']
+            qaac_cmd += ['--verbose']
+            ffmpeg_output_cmd += ['-vn']
+            ffmpeg_format = 'ipod'
+            bCopied = False
+            bitrate = force_input_bitrate
+            if bitrate is None:
+                # bitrate = ... {{{
+                audio_type = [inputfile.audio_type for inputfile in inputfiles]
+                audio_type = sorted(set(audio_type))
+                if (
+                        not force_encode and
+                        len(audio_type) == 1 and audio_type[0] in (
+                            mm.AudioType.aac,
+                            mm.AudioType.lc_aac,
+                            mm.AudioType.he_aac,
+                            mm.AudioType.ac3,
+                            )):
+                    # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
+                    ffmpeg_output_cmd += ['-c:a', 'copy']
+                    bCopied = True
+                    ffmpeg_format = 'ipod'  # See codec_ipod_tags @ ffmpeg/libavformat/movenc.c
+                elif (
+                        not force_encode and
+                        not ipod_compat and
+                        len(audio_type) == 1 and audio_type[0] in (
+                            mm.AudioType.mp2,
+                            mm.AudioType.mp3,
+                            )):
+                    # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
+                    ffmpeg_output_cmd += ['-c:a', 'copy']
+                    bCopied = True
+                    ffmpeg_format = 'mp4'
                 else:
-                    raise Exception('Unable to determine proper bitrate from %rk' % (kbitrate,))
-            # }}}
-        if bitrate is not None:
-            ffmpeg_output_cmd += ['-b:a', bitrate]
-        if channels is not None:
-            ffmpeg_output_cmd += ['-ac', channels]
-        if not bCopied:
-            try:
-                del m4b.tags.encodedby
-            except AttributeError:
-                pass
-            try:
-                del m4b.tags.tool
-            except AttributeError:
-                pass
-        inputfiles_names = [inputfile.file_name for inputfile in inputfiles]
-        if len(inputfiles_names) > 1:
-            concat_file = ffmpeg.ConcatScriptFile.NamedTemporaryFile()
-            concat_file.files = inputfiles
-            log.info('Writing %s...', concat_file)
-            concat_file.create(absolute=True)
-            # write -> read
-            concat_file.flush()
-            concat_file.seek(0)
-            concat_file.pprint()
-            ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', concat_file]
-        else:
-            ffmpeg_input_cmd += ['-i', inputfiles_names[0]]
-
-        ffmpeg_output_cmd += ['-f', ffmpeg_format]
-
-        intermediate_wav_files = []
-        try:
-
-            if use_qaac_intermediate:
-                assert use_qaac_cmd
-                new_inputfiles_names = []
-                for inputfile_name in inputfiles_names:
-                    if False:
-                        # Slower
-                        intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=inputfile_name.with_suffix('.tmp.alac.m4a'))
-                        intermediate_wav_files.append(intermediate_wav_file)
-                        new_inputfiles_names.append(intermediate_wav_file.file_name)
-                        out = ffmpeg('-i', inputfile_name, '-acodec', 'alac', intermediate_wav_file.file_name)
+                    # TODO select preferred encoder based on bitrate: https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio
+                    kbitrate = [target_bitrate]
+                    if kbitrate[0] is None:
+                        def get_kbitrate(inputfile):
+                            try:
+                                bitrate = inputfile.bitrate
+                            except AttributeError:
+                                inputfile.extract_info()
+                                bitrate = inputfile.bitrate
+                            return round(bitrate / 1000.0 / 16.0) * 16
+                        kbitrate = [get_kbitrate(inputfile) for inputfile in inputfiles]
+                        kbitrate = sorted(set(kbitrate))
+                        kbitrate = [kbitrate[0]]  # TODO
+                    if len(kbitrate) == 1:
+                        kbitrate = kbitrate[0]
+                        if use_qaac:
+                            use_qaac_cmd = True
+                            if len(audio_type) == 1 and audio_type[0] in (
+                                    mm.AudioType.mp2,
+                                    mm.AudioType.mp3,
+                                    mm.AudioType.dts,
+                            ):
+                                use_qaac_intermediate = True
+                                ffmpeg_format = 'wav'
+                            qaac_cmd += ['--no-smart-padding']  # Like iTunes
+                            # qaac_cmd += ['--ignorelength']
+                            if kbitrate >= 256:
+                                qaac_cmd += qaac.Preset.itunes_plus.cmdargs
+                            elif kbitrate >= 192:
+                                qaac_cmd += qaac.Preset.high_quality192.cmdargs
+                            elif kbitrate >= 128:
+                                qaac_cmd += qaac.Preset.high_quality.cmdargs
+                            elif kbitrate >= 96:
+                                qaac_cmd += qaac.Preset.high_quality96.cmdargs
+                            else:
+                                qaac_cmd += qaac.Preset.spoken_podcast.cmdargs
+                        else:
+                            if False and kbitrate >= 160:
+                                # http://wiki.hydrogenaud.io/index.php?title=FAAC
+                                log.info('NOTE: Using recommended high-quality LC-AAC libfaac settings; If it fails, try: --bitrate %dk', kbitrate)
+                                ffmpeg_output_cmd += ['-c:a', 'libfaac', '-q:a', '330', '-cutoff', '15000']  # 100% ~= 128k, 330% ~= ?
+                            elif kbitrate > 64:
+                                log.info('NOTE: Using recommended high-quality LC-AAC libfdk_aac settings; If it fails, try: --bitrate %dk', kbitrate)
+                                ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-b:a', '%dk' % (kbitrate,)]
+                            elif kbitrate >= 48:
+                                log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 64k settings; If it fails, try: --bitrate %dk', kbitrate)
+                                ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he', '-b:a', '64k']
+                                if itunes_compat:
+                                    ffmpeg_output_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
+                            elif True:
+                                log.info('NOTE: Using recommended high-quality HE-AAC libfdk_aac 32k settings; If it fails, try: --bitrate %dk', kbitrate)
+                                ffmpeg_output_cmd += ['-c:a', 'libfdk_aac', '-profile:a', 'aac_he_v2', '-b:a', '32k']
+                                if itunes_compat:
+                                    ffmpeg_output_cmd += ['-signaling:a', 'implicit']  # iTunes compatibility: implicit backwards compatible signaling
+                            else:
+                                bitrate = '%dk' % (kbitrate,)
                     else:
-                        intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=inputfile_name.with_suffix('.tmp.wav'))
-                        intermediate_wav_files.append(intermediate_wav_file)
-                        new_inputfiles_names.append(intermediate_wav_file.file_name)
-                        out = ffmpeg('-i', inputfile_name, intermediate_wav_file.file_name)
-                    # TODO out
-                inputfiles_names = new_inputfiles_names
-
+                        raise Exception('Unable to determine proper bitrate from %rk' % (kbitrate,))
+                # }}}
+            if bitrate is not None:
+                ffmpeg_output_cmd += ['-b:a', bitrate]
+            if channels is not None:
+                ffmpeg_output_cmd += ['-ac', channels]
+            if not bCopied:
+                try:
+                    del m4b.tags.encodedby
+                except AttributeError:
+                    pass
+                try:
+                    del m4b.tags.tool
+                except AttributeError:
+                    pass
+            inputfiles_names = [inputfile.file_name for inputfile in inputfiles]
             if len(inputfiles_names) > 1:
-                qaac_cmd += ['--concat'] + inputfiles_names
+                concat_file = ffmpeg.ConcatScriptFile.NamedTemporaryFile()
+                exit_stack.enter(concat_file)
+                concat_file.files = inputfiles
+                log.info('Writing %s...', concat_file)
+                concat_file.create(absolute=True)
+                # write -> read
+                concat_file.flush()
+                concat_file.seek(0)
+                concat_file.pprint()
+                ffmpeg_input_cmd += ['-f', 'concat', '-safe', '0', '-i', concat_file]
             else:
-                qaac_cmd += [inputfiles_names[0]]
+                ffmpeg_input_cmd += ['-i', inputfiles_names[0]]
 
-            ffmpeg_output_cmd += [m4b.file_name]
-            qaac_cmd += ['-o', m4b.file_name]
-            with contextlib.ExitStack() as exit_stack:
-                if use_qaac_cmd:
-                    qaac_cmd += ['--text-codepage', '65001']  # utf-8
-                    if not chapters_added and chapters:
-                        chapters_file = Mp4chapsFile.NamedTemporaryFile()
-                        exit_stack.enter_context(chapters_file)
-                        chapters_file.chapters = chapters
-                        chapters_file.create()
-                        # write -> read
-                        chapters_file.flush()
-                        chapters_file.seek(0)
-                        qaac_cmd += ['--chapter', chapters_file]
-                        chapters_added = True
-                    # TODO qaac_cmd += qaac.get_tag_args(m4b.tags)
-                    if not picture_added and picture is not None:
-                        qaac_cmd += ['--artwork', str(picture)]
-                        picture_added = True
-                out_time = None
-                if use_qaac_cmd:
-                    out = do_spawn_cmd(qaac_cmd)
-                    out = clean_cmd_output(out)
-                    parser = lines_parser(out.split('\n'))
-                    out_time_match = None
-                    while parser.advance():
-                        parser.line = parser.line.strip()
-                        if parser.re_search(r'^\[[0-9.]+%\] [0-9:.]+/(?P<out_time>[0-9:.]+) \([0-9.]+x\), ETA [0-9:.]+$'):
-                            # [35.6%] 2:51:28.297/8:01:13.150 (68.2x), ETA 4:32.491
-                            # [100.0%] 10:04.626/10:04.626 (79.9x), ETA 0:00.000
-                            out_time_match = parser.match
+            ffmpeg_output_cmd += ['-f', ffmpeg_format]
+
+            intermediate_wav_files = []
+            try:
+
+                if use_qaac_intermediate:
+                    assert use_qaac_cmd
+                    new_inputfiles_names = []
+                    for inputfile_name in inputfiles_names:
+                        if False:
+                            # Slower
+                            intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=inputfile_name.with_suffix('.tmp.alac.m4a'))
+                            intermediate_wav_files.append(intermediate_wav_file)
+                            new_inputfiles_names.append(intermediate_wav_file.file_name)
+                            out = ffmpeg('-i', inputfile_name, '-acodec', 'alac', intermediate_wav_file.file_name)
                         else:
-                            pass  # TODO
-                    if out_time_match is not None:
-                        out_time = mm.parse_time_duration(out_time_match.group('out_time'))
+                            intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=inputfile_name.with_suffix('.tmp.wav'))
+                            intermediate_wav_files.append(intermediate_wav_file)
+                            new_inputfiles_names.append(intermediate_wav_file.file_name)
+                            out = ffmpeg('-i', inputfile_name, intermediate_wav_file.file_name)
+                        # TODO out
+                    inputfiles_names = new_inputfiles_names
+
+                if len(inputfiles_names) > 1:
+                    qaac_cmd += ['--concat'] + inputfiles_names
                 else:
-                    ffmpeg_chapters_cmd = []
-                    if not chapters_added and chapters:
-                        metadata_file = ffmpeg.MetadataFile.NamedTemporaryFile()
-                        exit_stack.enter_context(metadata_file)
-                        chapters.fill_end_times(duration=expected_duration)
-                        metadata_file.chapters = chapters
-                        metadata_file.create()
-                        # write -> read
-                        metadata_file.flush()
-                        metadata_file.seek(0)
-                        ffmpeg_chapters_cmd += [
-                            '-i', metadata_file,
-                            '-map_metadata', 1,  # second input
-                        ]
-                        chapters_added = True
-                    out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_chapters_cmd + ffmpeg_output_cmd),
-                                 show_progress_bar=show_progress_bar,
-                                 progress_bar_max=progress_bar_max,
-                                 progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
-                                 )
-                    out_time = ffmpeg.Timestamp(byte_decode(out.spawn.progress_match.group('time')))
-            print('')
-            if expected_duration is not None:
-                log.info('Expected final duration: %s (%.3f seconds)', Mp4chapsFile.Timestamp(expected_duration), expected_duration)
-            if out_time is None:
-                log.warning('final duration unknown!')
-            else:
-                log.info('Final duration:          %s (%.3f seconds)', Mp4chapsFile.Timestamp(out_time), out_time)
+                    qaac_cmd += [inputfiles_names[0]]
 
-        finally:
-            for intermediate_wav_file in intermediate_wav_files:
-                intermediate_wav_file.unlink(force=True)
+                ffmpeg_output_cmd += [m4b.file_name]
+                qaac_cmd += ['-o', m4b.file_name]
+                with contextlib.ExitStack() as exit_stack:
+                    if use_qaac_cmd:
+                        qaac_cmd += ['--text-codepage', '65001']  # utf-8
+                        if not chapters_added and chapters:
+                            chapters_file = Mp4chapsFile.NamedTemporaryFile()
+                            exit_stack.enter_context(chapters_file)
+                            chapters_file.chapters = chapters
+                            chapters_file.create()
+                            # write -> read
+                            chapters_file.flush()
+                            chapters_file.seek(0)
+                            qaac_cmd += ['--chapter', chapters_file]
+                            chapters_added = True
+                        # TODO qaac_cmd += qaac.get_tag_args(m4b.tags)
+                        if not picture_added and picture is not None:
+                            qaac_cmd += ['--artwork', str(picture)]
+                            picture_added = True
+                    out_time = None
+                    if use_qaac_cmd:
+                        out = do_spawn_cmd(qaac_cmd, encoding='utf-8')
+                        out = clean_cmd_output(out)
+                        parser = lines_parser(out.split('\n'))
+                        out_time_match = None
+                        while parser.advance():
+                            parser.line = parser.line.strip()
+                            if parser.re_search(r'^\[[0-9.]+%\] [0-9:.]+/(?P<out_time>[0-9:.]+) \([0-9.]+x\), ETA [0-9:.]+$'):
+                                # [35.6%] 2:51:28.297/8:01:13.150 (68.2x), ETA 4:32.491
+                                # [100.0%] 10:04.626/10:04.626 (79.9x), ETA 0:00.000
+                                out_time_match = parser.match
+                            else:
+                                pass  # TODO
+                        if out_time_match is not None:
+                            out_time = mm.parse_time_duration(out_time_match.group('out_time'))
+                    else:
+                        ffmpeg_chapters_cmd = []
+                        if not chapters_added and chapters:
+                            metadata_file = ffmpeg.MetadataFile.NamedTemporaryFile()
+                            exit_stack.enter_context(metadata_file)
+                            chapters.fill_end_times(duration=expected_duration)
+                            metadata_file.chapters = chapters
+                            metadata_file.create()
+                            # write -> read
+                            metadata_file.flush()
+                            metadata_file.seek(0)
+                            ffmpeg_chapters_cmd += [
+                                '-i', metadata_file,
+                                '-map_metadata', 1,  # second input
+                            ]
+                            chapters_added = True
+                        out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_chapters_cmd + ffmpeg_output_cmd),
+                                     show_progress_bar=show_progress_bar,
+                                     progress_bar_max=progress_bar_max,
+                                     progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
+                                     )
+                        out_time = ffmpeg.Timestamp(byte_decode(out.spawn.progress_match.group('time')))
+                print('')
+                if expected_duration is not None:
+                    log.info('Expected final duration: %s (%.3f seconds)', Mp4chapsFile.Timestamp(expected_duration), expected_duration)
+                if out_time is None:
+                    log.warning('final duration unknown!')
+                else:
+                    log.info('Final duration:          %s (%.3f seconds)', Mp4chapsFile.Timestamp(out_time), out_time)
 
-        if not chapters_added and chapters:
-            log.info("Adding chapters...")
-            chapters.fill_end_times(duration=out_time if out_time is not None else expected_duration)
-            m4b.write_chapters(chapters,
-                               show_progress_bar=show_progress_bar,
-                               progress_bar_max=progress_bar_max)
-            chapters_added = True
+            finally:
+                for intermediate_wav_file in intermediate_wav_files:
+                    intermediate_wav_file.unlink(force=True)
 
-        if not tags_added and m4b.tags is not None:
-            log.info('Adding tags...')
-            tags = copy.copy(m4b.tags)
-            tags.picture = None
-            m4b.write_tags(tags=tags)
-            tags_added = True
+            if not chapters_added and chapters:
+                chapters.fill_end_times(duration=out_time if out_time is not None else expected_duration)
+                m4b.write_chapters(chapters,
+                                   show_progress_bar=show_progress_bar,
+                                   progress_bar_max=progress_bar_max,
+                                   log=True)
+                chapters_added = True
 
-        if not picture_added and picture is not None:
-            log.info('Adding picture...')
-            tags = TrackTags()
-            tags.picture = picture
-            m4b.write_tags(tags=tags)
-            picture_added = True
+            if not tags_added and m4b.tags is not None:
+                log.info('Adding tags...')
+                tags = copy.copy(m4b.tags)
+                tags.picture = None
+                m4b.write_tags(tags=tags)
+                tags_added = True
+
+            if not picture_added and picture is not None:
+                log.info('Adding picture...')
+                tags = TrackTags()
+                tags.picture = picture
+                m4b.write_tags(tags=tags)
+                picture_added = True
 
     def load_chapters(self):
         import mutagen
@@ -506,7 +508,7 @@ class Mp4chapsFile(TextFile):
         if file is None:
             file = self.fp
         if file is None:
-            with self.open('w', encoding='utf-8') as file:
+            with self.open('w') as file:
                 return self.create(file=file)
         for chap in self.chapters:
             line = f'{Mp4chapsTimestamp(chap.start)}'

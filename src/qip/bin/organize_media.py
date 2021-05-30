@@ -25,7 +25,6 @@ import shutil
 import subprocess
 import sys
 
-from qip import json
 from qip.app import app
 from qip.cmp import *
 from qip.exec import *
@@ -37,16 +36,6 @@ from qip.utils import byte_decode
 import qip.mm
 import qip.utils
 
-#import qip.pgs
-#import qip.vob
-import qip.avi
-import qip.flac
-import qip.img
-import qip.matroska
-import qip.mp2
-import qip.mp3
-import qip.mp4
-import qip.wav
 
 Auto = qip.utils.Constants.Auto
 all_part_names = {'disk', 'track', 'part'}

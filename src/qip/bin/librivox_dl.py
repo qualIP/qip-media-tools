@@ -95,19 +95,15 @@ def main():
 
     args_file = json.JsonFile(file_name=app.args.dir / 'librivox-dl.args.json')
     if app.args._continue:
-        with args_file.open(mode='r', encoding='utf-8') as fp:
-            new_args = {k: v for k, v in vars(app.args).items() if v is not None}
-            old_args = dict(json.load(fp))
-            app.args = argparse.Namespace()
-            app.args.__dict__ = old_args.copy()
-            app.args.__dict__.update(new_args)
+        old_args = dict(args_file.read_json())
+        new_args = {k: v for k, v in vars(app.args).items() if v is not None}
+        app.args = argparse.Namespace()
+        app.args.__dict__ = old_args.copy()
+        app.args.__dict__.update(new_args)
     else:
         os.makedirs(app.args.dir, exist_ok=True)
-    with args_file.open(mode='w', encoding='utf-8') as fp:
-        json.dump(
-                {k: _json_value(v) for k, v in vars(app.args).items() if k not in ('logging_level',)},
-                fp, indent=2, sort_keys=True)
-        print('', file=fp)
+    args_file.write_json(
+        {k: _json_value(v) for k, v in vars(app.args).items() if k not in ('logging_level',)})
 
     url = app.args.url
     p = urllib.parse.urlparse(url)
@@ -180,9 +176,8 @@ def main():
     audiobook.cover_file.download(url=url_file, md5=cover_file_info.md5)
 
     book_info_file = json.JsonFile(file_name=app.args.dir / 'librivox-dl.book_info.json')
-    with book_info_file.open(mode='w', encoding='utf-8') as fp:
-        json.dump(_json_value(vars(book_info)), fp, indent=2, sort_keys=True)
-        print('', file=fp)
+    book_info_file.write_json(
+        _json_value(vars(book_info)))
 
     if app.args.m4b:
         audiobook.create_mkm4b(

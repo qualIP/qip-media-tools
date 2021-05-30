@@ -3,6 +3,7 @@
 
 __all__ = (
     'MatroskaFile',
+    'MatroskaChaptersFile',
     'MkvFile',
     'WebmFile',
     'MkaFile',
@@ -16,11 +17,13 @@ __all__ = (
 
 from pathlib import Path
 import collections
+import contextlib
 import copy
 import functools
 import io
 import logging
 import re
+import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
 from .exec import Executable
@@ -212,7 +215,6 @@ class MatroskaChaptersFile(XmlFile):
 
     @classmethod
     def fix_chapters_out(cls, chapters_out):
-        import xml.etree.ElementTree as ET
         from .ffmpeg import ffmpeg
         chapters_xml = ET.parse(io.StringIO(byte_decode(chapters_out)))
         chapters_root = chapters_xml.getroot()
@@ -231,25 +233,13 @@ class MatroskaChaptersFile(XmlFile):
                         e = ET.SubElement(eChapterAtom, 'ChapterTimeStart')
                     e.text = str(ffmpeg.Timestamp(0))
                     chapters_xml_io = io.StringIO()
-                    chapters_xml.write(chapters_xml_io,
-                                       xml_declaration=True,
-                                       encoding='unicode',  # Force string
-                                       )
+                    cls.write_xml(chapters_xml, file=chapters_xml_io)
                     chapters_out = chapters_xml_io.getvalue()
                 break
         return chapters_out
 
     def create(self, file=None):
-        if file is None:
-            file = self.fp
-        if file is None:
-            with self.open('w', encoding='utf-8') as file:
-                return self.create(file=file)
-        chapters_xml = self.chapters.to_mkv_xml()
-        chapters_xml.write(file,
-                           xml_declaration=True,
-                           encoding='unicode',  # Force string
-                           )
+        self.write_xml(self.chapters.to_mkv_xml(), file=file)
 
     @classmethod
     def NamedTemporaryFile(cls, *, suffix=None, **kwargs):
@@ -404,34 +394,34 @@ class MatroskaFile(BinaryMediaFile):
 
     def get_tags_xml(self):
         from qip.exec import dbg_exec_cmd
-        from qip.file import TempFile
-        import xml.etree.ElementTree as ET
-        with TempFile.mkstemp(text=True, suffix='.tags.xml') as tmp_tags_xml_file:
+        with XmlFile.NamedTemporaryFile(suffix='.tags.xml') as tmp_tags_xml_file:
             cmd = [
                 'mkvextract',
-                self.file_name,
+                self,
                 'tags',
-                tmp_tags_xml_file.file_name,
+                tmp_tags_xml_file,
             ]
             dbg_exec_cmd(cmd)
+            # write -> read
+            # tmp_tags_xml_file.flush()
+            # tmp_tags_xml_file.seek(0)
             # https://mkvtoolnix.download/doc/mkvextract.html
             # If no tags are found in the file, the output file is not created.
             if tmp_tags_xml_file.exists() and tmp_tags_xml_file.getsize() > 0:
-                tags_xml = ET.parse(tmp_tags_xml_file.file_name)
+                tags_xml = ET.parse(tmp_tags_xml_file.fp)
             else:
                 tags_xml = self.create_empty_tags_xml()
         return tags_xml
 
     def set_tags_xml(self, tags_xml):
         from qip.exec import do_exec_cmd
-        from qip.file import TempFile
-        with TempFile.mkstemp(text=True, suffix='.tags.xml') as tmp_tags_xml_file:
-            tags_xml.write(tmp_tags_xml_file.file_name,
-                #encoding='unicode',
-                xml_declaration=True,
-                )
+        with XmlFile.NamedTemporaryFile(suffix='.tags.xml') as tmp_tags_xml_file:
+            tmp_tags_xml_file.write_xml(tags_xml)
+            # write -> read
+            tmp_tags_xml_file.flush()
+            tmp_tags_xml_file.seek(0)
             #if log.isEnabledFor(logging.DEBUG):
-            #    with open(tmp_tags_xml_file.file_name, 'r') as fd:
+            #    with open(tmp_tags_xml_file, 'r') as fd:
             #        log.debug('Tags XML: %s', fd.read())
             mkvpropedit(
                 self,
@@ -649,7 +639,6 @@ class MatroskaFile(BinaryMediaFile):
 
     @classmethod
     def create_empty_tags_xml(cls):
-        import xml.etree.ElementTree as ET
         tags_xml = ET.ElementTree(ET.fromstring(
             '''<?xml version="1.0"?>
             <!-- <!DOCTYPE Tags SYSTEM "matroskatags.dtd"> -->
@@ -659,7 +648,6 @@ class MatroskaFile(BinaryMediaFile):
 
     @classmethod
     def create_tags_xml_from_list(cls, tags_list):
-        import xml.etree.ElementTree as ET
         tags_xml = cls.create_empty_tags_xml()
         root = tags_xml.getroot()
         d_tags_per_target = collections.defaultdict(list)
@@ -710,7 +698,6 @@ class MatroskaFile(BinaryMediaFile):
         return tags_xml
 
     def load_tags(self, file_type=None):
-        import xml.etree.ElementTree as ET
         tags = AlbumTags()
         tags_xml = self.get_tags_xml()
         tags_list = self.iter_matroska_tags(tags_xml)
@@ -814,7 +801,6 @@ class MatroskaFile(BinaryMediaFile):
         return tags
 
     def load_chapters(self, *, fix=True, return_raw_xml=False, **kwargs):
-        import xml.etree.ElementTree as ET
         from qip.perf import perfcontext
         with perfcontext('mkvextract chapters'):
             chapters_out = mkvextract('chapters', self,
@@ -829,16 +815,13 @@ class MatroskaFile(BinaryMediaFile):
 
     def write_chapters(self, chaps,
                        show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
-        import xml.etree.ElementTree as ET
-
         with MatroskaChaptersFile.NamedTemporaryFile() as chapters_file:
             if isinstance(chaps, ET.ElementTree):
                 # XML tree
-                chapters_xml = chaps
-                chapters_xml.write(chapters_file.fp,
-                                   xml_declaration=True,
-                                   encoding='unicode',  # Force string
-                                   )
+                chapters_file.write_xml(chaps)
+                # write -> read
+                chapters_file.flush()
+                chapters_file.seek(0)
                 return
             if isinstance(chaps, str) and chaps.startswith('<'):
                 # XML string -> Chapters
@@ -863,7 +846,6 @@ class MatroskaFile(BinaryMediaFile):
             ipod_compat=True,  # unused
             keep_picture_file_name=None,
             ):
-        from .file import TempFile
         from .exec import do_exec_cmd
 
         if not src_picture:
@@ -891,13 +873,13 @@ class MatroskaFile(BinaryMediaFile):
                 picture = PngFile.NamedTemporaryFile()
             if src_picture.resolve() != picture.file_name.resolve():
                 log.info('Writing new picture %s...', picture)
-            from .ffmpeg import ffmpeg
-            ffmpeg_args = []
-            if True:  # yes
-                ffmpeg_args += ['-y']
-            ffmpeg_args += ['-i', src_picture]
-            ffmpeg_args += ['-an', str(picture)]
-            ffmpeg(*ffmpeg_args)
+                from .ffmpeg import ffmpeg
+                ffmpeg_args = []
+                if True:  # yes
+                    ffmpeg_args += ['-y']
+                ffmpeg_args += ['-i', src_picture]
+                ffmpeg_args += ['-an', str(picture)]
+                ffmpeg(*ffmpeg_args)
             src_picture = picture
 
         return picture
@@ -920,117 +902,122 @@ class MatroskaFile(BinaryMediaFile):
         from .parser import lines_parser
         from .qaac import qaac
         from .ffmpeg import ffmpeg
-        from .file import TempFile, safe_write_file_eval, safe_read_file
         output_file = self
         chapters_added = False
         tags_added = False
         picture_added = False
+        with contextlib.ExitStack() as exit_stack:
 
-        if show_progress_bar:
-            if progress_bar_max is None:
-                progress_bar_max = expected_duration
+            if show_progress_bar:
+                if progress_bar_max is None:
+                    progress_bar_max = expected_duration
 
-        log.info('Writing %s...', output_file)
+            log.info('Writing %s...', output_file)
 
-        ffmpeg_cmd = []
+            ffmpeg_cmd = []
 
-        ffmpeg_input_cmd = []
-        ffmpeg_output_cmd = []
-        if yes:
-            ffmpeg_cmd += ['-y']
-        ffmpeg_cmd += ['-stats']
-        # ffmpeg_output_cmd += ['-vn']
-        ffmpeg_format = 'matroska'
-        bCopied = False
+            ffmpeg_input_cmd = []
+            ffmpeg_output_cmd = []
+            if yes:
+                ffmpeg_cmd += ['-y']
+            ffmpeg_cmd += ['-stats']
+            # ffmpeg_output_cmd += ['-vn']
+            ffmpeg_format = 'matroska'
+            bCopied = False
 
-        if len(inputfiles) > 1:
-            temp_concat_file = TempFile.mkstemp(suffix='.concat.lst')
-            concat_file = ffmpeg.ConcatScriptFile(temp_concat_file)
-            concat_file.files = inputfiles
-            log.info('Writing %s...', concat_file)
-            concat_file.create(absolute=True)
-            log.debug('Files:\n' +
-                      re.sub(r'^', '    ', safe_read_file(concat_file), flags=re.MULTILINE))
-            ffmpeg_input_cmd += [
-                '-f', 'concat', '-safe', '0', '-i', concat_file,
-            ]
-        else:
-            ffmpeg_input_cmd += [
-                '-i', inputfiles[0],
-            ]
-        ffmpeg_output_cmd += [
-            '-map', '0:a',
-        ]
-
-        if not picture_added and picture is not None:
-            ffmpeg_input_cmd += [
-                '-i', picture,
-            ]
-            ffmpeg_output_cmd += [
-                '-map', '1:v',
-            ]
-            picture_added = True
-
-        ffmpeg_output_cmd += [
-            '-codec', 'copy',
-        ]
-
-        ffmpeg_output_cmd += [
-            '-map_metadata', -1,
-            '-map_chapters', -1,
-        ]
-
-        ffmpeg_output_cmd += [
-            '-f', ffmpeg_format,
-            output_file.file_name,
-        ]
-
-        out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd),
-                     show_progress_bar=show_progress_bar,
-                     progress_bar_max=progress_bar_max,
-                     progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
-                     )
-        out = out.out
-        out_time = None
-        # {{{
-        out = clean_cmd_output(out)
-        parser = lines_parser(out.split('\n'))
-        while parser.advance():
-            parser.line = parser.line.strip()
-            if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
-                # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
-                # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
-                out_time = parse_time_duration(parser.match.group('out_time'))
-            elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
-                log.warning('TODO: %s', parser.line)
-                pass
+            if len(inputfiles) > 1:
+                concat_file = ffmpeg.ConcatScriptFile.NamedTemporaryFile()
+                exit_stack.enter(concat_file)
+                concat_file.files = inputfiles
+                log.info('Writing %s...', concat_file)
+                concat_file.create(absolute=True)
+                # write -> read
+                concat_file.flush()
+                concat_file.seek(0)
+                if log.isEnabledFor(logging.DEBUG):
+                    log.debug('Files:\n' +
+                              re.sub(r'^', '    ', concat_file.read(), flags=re.MULTILINE))
+                    concat_file.seek(0)
+                ffmpeg_input_cmd += [
+                    '-f', 'concat', '-safe', '0', '-i', concat_file,
+                ]
             else:
-                pass  # TODO
-        # }}}
-        print('')
-        if expected_duration is not None:
-            expected_duration = ffmpeg.Timestamp(expected_duration)
-            log.info('Expected final duration: %s (%.3f seconds)', expected_duration, expected_duration)
-        if out_time is None:
-            log.warning('final duration unknown!')
-        else:
-            out_time = ffmpeg.Timestamp(out_time)
-            log.info('Final duration:          %s (%.3f seconds)', out_time, out_time)
+                ffmpeg_input_cmd += [
+                    '-i', inputfiles[0],
+                ]
+            ffmpeg_output_cmd += [
+                '-map', '0:a',
+            ]
 
-        if not chapters_added and chapters:
-            log.info("Adding chapters...")
-            chapters.fill_end_times(duration=out_time if out_time is not None else expected_duration)
-            output_file.write_chapters(chapters,
-                                       show_progress_bar=show_progress_bar,
-                                       progress_bar_max=progress_bar_max)
-            chapters_added = True
+            if not picture_added and picture is not None:
+                ffmpeg_input_cmd += [
+                    '-i', picture,
+                ]
+                ffmpeg_output_cmd += [
+                    '-map', '1:v',
+                ]
+                picture_added = True
 
-        if not tags_added and output_file.tags is not None:
-            log.info('Adding tags...')
-            tags = copy.copy(output_file.tags)
-            tags.picture = None
-            output_file.write_tags(tags=tags, run_func=do_exec_cmd)
-            tags_added = True
+            ffmpeg_output_cmd += [
+                '-codec', 'copy',
+            ]
+
+            ffmpeg_output_cmd += [
+                '-map_metadata', -1,
+                '-map_chapters', -1,
+            ]
+
+            ffmpeg_output_cmd += [
+                '-f', ffmpeg_format,
+                output_file,
+            ]
+
+            out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd),
+                         show_progress_bar=show_progress_bar,
+                         progress_bar_max=progress_bar_max,
+                         progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
+                         )
+            out = out.out
+            out_time = None
+            # {{{
+            out = clean_cmd_output(out)
+            parser = lines_parser(out.split('\n'))
+            while parser.advance():
+                parser.line = parser.line.strip()
+                if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
+                    # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
+                    # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
+                    out_time = parse_time_duration(parser.match.group('out_time'))
+                elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
+                    log.warning('TODO: %s', parser.line)
+                    pass
+                else:
+                    pass  # TODO
+            # }}}
+            print('')
+            if expected_duration is not None:
+                expected_duration = ffmpeg.Timestamp(expected_duration)
+                log.info('Expected final duration: %s (%.3f seconds)', expected_duration, expected_duration)
+            if out_time is None:
+                log.warning('final duration unknown!')
+            else:
+                out_time = ffmpeg.Timestamp(out_time)
+                log.info('Final duration:          %s (%.3f seconds)', out_time, out_time)
+
+            if not chapters_added and chapters:
+                chapters.fill_end_times(duration=out_time if out_time is not None else expected_duration)
+                output_file.write_chapters(chapters,
+                                           show_progress_bar=show_progress_bar,
+                                           progress_bar_max=progress_bar_max,
+                                           log=True)
+                chapters_added = True
+
+            if not tags_added and output_file.tags is not None:
+                log.info('Adding tags...')
+                tags = copy.copy(output_file.tags)
+                tags.picture = None
+                output_file.write_tags(tags=tags, run_func=do_exec_cmd)
+                tags_added = True
 
 class MkvFile(MatroskaFile, MovieFile):
 

@@ -25,7 +25,6 @@ import sys
 import xml.etree.ElementTree as ET
 
 from qip import argparse
-from qip import json
 from qip.app import app
 from qip.cmp import *
 from qip.exec import *
@@ -703,16 +702,15 @@ def mkm4b(inputfiles, default_tags):
                         edfile(chapters_file)
                         chapters_file.load()
                 elif ns.action == 'picture':
-                    if ns.picture is not None:
-                        select_src_picture(Path(ns.picture).expanduser())
-                    else:
+                    if ns.picture is None:
                         print(f'Current picture: {src_picture}')
-                        value = app.prompt('New picture: ')
-                        if not value:
+                        ns.picture = app.prompt('New picture: ')
+                        if not ns.picture:
                             print('Cancelled by user!')
                             print('')
                             continue
-                        select_src_picture(Path(value).expanduser())
+                    ns.picture = os.path.expanduser(ns.picture)
+                    select_src_picture(qip.mm._tPicture(ns.picture))
                 else:
                     app.log.error('Invalid input: %r' % (ns.action,))
 
