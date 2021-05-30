@@ -8,13 +8,31 @@
   - Music -- M4A, FLAC, ...
   - Audiobooks -- M4B, MKA, ...
 
-## HOWTOs
+Table of Contents:
+<!--ts-->
+* [qualIP's Media Tools](#qualips-media-tools)
+* [HOWTOs](#howtos)
+* [Tools](#tools)
+   * [mmdemux](#mmdemux)
+   * [mkbincue / bincuetags / bincuerip](#mkbincue--bincuetags--bincuerip)
+   * [mkm4b](#mkm4b)
+   * [librivox-dl](#librivox-dl)
+   * [lsdvd](#lsdvd)
+   * [taged](#taged)
+   * [organize-media](#organize-media)
+* [Installation](#installation)
+* [Donations](#donations)
+<!--te-->
+
+# HOWTOs
 
   - [mmdemux proposed workflow](doc/HOWTO-mmdemux-workflow.md)
   - [Ripping a 3D Movie](doc/HOWTO-rip-3D-movie.md)
   - Soon: Ripping audiobooks from audio CDs
   - Soon: Rip a DVD/BD's main title to .mkv files
   - More in the works...
+
+# Tools
 
 ## mmdemux
 

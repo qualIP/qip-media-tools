@@ -15,6 +15,17 @@ Here's a proposed movie conversion workflow.
    remaining work.
 4. Organize the resulting movie in your media library.
 
+Table of Contents:
+<!--ts-->
+* [mmdemux proposed workflow](#mmdemux-proposed-workflow)
+   * [Conversion setup using interactive mode](#conversion-setup-using-interactive-mode)
+   * [Automated conversion using batch mode](#automated-conversion-using-batch-mode)
+   * [Final manual steps using interactive mode](#final-manual-steps-using-interactive-mode)
+   * [Organize in your media library](#organize-in-your-media-library)
+* [Tips](#tips)
+   * [Setting default options](#setting-default-options)
+<!--te-->
+
 Conversion setup using interactive mode
 ---------------------------------------
 

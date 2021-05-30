@@ -8,6 +8,14 @@
 create VP9/Opus Matroska/WebM files with the 3D video stream still accessible
 and encoded in the format of your choice.
 
+Table of Contents:
+<!--ts-->
+* [HOWTO: Ripping a 3D Movie](#howto-ripping-a-3d-movie)
+   * [Step 1: Extract the movie tracks](#step-1-extract-the-movie-tracks)
+   * [Step 2: Identify movie tracks to keep](#step-2-identify-movie-tracks-to-keep)
+   * [Step 3: Mux, Optimize, Demux, Verify](#step-3-mux-optimize-demux-verify)
+<!--te-->
+
 ## Step 1: Extract the movie tracks
 
 Use `mmdemux` to extract the movie files. Underneath the hood, MakeMKV is used to read the disk.
