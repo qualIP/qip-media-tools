@@ -2,6 +2,7 @@ __all__ = [
         'app',
         ]
 
+from pathlib import Path
 import codecs
 import configparser
 import functools
@@ -15,6 +16,7 @@ import traceback
 import urllib
 
 from . import argparse
+from .propex import propex
 
 HAVE_ARGCOMPLETE = False
 try:
@@ -61,6 +63,45 @@ addLoggingLevelName((logging.INFO + logging.DEBUG) // 2, "VERBOSE")
 
 DEFAULT = object()
 
+class ConfigParser(configparser.ConfigParser):
+
+    file_name = None
+
+    def __init__(self, *, file_name=None, **kwargs):
+        self.file_name = None if file_name is None else str(file_name)
+        super().__init__(**kwargs)
+
+    def read(self, file_name=None, filenames=None, no_exists_ok=False, **kwargs):
+        if file_name is not None and filenames is not None:
+            assert TypeError('Both file_name and filenames provided')
+        if filenames is None:
+            if file_name is None:
+                file_name = self.file_name
+            if file_name is None:
+                assert TypeError('No file_name or filenames provided')
+            filenames = [self.file_name]
+        read_ok = super().read(filenames=filenames, **kwargs)
+        if not no_exists_ok and not read_ok:
+            raise OSError(errno.ENOENT, 'Config file(s) not found', ', '.join(filenames))
+        return read_ok
+
+    def write(self, file_name=None, fp=None, **kwargs):
+        if file_name is None and fp is None:
+            file_name = self.file_name
+        if file_name is not None:
+            file_name = Path(file_name)
+            if fp is not None:
+                assert TypeError('Both file_name and fp provided')
+            file_name.parent.mkdir(parents=True, exist_ok=True)
+            from qip.file import write_to_temp_context
+            with write_to_temp_context(file_name, text=True) as tmp_file:
+                return self.write(fp=tmp_file.fp, **kwargs)
+        elif fp is not None:
+            pass
+        else:
+            assert TypeError('No file_name or fp provided')
+        return super().write(fp=fp, **kwargs)
+
 def _run_dialog(dialog, style, async_=False):
     " Turn the `Dialog` into an `Application` and run it. "
     from prompt_toolkit.application.current import get_app
@@ -75,6 +116,9 @@ def _run_dialog(dialog, style, async_=False):
             return application.run_async()
         else:
             return application.run()
+
+def _resolved_Path(path):
+    return Path(path).resolve()
 
 class App(object):
 
@@ -91,7 +135,10 @@ class App(object):
 
     config_file_parser = None
 
-    cache_dir = None
+    cache_dir = propex(
+        name='cache_dir',
+        default=None,
+        type=(None, _resolved_Path))
     _user_agent = None
     _ureg = None
 
@@ -115,7 +162,7 @@ class App(object):
             logging_level=None,
             ):
         if prog is None:
-            prog = os.path.basename(sys.argv[0])
+            prog = Path(sys.argv[0]).name
         self.prog = prog
         self.version = version
         self.contact = contact
@@ -154,9 +201,6 @@ class App(object):
                 if 'auto_env_var_prefix' not in kwargs:
                     kwargs['auto_env_var_prefix'] = \
                             re.sub(r'[^A-Z0-9]+', '_', self.prog.upper() + '_')
-                if 'default_config_files' not in kwargs:
-                    kwargs['default_config_files'] = [
-                            '~/.{prog}.conf'.format(prog=self.prog)]
                 if 'args_for_setting_config_path' not in kwargs:
                     kwargs['args_for_setting_config_path'] = [
                             #"-c",
@@ -177,7 +221,7 @@ class App(object):
                 )
             self.config_parser.add_argument("--config", "-c", metavar="FILE",
                                           dest='config_file',
-                                          default=argparse.DefaultStringWrapper(self.default_config_file()),
+                                          default=argparse.DefaultWrapper(self.default_config_file()),
                                           type=argparse.FileType('r'),
                                           help="Specify config file")
             self.config_parser.add_argument("--no-config",
@@ -232,13 +276,13 @@ class App(object):
         if not self.prog:
             return None
         config_file = None
-        config_home = os.environ.get('XDG_CONFIG_HOME', None) \
-            or os.path.expanduser('~/.config')
-        config_file1 = f'{config_home}/{self.prog}/config'
-        if os.path.exists(config_file1):
+        config_home = os.environ.get('XDG_CONFIG_HOME', None)
+        config_home = Path(config_home) if config_home else Path.home() / '.config'
+        config_file1 = config_home / self.prog / 'config'
+        if config_file1.exists():
             return config_file1
-        config_file2 = os.path.expanduser(f'~/.{self.prog}.conf')
-        if os.path.exists(config_file2):
+        config_file2 = Path('~', self.prog + '.conf')
+        if config_file2.exists():
             return config_file2
         return config_file1  # The default that doesn't exist
 
@@ -262,12 +306,8 @@ class App(object):
                 args=remaining_args,
                 namespace=namespace)
 
-            if namespace.config_file \
-                    and isinstance(namespace.config_file, str) \
-                    and not os.path.exists(namespace.config_file):
-                namespace.config_file = None
             if namespace.config_file:
-                self.read_config_file(namespace.config_file)
+                self.read_config_file(namespace.config_file, no_exists_ok=True)
                 try:
                     options_config = self.config_file_parser["options"]
                 except KeyError:
@@ -325,14 +365,19 @@ class App(object):
 
         return self.args
 
-    def read_config_file(self, config_file):
-        self.config_file_parser = configparser.ConfigParser(allow_no_value=True)
+    def read_config_file(self, config_file, no_exists_ok=False):
         if isinstance(config_file, io.IOBase):
+            self.config_file_parser = ConfigParser(file_name=config_file.name,
+                                                   allow_no_value=True)
             self.config_file_parser.read_file(config_file)
-        elif isinstance(config_file, str):
-            self.config_file_parser.read([str(config_file)])
+            ret = True
+        elif isinstance(config_file, (str, os.PathLike)):
+            self.config_file_parser = ConfigParser(file_name=config_file,
+                                                   allow_no_value=True)
+            ret = bool(self.config_file_parser.read(no_exists_ok=no_exists_ok))
         else:
             raise TypeError(config_file)
+        return ret
 
     @property
     def user_agent(self):
@@ -364,12 +409,10 @@ class App(object):
 
     def mk_cache_file(self, cache_token):
         cache_dir = self.cache_dir
-        if not cache_dir:
+        if cache_dir is None:
             return None
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(
-            cache_dir,
-            urllib.parse.quote(cache_token, safe=''))
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = cache_dir / urllib.parse.quote(cache_token, safe='')
         return cache_file
 
     def main_wrapper(self, func):

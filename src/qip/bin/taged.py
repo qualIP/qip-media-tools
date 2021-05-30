@@ -5,6 +5,7 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
+from pathlib import Path
 import argparse
 import decimal
 import errno
@@ -159,7 +160,7 @@ def main():
     pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
     pgroup.add_argument('--xid', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
 
-    app.parser.add_argument('files', nargs='*', default=None, help='sound files')
+    app.parser.add_argument('files', nargs='*', default=None, type=Path, help='sound files')
 
     app.parse_args()
 
@@ -280,7 +281,7 @@ def main():
                         app.log.error('Invalid input')
             if file_name is not None:
                 if app.args.lyrics_save:
-                    lyrics_file = TextFile(os.path.splitext(file_name)[0] + '.txt')
+                    lyrics_file = TextFile(file_name.with_suffix('.txt'))
                     assert app.args.yes or not lyrics_file.exists()
                     app.log.info('Writing lyrics to %s', lyrics_file)
                     lyrics_file.write(lyrics)
@@ -442,7 +443,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                 assert mp4_tag == 'covr'
                 mp4_value = []
                 from qip.file import cache_url
-                value = cache_url(str(value))
+                value = cache_url(os.fspath(value))
                 if getattr(app.args, 'prep_picture', False):
                     global m4a_prepped_picture
                     if not m4a_prepped_picture:
@@ -450,7 +451,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                         m4a = M4aFile(file_name)
                         m4a_prepped_picture = m4a.prep_picture(value)
                     value = m4a_prepped_picture
-                img_file = ImageFile(str(value))
+                img_file = ImageFile(value)
                 img_type = img_file.image_type
                 if img_type is ImageType.jpg:
                     img_type = mutagen.mp4.MP4Cover.FORMAT_JPEG
@@ -540,10 +541,9 @@ def taged(file_name, tags):
             with perfcontext('mf.save'):
                 mf.save()
         return True
-    file_base, file_ext = os.path.splitext(file_name)
-    if file_ext in ('.mka', '.mkv', '.webm'):
+    if file_name.suffix in ('.mka', '.mkv', '.webm'):
         return taged_Matroska(file_name, tags)
-    raise NotImplementedError(file_ext)
+    raise NotImplementedError(file_name.suffix)
     return True
 
 def dump_tags(tags, *, deep=True, heading='Tags:'):

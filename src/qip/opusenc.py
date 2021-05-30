@@ -3,9 +3,11 @@ __all__ = [
         'opusenc',
         ]
 
+from pathlib import Path
 import functools
 import os
 import logging
+import re
 log = logging.getLogger(__name__)
 
 from .exec import *
@@ -45,27 +47,27 @@ class Opusenc(Executable):
         if slurm:
 
             # out_file is always last
-            out_file = args[-1]
+            out_file = Path(args[-1])
             args[-1] = '-'
 
             # in_file is previous to last
-            in_file = args[-2]
+            in_file = Path(args[-2])
             args[-2] = '-'
 
             run_func = do_srun_cmd
             run_kwargs['chdir'] = '/'
-            run_kwargs['stdin_file'] = os.path.abspath(in_file)
-            run_kwargs['stdout_file'] = os.path.abspath(out_file)
+            run_kwargs['stdin_file'] = in_file.resolve()
+            run_kwargs['stdout_file'] = out_file.resolve()
             run_kwargs['stderr_file'] = '/dev/stderr'
             run_kwargs['slurm_cpus_per_task'] = 1
             run_kwargs['slurm_mem'] = '500M'
-            run_kwargs.setdefault('slurm_job_name', '_'.join(os.path.basename(out_file).split()))
+            run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', out_file.name))
 
         else:
             run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
             #if not dry_run:
-            #    run_kwargs['stdin'] = open(str(in_file), "rb")
-            #    run_kwargs['stdout'] = open(str(out_file), "w")
+            #    run_kwargs['stdin'] = open(os.fspath(in_file), "rb")
+            #    run_kwargs['stdout'] = open(os.fspath(out_file), "w")
 
         if run_kwargs:
             run_func = functools.partial(run_func, **run_kwargs)

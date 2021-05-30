@@ -5,6 +5,7 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
+from pathlib import Path
 import argparse
 import decimal
 import errno
@@ -66,7 +67,7 @@ def get_audio_file_chapters(snd_file, chapter_naming_format):
     if not chaps and app.args.OverDrive_MediaMarkers:
         if hasattr(snd_file, 'OverDrive_MediaMarkers'):
             chaps = parse_OverDrive_MediaMarkers(snd_file.OverDrive_MediaMarkers)
-    if not chaps and os.path.splitext(snd_file.file_name)[1] in qip.mm.get_mp4v2_app_support().extensions_can_read:
+    if not chaps and snd_file.file_name.suffix in qip.mm.get_mp4v2_app_support().extensions_can_read:
         if shutil.which('mp4chaps'):
             # {{{
             try:
@@ -122,7 +123,7 @@ def get_audio_file_default_chapter(d, chapter_naming_format):
     if chapter_naming_format == 'title':
         if d.tags.contains(MediaTagEnum.title, strict=True):
             return d.tags.title
-        return clean_audio_file_title(d, os.path.splitext(os.path.split(d.file_name)[1])[0])
+        return clean_audio_file_title(d, d.file_name.with_suffix('').name)
     if chapter_naming_format == 'track':
         track = d.tags.track
         if track is not None:
@@ -209,7 +210,7 @@ def main():
             contact='jst@qualipsoft.com',
             )
 
-    app.cache_dir = os.path.abspath('mkm4b-cache')
+    app.cache_dir = 'mkm4b-cache'  # in current directory!
 
     in_tags = TrackTags(type='audiobook')
 
@@ -245,7 +246,7 @@ def main():
     xgroup.add_argument('--no-itunes-compat', dest='itunes_compat', default=argparse.SUPPRESS, action='store_false', help='iTunes compatibility (disable)')
 
     pgroup = app.parser.add_argument_group('Chapters Control')
-    pgroup.add_argument('--chapters', dest='chaptersfile', default=argparse.SUPPRESS, help='specify the chapters file name')
+    pgroup.add_argument('--chapters', dest='chaptersfile', default=argparse.SUPPRESS, type=Path, help='specify the chapters file name')
     pgroup.add_argument('--reuse-chapters', action='store_true', help='reuse chapters.txt file')
     pgroup.add_argument('--chapter-naming', dest='chapter_naming_format', default="default", help='chapters naming format',
             choices=["default", "title", "track", "disc", "disk", "disc-track", "disk-track"])
@@ -354,7 +355,7 @@ def main():
 # clean_file_name {{{
 
 def clean_file_name(file_name):
-    name, ext = os.path.splitext(file_name)
+    name, ext = os.path.splitext(os.fspath(file_name))
     # http://en.wikipedia.org/wiki/Filename {{{
     # UNIX: a leading . indicates that ls and file managers will not show the file by default
     name = re.sub(r'^[.]+', '', name)
@@ -373,7 +374,7 @@ def clean_file_name(file_name):
     if over > 0:
         name = name[:len(name)-over]
     # }}}
-    file_name = name + ext
+    file_name = Path(name + ext)
     return file_name
 
 # }}}
@@ -386,7 +387,7 @@ def mkm4b(inputfiles, default_tags):
             inputfile if isinstance(inputfile, SoundFile) else SoundFile.new_by_file_name(file_name=inputfile)
             for inputfile in inputfiles]
     for inputfile in inputfiles:
-        if not os.path.isfile(inputfile.file_name):
+        if not inputfile.file_name.is_file():
             raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
         app.log.info('Reading %s...', inputfile)
         inputfile.extract_info(need_actual_duration=(len(inputfiles) > 1))
@@ -473,13 +474,13 @@ def mkm4b(inputfiles, default_tags):
     # }}}
 
     if len(inputfiles) > 1:
-        filesfile = os.path.splitext(m4b.file_name)[0] + '.files.txt'
+        filesfile = m4b.file_name.with_suffix('.files.txt')
         app.log.info('Writing %s...', filesfile)
         def body(fp):
             print('ffconcat version 1.0', file=fp)
             for inputfile in inputfiles:
                 print('file \'%s\'' % (
-                    inputfile.file_name.replace('\\', '\\\\').replace('\'', '\'\\\'\''),
+                    os.fspath(inputfile.file_name).replace('\\', '\\\\').replace('\'', '\'\\\'\''),
                     ), file=fp)
                 if hasattr(inputfile, 'duration'):
                     print('duration %.3f' % (inputfile.duration,), file=fp)
@@ -488,9 +489,9 @@ def mkm4b(inputfiles, default_tags):
         print(re.sub(r'^', '    ', safe_read_file(filesfile), flags=re.MULTILINE))
 
     expected_duration = None
-    chapters_file = TextFile(file_name=os.path.splitext(m4b.file_name)[0] + '.chapters.txt')
+    chapters_file = TextFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
     if hasattr(app.args, 'chaptersfile'):
-        if os.path.abspath(app.args.chaptersfile) == os.path.abspath(chapters_file.file_name):
+        if app.args.chaptersfile.samefile(chapters_file.file_name):
             app.log.info('Reusing %s...', chapters_file)
         else:
             app.log.info('Writing %s from %s...', chapters_file, app.args.chaptersfile)
@@ -531,8 +532,8 @@ def mkm4b(inputfiles, default_tags):
             src_picture = inputfiles[0].file_name
         else:
             for ext in ('.png', '.jpg', '.jpeg', '.gif'):
-                test_src_picture = os.path.join(os.path.dirname(inputfiles[0].file_name), 'AlbumArt' + ext)
-                if os.path.exists(test_src_picture):
+                test_src_picture = inputfiles[0].file_name.with_name('AlbumArt' + ext)
+                if test_src_picture.exists():
                     src_picture = test_src_picture
                     break
 
@@ -549,10 +550,11 @@ def mkm4b(inputfiles, default_tags):
         else:
             src_picture = new_picture
             app.log.info('Using picture from %s...', src_picture)
-            picture = m4b.prep_picture(src_picture,
-                    yes=app.args.yes,
-                    ipod_compat=app.args.ipod_compat,
-                    keep_picture_file_name=os.path.splitext(m4b.file_name)[0] + '.png')
+            picture = m4b.prep_picture(
+                src_picture,
+                yes=app.args.yes,
+                ipod_compat=app.args.ipod_compat,
+                keep_picture_file_name=m4b.file_name.with_suffix('.png'))
 
     # }}}
     select_src_picture(src_picture)
@@ -596,7 +598,7 @@ def mkm4b(inputfiles, default_tags):
             print(' p - change picture%s' % (' (%s)' % (src_picture,) if src_picture else ''))
             print(' q - quit')
             print(' y - yes, do it!')
-            c = input('Choice: ')
+            c = app.prompt('Choice: ')
             if c == 't':
                 try:
                     m4b.tags = edvar(m4b.tags)[1]
@@ -605,7 +607,11 @@ def mkm4b(inputfiles, default_tags):
             elif c == 'c':
                 edfile(chapters_file)
             elif c == 'p':
-                select_src_picture(os.path.expanduser(input('Cover file: ')))
+                value = app.prompt('Cover file')
+                if value is None:
+                    print('Cancelled by user!')
+                    continue
+                select_src_picture(Path(value).expanduser())
             elif c == 'q':
                 return False
             elif c == 'y':

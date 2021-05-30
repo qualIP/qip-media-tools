@@ -6,6 +6,7 @@ __all__ = [
 
 from decimal import Decimal
 from fractions import Fraction
+from pathlib import Path
 import collections
 import copy
 import functools
@@ -80,11 +81,7 @@ class ConcatScriptFile(TextFile):
     class File(object):
 
         def __init__(self, name, duration=None):
-            if isinstance(name, File):
-                name = str(name)
-            if not (isinstance(name, str) and name):
-                raise ValueError(name)
-            self.name = name
+            self.name = toPath(name)
             self.duration = None if duration is None else Timestamp(duration)
 
     def __init__(self, file_name):
@@ -98,7 +95,7 @@ class ConcatScriptFile(TextFile):
         if self.ffconcat_version is not None:
             print(f'ffconcat version {self.ffconcat_version}', file=file)
         for file_entry in self.files:
-            esc_file = file_entry.name.replace(r"'", r"'\''")
+            esc_file = os.fspath(file_entry.name).replace(r"'", r"'\''")
             print(f'file \'{esc_file}\'', file=file)
             if file_entry.duration is not None:
                 print(f'duration {file_entry.duration}', file=file)
@@ -329,7 +326,7 @@ class _Ffmpeg(Executable):
     def build_cmd(self, *args, **kwargs):
         args = list(args)
 
-        # out_file is always last
+        # stdout_file is always last
         out_file_args = [args.pop(-1)]
         if args and args[-1] == '--':
             out_file_args = [args.pop(-1)] + out_file_args
@@ -382,11 +379,11 @@ class Ffmpeg(_Ffmpeg):
         run_kwargs = {}
 
         if slurm:
-            # args = <options...> [--] <out_file>
-            # out_file is always last
+            # args = <options...> [--] <stdout_file>
+            # stdout_file is always last
             if args[-2] != '--':
                 args.insert(-1, '--')
-            out_file = args[-1]
+            stdout_file = Path(args[-1])
             args[-1] = 'pipe:'
             # args = <options...> -- pipe:
 
@@ -394,16 +391,15 @@ class Ffmpeg(_Ffmpeg):
                 idx = args.index("-i")
             except ValueError:
                 raise ValueError('no input file specified')
-            else:
-                # args = <options...> -i <in_file> <options...>
-                in_file = args[idx + 1]
-                args[idx + 1] = 'pipe:0'
-                # args = <options...> -i pipe:0 <options...>
+            # args = <options...> -i <stdin_file> <options...>
+            stdin_file = Path(args[idx + 1])
+            args[idx + 1] = 'pipe:0'
+            # args = <options...> -i pipe:0 <options...>
 
             run_func = do_srun_cmd
             run_kwargs['chdir'] = '/'
-            run_kwargs['stdin_file'] = os.path.abspath(in_file)
-            run_kwargs['stdout_file'] = os.path.abspath(out_file)
+            run_kwargs['stdin_file'] = stdin_file.resolve()
+            run_kwargs['stdout_file'] = stdout_file.resolve()
             run_kwargs['stderr_file'] = '/dev/stderr'
             if slurm_cpus_per_task is None:
                 threads = None
@@ -421,13 +417,13 @@ class Ffmpeg(_Ffmpeg):
             if slurm_cpus_per_task is not None:
                 run_kwargs['slurm_cpus_per_task'] = slurm_cpus_per_task
             run_kwargs['slurm_mem'] = '500M'
-            run_kwargs.setdefault('slurm_job_name', '_'.join(os.path.basename(out_file).split()))
+            run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', stdout_file.name))
 
         else:
             run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
             #if not dry_run:
-            #    run_kwargs['stdin'] = open(str(in_file), "rb")
-            #    run_kwargs['stdout'] = open(str(out_file), "w")
+            #    run_kwargs['stdin'] = open(os.fspath(stdin_file), "rb")
+            #    run_kwargs['stdout'] = open(os.fspath(stdout_file), "w")
             run_kwargs['progress_bar_max'] = progress_bar_max
 
         if run_kwargs:
@@ -442,8 +438,8 @@ class Ffmpeg(_Ffmpeg):
     def run2pass(self, *args, **kwargs):
         args = list(args)
 
-        # out_file is always last
-        out_file = args.pop(-1)
+        # stdout_file is always last
+        stdout_file = args.pop(-1)
 
         try:
             idx = args.index("-i")
@@ -451,17 +447,17 @@ class Ffmpeg(_Ffmpeg):
             raise ValueError('no input file specified')
         else:
             args.pop(idx)
-            in_file = args.pop(idx)
+            stdin_file = args.pop(idx)
 
         pipe = True
-        if in_file == '-':
+        if os.fspath(stdin_file) == '-':
             assert pipe, "input file is stdin but piping is not possible"
 
         if pipe:
             return ffmpeg_2pass_pipe(
                     *args,
-                    stdin_file=in_file,
-                    stdout_file=out_file,
+                    stdin_file=stdin_file,
+                    stdout_file=stdout_file,
                     **kwargs)
 
         try:
@@ -484,7 +480,7 @@ class Ffmpeg(_Ffmpeg):
         with perfcontext('%s pass 2/2' % (self.name,)):
             d.pass2 = self.run(*args,
                     "-pass", 2, "-passlogfile", passlogfile,
-                    out_file,
+                    stdout_file,
                     **kwargs)
         d.out = d.pass2.out
         try:
@@ -573,7 +569,7 @@ ffmpeg = Ffmpeg()
 
 class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
 
-    name = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg-2pass-pipe')
+    name = Path(__file__).parent / 'bin' / 'ffmpeg-2pass-pipe'
 
     def build_cmd(self, *args, **kwargs):
         args = list(args)
@@ -581,11 +577,13 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
         args.append('-')  # dummy output
 
         cmd = super().build_cmd(*args, **kwargs)
-        assert cmd.pop(-1) == '-'
+        assert os.fspath(cmd.pop(-1)) == '-'
         return cmd
 
     def _run(self, *args, stdin_file, stdout_file, run_func=None, dry_run=False, slurm=False, progress_bar_max=None, **kwargs):
         args = list(args)
+        stdin_file = Path(stdin_file)
+        stdout_file = Path(stdout_file)
 
         if run_func or dry_run:
             slurm = False
@@ -595,45 +593,51 @@ class Ffmpeg2passPipe(_Ffmpeg, PipedPortableScript):
         except ValueError:
             pass
         else:
+            log.debug('-passlogfile provided; Disabling slurm.')
             slurm = False
 
-        run_kwargs = {}
-        if slurm:
-            run_func = do_srun_cmd
-            run_kwargs['chdir'] = '/'
-            run_kwargs['stdin_file'] = os.path.abspath(stdin_file)
-            run_kwargs['stdout_file'] = os.path.abspath(stdout_file)
-            run_kwargs['stderr_file'] = '/dev/stderr'
-            threads = None
-            try:
-                threads = kwargs['threads']
-            except KeyError:
-                try:
-                    idx = args.index("-threads")
-                except ValueError:
-                    pass
-                else:
-                    threads = args[idx + 1]
-            if threads:
-                run_kwargs['slurm_cpus_per_task'] = max(round(int(threads) * 0.75), 1)
-            run_kwargs['slurm_mem'] = '500M'
-            if not dry_run:
-                run_kwargs['slurm_tmp'] = os.path.getsize(stdin_file) * 1.5
-            run_kwargs.setdefault('slurm_job_name', '_'.join(os.path.basename(stdout_file).split()))
-        else:
-            run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
-            if not dry_run:
-                run_kwargs['stdin'] = open(str(stdin_file), "rb")
-                run_kwargs['stdout'] = open(str(stdout_file), "w")
-            run_kwargs['progress_bar_max'] = progress_bar_max
-        if run_kwargs:
-            run_func = functools.partial(run_func, **run_kwargs)
+        with contextlib.ExitStack() as stack:
 
-        return super()._run(
-            *args,
-            dry_run=dry_run,
-            run_func=run_func,
-            **kwargs)
+            run_kwargs = {}
+            if slurm:
+                run_func = do_srun_cmd
+                run_kwargs['chdir'] = '/'
+                run_kwargs['stdin_file'] = stdin_file.resolve()
+                run_kwargs['stdout_file'] = stdout_file.resolve()
+                run_kwargs['stderr_file'] = '/dev/stderr'
+                threads = None
+                try:
+                    threads = kwargs['threads']
+                except KeyError:
+                    try:
+                        idx = args.index("-threads")
+                    except ValueError:
+                        pass
+                    else:
+                        threads = args[idx + 1]
+                if threads:
+                    run_kwargs['slurm_cpus_per_task'] = max(round(int(threads) * 0.75), 1)
+                run_kwargs['slurm_mem'] = '500M'
+                if not dry_run:
+                    run_kwargs['slurm_tmp'] = stdin_file.stat().st_size * 1.5
+                run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', stdout_file.name))
+            else:
+                run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)
+                if not dry_run:
+                    run_kwargs['stdin'] = stack.enter_context(stdin_file.open("rb"))
+                    run_kwargs['stdout'] = stack.enter_context(stdout_file.open("wb"))
+                if progress_bar_max is not None:
+                    run_kwargs['progress_bar_max'] = progress_bar_max
+                if progress_bar_title is not None:
+                    run_kwargs['progress_bar_title'] = progress_bar_title
+            if run_kwargs:
+                run_func = functools.partial(run_func, **run_kwargs)
+
+            return super()._run(
+                *args,
+                dry_run=dry_run,
+                run_func=run_func,
+                **kwargs)
 
 
 ffmpeg_2pass_pipe = Ffmpeg2passPipe()
@@ -672,7 +676,7 @@ class Ffprobe(_Ffmpeg):
         args.append('-')  # dummy output
 
         cmd = super().build_cmd(*args, **kwargs)
-        assert cmd.pop(-1) == '-'
+        assert os.fspath(cmd.pop(-1)) == '-'
         return cmd
 
     def _run(self, *args, run_func=None, dry_run=False,

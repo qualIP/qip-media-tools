@@ -8,6 +8,7 @@ Attribution: TV information and images are provided by TheTVDB.com, but we are n
 __all__ = [
 ]
 
+from pathlib import Path
 import configparser
 import io
 import os
@@ -20,13 +21,13 @@ class Tvdb(tvdb_api.Tvdb):
     @staticmethod
     def default_config_file():
         config_file = None
-        config_home = os.environ.get('XDG_CONFIG_HOME', None) \
-            or os.path.expanduser('~/.config')
-        config_file1 = f'{config_home}/thetvdb/config'
-        if os.path.exists(config_file1):
+        config_home = os.environ.get('XDG_CONFIG_HOME', None)
+        config_home = Path(config_home) if config_home else Path.home() / '.config'
+        config_file1 = config_home / 'thetvdb/config'
+        if config_file1.exists():
             return config_file1
-        config_file2 = os.path.expanduser(f'~/.thetvdb.conf')
-        if os.path.exists(config_file2):
+        config_file2 = Path.home() / '.thetvdb.conf'
+        if config_file2.exists():
             return config_file2
         return config_file1  # The default that doesn't exist
 
@@ -44,8 +45,8 @@ class Tvdb(tvdb_api.Tvdb):
         self.config_file_parser = configparser.ConfigParser(allow_no_value=True)
         if isinstance(config_file, io.IOBase):
             self.config_file_parser.read_file(config_file)
-        elif isinstance(config_file, str):
-            self.config_file_parser.read([str(config_file)])
+        elif isinstance(config_file, (str, os.PathLike)):
+            self.config_file_parser.read([os.fspath(config_file)])
         else:
             raise TypeError(config_file)
 

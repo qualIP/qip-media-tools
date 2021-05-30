@@ -3,6 +3,7 @@ __all__ = [
         'mencoder',
         ]
 
+from pathlib import Path
 import functools
 import logging
 import os
@@ -55,23 +56,23 @@ class Mencoder(Executable):
                 else:
                     # Skip: -option value
                     idx_in_file += 2
-            in_file = str(args[idx_in_file])
+            in_file = Path(args[idx_in_file])
 
             idx_out_file = args.index('-o', idx_in_file + 1) + 1
-            out_file = str(args[idx_out_file])
+            out_file = Path(args[idx_out_file])
 
             args[idx_in_file] = '-'
             args[idx_out_file] = '-'
 
             run_func = do_srun_cmd
             run_kwargs['chdir'] = '/'
-            run_kwargs['stdin_file'] = os.path.abspath(in_file)
-            run_kwargs['stdout_file'] = os.path.abspath(out_file)
+            run_kwargs['stdin_file'] = in_file.resolve()
+            run_kwargs['stdout_file'] = out_file.resolve()
             run_kwargs['stderr_file'] = '/dev/stderr'
             if slurm_cpus_per_task is not None:
                 run_kwargs['slurm_cpus_per_task'] = slurm_cpus_per_task
             run_kwargs['slurm_mem'] = '500M'
-            run_kwargs.setdefault('slurm_job_name', '_'.join(os.path.basename(out_file).split()))
+            run_kwargs.setdefault('slurm_job_name', re.sub(r'\W+', '_', out_file.name))
 
         else:
             run_func = run_func or self.run_func or functools.partial(do_exec_cmd, stderr=subprocess.STDOUT)

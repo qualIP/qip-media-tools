@@ -19,6 +19,7 @@ __all__ = (
     'MissingMediaTagError',
 )
 
+from pathlib import Path
 import collections
 import copy
 import datetime
@@ -132,13 +133,12 @@ class Chapters(object):
     def from_mkv_xml(cls, xml, **kwargs):
         if isinstance(xml, ET.ElementTree):
             pass
-        elif isinstance(xml, str):
-            if xml.startswith('<'):
-                # XML string
-                xml = ET.parse(io.StringIO(xml))
-            else:
-                # file name
-                xml = ET.parse(xml)
+        elif isinstance(xml, str) and xml.startswith('<'):
+            # XML string
+            xml = ET.parse(io.StringIO(xml))
+        elif isinstance(xml, (str, os.PathLike)):
+            # file name
+            xml = ET.parse(xml)
         elif isinstance(xml, byte):
             # XML data/bytes
             xml = ET.parse(io.StringIO(byte_decode(xml)))
@@ -490,7 +490,7 @@ class MediaFile(BinaryFile):
                         try:
                             self.set_tag(tag, value)
                         except KeyError as e:
-                            if os.path.splitext(self.file_name)[1] in ('.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v'):
+                            if self.file_name.suffix in ('.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v'):
                                 try:
                                     self.set_tag('----:com.apple.iTunes:' + tag, value)
                                 except KeyError:
@@ -499,7 +499,7 @@ class MediaFile(BinaryFile):
                                 raise e
                     tags_done = True
 
-        if os.path.splitext(self.file_name)[1] in get_mp4v2_app_support().extensions_can_read:
+        if self.file_name.suffix in get_mp4v2_app_support().extensions_can_read:
             if not tags_done and mp4info.which(assert_found=False):
                 # {{{
                 d2, track_tags = mp4info.query(self.file_name)
@@ -510,7 +510,7 @@ class MediaFile(BinaryFile):
                 for k, v in d2.items():
                     setattr(self, k, v)
                 # }}}
-        if os.path.splitext(self.file_name)[1] not in ('.ogg', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v'):
+        if self.file_name.suffix not in ('.ogg', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v'):
             # parse_id3v2_id3info_out {{{
             def parse_id3v2_id3info_out(out):
                 nonlocal self
@@ -616,7 +616,7 @@ class MediaFile(BinaryFile):
                         pass
             # }}}
             if not tags_done and shutil.which('id3info'):
-                if os.path.splitext(self.file_name)[1] not in ('.wav'):
+                if self.file_name.suffix not in ('.wav'):
                     # id3info is not reliable on WAVE files as it may perceive some raw bytes as MPEG/Layer I and give out incorrect info
                     # {{{
                     try:
@@ -637,7 +637,7 @@ class MediaFile(BinaryFile):
                 else:
                     parse_id3v2_id3info_out(out)
                 # }}}
-        if os.path.splitext(self.file_name)[1] in get_sox_app_support().extensions_can_read:
+        if self.file_name.suffix in get_sox_app_support().extensions_can_read:
             if not tags_done and shutil.which('soxi'):
                 # {{{
                 try:
@@ -4363,7 +4363,7 @@ class SoundFile(MediaFile):
     def audio_type(self):
         audio_type = getattr(self, '_audio_type', None)
         if audio_type is None:
-            ext = os.path.splitext(self.file_name)[1]
+            ext = self.file_name.suffix
             if ext:
                 audio_type = AudioType(ext[1:])
         return audio_type
@@ -4407,17 +4407,17 @@ class TrackTagsCache(dict):
 album_tags_file_cache = AlbumTagsCache()
 
 def get_album_tags_from_tags_file(snd_file):
-    snd_file = str(snd_file)
-    m = re.match(r'^(?P<album_base_name>.+)-\d\d?$', os.path.splitext(snd_file)[0])
+    # snd_file = Path(snd_file)
+    m = re.match(r'^(?P<album_base_name>.+)-\d\d?$', os.path.splitext(os.fspath(snd_file))[0])
     if m:
         tags_file_name = m.group('album_base_name') + '.tags'
-        return album_tags_file_cache[tags_file_name]
+        return album_tags_file_cache[os.fspath(tags_file_name)]
 
 track_tags_file_cache = TrackTagsCache()
 
 def get_track_tags_from_tags_file(snd_file):
-    snd_file = str(snd_file)
-    tags_file_name = os.path.splitext(snd_file)[0] + '.tags'
+    snd_file = toPath(snd_file)
+    tags_file_name = snd_file.with_suffix('.tags')
     return track_tags_file_cache[tags_file_name]
 
 # }}}
@@ -4427,11 +4427,11 @@ def get_audio_file_sox_stats(d):
     cache_file = app.mk_cache_file(str(d.file_name) + '.soxstats')
     if (
             cache_file and
-            os.path.exists(cache_file) and
-            os.path.getmtime(cache_file) >= os.path.getmtime(d.file_name)
+            cache_file.exists() and
+            cache_file.stat().st_mtime >= d.file_name.stat().st_mtime
             ):
         out = safe_read_file(cache_file)
-    elif shutil.which('sox') and os.path.splitext(d.file_name)[1] in get_sox_app_support().extensions_can_read:
+    elif shutil.which('sox') and d.file_name.suffix in get_sox_app_support().extensions_can_read:
         app.log.info('Analyzing %s...', d.file_name)
         # NOTE --ignore-length: see #251 soxi reports invalid rate (M instead of K) for some VBR MP3s. (https://sourceforge.net/p/sox/bugs/251/)
         try:
@@ -4507,8 +4507,8 @@ def get_audio_file_ffmpeg_stats(d):
     cache_file = app.mk_cache_file(str(d.file_name) + '.ffmpegstats')
     if (
             cache_file and
-            os.path.exists(cache_file) and
-            os.path.getmtime(cache_file) >= os.path.getmtime(d.file_name)
+            cache_file.exists() and
+            cache_file.stat().st_mtime >= d.file_name.stat().st_mtime
             ):
         out = safe_read_file(cache_file)
     elif shutil.which('ffmpeg'):

@@ -9,6 +9,7 @@ __all__ = (
     'M4rFile',
 )
 
+from pathlib import Path
 import os
 import re
 import shutil
@@ -62,8 +63,8 @@ class Mpeg4ContainerFile(MediaFile):
 
         if not src_picture:
             return None
-        picture = src_picture
-        if os.path.splitext(str(src_picture))[1] not in (
+        picture = src_picture = Path(src_picture)
+        if src_picture.suffix not in (
                 #'.gif',
                 '.png',
                 '.jpg',
@@ -72,13 +73,13 @@ class Mpeg4ContainerFile(MediaFile):
                 picture = ImageFile(keep_picture_file_name)
             else:
                 picture = TempFile.mkstemp(suffix='.png')
-            if str(src_picture) != str(picture):
+            if src_picture.resolve() != picture.file_name.resolve():
                 app.log.info('Writing new picture %s...', picture)
             from .ffmpeg import ffmpeg
             ffmpeg_args = []
             if True or yes:
                 ffmpeg_args += ['-y']
-            ffmpeg_args += ['-i', str(src_picture)]
+            ffmpeg_args += ['-i', src_picture]
             ffmpeg_args += ['-an', str(picture)]
             ffmpeg(*ffmpeg_args)
             src_picture = picture
@@ -233,7 +234,7 @@ class Mpeg4ContainerFile(MediaFile):
                 print('ffconcat version 1.0', file=fp)
                 for inputfile in inputfiles:
                     print('file \'%s\'' % (
-                        os.path.join(os.getcwd(), inputfile.file_name) \
+                        os.fspath(inputfile.file_name.resolve()) \
                             .replace('\\', '\\\\').replace('\'', '\'\\\'\''),
                         ), file=fp)
                     if hasattr(inputfile, 'duration'):
@@ -256,12 +257,12 @@ class Mpeg4ContainerFile(MediaFile):
                 for inputfile_name in inputfiles_names:
                     if False:
                         # Slower
-                        intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=os.path.splitext(inputfile_name)[0] + '.tmp.alac.m4a')
+                        intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=inputfile_name.with_suffix('.tmp.alac.m4a'))
                         intermediate_wav_files.append(intermediate_wav_file)
                         new_inputfiles_names.append(intermediate_wav_file.file_name)
                         out = ffmpeg('-i', inputfile_name, '-acodec', 'alac', intermediate_wav_file.file_name)
                     else:
-                        intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=os.path.splitext(inputfile_name)[0] + '.tmp.wav')
+                        intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=inputfile_name.with_suffix('.tmp.wav'))
                         intermediate_wav_files.append(intermediate_wav_file)
                         new_inputfiles_names.append(intermediate_wav_file.file_name)
                         out = ffmpeg('-i', inputfile_name, intermediate_wav_file.file_name)
@@ -377,14 +378,14 @@ class M4bFile(M4aFile, AudiobookFile):
                     ]
             if self.cover_file:
                 cmd += [
-                        '--cover', str(os.path.join(oldcwd, str(self.cover_file))),
+                        '--cover', oldcwd / self.cover_file,
                         ]
             if interactive:
                 cmd += ['--interactive']
             if single:
                 cmd += ['--single']
             cmd += ['--logging_level', str(logging.getLogger().level)]
-            cmd += [os.path.join(oldcwd, str(e)) for e in snd_files]
+            cmd += [oldcwd / e for e in snd_files]
             if log.isEnabledFor(logging.DEBUG):
                 log.debug('CMD: %s', subprocess.list2cmdline(cmd))
             subprocess.check_call(cmd)

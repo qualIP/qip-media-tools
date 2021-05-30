@@ -8,6 +8,7 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
+from pathlib import Path
 import argparse
 import decimal
 import errno
@@ -112,14 +113,14 @@ def main():
 #'''
 
     pgroup = app.parser.add_argument_group('Files')
-    pgroup.add_argument('--output', '-o', dest='outputdir', default=argparse.SUPPRESS, help='specify the output directory')
+    pgroup.add_argument('--output', '-o', dest='outputdir', default=argparse.SUPPRESS, type=Path, help='specify the output directory')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     xgroup = pgroup.add_mutually_exclusive_group()
     xgroup.add_argument('--ascii-compat', dest='ascii_compat', default=True, action='store_true', help='Enable ASCII compatibility')
     xgroup.add_argument('--no-ascii-compat', dest='ascii_compat', default=argparse.SUPPRESS, action='store_false', help='Disable ASCII compatibility')
 
-    app.parser.add_argument('inputfiles', nargs='*', default=(), help='input sound files')
+    app.parser.add_argument('inputfiles', nargs='*', default=(), type=Path, help='input sound files')
 
     app.parse_args()
 
@@ -155,7 +156,7 @@ def main():
             raise Exception('No input files provided')
         if 'outputdir' not in app.args:
             for inputfile in app.args.inputfiles:
-                if os.path.isdir(inputfile):
+                if inputfile.is_dir():
                     raise Exception('Output directory mandatory when input directory provided')
             app.args.outputdir = ''
         for inputfile in app.args.inputfiles:
@@ -169,9 +170,9 @@ def main():
 
 def clean_file_name(file_name, keep_ext=True, extra=''):
     if keep_ext:
-        name, ext = os.path.splitext(file_name)
+        name, ext = os.path.splitext(os.fspath(file_name))
     else:
-        name, ext = file_name, ''
+        name, ext = os.fspath(file_name), ''
     name = unidecode.unidecode(name)
     # http://en.wikipedia.org/wiki/Filename {{{
     # UNIX: a leading . indicates that ls and file managers will not show the file by default
@@ -210,13 +211,10 @@ supported_audio_exts = \
         set(('.avi', '.mkv', '.webm'))
 
 def dir_empty(d):
-    if not os.path.isdir(d):
+    d = Path(d)
+    if not d.is_dir():
         return False
-    glob_pattern = os.path.join(glob.escape(d), '*')
-    for sub in glob.iglob(glob_pattern):
-        return False
-    glob_pattern = os.path.join(glob.escape(d), '.*')
-    for sub in glob.iglob(glob_pattern):
+    for sub in d.glob('*'):
         return False
     return True
 
@@ -391,7 +389,7 @@ def organize_music(inputfile, *, suggest_tags, dbtype='music'):
 
     dst_file_base += format_part_suffix(inputfile, which=all_part_names - {'disk', 'track'})
 
-    dst_file_base += os.path.splitext(inputfile.file_name)[1]
+    dst_file_base += inputfile.file_name.suffix
 
     return dst_dir, dst_file_base
 
@@ -456,7 +454,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
-    dst_file_base += os.path.splitext(inputfile.file_name)[1]
+    dst_file_base += inputfile.file_name.suffix
 
     return dst_dir, dst_file_base
 
@@ -496,7 +494,7 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
 
     dst_dir, dst_file_base = organize_music(inputfile, suggest_tags=suggest_tags,
                                             dbtype='musicvideo')
-    dst_file_base, dst_file_base_ext = os.path.splitext(dst_file_base)
+    dst_file_base, dst_file_base_ext = os.path.splitext(os.fspath(dst_file_base))
 
     # COMMENT
     if inputfile.tags.comment:
@@ -607,7 +605,7 @@ def organize_movie(inputfile, *, suggest_tags, orig_type):
 
     dst_file_base += format_part_suffix(inputfile)
 
-    dst_file_base += os.path.splitext(inputfile.file_name)[1]
+    dst_file_base += inputfile.file_name.suffix
 
     return dst_dir, dst_file_base
 
@@ -728,25 +726,26 @@ def organize_tvshow(inputfile, *, suggest_tags):
 
         dst_file_base += format_part_suffix(inputfile)
 
-    dst_file_base += os.path.splitext(inputfile.file_name)[1]
+    dst_file_base += inputfile.file_name.suffix
 
     return dst_dir, dst_file_base
 
 def organize(inputfile):
 
-    if type(inputfile) is str and os.path.isdir(inputfile):
+    if isinstance(inputfile, str):
+        inputfile = Path(inputfile)
+    if isinstance(inputfile, Path) and inputfile.is_dir():
         inputdir = inputfile
-        inputfile_glob_pattern = os.path.join(glob.escape(inputdir), '**')
-        app.log.verbose('Recursing info %s...', inputfile_glob_pattern)
-        for inputfile_path in sorted(glob.glob(inputfile_glob_pattern, recursive=True)):
-            inputext = os.path.splitext(inputfile_path)[1]
+        app.log.verbose('Recursing into %s...', inputdir)
+        for inputfile_path in sorted(inputdir.glob('**/*')):
+            inputext = inputfile_path.suffix
             if inputext in supported_audio_exts and \
-                    os.path.isfile(inputfile_path):
+                    inputfile_path.is_file():
                 organize(inputfile_path)
         return True
 
     if not isinstance(inputfile, MediaFile):
-        inputfile = MediaFile.new_by_file_name(str(inputfile))
+        inputfile = MediaFile.new_by_file_name(inputfile)
 
     if not os.path.isfile(inputfile.file_name):
         raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)
@@ -808,7 +807,7 @@ def organize(inputfile):
     else:
         raise ValueError('type = %r' % (inputfile.tags.type,))
     dst_dir, dst_file_base = ores
-    dst_dir = os.path.join(app.args.outputdir, dst_dir)
+    dst_dir = os.fspath(outputdir / dst_dir)
 
     src_stat = os.lstat(inputfile.file_name)
     skip = False

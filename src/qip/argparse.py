@@ -254,8 +254,8 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
             namespace = self.process_config_file_args(args, namespace)
         args, argv = super().parse_known_args(args=args, namespace=namespace)
         for k, v in args.__dict__.items():
-            if isinstance(v, DefaultStringWrapper):
-                setattr(args, k, str(v))
+            if isinstance(v, DefaultWrapper):
+                setattr(args, k, v.inner)
         return args, argv
 
     @trace
@@ -310,16 +310,13 @@ class ArgumentParser(_argparse.ArgumentParser, _AttributeHolder, _ActionsContain
         # return the modified argument list
         return new_arg_strings
 
-class DefaultStringWrapper(object):
+class DefaultWrapper(object):
 
-    def __init__(self, str):
-        self.str = str
+    def __init__(self, inner):
+        self.inner = inner
         super().__init__()
 
-    def __str__(self):
-        return self.str
-
     def __repr__(self):
-        return f'{self.__class__.__name__}({self.str!r})'
+        return f'{self.__class__.__name__}({self.inner!r})'
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

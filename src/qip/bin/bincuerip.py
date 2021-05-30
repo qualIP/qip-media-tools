@@ -99,7 +99,7 @@ def prep_bincuetags(cue_file):
     if not isinstance(cue_file, CDDACueSheetFile):
         cue_file = CDDACueSheetFile(cue_file)
 
-    tags_file = json.JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
+    tags_file = json.JsonFile(cue_file.file_name.with_suffix('.tags'))
     if not tags_file.exists():
         import qip.bin.bincuetags
         qip.bin.bincuetags.bincuetags(cue_file)
@@ -114,7 +114,7 @@ def bincuerip(cue_file):
     assert len(cue_file.files) == 1, f'{cue_file}: Expected 1 source file, got {cue_file.files!r}'
     assert cue_file.files[0].format is CDDACueSheetFile.FileFormatEnum.BINARY
 
-    tags_file = json.JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
+    tags_file = json.JsonFile(cue_file.file_name.with_suffix('.tags'))
     if tags_file.exists():
         app.log.info('Reading %s...', tags_file)
         with tags_file.open('r', encoding='utf-8') as fp:
@@ -130,17 +130,17 @@ def bincuerip(cue_file):
         album_tags = AlbumTags()
 
     for track_no, track in enumerate(cue_file.tracks, start=1):
-        bin_file = BinaryFile(os.path.join(os.path.dirname(cue_file.file_name), track.file.name))
+        bin_file = BinaryFile(cue_file.file_name.with_name(track.file.name))
 
         if app.args.format == 'wav':
             from qip.wav import WaveFile
             track_out_file = WaveFile('{base}-{track_no:02d}.wav'.format(
-                base=os.path.splitext(bin_file.file_name)[0],
+                base=os.path.splitext(os.fspath(bin_file.file_name))[0],
                 track_no=track_no))
         elif app.args.format == 'm4a':
             from qip.mp4 import M4aFile
             track_out_file = M4aFile('{base}-{track_no:02d}.m4a'.format(
-                base=os.path.splitext(bin_file.file_name)[0],
+                base=os.path.splitext(os.fspath(bin_file.file_name))[0],
                 track_no=track_no))
         else:
             raise ValueError(app.args.format)

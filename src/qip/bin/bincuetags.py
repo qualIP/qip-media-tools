@@ -601,7 +601,7 @@ def bincuetags(cue_file):
     for album_tags in album_tags_list:
         cleanup_album_tags(album_tags)
 
-    tags_file = json.JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
+    tags_file = json.JsonFile(cue_file.file_name.with_suffix('.tags'))
 
     if album_tags_list:
         album_tags_sel = 0

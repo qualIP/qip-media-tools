@@ -28,6 +28,7 @@ __all__ = [
         'ionice',
         ]
 
+from pathlib import Path
 import abc
 import enum
 import errno
@@ -96,8 +97,12 @@ class _SpawnMixin(pexpect.spawnbase.SpawnBase):
 
 class spawn(_SpawnMixin, pexpect.spawn):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, command, args=[], *_args, **kwargs):
+        if command is not None:
+            command = os.fspath(command)
+        args = [os.fspath(e) if isinstance(e, os.PathLike) else str(e)
+                for e in args]
+        super().__init__(command=command, args=args, *_args, **kwargs)
 
 class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
     # See pexpect/popen_spawn.py
@@ -156,7 +161,7 @@ class popen_spawn(_SpawnMixin, pexpect.popen_spawn.PopenSpawn):
 def dbg_exec_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', return_CompletedProcess=False, **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
-                    subprocess.list2cmdline(cmd),
+                    subprocess.list2cmdline([str(e) for e in cmd]),
                     log_append)
     # return subprocess.check_output(cmd + hidden_args, **kwargs)
     if 'input' in kwargs and kwargs['input'] is None:
@@ -174,7 +179,7 @@ def do_exec_cmd(cmd, *, dry_run=None, log_append='', return_CompletedProcess=Fal
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
-                    subprocess.list2cmdline(cmd),
+                    subprocess.list2cmdline([str(e) for e in cmd]),
                     log_append)
         if return_CompletedProcess:
             return subprocess.CompletedProcess(args=None, returncode=0, stdout='', stderr='')
@@ -184,21 +189,23 @@ def do_exec_cmd(cmd, *, dry_run=None, log_append='', return_CompletedProcess=Fal
         return dbg_exec_cmd(cmd, log_append=log_append, return_CompletedProcess=return_CompletedProcess, **kwargs)
 
 def suggest_exec_cmd(cmd, dry_run=None, **kwargs):
-    log.info('SUGGEST: %s', subprocess.list2cmdline(cmd))
+    log.info('SUGGEST: %s',
+             subprocess.list2cmdline([str(e) for e in cmd]))
 
 def dbg_system_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
-                    subprocess.list2cmdline(cmd),
+                    subprocess.list2cmdline([str(e) for e in cmd]),
                     log_append)
-    return os.system(subprocess.list2cmdline(cmd + hidden_args), **kwargs)
+    return os.system(subprocess.list2cmdline([str(e) for e in cmd + hidden_args]),
+                     **kwargs)
 
 def do_system_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
     if dry_run is None:
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
-                    subprocess.list2cmdline(cmd),
+                    subprocess.list2cmdline([str(e) for e in cmd]),
                     log_append)
         return ''
     else:
@@ -207,7 +214,7 @@ def do_system_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
 def dbg_popen_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
-                    subprocess.list2cmdline(cmd),
+                    subprocess.list2cmdline([str(e) for e in cmd]),
                     log_append)
     return subprocess.Popen(cmd + hidden_args, **kwargs)
 
@@ -216,7 +223,7 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
-                    subprocess.list2cmdline(cmd),
+                    subprocess.list2cmdline([str(e) for e in cmd]),
                     log_append)
         import contextlib
         p = types.SimpleNamespace()
@@ -230,7 +237,7 @@ def do_popen_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
 def dbg_popen_spawn_cmd(cmd, *, hidden_args=[], dry_run=None, log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
         log.verbose('CMD: %s%s',
-                    subprocess.list2cmdline(cmd),
+                    subprocess.list2cmdline([str(e) for e in cmd]),
                     log_append)
     return popen_spawn(cmd + hidden_args, **kwargs)
 
@@ -239,7 +246,7 @@ def do_popen_spawn_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
         log.verbose('CMD (dry-run): %s%s',
-                    subprocess.list2cmdline(cmd),
+                    subprocess.list2cmdline([str(e) for e in cmd]),
                     log_append)
         import contextlib
         p = types.SimpleNamespace()
@@ -252,7 +259,8 @@ def do_popen_spawn_cmd(cmd, *, dry_run=None, log_append='', **kwargs):
 
 def dbg_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False, logfile=True):
     if app.log.isEnabledFor(logging.DEBUG):
-        app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
+        app.log.verbose('CMD: %s',
+                        subprocess.list2cmdline([str(e) for e in cmd]))
     out = ''
     if logfile is True:
         logfile = sys.stdout.buffer
@@ -329,7 +337,7 @@ def dbg_spawn_cmd(cmd, hidden_args=[], dry_run=None, no_status=False, yes=False,
     if not no_status and p.exitstatus:
         raise subprocess.CalledProcessError(
                 returncode=p.exitstatus,
-                cmd=subprocess.list2cmdline(cmd),
+                cmd=subprocess.list2cmdline([str(e) for e in cmd]),
                 output=out)
     return out
 
@@ -337,7 +345,8 @@ def do_spawn_cmd(cmd, dry_run=None, **kwargs):
     if dry_run is None:
          dry_run = getattr(app.args, 'dry_run', False)
     if dry_run:
-        app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
+        app.log.verbose('CMD (dry-run): %s',
+                        subprocess.list2cmdline([str(e) for e in cmd]))
         return ''
     else:
         return dbg_spawn_cmd(cmd, **kwargs)
@@ -374,14 +383,16 @@ class Executable(metaclass=abc.ABCMeta):
         if dry_run is None:
              dry_run = getattr(app.args, 'dry_run', False)
         if dry_run:
-            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
+            app.log.verbose('CMD (dry-run): %s',
+                            subprocess.list2cmdline([str(e) for e in cmd]))
             return ''
-        if app.log.isEnabledFor(logging.DEBUG):
-            app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
         if logfile is True:
             logfile = sys.stdout.buffer
         elif logfile is False:
             logfile = None
+        if app.log.isEnabledFor(logging.DEBUG):
+            app.log.verbose('CMD: %s',
+                            subprocess.list2cmdline([str(e) for e in cmd]))
         p = self.spawn(cmd[0], args=cmd[1:] + hidden_args, logfile=logfile, **kwargs)
         with p:
             pattern_dict = p.get_pattern_dict()
@@ -404,7 +415,7 @@ class Executable(metaclass=abc.ABCMeta):
         if not no_status and p.exitstatus:
             raise SpawnedProcessError(
                 returncode=p.exitstatus,
-                cmd=subprocess.list2cmdline(cmd),
+                cmd=subprocess.list2cmdline([str(e) for e in cmd]),
                 output=out,
                 spawn=p)
         return out
@@ -413,10 +424,12 @@ class Executable(metaclass=abc.ABCMeta):
         if dry_run is None:
              dry_run = getattr(app.args, 'dry_run', False)
         if dry_run:
-            app.log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
+            app.log.verbose('CMD (dry-run): %s',
+                            subprocess.list2cmdline([str(e) for e in cmd]))
             return ''
         if app.log.isEnabledFor(logging.DEBUG):
-            app.log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
+            app.log.verbose('CMD: %s',
+                            subprocess.list2cmdline([str(e) for e in cmd]))
         if logfile is True:
             logfile = sys.stdout.buffer
         elif logfile is False:
@@ -443,7 +456,7 @@ class Executable(metaclass=abc.ABCMeta):
         if not no_status and p.exitstatus:
             raise SpawnedProcessError(
                 returncode=p.exitstatus,
-                cmd=subprocess.list2cmdline(cmd),
+                cmd=subprocess.list2cmdline([str(e) for e in cmd]),
                 output=out,
                 spawn=p)
         return out
@@ -878,10 +891,15 @@ class Difftool(Executable):
 DIFFTOOL = Difftool()
 
 def edfile(file):
-    file = str(file)
-    startMtime = os.path.getmtime(file)
+    file = Path(file)
+    start_mtime = file.stat().st_mtime
     EDITOR(file)
-    return os.path.getmtime(file) != startMtime
+    try:
+        modified = file.stat().st_mtime != start_mtime
+    except:
+        # File removed?
+        modified = True
+    return modified
 
 def edvar(value, *, json=None, suffix=None, encoding='utf-8',
           preserve_whitespace_tags=None):
@@ -931,9 +949,14 @@ def edvar(value, *, json=None, suffix=None, encoding='utf-8',
     return (True, new_value)
 
 def eddiff(files):
-    files = [str(e) for e in files]
-    #startMtime = os.path.getmtime(file)
+    files = [Path(file) for file in files]
+    start_mtimes = [file.stat().st_mtime for file in files]
     DIFFTOOL(*files)
-    #return os.path.getmtime(file) != startMtime
+    try:
+        modified = [file.stat().st_mtime for file in files] != start_mtimes
+    except:
+        # File removed?
+        modified = True
+    return modified
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et

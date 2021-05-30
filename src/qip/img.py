@@ -693,7 +693,7 @@ class ImageFile(MediaFile):
     def image_type(self):
         image_type = getattr(self, '_image_type', None)
         if image_type is None:
-            ext = os.path.splitext(self.file_name)[1]
+            ext = self.file_name.suffix
             image_type = ImageType(ext)
         return image_type
 
@@ -835,10 +835,10 @@ image_tags_file_cache = ImageTagsCache()
 
 def get_image_tags_from_tags_file(img_file):
     img_file = str(img_file)
-    m = re.match(r'^(?P<imageum_base_name>.+)-\d\d?$', os.path.splitext(img_file)[0])
+    m = re.match(r'^(?P<imageum_base_name>.+)-\d\d?$', os.path.splitext(os.fspath(img_file))[0])
     if m:
         tags_file_name = m.group('image_base_name') + '.tags'
-        return image_tags_file_cache[tags_file_name]
+        return image_tags_file_cache[os.fspath(tags_file_name)]
 
 # }}}
 

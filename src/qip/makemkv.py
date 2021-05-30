@@ -3,6 +3,7 @@ __all__ = [
         'makemkvcon',
         ]
 
+from pathlib import Path
 import collections
 import contextlib
 import logging
@@ -476,13 +477,13 @@ class MakemkvconSpawn(_exec_spawn):
         device_name = self.match.group('device_name')
         if device_name:
             self.drives.append(DriveInfo(
-                index=self.match.group('index'),
-                flag1=self.match.group('flag1'),
-                flag2=self.match.group('flag2'),
-                flag3=self.match.group('flag3'),
-                drive_name=self.match.group('drive_name'),
-                disc_name=self.match.group('disc_name'),
-                device_name=self.match.group('device_name'),
+                index=int(byte_decode(self.match.group('index'))),
+                flag1=int(byte_decode(self.match.group('flag1'))),
+                flag2=int(byte_decode(self.match.group('flag2'))),
+                flag3=int(byte_decode(self.match.group('flag3'))),
+                drive_name=byte_decode(self.match.group('drive_name')),
+                disc_name=byte_decode(self.match.group('disc_name')),
+                device_name=Path(byte_decode(device_name)),
             ))
         return True
 

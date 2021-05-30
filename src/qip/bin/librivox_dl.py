@@ -5,6 +5,7 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
+from pathlib import Path
 import argparse
 import functools
 import io
@@ -49,7 +50,7 @@ def main():
     app.parser.add_argument('--format', default=None, help='file format')
     app.parser.add_argument('--url', default=None, help='librivox or Internet Archive URL')
 
-    app.parser.add_argument('--dir', default=None, help='output directory')
+    app.parser.add_argument('--dir', default=None, type=Path, help='output directory')
     app.parser.add_argument('--m4b', action='store_true', help='create a M4B audiobook')
 
     pgroup = app.parser.add_argument_group('Audiobook Control')
@@ -89,7 +90,7 @@ def main():
         if app.args.dir is None:
             app.parser.error(_('the following arguments is required: %s') % ('--dir',))
 
-    args_file = json.JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.args.json'))
+    args_file = json.JsonFile(file_name=app.args.dir / 'librivox-dl.args.json')
     if app.args._continue:
         with args_file.open(mode='r', encoding='utf-8') as fp:
             new_args = {k: v for k, v in vars(app.args).items() if v is not None}
@@ -111,7 +112,7 @@ def main():
         # https://librivox.org/les-miserables-tome-4-by-victor-hugo/
         # <a href="http://archive.org/details/lesmiserables_t4_1208_librivox">Internet Archive Page</a>
         rel_librivox_html_file = 'librivox.html'
-        librivox_html_file = HtmlFile(file_name=os.path.join(app.args.dir, rel_librivox_html_file))
+        librivox_html_file = HtmlFile(file_name=app.args.dir / rel_librivox_html_file)
         librivox_html_file.download(url=url)
         page = librivox_html_file.read()
         m = re.search(r'<a href="([^"]+)">Internet Archive Page</a>', page)
@@ -127,8 +128,8 @@ def main():
     else:
         raise ValueError('Unrecognized URL: %s' % (url,))
     book_info = LibrivoxBook(**m.groupdict())
-    rel_file_index_xml = os.path.split(urllib.parse.urlparse(book_info.url_download_index_xml).path)[1]
-    file_index_xml = LibrivoxIndexFile(file_name=os.path.join(app.args.dir, rel_file_index_xml), load=False)
+    rel_file_index_xml = Path(urllib.parse.urlparse(book_info.url_download_index_xml).path).name
+    file_index_xml = LibrivoxIndexFile(file_name=app.args.dir / rel_file_index_xml, load=False)
     book_info.file_index_xml = rel_file_index_xml
     file_index_xml.download(url=book_info.url_download_index_xml)
 
@@ -151,11 +152,9 @@ def main():
         else:
             snd_file_info = orig_snd_file_info
         url_file = urllib.parse.urljoin(book_info.url_download_base, snd_file_info.name)
-        os.makedirs(os.path.join(app.args.dir, snd_file_info.format), exist_ok=True)
-        rel_snd_file = os.path.join(
-                snd_file_info.format,
-                os.path.split(urllib.parse.urlparse(url_file).path)[1])
-        snd_file = SoundFile.new_by_file_name(os.path.join(app.args.dir, rel_snd_file))
+        snd_file = SoundFile.new_by_file_name(
+            app.args.dir / snd_file_info.format / Path(urllib.parse.urlparse(url_file).path).name)
+        snd_file.parent.mkdir(parents=True, exist_ok=True)
         if snd_file.download(url=url_file, md5=snd_file_info.md5) and first_file:
             if not snd_file.test_integrity():
                 app.log.info('Other formats:\n    ' + '\n    '.join(
@@ -167,24 +166,24 @@ def main():
                         if t not in (snd_file_info.format, 'Spectrogram', 'PNG')]
                     ))
                 exit(1)
-        book_info.snd_files.append(rel_snd_file)
+        book_info.snd_files.append(snd_file.relative_to(app.args.dir))
         first_file = False
 
     cover_file_info = next(file_index_xml.original_image_files)
     url_file = urllib.parse.urljoin(book_info.url_download_base, cover_file_info.name)
-    rel_cover_file = os.path.split(urllib.parse.urlparse(url_file).path)[1]
+    rel_cover_file = Path(urllib.parse.urlparse(url_file).path).name
     book_info.cover_file = rel_cover_file
-    audiobook.cover_file = ImageFile.new_by_file_name(os.path.join(app.args.dir, rel_cover_file))
+    audiobook.cover_file = ImageFile.new_by_file_name(app.args.dir / rel_cover_file)
     audiobook.cover_file.download(url=url_file, md5=cover_file_info.md5)
 
-    book_info_file = json.JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.book_info.json'))
+    book_info_file = json.JsonFile(file_name=app.args.dir / 'librivox-dl.book_info.json')
     with book_info_file.open(mode='w', encoding='utf-8') as fp:
         json.dump(vars(book_info), fp, indent=2, sort_keys=True)
         print('', file=fp)
 
     if app.args.m4b:
         audiobook.create_mkm4b(
-                snd_files=[os.path.join(app.args.dir, str(e)) for e in book_info.snd_files],
+                snd_files=[app.args.dir / e for e in book_info.snd_files],
                 out_dir=app.args.dir,
                 interactive=app.args.interactive,
                 **dict({k[4:]: v for k, v in vars(app.args).items() if k.startswith('m4b-')}))

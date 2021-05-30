@@ -304,8 +304,8 @@ class CDTocFile(TextFile):
 
     class File(object):
         def __init__(self, name):
-            assert name and isinstance(name, str)
-            self.name = name
+            assert name and isinstance(name, (str, os.PathLike))
+            self.name = os.fspath(name)
 
     class Track(CDToc.Track):
 
@@ -781,8 +781,8 @@ class CDDACueSheetFile(TextFile):
 
     class File(object):
         def __init__(self, name, format):
-            assert name and isinstance(name, str)
-            self.name = name
+            assert name and isinstance(name, (str, os.PathLike))
+            self.name = os.fspath(name)
             self.format = CDDACueSheetFile.FileFormatEnum(format)
             self.tags = AlbumTags()
 
@@ -1053,9 +1053,9 @@ class CDDACueSheetFile(TextFile):
         file_format = CDDACueSheetFile.FileFormatEnum(file_format)
         track_type = CDDACueSheetFile.TrackTypeEnum(track_type)
         if file:
-            assert type(file) is str
+            assert isinstance(file, (str, os.PathLike))
             file = CDDACueSheetFile.File(
-                    name=file,
+                    name=os.fspath(file),
                     format=file_format,
                     )
             self.files.append(file)
@@ -1072,9 +1072,7 @@ class CDDACueSheetFile(TextFile):
         sectors = self._sectors
         if sectors is None:
             assert len(self.files) == 1
-            bin_file = BinaryFile(os.path.join(
-                os.path.dirname(self.file_name),
-                self.files[0].name))
+            bin_file = BinaryFile(self.file_name.parent / self.files[0].name)
             size = bin_file.getsize()
             assert (size % CDDA_BYTES_PER_SECTOR) == 0
             sectors = size // CDDA_BYTES_PER_SECTOR

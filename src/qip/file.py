@@ -1,5 +1,6 @@
 
 __all__ = [
+        'toPath',
         'File',
         'TextFile',
         'BinaryFile',
@@ -11,10 +12,12 @@ __all__ = [
         'safe_read_file',
         ]
 
+from pathlib import Path
 import contextlib
 import hashlib
 import io
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -28,6 +31,15 @@ log = logging.getLogger(__name__)
 from qip.propex import propex
 from qip.decorator import func_once
 
+_osPath = type(Path(''))
+
+def toPath(value):
+    if type(value) is _osPath:
+        return value
+    if isinstance(value, File):
+        return value.file_name
+    return Path(value)
+
 # http://stackoverflow.com/questions/3431825/generating-a-md5-checksum-of-a-file
 def hashfile(afile, hasher, blocksize=65536):
     buf = afile.read(blocksize)
@@ -39,8 +51,9 @@ def hashfile(afile, hasher, blocksize=65536):
 
 class _argparse_type(object):
 
-    def __init__(self, file_cls, mode='r', **kwargs):
+    def __init__(self, file_cls, mode='r', resolved=True, **kwargs):
         self._file_cls = file_cls
+        self._resolved = resolved
         kwargs['mode'] = mode
         self._kwargs = kwargs
 
@@ -65,6 +78,8 @@ class _argparse_type(object):
                 raise ValueError(msg)
             file = file_cls(file_name=None)
         else:
+            if self._resolved:
+                file_name = toPath(file_name).resolve()
             file = file_cls.new_by_file_name(file_name)
 
         if fp is None:
@@ -85,10 +100,13 @@ class _argparse_type(object):
 
 
 class File(object):
+    # os.PathLike is not a parent since os.PathLike.__subclasses__ is not well formed in Python 3.7 as it doesn't check cls is PathLike
 
     file_name = propex(
         name='file_name',
-        type=(None, propex.test_istype(str)),
+        type=(None,
+              toPath,
+              ),
         fdel=None)
 
     open_mode = propex(
@@ -104,7 +122,8 @@ class File(object):
     def new_by_file_name(cls, file_name, *args, default_class=True, **kwargs):
         if default_class is True:
             default_class = cls
-        ext = os.path.splitext(file_name)[1]
+        file_name = toPath(file_name)
+        ext = file_name.suffix
         if cls._extension_to_class_map is None:
             cls._update_extension_to_class_map()
         factory_cls = cls._extension_to_class_map.get(ext, None)
@@ -122,36 +141,43 @@ class File(object):
             self.open_mode = open_mode
         super().__init__()
 
+    def __fspath__(self):
+        if self.file_name is None:
+            raise ValueError('%r: file_name not defined' % (self,))
+        return os.fspath(self.file_name)
+
     def __str__(self):
-        return self.file_name
+        return str(self.file_name)
 
     def __repr__(self):
-        return "%s(%r)" % (self.__class__.__name__, self.file_name)
+        return "%s(%r)" % (self.__class__.__name__, str(self))
+
+    def assert_file_name_defined(self):
+        if not self.file_name:
+            raise ValueError('%r: file_name not defined' % (self,))
 
     def exists(self):
-        if not self.file_name:
-            raise ValueError('%r: file_name not defined' % (self,))
-        return os.path.exists(self.file_name)
+        self.assert_file_name_defined()
+        return self.file_name.exists()
 
     def getsize(self):
-        if not self.file_name:
-            raise ValueError('%r: file_name not defined' % (self,))
-        return os.path.getsize(self.file_name)
+        self.assert_file_name_defined()
+        return self.file_name.stat().st_size
 
     def unlink(self, force=False):
-        if not self.file_name:
-            raise ValueError('%r: file_name not defined' % (self,))
+        self.assert_file_name_defined()
         try:
-            os.unlink(self.file_name)
+            self.file_name.unlink()
         except FileNotFoundError:
             if not force:
                 raise
 
     def truncate(self, length):
-        if not self.file_name:
-            raise ValueError('%r: file_name not defined' % (self,))
-        # TODO support os.truncate(self.fd, length)
-        os.truncate(self.file_name, length)
+        if self.fd is not None:
+            os.truncate(self.fd, length)
+        else:
+            self.assert_file_name_defined()
+            os.truncate(self.file_name, length)
 
     def test_integrity(self):
         raise NotImplementedError()
@@ -167,24 +193,29 @@ class File(object):
         return self.hash(hashlib.md5())
 
     def download(self, url, md5=None, overwrite=False):
-        if not self.file_name:
-            raise ValueError('%r: file_name not defined' % (self,))
+        self.assert_file_name_defined()
         if not overwrite and self.exists():
             return False
         log.info('Downloading %s...' % (url,))
         #log.info('Downloading %s to %s...' % (url, self))
-        with TempFile(file_name=self.file_name + '.tmp', open_mode=self.open_mode) as tmp_file:
+        with write_to_temp_context(self, open=False) as tmp_file:
             urllib.request.urlretrieve(url, filename=tmp_file.file_name)
             if md5:
                 file_md5 = tmp_file.md5.hexdigest()
                 if file_md5 != md5:
                     raise ValueError('MD5 hash of %s is %s, expected %s' % (tmp_file, file_md5, md5))
-            shutil.move(tmp_file.file_name, self.file_name)
-            tmp_file.delete = False
         return True
 
+    def replace(self, target, update_file_name=True):
+        # Note: replace could fail if files are on different filesystems. Use move instead.
+        target = toPath(target)
+        self.assert_file_name_defined()
+        self.file_name.replace(target=target)
+        if update_file_name:
+            self.file_name = target
+
     def move(self, dst, update_file_name=True):
-        dst = str(dst)
+        dst = toPath(dst)
         shutil.move(self.file_name, dst)
         if update_file_name:
             self.file_name = dst
@@ -209,7 +240,7 @@ class File(object):
 
     def fileno(self):
         fp = self.fp
-        if fp:
+        if fp is not None:
             return fp.fileno()
         raise ValueError('I/O operation on closed file')  # like file objects
 
@@ -236,12 +267,11 @@ class File(object):
         return p.stdout
 
     def open(self, mode='r', encoding=None, **kwargs):
-        assert not self.fp
-        if not self.file_name:
-            raise ValueError('%r: file_name not defined' % (self,))
+        assert self.fp is None
+        self.assert_file_name_defined()
         if 't' not in mode and 'b' not in mode:
             mode += self.open_mode
-        return open(self.file_name, mode=mode, encoding=encoding, **kwargs)
+        return self.file_name.open(mode=mode, encoding=encoding, **kwargs)
 
     def fdopen(self, fd, mode='r', encoding=None):
         assert not self.fp
@@ -250,14 +280,16 @@ class File(object):
         return os.fdopen(fd, mode=mode, encoding=encoding)
 
     def read(self):
-        if self.fp:
+        if self.fp is not None:
             return self.fp.read()
+        # self.file_name.read_text/read_bytes
         with self.open(mode='r') as fp:
             return fp.read()
 
     def write(self, *args, **kwargs):
         if self.fp:
             return self.fp.write(*args, **kwargs)
+        # self.file_name.write_text/write_bytes
         with self.open(mode='w') as fp:
             return fp.write(*args, **kwargs)
 
@@ -367,12 +399,12 @@ def cache_url(url, cache_dict={}):
     assert isinstance(url, str)
     purl = urllib.parse.urlparse(url)
     if purl.scheme == 'file':
-        return os.path.normpath(purl.path)
+        return Path(purl.path).resolve()
     elif purl.scheme == '':
         # May not be true if url contains a #, in which case purl.path will be truncated
         #assert purl.path == url, (purl.path, url)
-        #return os.path.normpath(purl.path)
-        return os.path.normpath(url)
+        #return Path(purl.path).resolve()
+        return Path(url).resolve()
 
     try:
         tfp = cache_dict[url]
@@ -386,7 +418,7 @@ def cache_url(url, cache_dict={}):
         with opener.open(req) as fp:
             headers = fp.info()
 
-            suffix = os.path.splitext(purl.path)[1]
+            suffix = Path(purl.path).suffix
             tfp = tempfile.NamedTemporaryFile(suffix=suffix)
 
             bs = 1024*8
@@ -430,13 +462,13 @@ def safe_write_file(file, content, **kwargs):
 # safe_write_file_eval {{{
 
 def safe_write_file_eval(file, body, *, text=False, encoding='utf-8'):
-    file = str(file)
+    file = toPath(file)
     if (
             not os.access(file, os.W_OK) and
-            (os.path.exists(file) or
-                not os.access(os.path.dirname(file), os.W_OK))):
+            (file.exists() or
+                not os.access(file.parent, os.W_OK))):
         pass # XXXJST TODO: raise Exception('couldn\'t open "%s"' % (file,))
-    with TempFile(file + '.tmp') as tmp_file:
+    with TempFile(file.with_suffix(file.suffix + '.tmp')) as tmp_file:
         open_kwargs = {}
         if text:
             open_kwargs['encoding'] = encoding
@@ -451,7 +483,7 @@ def safe_write_file_eval(file, body, *, text=False, encoding='utf-8'):
 # safe_read_file {{{
 
 def safe_read_file(file, *, encoding='utf-8'):
-    return open(str(file), mode='r', encoding=encoding).read()
+    return open(os.fspath(file), mode='r', encoding=encoding).read()
 
 # }}}
 
