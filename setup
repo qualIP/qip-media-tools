@@ -365,6 +365,51 @@ if $OPT_INSTALL ; then
         if ask_yes_no "Install qip-media-tools-depends package?" ; then
             (set -x && $MAKE -C src install-qip-media-tools-depends)
         fi
+        if ! test_package_installed qip-media-tools-depends ; then
+            echo
+            echo "The qip-media-tools-depends package failed to install."
+            case "$lsb_codename" in
+                buster)
+                    echo
+                    echo "Debian buster may require extra preparations."
+                    echo
+                    echo "Extra contrib and non-free package sources:"
+                    echo
+                    echo "    sudo sed -i -e 's/ main *$/ main contrib non-free/' /etc/apt/sources.list"
+                    echo "    sudo apt-get update"
+                    echo
+                    echo "libudfread-dev is not available in Debian $lsb_codename, add backports:"
+                    echo
+                    echo "    echo deb http://deb.debian.org/debian/ buster-backports main contrib non-free | sudo tee /etc/apt/sources.list.d/buster-backports.list"
+                    echo "    sudo apt-get update"
+                    echo
+                    echo "Please fix the issue and run $0 again."
+                    exit 1
+                    ;;
+
+                focal)
+                    echo
+                    echo "Ubuntu $lsb_codename may require extra preparations."
+                    echo
+                    echo "libudfread-dev is not available in Ubuntu $lsb_codename, get it from groovy:"
+                    echo
+                    echo "    wget http://mirrors.kernel.org/ubuntu/pool/universe/libu/libudfread/libudfread-dev_1.1.0-1_amd64.deb"
+                    echo "    wget http://mirrors.kernel.org/ubuntu/pool/universe/libu/libudfread/libudfread0_1.1.0-1_amd64.deb"
+                    echo "    sudo dpkg -i libudfread-dev_1.1.0-1_amd64.deb libudfread0_1.1.0-1_amd64.deb"
+                    echo
+                    echo "Please fix the issue and run $0 again."
+                    exit 1
+                    ;;
+
+                *)
+                    echo
+                    echo "Sorry, there are no special instructions at this time for release"
+                    echo "codename '$lsb_codename'"
+                    echo
+                    exit 1
+                    ;;
+            esac
+        fi
     fi
 else
     if test_package_installed qip-media-tools-depends \
