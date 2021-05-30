@@ -231,7 +231,7 @@ class App(object):
             parser_parents.append(self.config_parser)
 
         self.parser = argparse.ArgumentParser(
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            formatter_class=argparse.RawTextArgumentDefaultsHelpFormatter,
             parents=parser_parents,
             fromfile_prefix_chars=fromfile_prefix_chars,
             prog=self.prog,

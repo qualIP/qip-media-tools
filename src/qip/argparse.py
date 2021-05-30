@@ -48,6 +48,12 @@ class ArgumentDefaultsHelpFormatter(_argparse.ArgumentDefaultsHelpFormatter, Hel
 class MetavarTypeHelpFormatter(_argparse.MetavarTypeHelpFormatter, HelpFormatter):
     pass
 
+class RawDescriptionArgumentDefaultsHelpFormatter(RawDescriptionHelpFormatter, ArgumentDefaultsHelpFormatter):
+    pass
+
+class RawTextArgumentDefaultsHelpFormatter(RawTextHelpFormatter, ArgumentDefaultsHelpFormatter):
+    pass
+
 #class ArgumentError(Exception): pass
 
 #class ArgumentTypeError(Exception): pass
