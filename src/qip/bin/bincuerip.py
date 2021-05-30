@@ -23,6 +23,7 @@ from qip.exec import *
 from qip.file import *
 from qip.snd import *
 from qip.utils import byte_decode
+from qip import json
 import qip.cdda as cdda
 
 @app.main_wrapper
@@ -97,7 +98,7 @@ def bincuerip(cue_file_name):
     assert len(cue_file.files) == 1
     assert cue_file.files[0].format is CDDACueSheetFile.FileFormatEnum.BINARY
 
-    tags_file = JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
+    tags_file = json.JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
     if tags_file.exists():
         app.log.info('Reading %s...', tags_file)
         with tags_file.open('r', encoding='utf-8') as fp:

@@ -3807,7 +3807,7 @@ class SoundFile(MediaFile):
 class AlbumTagsCache(dict):
 
     def __missing__(self, key):
-        tags_file = JsonFile(key)
+        tags_file = json.JsonFile(key)
         album_tags = None
         if tags_file.exists():
             app.log.info('Reading %s...', tags_file)
@@ -3819,7 +3819,7 @@ class AlbumTagsCache(dict):
 class TrackTagsCache(dict):
 
     def __missing__(self, key):
-        tags_file = JsonFile(key)
+        tags_file = json.JsonFile(key)
         track_tags = None
         if tags_file.exists():
             app.log.info('Reading %s...', tags_file)

@@ -821,7 +821,7 @@ class ImageFile(BinaryFile):
 class ImageTagsCache(dict):
 
     def __missing__(self, key):
-        tags_file = JsonFile(key)
+        tags_file = json.JsonFile(key)
         image_tags = None
         if tags_file.exists():
             app.log.info('Reading %s...', tags_file)

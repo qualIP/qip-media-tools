@@ -598,7 +598,7 @@ def bincuetags(cue_file_name):
     for album_tags in album_tags_list:
         cleanup_album_tags(album_tags)
 
-    tags_file = JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
+    tags_file = json.JsonFile(os.path.splitext(cue_file.file_name)[0] + '.tags')
 
     if album_tags_list:
         album_tags_sel = 0
@@ -630,7 +630,7 @@ def bincuetags(cue_file_name):
                     if i == 1:
                         tags_filei = tags_file
                     else:
-                        tags_filei = JsonFile('{}.{}'.format(tags_file.file_name, i))
+                        tags_filei = json.JsonFile('{}.{}'.format(tags_file.file_name, i))
                     with tags_filei.open('w', encoding='utf-8') as fp:
                         album_tags.json_dump(fp)
                         fp.write('\n')
@@ -641,7 +641,7 @@ def bincuetags(cue_file_name):
                 for i, album_tags in enumerate(album_tags_list, start=1):
                     if i == 1:
                         continue
-                    tags_filei = JsonFile('{}.{}'.format(tags_file.file_name, i))
+                    tags_filei = json.JsonFile('{}.{}'.format(tags_file.file_name, i))
                     tags_filei.unlink(force=True)
                 album_tags_sel = 0
             elif c == 'y':

@@ -89,7 +89,7 @@ def main():
         if app.args.dir is None:
             app.parser.error(_('the following arguments is required: %s') % ('--dir',))
 
-    args_file = JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.args.json'))
+    args_file = json.JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.args.json'))
     if app.args._continue:
         with args_file.open(mode='r', encoding='utf-8') as fp:
             new_args = {k: v for k, v in vars(app.args).items() if v is not None}
@@ -177,7 +177,7 @@ def main():
     audiobook.cover_file = ImageFile(file_name=os.path.join(app.args.dir, rel_cover_file))
     audiobook.cover_file.download(url=url_file, md5=cover_file_info.md5)
 
-    book_info_file = JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.book_info.json'))
+    book_info_file = json.JsonFile(file_name=os.path.join(app.args.dir, 'librivox-dl.book_info.json'))
     with book_info_file.open(mode='w', encoding='utf-8') as fp:
         json.dump(vars(book_info), fp, indent=2, sort_keys=True)
         print('', file=fp)

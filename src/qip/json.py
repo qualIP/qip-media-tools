@@ -1,5 +1,6 @@
 
 __all__ = (
+        'JsonFile',
         'JSONEncodable',
         'JSONDecodable',
         'load',
@@ -20,6 +21,14 @@ from json import load as _load
 from json import loads as _loads
 from json import dump as _dump
 from json import dumps as _dumps
+
+from .file import TextFile
+
+class JsonFile(TextFile):
+
+    _common_extensions = (
+        '.json',
+    )
 
 class JSONEncodable(object):
 
@@ -218,3 +227,4 @@ def register_class(cls, encoder, decoder, wrap=True):
         cls.__json_encode__ = encoder
         cls.__json_decode__ = decoder
 
+JsonFile._build_extension_to_class_map()

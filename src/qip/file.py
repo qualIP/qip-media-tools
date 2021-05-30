@@ -5,7 +5,6 @@ __all__ = [
         'BinaryFile',
         'HtmlFile',
         'XmlFile',
-        'JsonFile',
         'TempFile',
         'safe_write_file',
         'safe_write_file_eval',
@@ -239,12 +238,6 @@ class XmlFile(TextFile):
 
     _common_extensions = (
         '.xml',
-    )
-
-class JsonFile(TextFile):
-
-    _common_extensions = (
-        '.json',
     )
 
 class TempFile(File):
