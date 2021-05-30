@@ -2,8 +2,12 @@
 __all__ = [
         'dbg_exec_cmd',
         'do_exec_cmd',
+        'suggest_exec_cmd',
         'clean_cmd_output',
         'Executable',
+        'EDITOR',
+        'edfile',
+        'edvar',
         ]
 
 import abc
@@ -20,17 +24,40 @@ log = logging.getLogger(__name__)
 from qip.app import app  # Also setup log.verbose
 from qip.utils import byte_decode
 
-def dbg_exec_cmd(cmd, hidden_args=[], **kwargs):
+def dbg_exec_cmd(cmd, hidden_args=[], log_append='', **kwargs):
     if log.isEnabledFor(logging.DEBUG):
-        log.verbose('CMD: %s', subprocess.list2cmdline(cmd))
+        log.verbose('CMD: %s%s',
+                    subprocess.list2cmdline(cmd),
+                    log_append)
     return subprocess.check_output(cmd + hidden_args, **kwargs)
 
-def do_exec_cmd(cmd, **kwargs):
+def do_exec_cmd(cmd, log_append='', **kwargs):
     if getattr(app.args, 'dry_run', False):
-        log.verbose('CMD (dry-run): %s', subprocess.list2cmdline(cmd))
+        log.verbose('CMD (dry-run): %s%s',
+                    subprocess.list2cmdline(cmd),
+                    log_append)
         return ''
     else:
-        return dbg_exec_cmd(cmd, **kwargs)
+        return dbg_exec_cmd(cmd, log_append=log_append, **kwargs)
+
+def dbg_system_cmd(cmd, hidden_args=[], log_append='', **kwargs):
+    if log.isEnabledFor(logging.DEBUG):
+        log.verbose('CMD: %s%s',
+                    subprocess.list2cmdline(cmd),
+                    log_append)
+    return os.system(subprocess.list2cmdline(cmd + hidden_args), **kwargs)
+
+def do_system_cmd(cmd, log_append='', **kwargs):
+    if getattr(app.args, 'dry_run', False):
+        log.verbose('CMD (dry-run): %s%s',
+                    subprocess.list2cmdline(cmd),
+                    log_append)
+        return ''
+    else:
+        return dbg_system_cmd(cmd, log_append=log_append, **kwargs)
+
+def suggest_exec_cmd(cmd, **kwargs):
+    log.info('SUGGEST: %s', subprocess.list2cmdline(cmd))
 
 # clean_cmd_output {{{
 
@@ -47,6 +74,8 @@ def clean_cmd_output(out):
 # }}}
 
 class Executable(metaclass=abc.ABCMeta):
+
+    run_func = None
 
     @property
     @abc.abstractmethod
@@ -71,21 +100,94 @@ class Executable(metaclass=abc.ABCMeta):
     def _run(self, *args, **kwargs):
         d = types.SimpleNamespace()
         run_func = kwargs.pop('run_func', None)
+        dry_run = kwargs.pop('dry_run', False)
         cmd = [self.which()] + list(args) + self.kwargs_to_cmdargs(**kwargs)
-        if run_func is None:
-            t0 = time.time()
-            d.out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-            #d.subprocess_info = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            t1 = time.time()
-            #d.out = d.subprocess_info.stdout
+        if dry_run:
+            log.verbose('CMD (dry-run): %s',
+                        subprocess.list2cmdline(cmd))
+            d.out = ''
+            d.elapsed_time = 0
         else:
-            t0 = time.time()
-            d.out = run_func(cmd)
-            t1 = time.time()
-        d.elapsed_time = t1 - t0
+            if run_func is None:
+                run_func = self.run_func
+            if run_func is None:
+                t0 = time.time()
+                d.out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+                #d.subprocess_info = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                t1 = time.time()
+                #d.out = d.subprocess_info.stdout
+            else:
+                t0 = time.time()
+                d.out = run_func(cmd)
+                t1 = time.time()
+            d.elapsed_time = t1 - t0
         return d
 
     def __call__(self, *args, **kwargs):
         return self._run(*args, **kwargs)
+
+class Editor(Executable):
+
+    _name = None
+    @property
+    def run_func(self):
+        return do_system_cmd
+
+    @property
+    def name(self):
+        editor = self._name
+        if not editor:
+            editor = os.environ.get('EDITOR', None)
+        if not editor:
+            for e in ('vim', 'vi', 'emacs'):
+                editor = shutil.which(e)
+                if editor:
+                    break
+        if not editor:
+            raise Exception('No editor found; Please set \'EDITOR\' environment variable.')
+        return editor
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+
+EDITOR = Editor()
+
+# edfile {{{
+
+def edfile(file):
+    file = str(file)
+    startMtime = os.path.getmtime(file)
+    EDITOR(file)
+    return os.path.getmtime(file) != startMtime
+
+# }}}
+# edvar {{{
+
+def edvar(value, *, encoding='utf-8'):
+    from qip.file import TempFile
+    from qip import json
+    import tempfile
+
+    with TempFile(file_name=None) as tmp_file:
+        fp, tmp_file.file_name = tempfile.mkstemp(suffix='.json', text=True)
+        with os.fdopen(fp, 'w') as fp:
+            json.dump(value, fp, indent=2, sort_keys=True, ensure_ascii=False)
+            print('', file=fp)
+        print('HERE5')
+        if not edfile(tmp_file):
+            print('HERE6')
+            return (False, value)
+        print('HERE7')
+        with tmp_file.open(mode='r', encoding=encoding) as fp:
+            print('HERE8')
+            new_value = json.load(fp)
+            print('HERE9')
+            #if type(new_value) is not type(value):
+            #    raise ValueError(new_value)
+            return (True, new_value)
+        print('HERE10')
+
+# }}}
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

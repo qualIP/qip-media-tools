@@ -20,6 +20,7 @@ import urllib.parse
 import urllib.request
 import io
 import tempfile
+import shutil
 
 import logging
 log = logging.getLogger(__name__)
@@ -110,15 +111,17 @@ class File(object):
                 file_md5 = tmp_file.md5.hexdigest()
                 if file_md5 != md5:
                     raise ValueError('MD5 hash of %s is %s, expected %s' % (tmp_file, file_md5, md5))
-            os.rename(tmp_file.file_name, self.file_name)
+            shutil.move(tmp_file.file_name, self.file_name)
             tmp_file.delete = False
         return True
 
-    def rename(self, dst, src_dir_fd=None, dst_dir_fd=None, update_file_name=True):
+    def move(self, dst, src_dir_fd=None, dst_dir_fd=None, update_file_name=True):
         dst = str(dst)
-        os.rename(self.file_name, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+        shutil.move(self.file_name, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
         if update_file_name:
             self.file_name = dst
+
+    rename = move
 
     def combine_from(self, other_files):
         assert not self.fp
@@ -270,7 +273,7 @@ def safe_write_file_eval(file, body, *, encoding='utf-8'):
     with TempFile(file + '.tmp') as tmp_file:
         with tmp_file.open(mode='w', encoding=encoding) as fp:
             ret = body(fp)
-        os.rename(tmp_file.file_name, file)
+        shutil.move(tmp_file.file_name, file)
         tmp_file.delete = False
     return ret
 

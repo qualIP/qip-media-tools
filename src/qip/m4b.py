@@ -8,9 +8,9 @@ import subprocess
 import logging
 log = logging.getLogger(__name__)
 
-from .snd import *
+from .m4a import M4aFile
 
-class AudiobookFile(SoundFile):
+class AudiobookFile(M4aFile):
 
     def __init__(self, file_name, *args, **kwargs):
         super().__init__(file_name=file_name, *args, **kwargs)
@@ -38,8 +38,5 @@ class AudiobookFile(SoundFile):
             subprocess.check_call(cmd)
         finally:
             os.chdir(oldcwd)
-
-    def write_tags(self, **kwargs):
-        mp4tags.write_tags(tags=self.tags, file_name=self.file_name)
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

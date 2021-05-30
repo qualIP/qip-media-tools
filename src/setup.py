@@ -76,6 +76,7 @@ setup(
     install_requires=[
             'pint',
             'ConfigArgParse',
+            'mutagen',
             ],
 
     # List additional groups of dependencies here (e.g. development
@@ -112,7 +113,9 @@ setup(
             'librivox-dl = qip.bin.librivox_dl:main',
             'mkbincue = qip.bin.mkbincue:main',
             'mkm4b = qip.bin.mkm4b:main',
+            'mmdemux = qip.bin.mmdemux:main',
             'organize-media = qip.bin.organize_media:main',
+            'taged = qip.bin.taged:main',
         ],
     },
 )

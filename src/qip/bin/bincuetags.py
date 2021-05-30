@@ -18,15 +18,15 @@ import sys
 import urllib
 import types
 
-from qip.app import app
-from qip.snd import *
-from qip.file import *
-from qip.exec import *
-import qip.cdda as cdda
-from qip.cdda import *
-from qip.extern import CDDB
 from qip import json
+from qip.app import app
+from qip.cdda import *
+from qip.exec import *
+from qip.extern import CDDB
+from qip.file import *
+from qip.snd import *
 from qip.utils import byte_decode
+import qip.cdda as cdda
 
 class MusicBrainzLoggingFilter(logging.Filter):
     def filter(self, record):
@@ -127,27 +127,7 @@ def do_spawn_cmd(cmd, **kwargs):
     else:
         return dbg_spawn_cmd(cmd, **kwargs)
 
-# edfile {{{
-
-def edfile(file):
-    file = str(file)
-
-    if 'EDITOR' in os.environ:
-        editor = os.editor['EDITOR']
-    else:
-        for e in ('vim', 'vi', 'emacs'):
-            editor = shutil.which(e)
-            if editor:
-                break
-        else:
-            raise Exception('No editor found; Please set \'EDITOR\' environment variable.')
-
-    startMtime = os.path.getmtime(file)
-    os.system(subprocess.list2cmdline([editor, file]))
-    return os.path.getmtime(file) != startMtime
-
-# }}}
-
+@app.main_wrapper
 def main():
 
     app.init(

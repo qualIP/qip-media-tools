@@ -5,12 +5,6 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
-from qip.app import app
-app.init(
-        version='1.0',
-        description='M4B Audiobook Maker',
-        )
-
 import argparse
 import decimal
 import errno
@@ -24,22 +18,20 @@ import reprlib
 import shutil
 import subprocess
 import sys
-import tempfile
 import xml.etree.ElementTree as ET
 reprlib.aRepr.maxdict = 100
 
 from qip import json
+from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
 from qip.m4b import *
 from qip.parser import *
 from qip.qaac import qaac
-import qip.snd
 from qip.snd import *
 from qip.utils import byte_decode
-
-app.cache_dir = os.path.abspath('mkm4b-cache')
+import qip.snd
 
 # https://www.ffmpeg.org/ffmpeg.html
 
@@ -101,45 +93,6 @@ def do_spawn_cmd(cmd, **kwargs):
         return ''
     else:
         return dbg_spawn_cmd(cmd, **kwargs)
-
-# edfile {{{
-
-def edfile(file):
-    file = str(file)
-
-    if 'EDITOR' in os.environ:
-        editor = os.editor['EDITOR']
-    else:
-        for e in ('vim', 'vi', 'emacs'):
-            editor = shutil.which(e)
-            if editor:
-                break
-        else:
-            raise Exception('No editor found; Please set \'EDITOR\' environment variable.')
-
-    startMtime = os.path.getmtime(file)
-    os.system(subprocess.list2cmdline([editor, file]))
-    return os.path.getmtime(file) != startMtime
-
-# }}}
-# edvar {{{
-
-def edvar(value, *, encoding='utf-8'):
-
-    with TempFile(file_name=None) as tmp_file:
-        fp, tmp_file.file_name = tempfile.mkstemp(suffix='.json', text=True)
-        with os.fdopen(fp, 'w') as fp:
-            json.dump(value, fp, indent=2, sort_keys=True, ensure_ascii=False)
-            print('', file=fp)
-        if not edfile(tmp_file):
-            return (False, value)
-        with tmp_file.open(mode='r', encoding=encoding) as fp:
-            new_value = json.load(fp)
-            #if type(new_value) is not type(value):
-            #    raise ValueError(new_value)
-            return (True, new_value)
-
-# }}}
 
 # times_1000 {{{
 
@@ -307,93 +260,101 @@ def get_vbr_formats():
 
 # }}}
 
-in_tags = TrackTags()
-
-# TODO app.parser.add_argument('--help', '-h', action='help')
-app.parser.add_argument('--version', '-V', action='version')
-
-pgroup = app.parser.add_argument_group('Program Control')
-pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
-pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
-pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
-xgroup = pgroup.add_mutually_exclusive_group()
-xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
-xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
-xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
-xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
-
-pgroup = app.parser.add_argument_group('Alternate Actions')
-xgroup = pgroup.add_mutually_exclusive_group()
-xgroup.add_argument('--ffmpegstats', dest='action', default=argparse.SUPPRESS, action='store_const', const='ffmpegstats', help='execute ffmpeg stats action only')
-xgroup.add_argument('--type-list', action=qip.snd.ArgparseTypeListAction)
-xgroup.add_argument('--genre-list', action=qip.snd.ArgparseGenreListAction)
-
-pgroup = app.parser.add_argument_group('Files')
-pgroup.add_argument('--single', action='store_true', help='create single audiobooks files')
-pgroup.add_argument('--output', '-o', dest='outputfile', default=argparse.SUPPRESS, help='specify the output file name')
-
-pgroup = app.parser.add_argument_group('Compatibility')
-xgroup = pgroup.add_mutually_exclusive_group()
-xgroup.add_argument('--ipod-compat', dest='ipod_compat', default=True, action='store_true', help='iPod compatibility (default)')
-xgroup.add_argument('--no-ipod-compat', dest='ipod_compat', default=argparse.SUPPRESS, action='store_false', help='iPod compatibility (disable)')
-xgroup = pgroup.add_mutually_exclusive_group()
-xgroup.add_argument('--itunes-compat', dest='itunes_compat', default=True, action='store_true', help='iTunes compatibility (default)')
-xgroup.add_argument('--no-itunes-compat', dest='itunes_compat', default=argparse.SUPPRESS, action='store_false', help='iTunes compatibility (disable)')
-
-pgroup = app.parser.add_argument_group('Chapters Control')
-pgroup.add_argument('--chapters', dest='chaptersfile', default=argparse.SUPPRESS, help='specify the chapters file name')
-pgroup.add_argument('--reuse-chapters', action='store_true', help='reuse chapters.txt file')
-pgroup.add_argument('--chapter-naming', dest='chapter_naming_format', default="default", help='chapters naming format',
-        choices=["default", "title", "track", "disc", "disk", "disc-track", "disk-track"])
-xgroup = pgroup.add_mutually_exclusive_group()
-xgroup.add_argument('--OverDrive-MediaMarkers', dest='OverDrive_MediaMarkers', default=True, action='store_true', help='use OverDrive MediaMarkers (default)')
-xgroup.add_argument('--no-OverDrive-MediaMarkers', dest='OverDrive_MediaMarkers', default=argparse.SUPPRESS, action='store_false', help='do not use OverDrive MediaMarkers')
-
-pgroup = app.parser.add_argument_group('Encoding')
-xgroup = pgroup.add_mutually_exclusive_group()
-xgroup.add_argument('--force-encode', dest='force_encode', default=False, action='store_true', help='force encoding (enable)')
-xgroup.add_argument('--no-force-encode', dest='force_encode', default=argparse.SUPPRESS, action='store_false', help='do not force encoding (default)')
-pgroup.add_argument('--bitrate', type=int, default=argparse.SUPPRESS, help='force the encoding bitrate')  # TODO support <int>k
-pgroup.add_argument('--target-bitrate', dest='target_bitrate', type=int, default=argparse.SUPPRESS, help='specify the resampling target bitrate')
-pgroup.add_argument('--channels', dest='ac', type=int, default=argparse.SUPPRESS, help='force the number of audio channels (ffmpeg -ac)')
-pgroup.add_argument('--qaac', dest='use_qaac', default=True, action='store_true', help='use qaac, if available')
-pgroup.add_argument('--no-qaac', dest='use_qaac', default=argparse.SUPPRESS, action='store_false', help='do not use qaac')
-
-pgroup = app.parser.add_argument_group('Tags')
-pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--album', '--albumtitle', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--type', tags=in_tags, default='audiobook', action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--disk', '--disc', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--track', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--sort-album', '--sort-albumtitle', dest='sortalbum', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--sort-writer', '--sort-composer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-
-app.parser.add_argument('inputfiles', nargs='*', default=None, help='input sound files')
-
-app.parse_args()
-
-if getattr(app.args, 'action', None) is None:
-    app.args.action = 'mkm4b'
-if not hasattr(app.args, 'logging_level'):
-    app.args.logging_level = logging.INFO
-app.set_logging_level(app.args.logging_level)
-if app.args.logging_level <= logging.DEBUG:
-    reprlib.aRepr.maxdict = 100
-# app.log.debug('get_sox_app_support: %r', qip.snd.get_sox_app_support())
-# app.log.debug('get_vbr_formats: %r', get_vbr_formats())
-# app.log.debug('get_mp4v2_app_support: %r', qip.snd.get_mp4v2_app_support())
-
+@app.main_wrapper
 def main():
-    global in_tags
+
+    app.init(
+            version='1.0',
+            description='M4B Audiobook Maker',
+            contact='jst@qualipsoft.com',
+            )
+
+    app.cache_dir = os.path.abspath('mkm4b-cache')
+
+    in_tags = TrackTags()
+
+    # TODO app.parser.add_argument('--help', '-h', action='help')
+    app.parser.add_argument('--version', '-V', action='version')
+
+    pgroup = app.parser.add_argument_group('Program Control')
+    pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
+    pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
+    pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
+    xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
+    xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
+    xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
+
+    pgroup = app.parser.add_argument_group('Alternate Actions')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--ffmpegstats', dest='action', default=argparse.SUPPRESS, action='store_const', const='ffmpegstats', help='execute ffmpeg stats action only')
+    xgroup.add_argument('--type-list', action=qip.snd.ArgparseTypeListAction)
+    xgroup.add_argument('--genre-list', action=qip.snd.ArgparseGenreListAction)
+
+    pgroup = app.parser.add_argument_group('Files')
+    pgroup.add_argument('--single', action='store_true', help='create single audiobooks files')
+    pgroup.add_argument('--output', '-o', dest='outputfile', default=argparse.SUPPRESS, help='specify the output file name')
+
+    pgroup = app.parser.add_argument_group('Compatibility')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--ipod-compat', dest='ipod_compat', default=True, action='store_true', help='iPod compatibility (default)')
+    xgroup.add_argument('--no-ipod-compat', dest='ipod_compat', default=argparse.SUPPRESS, action='store_false', help='iPod compatibility (disable)')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--itunes-compat', dest='itunes_compat', default=True, action='store_true', help='iTunes compatibility (default)')
+    xgroup.add_argument('--no-itunes-compat', dest='itunes_compat', default=argparse.SUPPRESS, action='store_false', help='iTunes compatibility (disable)')
+
+    pgroup = app.parser.add_argument_group('Chapters Control')
+    pgroup.add_argument('--chapters', dest='chaptersfile', default=argparse.SUPPRESS, help='specify the chapters file name')
+    pgroup.add_argument('--reuse-chapters', action='store_true', help='reuse chapters.txt file')
+    pgroup.add_argument('--chapter-naming', dest='chapter_naming_format', default="default", help='chapters naming format',
+            choices=["default", "title", "track", "disc", "disk", "disc-track", "disk-track"])
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--OverDrive-MediaMarkers', dest='OverDrive_MediaMarkers', default=True, action='store_true', help='use OverDrive MediaMarkers (default)')
+    xgroup.add_argument('--no-OverDrive-MediaMarkers', dest='OverDrive_MediaMarkers', default=argparse.SUPPRESS, action='store_false', help='do not use OverDrive MediaMarkers')
+
+    pgroup = app.parser.add_argument_group('Encoding')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--force-encode', dest='force_encode', default=False, action='store_true', help='force encoding (enable)')
+    xgroup.add_argument('--no-force-encode', dest='force_encode', default=argparse.SUPPRESS, action='store_false', help='do not force encoding (default)')
+    pgroup.add_argument('--bitrate', type=int, default=argparse.SUPPRESS, help='force the encoding bitrate')  # TODO support <int>k
+    pgroup.add_argument('--target-bitrate', dest='target_bitrate', type=int, default=argparse.SUPPRESS, help='specify the resampling target bitrate')
+    pgroup.add_argument('--channels', dest='ac', type=int, default=argparse.SUPPRESS, help='force the number of audio channels (ffmpeg -ac)')
+    pgroup.add_argument('--qaac', dest='use_qaac', default=True, action='store_true', help='use qaac, if available')
+    pgroup.add_argument('--no-qaac', dest='use_qaac', default=argparse.SUPPRESS, action='store_false', help='do not use qaac')
+
+    pgroup = app.parser.add_argument_group('Tags')
+    pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--album', '--albumtitle', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--type', tags=in_tags, default='audiobook', action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--disk', '--disc', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--track', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-album', '--sort-albumtitle', dest='sortalbum', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-writer', '--sort-composer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+
+    app.parser.add_argument('inputfiles', nargs='*', default=None, help='input sound files')
+
+    app.parse_args()
+
+    if getattr(app.args, 'action', None) is None:
+        app.args.action = 'mkm4b'
+    if not hasattr(app.args, 'logging_level'):
+        app.args.logging_level = logging.INFO
+    app.set_logging_level(app.args.logging_level)
+    if app.args.logging_level <= logging.DEBUG:
+        reprlib.aRepr.maxdict = 100
+    # app.log.debug('get_sox_app_support: %r', qip.snd.get_sox_app_support())
+    # app.log.debug('get_vbr_formats: %r', get_vbr_formats())
+    # app.log.debug('get_mp4v2_app_support: %r', qip.snd.get_mp4v2_app_support())
 
     for prog in (
             'ffmpeg',  # ffmpeg | libav-tools

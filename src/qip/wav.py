@@ -19,12 +19,12 @@ class WaveFile(snd.SoundFile):
 
     @property
     def audio_type(self):
-        return AudioType.wav
+        return snd.AudioType.wav
 
     @audio_type.setter
     def audio_type(self, value):
         if value is not None \
-                and AudioType(value) is not AudioType.wav:
+                and snd.AudioType(value) is not snd.AudioType.wav:
             raise ValueError(value)
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None, fp=None):
@@ -61,9 +61,10 @@ class WaveFile(snd.SoundFile):
                 for _ in range(cue_track.length.frames):
                     fp.write(binfp.read(cdda.CDDA_BYTES_PER_SECTOR))
         if tags is not None:
-            self.write_tags(tags)
+            self.write_tags(tags=tags)
 
-    def write_tags(self, tags):
-        return snd.id3v2.write_tags(tags, self.file_name)
+    @property
+    def tag_writer(self):
+        return snd.id3v2
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

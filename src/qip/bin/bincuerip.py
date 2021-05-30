@@ -18,13 +18,14 @@ import sys
 import struct
 
 from qip.app import app
-from qip.snd import *
-from qip.file import *
-from qip.exec import *
-import qip.cdda as cdda
 from qip.cdda import *
+from qip.exec import *
+from qip.file import *
+from qip.snd import *
 from qip.utils import byte_decode
+import qip.cdda as cdda
 
+@app.main_wrapper
 def main():
 
     app.init(

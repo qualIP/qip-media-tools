@@ -7,7 +7,9 @@ __all__ = (
     'mp4tags',
     'mp4info',
     'id3v2',
+    'operon',
     'AudioType',
+    'MissingTagError',
 )
 
 import collections
@@ -35,10 +37,11 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 import qip.file
+from qip.isolang import isolang
 from qip.file import *
 from qip.parser import *
 from qip.propex import propex
-from qip.utils import byte_decode, TypedKeyDict, TypedValueDict
+from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise
 
 
 def _tIntRange(value, rng):
@@ -78,6 +81,21 @@ class _tReMatchTest(object):
             self.expr,
             ', {}'.format(self.flags) if self.flags is not None else '',
         )
+
+
+class MissingTagError(Exception):
+
+    def __init__(self, tag, file=None):
+        tag = SoundTagEnum(tag)
+        super().__init__(tag)
+        self.tag = tag
+        self.file_name = str(file) if file else None
+
+    def __str__(self):
+        s = '%s tag missing' % (self.tag.name,)
+        if self.file_name:
+            s = '%s: %s' % (self.file_name, s)
+        return s
 
 
 class _tReMatchGroups(_tReMatchTest):
@@ -185,10 +203,20 @@ class ITunesXid(object):
             raise TypeError('{}(xid | prefix, scheme, identifier)'.format(self.__class__.__name__))
         super().__init__()
 
+def _tSoundTagRating(value):
+    if type(value) is str:
+        value = value.strip()
+        value = {
+            '0': 'None',
+            '1': 'Clean',
+            '2': 'Explicit',
+            }.get(value, value)
+    return SoundTagRating(value)
+
 class SoundTagRating(enum.Enum):
-    none = 'none'
-    clean = 'clean'
-    explicit = 'explicit'
+    none = 'None'          # 0
+    clean = 'Clean'        # 2
+    explicit = 'Explicit'  # 3
 
     def __str__(self):
         return self.value
@@ -220,7 +248,11 @@ class SoundTagDate(object):
             self.year = value
         elif type(value) is str:
             try:
-                d = datetime.datetime.strptime(value, '%Y-%m-%d').date()
+                # 2013-11-20T08:00:00Z
+                # 2013-11-20 08:00:00
+                m = re.match(r'^(\d+-\d+-\d+)[T ]', value)
+                tmp_value = m.group(1) if m else value
+                d = datetime.datetime.strptime(tmp_value, '%Y-%m-%d').date()
             except ValueError:
                 try:
                     d = datetime.datetime.strptime(value, '%Y:%m:%d').date()
@@ -274,6 +306,7 @@ class SoundTagEnum(enum.Enum):
     subtitle = 'subtitle'  # STR
     composer = 'composer'  # STR  Set the composer information (writer)
     composerid = 'composerid'  # NUM  Set the composer ID
+    # TODO originalartist = 'originalartist'
 
     date = 'date'  # None|SoundTagDate
     year = 'year'  # NUM  Set the release date (*from date)
@@ -304,6 +337,7 @@ class SoundTagEnum(enum.Enum):
     type = 'type'  # STR  Set the Media Type(tvshow, movie, music, ...)
     category = 'category'  # STR  Set the category
     grouping = 'grouping'  # STR  Set the grouping name
+    language = 'language'  # STR  None|IsoLang
 
     copyright = 'copyright'  # STR  Set the copyright information
     encodedby = 'encodedby'  # STR  Set the name of the person or company who encoded the file
@@ -314,6 +348,7 @@ class SoundTagEnum(enum.Enum):
     picture = 'picture'  # PTH  Set the picture as a .png
 
     tempo = 'tempo'  # NUM  Set the tempo (beats per minute)
+    gapless = 'gapless'  # NUM  Set the gapless flag (1\0)
 
     comment = 'comment'  # STR  Set a general comment
     lyrics = 'lyrics'  # NUM  Set the lyrics  # TODO STR!
@@ -324,6 +359,9 @@ class SoundTagEnum(enum.Enum):
     sortalbumtitle = 'sortalbumtitle'
     sortcomposer = 'sortcomposer'
     sorttvshow = 'sorttvshow'
+
+    purchasedate = 'purchasedate'
+    itunesaccount = 'itunesaccount'
 
     xid = 'xid'  # ITunesXid  Set the globally-unique xid (vendor:scheme:id)
     cddb_discid = 'cddb_discid'
@@ -336,7 +374,7 @@ class SoundTagEnum(enum.Enum):
     asin = 'asin'
 
     playlistid = 'playlistid'  # NUM  Set the playlist ID
-    rating = 'rating'  # None|SoundTagRating  Set the Rating(none, clean, explicit)
+    contentrating = 'contentrating'  # None|SoundTagRating  Set the Rating(none, clean, explicit)
 
     def __repr__(self):
         return self.value
@@ -403,6 +441,14 @@ def _tBool(value):
         except KeyError:
             pass
     raise ValueError('Not a boolean')
+
+def _tCommentTag(value):
+    if value is None:
+        return None
+    elif type(value) is str:
+        return (value,)
+    else:
+        return tuple(value)
 
 class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMapping):
 
@@ -590,17 +636,35 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         name='contentid',
         type=(_tNullTag, int))
 
+    language = propex(
+        name='language',
+        type=(None, isolang))
+
     tempo = propex(
         name='tempo',
         type=(_tNullTag, int))  # TODO pint ppm
+
+    gapless = propex(
+        name='gapless',
+        type=(_tNullTag, _tBool))
 
     playlistid = propex(
         name='playlistid',
         type=(_tNullTag, int))
 
-    rating = propex(
-        name='rating',
-        type=(_tNullTag, SoundTagRating))
+    comment = propex(
+        name='comment',
+        type=(_tNullTag, _tCommentTag))
+
+    contentrating = propex(
+        name='contentrating',
+        type=(_tNullTag, _tSoundTagRating))
+
+    purchasedate = propex(
+        name='purchasedate',
+        type=(_tNullDate, SoundTagDate))
+
+    # TODO itunesaccount = propex(name='itunesaccount', type=(_tNullDate, email))
 
     xid = propex(
         name='xid',
@@ -612,6 +676,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 (SoundTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
                 (SoundTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
                 (SoundTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
+                (SoundTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
                 (SoundTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
                 (SoundTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
                 (SoundTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
@@ -716,7 +781,7 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                     try:
                         tag = tag_info['map'][tag.lower()]
                     except:
-                        log.debug('tag %r not known', tag)
+                        log.debug('tag %r not known: %r', tag, value)
                         return False
         if isinstance(value, str):
             value = value.strip()
@@ -770,10 +835,10 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
         elif tag == 'comment':
             if value == '<p>':
                 return False
-            l = []
             try:
-                l += self[tag]
+                l = self[tag] or []
             except KeyError:
+                l = []
                 pass
             if value not in l:
                 l.append(value)
@@ -781,21 +846,20 @@ class SoundTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
 
         elif tag == 'type':
             if value.isdigit():
-                # Ok
-                # NOTE: AtomicParsley takes "value=$value"
-                pass
+                value = int(value)
             else:
                 try:
                     value = tag_stik_info['map'][value]
                 except KeyError:
                     try:
-                        value = tag_stik_info['map'][m.sub(r'\s', '', value.lower())]
+                        value = tag_stik_info['map'][re.sub(r'\s', '', value.lower())]
                     except KeyError:
-                        raise ValueError('Unsupported %s value' % (tag, ))
+                        raise ValueError('Unsupported %s value %r' % (tag, value))
             try:
                 value = tag_stik_info['stik'][value]['mp4v2_arg']
             except KeyError:
-                pass
+                raise ValueError('Unsupported %s value %r' % (tag, value))
+                #pass
 
         else:
             pass  # TODO
@@ -2330,10 +2394,10 @@ tag_stik_info = {
 # }}}
 for element, stik, mp4v2_arg, atomicparsley_arg, aliases in [
     ["Movie (Old)",        0,      "oldmovie",   "Movie",            []],
-    ["Normal (Music)",     1,      "normal",     "Normal",           ["music"]],
+    ["Normal (Music)",     1,      "normal",     "Normal",           ["normal", "music", "(CD/DD)"]],
     ["Audio Book",         2,      "audiobook",  "Audiobook",        []],
     ["Whacked Bookmark",   5,      None,         "Whacked Bookmark", []],
-    ["Music Video",        6,      "musicvideo", "Music Video",      []],
+    ["Music Video",        6,      "musicvideo", "Music Video",      ["musicvideo"]],
     ["Movie",              9,      "movie",      "Short Film",       []],
     ["TV Show",            10,     "tvshow",     "TV Show",          []],
     ["Booklet",            11,     "booklet",    "Bookley",          []],
@@ -2519,11 +2583,11 @@ tag_info = {
         'tags': {},
         'map': {},
         }
-for element, mp4v2_tag, data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag, aliases in [
+for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag, aliases in [
     # title = mp4v2 song
     ["Name",                   "©nam",                     "utf-8",                    "title",                    "TT2",                      "TIT2",           ["Song", 'song', "Title", "name"]],
     ["Artist",                 "©ART",                     "utf-8",                    "artist",                   "TP1",                      "TPE1",           []],
-    ["Album Artist",           "aART",                     "utf-8",                    "albumArtist",              "TP2",                      "TPE2",           []],
+    ["Album Artist",           "aART",                     "utf-8",                    "albumArtist",              "TP2",                      "TPE2",           ['album_artist']],
     # albumtitle = mp4v2 album
     ["Album",                  "©alb",                     "utf-8",                    "albumtitle",               "TAL",                      "TALB",           ["album"]],
     ["Grouping",               "©grp",                     "utf-8",                    "grouping",                 "TT1",                      "TIT1",           []],
@@ -2533,56 +2597,56 @@ for element, mp4v2_tag, data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag, alias
     ["Genre ID",               "gnre",                     "enum",                     "genreID",                  None,                       None,             []],
     ["Genre",                  "©gen",                     "utf-8",                    "genre",                    "TCO",                      "TCON",           ["GenreType"]],
     # date = mp4v2 year
-    ["Release Date",           "©day",                     "utf-8",                    "date",                     "TDA",                      "TDAT",           ["releaseDate", "Date", "date"]],
+    ["Release Date",           "©day",                     "utf-8",                    "date",                     "TDA",                      "TDAT",           ["releaseDate", "Date", "date", 'DATE_RELEASED']],
     ["Year",                   None,                       None,                       None,                       "TYE",                      "TYER",           ["year"]],
     ["Track Number",           "trkn",                     "binary",                   "track",                    None,                       None,             []],
-    ["Total Tracks",           None,                       "int32",                    "tracks",                   None,                       None,             []],
+    ["Total Tracks",           None,                       "int32",                    "tracks",                   None,                       None,             ['TOTAL_PARTS']],
     ["track_slash_tracks",     None,                       "utf-8",                    None,                       "TRK",                      "TRCK",           []],
     ["Disc Number",            "disk",                     "binary",                   "disk",                     None,                       None,             ["disc"]],
     ["Total Discs",            None,                       "int32",                    "disks",                    None,                       None,             ["discs"]],
     ["disk_slash_disks",       None,                       "utf-8",                    None,                       "TPA",                      "TPOS",           []],
     ["Tempo (bpm)",            "tmpo",                     "int16",                    "tempo",                    None,                       None,             []],
-    ["Compilation",            "cpil",                     "bool8",                    "compilation",              None,                       None,             []],
-    ["TV Show Name",           "tvsh",                     "utf-8",                    "tvShow",                   None,                       None,             []],
+    ["Compilation",            "cpil",                     "bool8",                    "compilation",              None,                       "TCMP",           []],
+    ["TV Show Name",           "tvsh",                     "utf-8",                    "tvShow",                   None,                       None,             ['COLLECTION/TITLE']],
     ["TV Episode ID",          "tven",                     "utf-8",                    "tvEpisodeID",              None,                       None,             []],
-    ["TV Season",              "tvsn",                     "int32",                    "tvSeason",                 None,                       None,             []],
-    ["TV Episode",             "tves",                     "int32",                    "tvEpisode",                None,                       None,             []],
+    ["TV Season",              "tvsn",                     "int32",                    "season",                   None,                       None,             ['SEASON/PART_NUMBER']],
+    ["TV Episode",             "tves",                     "int32",                    "episode",                  None,                       None,             ['EPISODE/PART_NUMBER']],
     ["TV Network",             "tvnn",                     "utf-8",                    "tvNetwork",                None,                       None,             []],
     ["Description",            "desc",                     "utf-8",                    "description",              None,                       None,             []],
-    ["Long Description",       "ldes",                     "utf-8",                    "longDescription",          None,                       None,             []],
+    ["Long Description",       "ldes",                     "utf-8",                    "longDescription",          None,                       None,             ['synopsis']],
     ["Lyrics",                 "©lyr",                     "utf-8",                    "lyrics",                   None,                       None,             []],
     # sortTitle = mp4v2 sortName
-    ["Sort Name",              "sonm",                     "utf-8",                    "sortTitle",                None,                       None,             ["sortname"]],
-    ["Sort Artist",            "soar",                     "utf-8",                    "sortArtist",               None,                       None,             []],
-    ["Sort Album Artist",      "soaa",                     "utf-8",                    "sortAlbumArtist",          None,                       None,             []],
+    ["Sort Name",              "sonm",                     "utf-8",                    "sortTitle",                None,                       None,             ["sortname", "sort_name"]],
+    ["Sort Artist",            "soar",                     "utf-8",                    "sortArtist",               None,                       None,             ['sortartist', 'sort_artist']],
+    ["Sort Album Artist",      "soaa",                     "utf-8",                    "sortAlbumArtist",          None,                       None,             ['sortalbumartist', 'sort_album_artist']],
     # sortAlbumTitle = mp4v2 sortAlbum
-    ["Sort Album",             "soal",                     "utf-8",                    "sortAlbumTitle",           None,                       None,             ["sortalbum"]],
-    ["Sort Composer",          "soco",                     "utf-8",                    "sortComposer",             None,                       None,             ["sortwriter"]],
+    ["Sort Album",             "soal",                     "utf-8",                    "sortAlbumTitle",           None,                       None,             ["sortalbum", "sort_album"]],
+    ["Sort Composer",          "soco",                     "utf-8",                    "sortComposer",             None,                       None,             ["sortwriter", "sort_writer"]],
     ["Sort Show",              "sosn",                     "utf-8",                    "sortTVShow",               None,                       None,             []],
     ["Cover Art",              "covr",                     "picture",                  "picture",                  "PIC",                      "APIC",           []], # TODO artwork?
     ["Copyright",              "cprt",                     "utf-8",                    "copyright",                "TCR",                      "TCOP",           []],
     ["Encoding Tool",          "©too",                     "utf-8",                    "tool",                     "TSS",                      "TSSE",           ["Encoded with", "encodingTool", "encoder"]],
-    ["Encoded By",             "©enc",                     "utf-8",                    "encodedBy",                "TEN",                      "TENC",           []],
-    ["Purchase Date",          "purd",                     "utf-8",                    "purchaseDate",             None,                       None,             []],
+    ["Encoded By",             "©enc",                     "utf-8",                    "encodedBy",                "TEN",                      "TENC",           ['encoded_by']],
+    ["Purchase Date",          "purd",                     "utf-8",                    "purchaseDate",             None,                       None,             ['purchase_date']],
     ["Podcast",                "pcst",                     "bool8",                    "podcast",                  None,                       None,             []],
     ["Podcast URL",            "purl",                     "utf-8",                    "podcastUrl",               None,                       None,             []],
     ["Keywords",               "keyw",                     "utf-8",                    "keywords",                 None,                       None,             []],
     ["Category",               "catg",                     "utf-8",                    "category",                 None,                       None,             []],
-    ["HD Video",               "hdvd",                     "bool8",                    "hdVideo",                  None,                       None,             []],
-    ["Media Type",             "stik",                     "enum8",                    "type",                     "TMT",                      "TMED",           ["mediaType"]],
-    ["Content Rating",         "rtng",                     "int8",                     "contentRating",            None,                       None,             []],
-    ["Gapless Playback",       "pgap",                     "bool8",                    "gapless",                  None,                       None,             []],
-    ["Purchase Account",       "apID",                     "utf-8",                    "iTunesAccount",            None,                       None,             []],
+    ["HD Video",               "hdvd",                     "bool8",                    "hdVideo",                  None,                       None,             ['hd_video']],
+    ["Media Type",             "stik",                     "enum8",                    "type",                     "TMT",                      "TMED",           ["mediaType", "media_type"]],
+    ["Content Rating",         "rtng",                     "int8",                     "contentRating",                   None,                       None,             ['rating']],
+    ["Gapless Playback",       "pgap",                     "bool8",                    "gapless",                  None,                       None,             ['gapless_playback']],
+    ["Purchase Account",       "apID",                     "utf-8",                    "iTunesAccount",            None,                       None,             ['account_id']],
     ["Account Type",           "akID",                     "int8",                     "iTunesAccountType",        None,                       None,             []],
     ["Catalog ID",             "cnID",                     "int32",                    "iTunesCatalogID",          None,                       None,             []],
     ["Country Code",           "sfID",                     "int32",                    "iTunesCountry",            None,                       None,             []],
     ["Artist ID",              "atID",                     "int32",                    "artistID",                 None,                       None,             []],
-    ["Alnum ID",               "plID",                     "int64",                    "plID",                     None,                       None,             []],
-    ["Genre ID",               "geID",                     "int32",                    "geID",                     None,                       None,             []],
+    ["Album ID",               "plID",                     "int64",                    "plID",                     None,                       None,             []],
+    ["x-Genre ID",             "geID",                     "int32",                    "geID",                     None,                       None,             []],
     ["Subtitle",               "©st3",                     "utf-8",                    "subtitle",                 "TT3",                      "TIT3",           []],
     ]:
     tag = (mp4v2_name or element).lower()
-    for v in ["element", "mp4v2_tag", "data_type", "mp4v2_name", "id3v2_20_tag", "id3v2_30_tag", "aliases"]:
+    for v in ["element", "mp4v2_tag", "mp4v2_data_type", "mp4v2_name", "id3v2_20_tag", "id3v2_30_tag", "aliases"]:
         t = locals()[v]
         if t is not None:
             tag_info['tags'].setdefault(tag, {})
@@ -2593,6 +2657,7 @@ for element, mp4v2_tag, data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag, alias
             tag_info['map'][t] = tag
 
 # }}}
+#import pprint ; pprint.pprint(tag_info)
 
 # class AudioAppSupport {{{
 
@@ -2918,8 +2983,86 @@ class SoundFile(BinaryFile):
     def set_tag(self, tag, value, source=''):
         return self.tags.set_tag(tag, value, source=source)
 
+    def write_tags(self, *, tags=None, **kwargs):
+        if tags is None:
+            tags = self.tags
+        self.tag_writer.write_tags(tags=tags, file_name=self.file_name, **kwargs)
+
+    def extract_ffprobe_json(self,
+            show_streams=True,
+            show_format=True,
+            show_chapters=True,
+            show_error=True,
+        ):
+        cmd = [
+            'ffprobe',
+            '-i', self.file_name,
+            '-threads', '0',
+            '-v', 'info',
+            '-print_format', 'json',
+        ]
+        if show_streams:
+            cmd += ['-show_streams']
+        if show_format:
+            cmd += ['-show_format']
+        if show_chapters:
+            cmd += ['-show_chapters']
+        if show_error:
+            cmd += ['-show_error']
+        try:
+            # ffprobe -print_format json -show_streams -show_format -i ...
+            out = dbg_exec_cmd(cmd, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError:
+            # TODO ignore/report failure only?
+            raise
+        else:
+            out = clean_cmd_output(out)
+            parser = lines_parser(out.split('\n'))
+            ffprobe_dict = None
+            while parser.advance():
+                if parser.line == '{':
+                    parser.pushback(parser.line)
+                    ffprobe_dict = json.loads('\n'.join(parser.lines_iter))
+                    break
+                parser.line = parser.line.strip()
+                if parser.line == '':
+                    pass
+                else:
+                    #log.debug('TODO: %s', parser.line)
+                    pass
+            if ffprobe_dict:
+                return ffprobe_dict
+            raise ValueError('No json found in output of %r' % subprocess.list2cmdline(cmd))
+
     def extract_info(self, need_actual_duration=False):
         tags_done = False
+
+        if shutil.which('ffprobe'):
+            ffprobe_dict = self.extract_ffprobe_json()
+            if ffprobe_dict:
+                # import pprint ; pprint.pprint(ffprobe_dict)
+                for stream_dict in ffprobe_dict['streams']:
+                    if stream_dict['codec_type'] == 'audio':
+                        try:
+                            self.bitrate = int(stream_dict['bit_rate'])
+                        except KeyError:
+                            pass
+                for tag, value in ffprobe_dict['format']['tags'].items():
+                    if value == 'None':
+                        continue
+                    if tag in (
+                        'major_brand',
+                        'minor_version',
+                        'compatible_brands',
+                        'Encoding Params',
+                        'iTunSMPB',
+                        'creation_time',
+                        'CREATION_TIME',
+                    ):
+                        continue
+                    self.set_tag(tag, value)
+                tags_done = True
+
         if os.path.splitext(self.file_name)[1] in qip.snd.get_mp4v2_app_support().extensions_can_read:
             if not tags_done and mp4info.which(assert_found=False):
                 # {{{
@@ -3201,7 +3344,7 @@ class SoundFile(BinaryFile):
                             self.sample_bits = int(parser.match.group(1))
                             pass
                         else:
-                            log.debug('TODO: %r: %s', d, parser.line)
+                            log.debug('TODO: %s', parser.line)
                             # TODO
                             pass
                 # }}}
@@ -3431,8 +3574,11 @@ class ArgparseSetTagAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         if len(values) != 1:
             raise ValueError(values)
-        if not self.tags.set_tag(self.dest, values[0]):
-            raise ValueError('Failed to set tag %r to %r' % (self.dest, values[0]))
+        value = values[0]
+        if value == 'None':
+            value = None
+        if not self.tags.set_tag(self.dest, value):
+            raise ValueError('Failed to set tag %r to %r' % (self.dest, value))
 
 # }}}
 # class ArgparseTypeListAction {{{
@@ -3549,11 +3695,15 @@ class Mp4tags(Executable):
         TagArgInfo('-t', '-track', SoundTagEnum.track, NUM, 'Set the track number'),
         TagArgInfo('-T', '-tracks', SoundTagEnum.tracks, NUM, 'Set the number of tracks'),
         TagArgInfo('-x', '-xid', SoundTagEnum.xid, STR, 'Set the globally-unique xid (vendor:scheme:id)'),
-        TagArgInfo('-X', '-rating', SoundTagEnum.rating, STR, 'Set the Rating(none, clean, explicit)'),
+        TagArgInfo('-X', '-rating', SoundTagEnum.contentrating, STR, 'Set the Rating(none, clean, explicit)'),
         TagArgInfo('-w', '-writer', SoundTagEnum.composer, STR, 'Set the composer information'),
         TagArgInfo('-y', '-year', SoundTagEnum.year, NUM, 'Set the release date'),
         TagArgInfo('-z', '-artistid', SoundTagEnum.artistid, NUM, 'Set the artist ID'),
         TagArgInfo('-Z', '-composerid', SoundTagEnum.composerid, NUM, 'Set the composer ID'),
+        # Custom: https://code.google.com/archive/p/mp4v2/issues/170
+        TagArgInfo('-Q', '-gapless', SoundTagEnum.gapless, NUM, 'Set gapless flag (0 false, non-zero true)'),
+        #TagArgInfo('-J', '-genretype', SoundTagEnum.genreid, NUM, 'Set the genre type'),
+        TagArgInfo('-K', '-compilation', SoundTagEnum.compilation, NUM, 'Set the compilation flag (0 false, non-zero true)'),
     )
 
     @classmethod
@@ -3566,7 +3716,7 @@ class Mp4tags(Executable):
                 tagargs += [tag_info.long_arg or tag_info.short_arg, value]
         return tuple(tagargs)
 
-    def write_tags(self, tags, file_name, **kwargs):
+    def write_tags(self, *, tags, file_name, **kwargs):
         tagargs = tuple(str(e) for e in self.get_tag_args(tags))
         self(*(tagargs + (file_name,)), **kwargs)
 
@@ -3657,6 +3807,11 @@ class Id3v2(Executable):
                 '--track': '-T',
             }.get(long_arg, None)
             tag_args_info_d[id3v2_30_tag] = TagArgInfo(short_arg, '--' + id3v2_30_tag, SoundTagEnum(key), STR, 'Set the ' + info['element'])
+            del long_arg
+            del short_arg
+        del id3v2_30_tag
+        del key
+        del info
 
     tag_args_info_d['TCON'] = tag_args_info_d['TCON']._replace(type=genre_to_id3v2)
     tag_args_info_d['TRCK'] = tag_args_info_d['TRCK']._replace(tag_enum=SoundTagEnum.track_slash_tracks)
@@ -3686,12 +3841,106 @@ class Id3v2(Executable):
                     tagargs += [arg, value]
         return tuple(tagargs)
 
-    def write_tags(self, tags, file_name, **kwargs):
+    def write_tags(self, *, tags, file_name, **kwargs):
         tagargs = tuple(str(e) for e in self.get_tag_args(tags))
         self(
                 '-2',  # TODO
                 *(tagargs + (file_name,)), **kwargs)
 
+
 id3v2 = Id3v2()
+
+class Operon(Executable):
+
+    name = 'operon'
+
+    STR = str
+    NUM = int
+
+    class TagArgInfo(collections.namedtuple('TagArgInfo', 'arg tag_enum type description')):
+        __slots__ = ()
+
+    tag_args_info = (
+            # See: $ operon tags
+            TagArgInfo('album', SoundTagEnum.albumtitle, STR, 'Album'),
+            TagArgInfo('albumartist', SoundTagEnum.albumartist, STR, 'Album Artist'),
+            TagArgInfo('albumartistsort', SoundTagEnum.sortalbumartist, STR, 'Album Artist (Sort)'),
+            TagArgInfo('albumsort', SoundTagEnum.sortalbumtitle, STR, 'Album (Sort)'),
+            #TagArgInfo('arranger', SoundTagEnum.XXXJST, STR, 'Arranger'),
+            TagArgInfo('artist', SoundTagEnum.artist, STR, 'Artist'),
+            TagArgInfo('artistsort', SoundTagEnum.sortartist, STR, 'Artist (Sort)'),
+            #TagArgInfo('author', SoundTagEnum.XXXJST, STR, 'Author'),
+            TagArgInfo('bpm', SoundTagEnum.tempo, NUM, 'BPM'),
+            TagArgInfo('composer', SoundTagEnum.composer, STR, 'Composer'),
+            TagArgInfo('composersort', SoundTagEnum.sortcomposer, STR, 'Composer (Sort)'),
+            #TagArgInfo('conductor', SoundTagEnum.XXXJST, STR, 'Conductor'),
+            #TagArgInfo('contact', SoundTagEnum.XXXJST, STR, 'Contact'),
+            TagArgInfo('copyright', SoundTagEnum.copyright, STR, 'Copyright'),
+            TagArgInfo('date', SoundTagEnum.date, SoundTagDate, 'Date'),
+            TagArgInfo('description', SoundTagEnum.description, STR, 'Description'),
+            TagArgInfo('discnumber', SoundTagEnum.disk_slash_disks, STR, 'Disc'),
+            #TagArgInfo('discsubtitle', SoundTagEnum.XXXJST, STR, 'Disc Subtitle'),
+            TagArgInfo('genre', SoundTagEnum.genre, STR, 'Genre'),
+            TagArgInfo('grouping', SoundTagEnum.grouping, STR, 'Grouping'),
+            #TagArgInfo('isrc', SoundTagEnum.XXXJST, STR, 'ISRC'),
+            #TagArgInfo('labelid', SoundTagEnum.XXXJST, STR, 'Label ID'),
+            TagArgInfo('language', SoundTagEnum.language, isolang, 'Language'),
+            #TagArgInfo('license', SoundTagEnum.XXXJST, STR, 'License'),
+            #TagArgInfo('location', SoundTagEnum.XXXJST, STR, 'Location'),
+            #TagArgInfo('lyricist', SoundTagEnum.XXXJST, STR, 'Lyricist'),
+            #TagArgInfo('organization', SoundTagEnum.XXXJST, STR, 'Organization'),
+            #TagArgInfo('originalalbum', SoundTagEnum.XXXJST, STR, 'Original Album'),
+            #TagArgInfo('originalartist', SoundTagEnum.XXXJST, STR, 'Original Artist'),
+            #TagArgInfo('originaldate', SoundTagEnum.XXXJST, STR, 'Original Release Date'),
+            TagArgInfo('part', SoundTagEnum.subtitle, STR, 'Subtitle'),
+            #TagArgInfo('performer', SoundTagEnum.XXXJST, STR, 'Performer'),
+            #TagArgInfo('performersort', SoundTagEnum.XXXJST, STR, 'Performer (Sort)'),
+            #TagArgInfo('recordingdate', SoundTagEnum.XXXJST, STR, 'Recording Date'),
+            TagArgInfo('releasecountry', SoundTagEnum.country, STR, 'Release Country'),
+            TagArgInfo('title', SoundTagEnum.title, STR, 'Title'),
+            TagArgInfo('tracknumber', SoundTagEnum.track_slash_tracks, STR, 'Track'),
+            #TagArgInfo('version', SoundTagEnum.XXXJST, STR, 'Version'),
+            #TagArgInfo('website', SoundTagEnum.XXXJST, STR, 'Website'),
+            )
+
+    @classmethod
+    def get_tag_args(cls, tags):
+        tagargs = []
+        for tag_info in cls.tag_args_info:
+            value = tags.get(tag_info.tag_enum, None)
+            if value is not None:
+                value = str(tag_info.type(value))
+                tagargs += [tag_info.arg, value]
+        return tuple(tagargs)
+
+    def write_tags(self, *, tags, file_name, **kwargs):
+        for arg, value in pairwise(self.get_tag_args(tags)):
+            self('set', arg, value, file_name, **kwargs)
+
+operon = Operon()
+
+class Taged(Executable):
+
+    name = 'taged'
+
+    @classmethod
+    def get_tag_args(cls, tags):
+        tagargs = []
+        for tag, value in sorted(tags.items()):
+            tagargs += ['--%s' % (tag.name,), value]
+        return tuple(tagargs)
+
+    def write_tags(self, *, tags, file_name, **kwargs):
+        kwargs_dup = dict(kwargs)
+        if not kwargs_dup.pop('dry_run', False) \
+                and kwargs_dup.pop('run_func', None) in (None, do_exec_cmd) \
+                and not kwargs_dup:
+            import qip.bin.taged
+            qip.bin.taged.taged(file_name, tags)
+        else:
+            tagargs = tuple(str(e) for e in self.get_tag_args(tags))
+            self(*(tagargs + (file_name,)), **kwargs)
+
+taged = Taged()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker

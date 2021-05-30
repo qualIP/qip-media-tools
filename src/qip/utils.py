@@ -2,6 +2,7 @@ __all__ = (
         'TypedKeyDict',
         'TypedValueDict',
         'byte_decode',
+        'pairwise',
         )
 
 import abc
@@ -78,3 +79,7 @@ def byte_decode(b, encodings=('utf-8', 'iso-8859-1', 'us-ascii')):
             last_e = e
     raise ValueError('Unable to decode %r', (b,)) from last_e
 
+def pairwise(iterable):
+    "s -> (s0, s1), (s2, s3), (s4, s5), ..."
+    a = iter(iterable)
+    return zip(a, a)

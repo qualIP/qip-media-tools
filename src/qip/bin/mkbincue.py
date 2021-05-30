@@ -5,12 +5,6 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
-from qip.app import app
-app.init(
-        version='1.0',
-        description='BIN/CUE Maker',
-        )
-
 import argparse
 import collections
 import functools
@@ -25,75 +19,17 @@ import time
 import sys
 logging.basicConfig(level=logging.DEBUG)
 
-from qip.file import *
-from qip.exec import *
-from qip.cdrdao import *
-from qip.cdparanoia import *
-from qip.safecopy import *
-import qip.cdda as cdda
+from qip.app import app
 from qip.cdda import *
-import qip.snd
+from qip.cdparanoia import *
+from qip.cdrdao import *
+from qip.exec import *
+from qip.file import *
+from qip.safecopy import *
 from qip.snd import *
 from qip.utils import byte_decode
-
-in_tags = TrackTags()
-
-# TODO app.parser.add_argument('--help', '-h', action='help')
-app.parser.add_argument('--version', '-V', action='version')
-
-pgroup = app.parser.add_argument_group('Program Control')
-pgroup.add_argument('--continue', '-c', dest='_continue', action='store_true', help='continue creating RIP')
-#pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
-pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
-#pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
-pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
-# TODO pgroup.add_argument('--device-cache-size', dest='device_cache_size', default=None, help='cache size for your device (MB)')
-pgroup.add_argument('--device-sample-offset', dest='device_sample_offset', default=6, help='sample read offset for your device (http://www.accuraterip.com/driveoffsets.htm)')
-pgroup.add_argument('--eject', default=False, action='store_true', help='eject cdrom when done')
-pgroup.add_argument('--cddb', default=False, action='store_true', help='enable CDDB')
-pgroup.add_argument('--fast', default=False, action='store_true', help='fast mode')
-pgroup.add_argument('--ripper', default='cdparanoia', choices=['cdparanoia', 'safecopy'], help='ripper program to use')
-pgroup.add_argument('--force-read-speed', dest='force_read_speed', default=None, help='force CDROM read speed')
-pgroup.add_argument('--safecopy-timing', dest='safecopy_timing', default=False, action='store_true', help='write safecopy timing files')
-pgroup.add_argument('--cdparanoia-max-skip-retries', dest='cdparanoia_max_skip_retries', default=None, type=int, help='number of retries before cdparanoia is allowed to skip a sector')
-pgroup.add_argument('--no-disable-paranoia', dest='no_disable_paranoia', default=False, action='store_true', help='Do not use cdparanoia --disable-paranoia on first try')
-pgroup.add_argument('--max-track-retries', dest='max_track_retries', default=None, type=int, help='number of retries before giving up reading a track')
-pgroup.add_argument('--rebuild', default=False, action='store_true', help='rebuild tracks from best sectors if all else fails')
-pgroup.add_argument('--rebuild-unique-sectors', dest='rebuild_unique_sectors', default=False, action='store_true', help='rebuild tracks even from unique sectors')
-pgroup.add_argument('--save-temps', dest='save_temps', default=False, action='store_true', help='do not delete intermediate files')
-xgroup = pgroup.add_mutually_exclusive_group()
-xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
-xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
-xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
-xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
-
-pgroup = app.parser.add_argument_group('Tags')
-#pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-#pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--writer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--type', tags=in_tags, default='audiobook', action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--disk', '--disc', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--disks', '--discs', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-#pgroup.add_argument('--track', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-#pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--sort-album', dest='sortalbum', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-#pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-pgroup.add_argument('--sort-writer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-
-app.parser.add_argument('file_name_prefix', help='output file name prefix')
-
-app.parse_args()
-
-if getattr(app.args, 'action', None) is None:
-    app.args.action = 'mkbincue'
-if not hasattr(app.args, 'logging_level'):
-    app.args.logging_level = logging.INFO
-app.set_logging_level(app.args.logging_level)
+import qip.cdda as cdda
+import qip.snd
 
 def dbg_spawn_cmd(cmd, hidden_args=[], no_status=False, yes=False, logfile=True):
     if app.log.isEnabledFor(logging.DEBUG):
@@ -162,8 +98,73 @@ def do_spawn_cmd(cmd, **kwargs):
     else:
         return dbg_spawn_cmd(cmd, **kwargs)
 
+@app.main_wrapper
 def main():
-    global in_tags
+
+    app.init(
+            version='1.0',
+            description='BIN/CUE Maker',
+            contact='jst@qualipsoft.com',
+            )
+
+    in_tags = TrackTags()
+
+    # TODO app.parser.add_argument('--help', '-h', action='help')
+    app.parser.add_argument('--version', '-V', action='version')
+
+    pgroup = app.parser.add_argument_group('Program Control')
+    pgroup.add_argument('--continue', '-c', dest='_continue', action='store_true', help='continue creating RIP')
+    #pgroup.add_argument('--interactive', '-i', action='store_true', help='interactive mode')
+    pgroup.add_argument('--dry-run', '-n', dest='dry_run', action='store_true', help='dry-run mode')
+    #pgroup.add_argument('--yes', '-y', action='store_true', help='answer "yes" to all prompts')
+    pgroup.add_argument('--device', default=os.environ.get('CDROM', '/dev/cdrom'), help='specify alternate cdrom device')
+    # TODO pgroup.add_argument('--device-cache-size', dest='device_cache_size', default=None, help='cache size for your device (MB)')
+    pgroup.add_argument('--device-sample-offset', dest='device_sample_offset', default=6, help='sample read offset for your device (http://www.accuraterip.com/driveoffsets.htm)')
+    pgroup.add_argument('--eject', default=False, action='store_true', help='eject cdrom when done')
+    pgroup.add_argument('--cddb', default=False, action='store_true', help='enable CDDB')
+    pgroup.add_argument('--fast', default=False, action='store_true', help='fast mode')
+    pgroup.add_argument('--ripper', default='cdparanoia', choices=['cdparanoia', 'safecopy'], help='ripper program to use')
+    pgroup.add_argument('--force-read-speed', dest='force_read_speed', default=None, help='force CDROM read speed')
+    pgroup.add_argument('--safecopy-timing', dest='safecopy_timing', default=False, action='store_true', help='write safecopy timing files')
+    pgroup.add_argument('--cdparanoia-max-skip-retries', dest='cdparanoia_max_skip_retries', default=None, type=int, help='number of retries before cdparanoia is allowed to skip a sector')
+    pgroup.add_argument('--no-disable-paranoia', dest='no_disable_paranoia', default=False, action='store_true', help='Do not use cdparanoia --disable-paranoia on first try')
+    pgroup.add_argument('--max-track-retries', dest='max_track_retries', default=None, type=int, help='number of retries before giving up reading a track')
+    pgroup.add_argument('--rebuild', default=False, action='store_true', help='rebuild tracks from best sectors if all else fails')
+    pgroup.add_argument('--rebuild-unique-sectors', dest='rebuild_unique_sectors', default=False, action='store_true', help='rebuild tracks even from unique sectors')
+    pgroup.add_argument('--save-temps', dest='save_temps', default=False, action='store_true', help='do not delete intermediate files')
+    xgroup = pgroup.add_mutually_exclusive_group()
+    xgroup.add_argument('--logging_level', default=argparse.SUPPRESS, help='set logging level')
+    xgroup.add_argument('--quiet', '-q', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.WARNING, help='quiet mode')
+    xgroup.add_argument('--verbose', '-v', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.VERBOSE, help='verbose mode')
+    xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
+
+    pgroup = app.parser.add_argument_group('Tags')
+    #pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    #pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--writer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--type', tags=in_tags, default='audiobook', action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--disk', '--disc', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--disks', '--discs', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    #pgroup.add_argument('--track', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    #pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-album', dest='sortalbum', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    #pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-writer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+
+    app.parser.add_argument('file_name_prefix', help='output file name prefix')
+
+    app.parse_args()
+
+    if getattr(app.args, 'action', None) is None:
+        app.args.action = 'mkbincue'
+    if not hasattr(app.args, 'logging_level'):
+        app.args.logging_level = logging.INFO
+    app.set_logging_level(app.args.logging_level)
 
     for prog in (
             'cdrdao',
@@ -645,9 +646,6 @@ def mkbincue(file_name_prefix, in_tags):
 
     return True
 
-if __name__ == "__main__":
-    main()
-
 # strottie@vb-strottie-wp:~$ find /dev -type l | xargs ls -l | grep sr1
 # ls: cannot access /dev/disk/by-label/x2fhome: No such file or directory
 # ls: cannot access /dev/disk/by-label/x2f: No such file or directory
@@ -799,5 +797,8 @@ if __name__ == "__main__":
 # the cdparanoia.log file produced by this failed analysis to
 # paranoia-dev@xiph.org to assist developers in extending
 # Paranoia to handle this CDROM properly.
+
+if __name__ == "__main__":
+    main()
 
 # vim: ft=python ts=8 sw=4 sts=4 ai et fdm=marker
