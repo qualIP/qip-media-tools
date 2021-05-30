@@ -92,6 +92,7 @@ setup(
             'tabulate',
             'Send2Trash',
             'bs4',
+            'lxml',
             ],
 
     # List additional groups of dependencies here (e.g. development

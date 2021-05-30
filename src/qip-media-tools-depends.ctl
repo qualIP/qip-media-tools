@@ -54,6 +54,7 @@ Recommends:
     safecopy,
     mp4v2-utils,
     python3-bs4,
+    python3-lxml,
 # NOTE: mp4v2-utils: https://www.deb-multimedia.org
 # NOTE: libdvdcss2: https://download.videolan.org/pub/debian/stable/
 # Suggests: <comma-separated list of packages>
