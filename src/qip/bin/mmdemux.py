@@ -3420,6 +3420,22 @@ def mux_dict_from_file(inputfile, outputdir):
                 original_source_description.append(stream_codec_name)
                 if stream.codec_type is CodecType.video:
                     try:
+                        if stream_codec_name == 'h264' \
+                                and ffprobe_stream_dict.get('profile', '') == 'High' \
+                                and ffprobe_stream_dict.get('tags', {}).get('stereo_mode', '') == 'block_lr' \
+                                and {
+                                    'side_data_type': 'Stereo 3D',
+                                    'type': 'frame alternate',
+                                    'inverted': 0,
+                                } in ffprobe_stream_dict.get('side_data_list', []) \
+                                and mediainfo_track_dict.get('Format', '') == 'AVC' \
+                                and mediainfo_track_dict.get('Format_Profile', '').startswith('Stereo High') \
+                                and int(mediainfo_track_dict.get('MultiView_Count', 1)) == 2 \
+                                and mediainfo_track_dict.get('MultiView_Layout', '') == 'Both Eyes laced in one block (left eye first)':
+                            original_source_description.append('MVC-3D')
+                    except KeyError:
+                        pass
+                    try:
                         original_source_description.append(ffprobe_stream_dict['profile'])
                     except KeyError:
                         pass
