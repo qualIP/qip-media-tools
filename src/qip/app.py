@@ -261,6 +261,7 @@ class App(XdgResource):
 
     def init_logging(self, level=None, **kwargs):
         self.log.name = self.prog
+        level = level if level is not None else logging.INFO
         if HAVE_COLOREDLOGS:
             coloredlogs.install(
                     level=level,
@@ -275,9 +276,10 @@ class App(XdgResource):
                     )
         else:
             logging.basicConfig(
-                    level=level if level is not None else logging.INFO,
+                    level=level,
                     format=DEFAULT_ROOT_LOG_FORMAT,
                     **kwargs)
+        self.set_logging_level(level)  # For side effects
 
     def init_terminal_size(self):
         if ('COLUMNS' not in os.environ
@@ -291,6 +293,9 @@ class App(XdgResource):
         logging.getLogger().setLevel(level)
         if HAVE_COLOREDLOGS:
             coloredlogs.set_level(level)
+        if level <= logging.DEBUG:
+            import reprlib
+            reprlib.aRepr.maxdict = 100
 
     def default_config_file(self):
         assert self.xdg_resource
@@ -388,6 +393,10 @@ class App(XdgResource):
             qip.exec.ionice(pid=os.getpid(),
                             _class=2,  # best-effort
                             classdata=ionice)
+
+        logging_level = getattr(self.args, 'logging_level', None)
+        if logging_level is not None:
+            app.set_logging_level(app.args.logging_level)
 
         return self.args
 

@@ -18,13 +18,11 @@ import logging
 import os
 import pexpect
 import re
-import reprlib
 import shlex
 import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
-reprlib.aRepr.maxdict = 100
 
 from qip import argparse
 from qip import json
@@ -263,11 +261,6 @@ def main():
 
     if getattr(app.args, 'action', None) is None:
         app.args.action = 'mkm4b'
-    if not hasattr(app.args, 'logging_level'):
-        app.args.logging_level = logging.INFO
-    app.set_logging_level(app.args.logging_level)
-    if app.args.logging_level <= logging.DEBUG:
-        reprlib.aRepr.maxdict = 100
     # app.log.debug('get_sox_app_support: %r', qip.mm.get_sox_app_support())
     # app.log.debug('get_vbr_formats: %r', get_vbr_formats())
     # app.log.debug('get_mp4v2_app_support: %r', qip.mm.get_mp4v2_app_support())

@@ -29,12 +29,10 @@ import itertools
 import json
 import logging
 import os
-import reprlib
 import socket
 import sys
 import types
 log = logging.getLogger(__name__)
-reprlib.aRepr.maxdict = 100
 
 from qip.app import app
 from qip.cdrom import cdrom_ready, read_dvd_title
@@ -117,12 +115,6 @@ def main():
     pgroup.add_argument('device', default=argparse.SUPPRESS, nargs='?', help='specify alternate CDROM device')
 
     app.parse_args()
-
-    if not hasattr(app.args, 'logging_level'):
-        app.args.logging_level = logging.INFO
-    app.set_logging_level(app.args.logging_level)
-    if app.args.logging_level <= logging.DEBUG:
-        reprlib.aRepr.maxdict = 100
 
     if app.args.check_cdrom_ready:
         if not cdrom_ready(app.args.device,

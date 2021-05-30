@@ -102,9 +102,6 @@ def main():
 
     if getattr(app.args, 'action', None) is None:
         app.args.action = 'bincuetags'
-    if not hasattr(app.args, 'logging_level'):
-        app.args.logging_level = logging.INFO
-    app.set_logging_level(app.args.logging_level)
 
     for prog in ():
         if prog and not shutil.which(prog):

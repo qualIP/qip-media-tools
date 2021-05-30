@@ -19,11 +19,9 @@ import logging
 import os
 import pexpect
 import re
-import reprlib
 import shutil
 import subprocess
 import sys
-reprlib.aRepr.maxdict = 100
 
 from qip.propex import propex
 from qip.mm import MediaFile
@@ -65,11 +63,6 @@ def main():
 
     if getattr(app.args, 'action', None) is None:
         app.args.action = 'rename'
-    if not hasattr(app.args, 'logging_level'):
-        app.args.logging_level = logging.INFO
-    app.set_logging_level(app.args.logging_level)
-    if app.args.logging_level <= logging.DEBUG:
-        reprlib.aRepr.maxdict = 100
 
     if app.args.action == 'rename':
 

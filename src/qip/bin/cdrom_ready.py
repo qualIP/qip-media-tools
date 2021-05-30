@@ -39,10 +39,6 @@ def main():
 
     app.parse_args()
 
-    if not hasattr(app.args, 'logging_level'):
-        app.args.logging_level = logging.INFO
-    app.set_logging_level(app.args.logging_level)
-
     return cdrom_ready(device=app.args.device,
                        timeout=app.args.timeout,
                        progress_bar=app.args.progress)

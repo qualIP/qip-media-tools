@@ -73,7 +73,6 @@ import os
 import pexpect
 import pprint
 import re
-import reprlib
 import shlex
 import shutil
 import subprocess
@@ -82,7 +81,6 @@ import tempfile
 import types
 import unidecode
 import xml.etree.ElementTree as ET
-reprlib.aRepr.maxdict = 100
 
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.widgets import TextArea
@@ -686,7 +684,6 @@ def main():
             description='Multimedia [de]multiplexer',
             contact='jst@qualipsoft.com',
             )
-    app.set_logging_level(logging.INFO)
 
     app.cache_dir = 'mmdemux-cache'  # in current directory!
 
@@ -844,11 +841,6 @@ def main():
 
     # if getattr(app.args, 'action', None) is None:
     #     app.args.action = TODO
-    if not hasattr(app.args, 'logging_level'):
-        app.args.logging_level = logging.INFO
-    app.set_logging_level(app.args.logging_level)
-    if app.args.logging_level <= logging.DEBUG:
-        reprlib.aRepr.maxdict = 100
 
     if False and app.args.cuda:
         default_ffmpeg_args += [

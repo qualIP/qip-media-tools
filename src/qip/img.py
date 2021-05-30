@@ -23,7 +23,6 @@ import logging
 import operator
 import os
 import re
-import reprlib
 import shutil
 import string
 import subprocess

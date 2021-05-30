@@ -66,10 +66,6 @@ def main():
 
     app.parse_args()
 
-    if not hasattr(app.args, 'logging_level'):
-        app.args.logging_level = logging.INFO
-    app.set_logging_level(app.args.logging_level)
-
     audiobook = M4bFile(file_name=None)
 
     if app.args._continue:

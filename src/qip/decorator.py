@@ -5,7 +5,6 @@ import functools
 import sys
 import logging
 import traceback
-import reprlib
 import inspect
 import types
 
@@ -71,7 +70,6 @@ def trace(func=None, log=None, pin=True, pargs=True, pout=True, preturn=True,
                     if preturn:
                         log.info("%sOUT: %s, returned %s",
                                 indent, func_name,
-                                #reprlib.repr(ret),
                                 repr(ret),
                                 )
                     else:
