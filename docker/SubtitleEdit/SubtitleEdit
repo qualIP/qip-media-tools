@@ -73,7 +73,7 @@ set -- "$@" ${DISPLAY:+-e DISPLAY="$DISPLAY"}
 set -- "$@" "${docker_args[@]}"
 $OPT_SHELL && set -- "$@" --entrypoint /bin/bash
 
-set -- "$@" test/subtitleedit
+set -- "$@" qualip/subtitleedit
 set -- "$@" $($OPT_X && echo -x)
 set -- "$@" "${app_args[@]}"
 "$@"

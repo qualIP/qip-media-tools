@@ -17,7 +17,7 @@ FILE_FRIM_ZIP=FRIM_x64_version_${FRIM_VER}.zip
 docker build \
     --build-arg "FRIM_VER=${FRIM_VER}" \
     --build-arg "FILE_FRIM_ZIP=${FILE_FRIM_ZIP}" \
-    -t test/${PACKAGE_NAME}:${PACKAGE_VER} \
+    -t qualip/${PACKAGE_NAME}:${PACKAGE_VER} \
     .
 
 docker image prune --force

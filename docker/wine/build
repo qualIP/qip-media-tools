@@ -18,7 +18,7 @@ for PACKAGE_NAME in $PACKAGE_NAMES ; do
         -f "$CURDIR/Dockerfile.${PACKAGE_NAME}" \
         --build-arg "WINE_TAG=${WINE_TAG}" \
         --build-arg "WINE_VER=${WINE_VER}" \
-        -t test/${PACKAGE_NAME}:${PACKAGE_VER} \
+        -t qualip/${PACKAGE_NAME}:${PACKAGE_VER} \
         .
 done
 

@@ -5,7 +5,7 @@
 #include <Dockerfile.macros.in>
 
 ARG WINE_VER
-FROM test/wine64-build:${WINE_VER} as build
+FROM qualip/wine64-build:${WINE_VER} as build
 
 FROM ubuntu:20.04
 LABEL maintainer="j.sebastien.trottier@gmail.com"

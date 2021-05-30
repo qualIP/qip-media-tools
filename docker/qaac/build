@@ -24,7 +24,7 @@ for PACKAGE_NAME in $PACKAGE_NAMES ; do
         --build-arg "FILE_QAAC_ZIP=${FILE_QAAC_ZIP}" \
         --build-arg "FILE_ITUNES64_SETUP=${FILE_ITUNES64_SETUP}" \
         --build-arg "PACKAGE_VER=${PACKAGE_VER}" \
-        -t test/${PACKAGE_NAME}:${PACKAGE_VER} \
+        -t qualip/${PACKAGE_NAME}:${PACKAGE_VER} \
         .
 done
 

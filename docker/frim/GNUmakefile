@@ -65,18 +65,18 @@ run:
 
 .PHONY: tag-latest
 tag-latest:
-	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) test/$(PACKAGE_NAME):latest
+	docker tag qualip/$(PACKAGE_NAME):$(PACKAGE_VER) qualip/$(PACKAGE_NAME):latest
 
 .PHONY: push
 push:
 	$(if $(REGISTRY),,echo "REGISTRY environment variable missing" >&2 ; exit 1)
-	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):$(PACKAGE_VER)
+	docker tag qualip/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):$(PACKAGE_VER)
 	docker push $(REGISTRY)/$(PACKAGE_NAME):$(PACKAGE_VER)
 
 .PHONY: push-latest
 push-latest: tag-latest
 	$(if $(REGISTRY),,echo "REGISTRY environment variable missing" >&2 ; exit 1)
-	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):latest
+	docker tag qualip/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):latest
 	docker push $(REGISTRY)/$(PACKAGE_NAME):latest
 
 XDG_DATA_DIRS0 = $(PREFIX)/share
@@ -92,7 +92,7 @@ uninstall:
 	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMDecode"
 	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMEncode"
 	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/FRIMTranscode"
-	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
+	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q qualip/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-all
 clean-all: clean
@@ -101,7 +101,7 @@ clean-all: clean-dl
 .PHONY: clean
 clean:
 	rm -fv $(FILES_PREPROC)
-	for p in $(BUILD_PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
+	for p in $(BUILD_PACKAGE_NAMES) ; do l=`docker image ls -q qualip/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-dl
 clean-dl:

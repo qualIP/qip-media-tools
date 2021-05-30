@@ -93,7 +93,7 @@ set -- "$@" --ipc=host
 
 $OPT_SHELL && set -- "$@" --entrypoint /bin/bash
 
-set -- "$@" test/frim
+set -- "$@" qualip/frim
 $OPT_SHELL || set -- "$@" $tool
 set -- "$@" "${app_args[@]}"
 "$@"

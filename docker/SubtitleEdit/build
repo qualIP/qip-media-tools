@@ -16,7 +16,7 @@ FILE_SUBTITLEEDIT_PORTABLE_ZIP=SE${SUBTITLEEDIT_VER_SHORT}.zip
 
 docker build \
     --build-arg "FILE_SUBTITLEEDIT_PORTABLE_ZIP=${FILE_SUBTITLEEDIT_PORTABLE_ZIP}" \
-    -t test/${PACKAGE_NAME}:${PACKAGE_VER} \
+    -t qualip/${PACKAGE_NAME}:${PACKAGE_VER} \
     .
 
 docker image prune --force

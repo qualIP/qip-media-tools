@@ -50,6 +50,6 @@ set -- "$@" "${docker_args[@]}"
 
 $OPT_SHELL && set -- "$@" --entrypoint /bin/bash
 
-set -- "$@" test/qaac
+set -- "$@" qualip/qaac
 set -- "$@" "${app_args[@]}"
 "$@"

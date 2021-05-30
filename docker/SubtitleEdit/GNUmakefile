@@ -69,7 +69,7 @@ FILES_PREPROC += Dockerfile
 build-deps: Dockerfile
 
 SubtitleEdit.ico:
-	docker run --rm --entrypoint /bin/cat test/$(PACKAGE_NAME):$(PACKAGE_VER) "/home/developer/SubtitleEdit/SubtitleEdit.exe" < /dev/null > "temp-$@.exe"
+	docker run --rm --entrypoint /bin/cat qualip/$(PACKAGE_NAME):$(PACKAGE_VER) "/home/developer/SubtitleEdit/SubtitleEdit.exe" < /dev/null > "temp-$@.exe"
 	wrestool -x -t 14 "temp-$@.exe" > "$@"
 	rm "temp-$@.exe"
 	icotool -l "$@"
@@ -94,18 +94,18 @@ run:
 
 .PHONY: tag-latest
 tag-latest:
-	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) test/$(PACKAGE_NAME):latest
+	docker tag qualip/$(PACKAGE_NAME):$(PACKAGE_VER) qualip/$(PACKAGE_NAME):latest
 
 .PHONY: push
 push:
 	$(if $(REGISTRY),,echo "REGISTRY environment variable missing" >&2 ; exit 1)
-	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):$(PACKAGE_VER)
+	docker tag qualip/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):$(PACKAGE_VER)
 	docker push $(REGISTRY)/$(PACKAGE_NAME):$(PACKAGE_VER)
 
 .PHONY: push-latest
 push-latest: tag-latest
 	$(if $(REGISTRY),,echo "REGISTRY environment variable missing" >&2 ; exit 1)
-	docker tag test/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):latest
+	docker tag qualip/$(PACKAGE_NAME):$(PACKAGE_VER) $(REGISTRY)/$(PACKAGE_NAME):latest
 	docker push $(REGISTRY)/$(PACKAGE_NAME):latest
 
 XDG_DATA_DIRS0 = $(PREFIX)/share
@@ -122,7 +122,7 @@ uninstall:
 	$(PREFIX_SUDO) rm -fv "$(PREFIX)/bin/SubtitleEdit"
 	$(PREFIX_SUDO) rm -fv "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
 	$(PREFIX_SUDO) rm -fv "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
-	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
+	for p in $(PACKAGE_NAMES) ; do l=`docker image ls -q qualip/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-all
 clean-all: clean
@@ -134,7 +134,7 @@ clean:
 	rm -fv temp-*.exe
 	rm -fv SubtitleEdit*.ico
 	rm -fv SubtitleEdit.png
-	for p in $(BUILD_PACKAGE_NAMES) ; do l=`docker image ls -q test/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
+	for p in $(BUILD_PACKAGE_NAMES) ; do l=`docker image ls -q qualip/$$p | sort -u` ; if [ -n "$$l" ] ; then docker image rm --force $$l ; fi ; done
 
 .PHONY: clean-dl
 clean-dl:

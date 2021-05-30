@@ -1,7 +1,7 @@
 
 ARG WINE_VER=3.0.3
 
-FROM test/wine64:${WINE_VER}
+FROM qualip/wine64:${WINE_VER}
 ARG WINEPREFIX="/home/developer/.wine"
 LABEL maintainer="j.sebastien.trottier@gmail.com"
 
