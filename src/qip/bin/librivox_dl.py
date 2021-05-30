@@ -17,7 +17,7 @@ from gettext import gettext as _
 
 from qip.app import app
 from qip.file import *
-from qip.snd import *
+from qip.mm import *
 from qip.img import *
 from qip.cmp import *
 from qip.librivox import *

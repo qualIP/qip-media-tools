@@ -26,10 +26,10 @@ from qip.cdrdao import *
 from qip.exec import *
 from qip.file import *
 from qip.safecopy import *
-from qip.snd import *
+from qip.mm import *
 from qip.utils import byte_decode
 import qip.cdda as cdda
-import qip.snd
+import qip.mm
 
 @app.main_wrapper
 def main():
@@ -72,23 +72,23 @@ def main():
     xgroup.add_argument('--debug', '-d', dest='logging_level', default=argparse.SUPPRESS, action='store_const', const=logging.DEBUG, help='debug mode')
 
     pgroup = app.parser.add_argument_group('Tags')
-    #pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    #pgroup.add_argument('--subtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    #pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--writer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--type', tags=in_tags, default='audiobook', action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--disk', '--disc', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--disks', '--discs', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    #pgroup.add_argument('--track', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    #pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-album', dest='sortalbum', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    #pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-writer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    #pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    #pgroup.add_argument('--subtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    #pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--writer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--type', tags=in_tags, default='audiobook', action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--disk', '--disc', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--disks', '--discs', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    #pgroup.add_argument('--track', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    #pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-album', dest='sortalbum', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    #pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-writer', dest='sortwriter', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
 
     app.parser.add_argument('file_name_prefix', help='output file name prefix')
 

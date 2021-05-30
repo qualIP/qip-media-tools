@@ -21,7 +21,7 @@ from qip.app import app
 from qip.cdda import *
 from qip.exec import *
 from qip.file import *
-from qip.snd import *
+from qip.mm import *
 from qip.utils import byte_decode
 from qip import json
 import qip.cdda as cdda

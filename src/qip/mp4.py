@@ -1,9 +1,12 @@
 
+# https://en.wikipedia.org/wiki/MPEG-4_Part_14
+
 __all__ = (
     'Mpeg4ContainerFile',
     'Mp4File',
     'M4aFile',
     'M4bFile',
+    'M4rFile',
 )
 
 import os
@@ -15,11 +18,11 @@ import logging
 log = logging.getLogger(__name__)
 
 from .mm import MediaFile
-from .snd import SoundFile
-from .snd import MovieFile
-from .snd import AudiobookFile
-import qip.snd as snd
-import qip.snd as snd
+from .mm import SoundFile
+from .mm import RingtoneFile
+from .mm import MovieFile
+from .mm import AudiobookFile
+import qip.mm as mm
 import qip.wav as wav
 import qip.cdda as cdda
 from .img import ImageFile
@@ -30,7 +33,7 @@ from .utils import byte_decode
 class Mpeg4ContainerFile(MediaFile):
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None):
-        from qip.qaac import qaac
+        from .qaac import qaac
         #with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_dir = None
         with tempfile.NamedTemporaryFile(suffix='.wav') as tmp_fp:
@@ -45,17 +48,17 @@ class Mpeg4ContainerFile(MediaFile):
 
     @property
     def tag_writer(self):
-        return snd.taged
-        #return snd.mp4tags
+        return mm.taged
+        #return mm.mp4tags
 
     def prep_picture(self, src_picture, *,
             yes=False,
             ipod_compat=True,
             keep_picture_file_name=None,
             ):
-        from qip.app import app
-        from qip.file import TempFile
-        from qip.exec import do_exec_cmd
+        from .app import app
+        from .file import TempFile
+        from .exec import do_exec_cmd
 
         if not src_picture:
             return None
@@ -71,7 +74,7 @@ class Mpeg4ContainerFile(MediaFile):
                 picture = TempFile.mkstemp(suffix='.png')
             if str(src_picture) != str(picture):
                 app.log.info('Writing new picture %s...', picture)
-            from qip.ffmpeg import ffmpeg
+            from .ffmpeg import ffmpeg
             ffmpeg_args = []
             if True or yes:
                 ffmpeg_args += ['-y']
@@ -105,13 +108,12 @@ class Mpeg4ContainerFile(MediaFile):
                channels=None,
                picture=None,
                expected_duration=None):
-        from qip.app import app
-        from qip.exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
-        from qip.parser import lines_parser
-        from qip.qaac import qaac
-        from qip.ffmpeg import ffmpeg
-        from qip.file import TempFile, safe_write_file_eval, safe_read_file
-        import qip.snd
+        from .app import app
+        from .exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
+        from .parser import lines_parser
+        from .qaac import qaac
+        from .ffmpeg import ffmpeg
+        from .file import TempFile, safe_write_file_eval, safe_read_file
         m4b = self
 
         app.log.info('Writing %s...', m4b)
@@ -137,10 +139,10 @@ class Mpeg4ContainerFile(MediaFile):
             if (
                     not force_encode and
                     len(audio_type) == 1 and audio_type[0] in (
-                        snd.AudioType.aac,
-                        snd.AudioType.lc_aac,
-                        snd.AudioType.he_aac,
-                        snd.AudioType.ac3,
+                        mm.AudioType.aac,
+                        mm.AudioType.lc_aac,
+                        mm.AudioType.he_aac,
+                        mm.AudioType.ac3,
                         )):
                 # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
                 ffmpeg_output_cmd += ['-c:a', 'copy']
@@ -150,8 +152,8 @@ class Mpeg4ContainerFile(MediaFile):
                     not force_encode and
                     not ipod_compat and
                     len(audio_type) == 1 and audio_type[0] in (
-                        snd.AudioType.mp2,
-                        snd.AudioType.mp3,
+                        mm.AudioType.mp2,
+                        mm.AudioType.mp3,
                         )):
                 # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
                 ffmpeg_output_cmd += ['-c:a', 'copy']
@@ -169,9 +171,9 @@ class Mpeg4ContainerFile(MediaFile):
                     if use_qaac:
                         use_qaac_cmd = True
                         if len(audio_type) == 1 and audio_type[0] in (
-                                snd.AudioType.mp2,
-                                snd.AudioType.mp3,
-                                snd.AudioType.dts,
+                                mm.AudioType.mp2,
+                                mm.AudioType.mp3,
+                                mm.AudioType.dts,
                         ):
                             use_qaac_intermediate = True
                             ffmpeg_format = 'wav'
@@ -252,10 +254,17 @@ class Mpeg4ContainerFile(MediaFile):
                 assert use_qaac_cmd
                 new_inputfiles_names = []
                 for inputfile_name in inputfiles_names:
-                    intermediate_wav_file = snd.SoundFile(file_name=os.path.splitext(inputfile_name)[0] + '.tmp.wav')
-                    intermediate_wav_files.append(intermediate_wav_file)
-                    new_inputfiles_names.append(intermediate_wav_file.file_name)
-                    out = do_spawn_cmd([shutil.which('ffmpeg'), '-i', inputfile_name, intermediate_wav_file.file_name])
+                    if False:
+                        # Slower
+                        intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=os.path.splitext(inputfile_name)[0] + '.tmp.alac.m4a')
+                        intermediate_wav_files.append(intermediate_wav_file)
+                        new_inputfiles_names.append(intermediate_wav_file.file_name)
+                        out = ffmpeg('-i', inputfile_name, '-acodec', 'alac', intermediate_wav_file.file_name)
+                    else:
+                        intermediate_wav_file = mm.SoundFile.new_by_file_name(file_name=os.path.splitext(inputfile_name)[0] + '.tmp.wav')
+                        intermediate_wav_files.append(intermediate_wav_file)
+                        new_inputfiles_names.append(intermediate_wav_file.file_name)
+                        out = ffmpeg('-i', inputfile_name, intermediate_wav_file.file_name)
                     # TODO out
                 inputfiles_names = new_inputfiles_names
 
@@ -287,7 +296,7 @@ class Mpeg4ContainerFile(MediaFile):
                     parser.line = parser.line.strip()
                     if parser.re_search(r'^\[[0-9.]+%\] [0-9:.]+/(?P<out_time>[0-9:.]+) \([0-9.]+x\), ETA [0-9:.]+$'):
                         # [35.6%] 2:51:28.297/8:01:13.150 (68.2x), ETA 4:32.491
-                        out_time = qip.snd.parse_time_duration(parser.match.group('out_time'))
+                        out_time = mm.parse_time_duration(parser.match.group('out_time'))
                     else:
                         pass  # TODO
             else:
@@ -297,7 +306,7 @@ class Mpeg4ContainerFile(MediaFile):
                     if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
                         # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
                         # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
-                        out_time = qip.snd.parse_time_duration(parser.match.group('out_time'))
+                        out_time = mm.parse_time_duration(parser.match.group('out_time'))
                     elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
                         app.log.warning('TODO: %s', parser.line)
                         pass
@@ -306,11 +315,11 @@ class Mpeg4ContainerFile(MediaFile):
             # }}}
             print('')
             if expected_duration is not None:
-                app.log.info('Expected final duration: %s (%.3f seconds)', qip.snd.mp4chaps_format_time_offset(expected_duration), expected_duration)
+                app.log.info('Expected final duration: %s (%.3f seconds)', mm.mp4chaps_format_time_offset(expected_duration), expected_duration)
             if out_time is None:
                 app.log.warning('final duration unknown!')
             else:
-                app.log.info('Final duration:          %s (%.3f seconds)', qip.snd.mp4chaps_format_time_offset(out_time), out_time)
+                app.log.info('Final duration:          %s (%.3f seconds)', mm.mp4chaps_format_time_offset(out_time), out_time)
 
         finally:
             for intermediate_wav_file in intermediate_wav_files:
@@ -343,8 +352,13 @@ class M4aFile(Mpeg4ContainerFile, SoundFile):
 
     _common_extensions = (
         '.m4a',
-        '.m4r',  # Apple iPhone ringtones
         '.m4p',  # encrypted by FairPlay Digital Rights Management
+    )
+
+class M4rFile(M4aFile, RingtoneFile):
+
+    _common_extensions = (
+        '.m4r',  # Apple iPhone ringtones
     )
 
 class M4bFile(M4aFile, AudiobookFile):

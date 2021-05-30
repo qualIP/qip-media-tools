@@ -32,9 +32,10 @@ from qip.cmp import *
 from qip.exec import *
 from qip.file import *
 from qip.parser import *
-from qip.snd import *
+from qip.mm import *
 from qip.utils import byte_decode
-import qip.snd
+from qip.mm import MediaFile
+import qip.mm
 
 # replace_html_entities {{{
 
@@ -74,7 +75,7 @@ def main():
     pgroup.add_argument('--musicvideo', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='musicvideo', help='Music Video mode (Plex: <albumartist>/<albumartist>/<track> - <comment>-video; Emby: same as music)')
     pgroup.add_argument('--movie', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='movie', help='Movie mode (<title>/<file>)')
     pgroup.add_argument('--tvshow', dest='library_mode', default=argparse.SUPPRESS, action='store_const', const='tvshow', help='TV show mode (<title>/<file>)')
-    pgroup.add_argument('--contenttype', help='Content Type (%s)' % (', '.join((str(e) for e in qip.snd.ContentType)),))
+    pgroup.add_argument('--contenttype', help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
     pgroup.add_argument('--app', default='plex', choices=['emby', 'plex'], help='App compatibility mode')
     pgroup.add_argument('--aux', dest='aux', default=True, action='store_true', help='Handle auxiliary files (default)')
     pgroup.add_argument('--no-aux', dest='aux', default=argparse.SUPPRESS, action='store_false', help='Do not handle auxiliary files')
@@ -188,8 +189,8 @@ def dump_tags(tags, *, deep=True, heading='Tags:'):
         dump_tags(track_tags, deep=False, heading='- Track %d' % (track_no,))
 
 supported_audio_exts = \
-        set(qip.snd.get_mp4v2_app_support().extensions_can_read) | \
-        set(qip.snd.get_sox_app_support().extensions_can_read) | \
+        set(qip.mm.get_mp4v2_app_support().extensions_can_read) | \
+        set(qip.mm.get_sox_app_support().extensions_can_read) | \
         set(('.ogg', '.mka', '.mp4', '.m4a', '.m4p', '.m4b', '.m4r', '.m4v')) | \
         set(('.mp3', '.wav')) | \
         set(('.avi', '.mkv', '.webm'))
@@ -249,7 +250,7 @@ def organize_music(inputfile, *, suggest_tags):
 
     # ARTIST
     if not inputfile.tags.artist:
-        raise MissingSoundTagError(SoundTagEnum.artist, file=inputfile)
+        raise MissingMediaTagError(MediaTagEnum.artist, file=inputfile)
 
     # ALBUMARTIST
     if not inputfile.tags.albumartist and inputfile.tags.artist:
@@ -257,7 +258,7 @@ def organize_music(inputfile, *, suggest_tags):
 
     # TITLE
     if not inputfile.tags.title:
-        raise MissingSoundTagError(SoundTagEnum.title, file=inputfile)
+        raise MissingMediaTagError(MediaTagEnum.title, file=inputfile)
 
     if not inputfile.tags.sorttitle:
         v = make_sort_tag(inputfile.tags.title)
@@ -282,7 +283,7 @@ def organize_music(inputfile, *, suggest_tags):
             'title',
             ):
         if tag and not getattr(inputfile.tags, tag):
-            raise MissingSoundTagError(tag, file=inputfile)
+            raise MissingMediaTagError(tag, file=inputfile)
 
     dst_dir = ''
 
@@ -307,7 +308,7 @@ def organize_music(inputfile, *, suggest_tags):
     else:
         track = None
 
-    # [DISC]-[TRACK]<spc>
+    # [DISK]-[TRACK]<spc>
     if disk or track:
         dst_file_base += '{disk}{disk_track_sep}{track} '.format(
             disk=disk or '',
@@ -328,7 +329,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     # ARTIST
     if not inputfile.tags.artist:
-        raise MissingSoundTagError(SoundTagEnum.artist, file=inputfile)
+        raise MissingMediaTagError(MediaTagEnum.artist, file=inputfile)
 
     # ALBUMARTIST
     if not inputfile.tags.albumartist and inputfile.tags.artist:
@@ -336,7 +337,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
 
     # TITLE
     if not inputfile.tags.title:
-        raise MissingSoundTagError(SoundTagEnum.title, file=inputfile)
+        raise MissingMediaTagError(MediaTagEnum.title, file=inputfile)
 
     if not inputfile.tags.sorttitle:
         v = make_sort_tag(inputfile.tags.title)
@@ -351,7 +352,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
             'title',
             ):
         if tag and not getattr(inputfile.tags, tag):
-            raise MissingSoundTagError(tag, file=inputfile)
+            raise MissingMediaTagError(tag, file=inputfile)
 
     dst_dir = ''
 
@@ -372,7 +373,7 @@ def organize_audiobook(inputfile, *, suggest_tags):
     else:
         track = None
 
-    # [DISC]-[TRACK]<spc>
+    # [DISK]-[TRACK]<spc>
     if disk or track:
         dst_file_base += '{disk}{disk_track_sep}{track} '.format(
             disk=disk or '',
@@ -401,12 +402,12 @@ def organize_inline_musicvideo(inputfile, *, suggest_tags):
 
     # -video
     dst_file_base += {
-        qip.snd.ContentType.behind_the_scenes: '-behindthescenes',
-        qip.snd.ContentType.concert: '-concert',
-        qip.snd.ContentType.interview: '-interview',
-        qip.snd.ContentType.live_music_video: '-live',
-        qip.snd.ContentType.lyrics_music_video: '-lyrics',
-        qip.snd.ContentType.music_video: '-video',
+        qip.mm.ContentType.behind_the_scenes: '-behindthescenes',
+        qip.mm.ContentType.concert: '-concert',
+        qip.mm.ContentType.interview: '-interview',
+        qip.mm.ContentType.live_music_video: '-live',
+        qip.mm.ContentType.lyrics_music_video: '-lyrics',
+        qip.mm.ContentType.music_video: '-video',
     }.get(inputfile.tags.contenttype, '-video')
 
     dst_file_base += dst_file_base_ext
@@ -422,7 +423,7 @@ def organize_movie(inputfile, *, suggest_tags):
 
     # TITLE
     if not inputfile.tags.title:
-        raise MissingSoundTagError(SoundTagEnum.title, file=inputfile)
+        raise MissingMediaTagError(MediaTagEnum.title, file=inputfile)
 
     if not inputfile.tags.sorttitle:
         v = make_sort_tag(inputfile.tags.title)
@@ -436,14 +437,18 @@ def organize_movie(inputfile, *, suggest_tags):
             'title',
             ):
         if tag and not getattr(inputfile.tags, tag):
-            raise MissingSoundTagError(tag, file=inputfile)
+            raise MissingMediaTagError(tag, file=inputfile)
 
     dst_dir = ''
 
     # https://github.com/MediaBrowser/Wiki/wiki/Movie-naming
     # https://support.plex.tv/articles/200381023-naming-movie-files/
-    # ALBUMTITLE (YEAR)/
-    dst_dir += '%s' % (clean_file_name(inputfile.tags.albumtitle, keep_ext=False),)
+    # TITLE [SUBTITLE] (YEAR)/
+    dst_dir += '%s' % (clean_file_name(inputfile.tags.title, keep_ext=False),)
+    if app.args.app == 'plex':
+        # https://support.plex.tv/articles/200381043-multi-version-movies/
+        if inputfile.tags.subtitle:
+            dst_dir += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
     if inputfile.tags.year:
         dst_dir += ' (%d)' % (inputfile.tags.year,)
     dst_dir += '/'
@@ -459,29 +464,55 @@ def organize_movie(inputfile, *, suggest_tags):
         track = "%0*d" % (len(str(inputfile.tags.tracks or 99)), inputfile.tags.track)
     else:
         track = None
-
-    if app.args.app == 'plex':
-        # TITLE (YEAR)
-        dst_file_base += inputfile.tags.title
-        if inputfile.tags.year:
-            dst_file_base += ' (%d)' % (inputfile.tags.year,)
+    if inputfile.tags.part is not None:
+        part = "%0*d" % (len(str(inputfile.tags.parts or 1)), inputfile.tags.part)
     else:
-        # TITLE
-        dst_file_base += inputfile.tags.title
+        part = None
+
+    # TITLE (YEAR)
+    dst_file_base += inputfile.tags.title
+    if inputfile.tags.year:
+        dst_file_base += ' (%d)' % (inputfile.tags.year,)
+
     # https://support.plex.tv/articles/200381043-multi-version-movies/
-    # TODO format!
+    if inputfile.tags.subtitle:
+        dst_file_base += ' [%s]' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
-    # -[DISC]
-    # -[TRACK]
-    if disk:
-        dst_file_base += '-disk{disk}'.format(
-            disk=disk)
-    if track:
-        # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
-        dst_file_base += '-part{track}'.format(
-            track=track)
+    if app.args.app == 'plex':
+        # - [DISK]
+        # - [PART]
+        # - [TRACK]
+        if disk:
+            dst_file_base += ' - disk{disk}'.format(
+                disk=disk)
+        if part:
+            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
+            dst_file_base += ' - part{part}'.format(
+                part=part)
+        elif track:
+            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
+            dst_file_base += ' - part{track}'.format(
+                track=track)
+    elif app.args.app == 'emby':
+        # - [SUBTITLE]
+        if inputfile.tags.subtitle:
+            dst_dir += ' - %s' % (clean_file_name(inputfile.tags.subtitle, keep_ext=False),)
+        # -[DISK]
+        # -[PART]
+        # -[TRACK]
+        if disk:
+            dst_file_base += '-disk{disk}'.format(
+                disk=disk)
+        if part:
+            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
+            dst_file_base += '-part{part}'.format(
+                part=part)
+        elif track:
+            # https://support.plex.tv/articles/200264966-naming-multi-file-movies/
+            dst_file_base += '-part{track}'.format(
+                track=track)
 
     dst_file_base += os.path.splitext(inputfile.file_name)[1]
 
@@ -497,7 +528,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
     if not inputfile.tags.tvshow and inputfile.tags.albumtitle:
         suggest_tags.tvshow = inputfile.tags.tvshow = inputfile.tags.albumtitle
     if not inputfile.tags.tvshow:
-        raise MissingSoundTagError(SoundTagEnum.tvshow, file=inputfile)
+        raise MissingMediaTagError(MediaTagEnum.tvshow, file=inputfile)
 
     if not inputfile.tags.sorttvshow:
         v = make_sort_tag(inputfile.tags.tvshow)
@@ -516,7 +547,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
             'episode',
             ):
         if tag and not getattr(inputfile.tags, tag):
-            raise MissingSoundTagError(tag, file=inputfile)
+            raise MissingMediaTagError(tag, file=inputfile)
 
     dst_dir = ''
 
@@ -559,7 +590,7 @@ def organize_tvshow(inputfile, *, suggest_tags):
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
     if inputfile.tags.type not in ('normal', 'audiobook', 'musicvideo'):
-        # -[DISC]
+        # -[DISK]
         # -[TRACK]
         if disk:
             dst_file_base += '-disk{disk}'.format(
@@ -587,7 +618,7 @@ def organize(inputfile):
         return True
 
     if not isinstance(inputfile, MediaFile):
-        inputfile = MediaFile.new_by_file_name(str(inputfile), default_class=MediaFile)
+        inputfile = MediaFile.new_by_file_name(str(inputfile))
 
     if not os.path.isfile(inputfile.file_name):
         raise OSError(errno.ENOENT, 'No such file', inputfile.file_name)

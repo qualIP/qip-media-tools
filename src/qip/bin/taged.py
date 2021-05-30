@@ -30,10 +30,10 @@ from qip.exec import *
 from qip.file import *
 from qip.parser import *
 from qip.perf import perfcontext
-from qip.snd import *
+from qip.mm import *
 from qip.img import *
 from qip.utils import byte_decode
-import qip.snd
+import qip.mm
 
 import mutagen.mp4
 mutagen.mp4.MP4Tags._MP4Tags__atoms[b'idx'] = (
@@ -116,33 +116,36 @@ def main():
     pgroup.add_argument('--lyrics-embed', dest='lyrics_embed', action='store_true', help='Embed lyrics in sound file if found')
 
     pgroup = app.parser.add_argument_group('Tags')
-    pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--subtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--date', '--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--type', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--mediatype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Physical Media Type (%s)' % (', '.join((str(e) for e in qip.snd.MediaType)),))
-    pgroup.add_argument('--contenttype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.snd.ContentType)),))
-    pgroup.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--track', dest='track_slash_tracks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--tvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--season', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--episode', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--compilation', '-K', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--xid', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--subtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--date', '--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--type', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--mediatype', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='Physical Media Type (%s)' % (', '.join((str(e) for e in qip.mm.MediaType)),))
+    pgroup.add_argument('--contenttype', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
+    pgroup.add_argument('--part', dest='part_slash_parts', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--parttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--track', dest='track_slash_tracks', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--tvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--season', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--episode', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--compilation', '-K', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-grouping', dest='sortgrouping', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--xid', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
 
     app.parser.add_argument('files', nargs='*', default=None, help='sound files')
 
@@ -264,7 +267,7 @@ def find_lyrics(file_name, *, genius=None, tags=None, **kwargs):
                 **kwargs)
 
     if file_name is not None:
-        snd_file = SoundFile(file_name)
+        snd_file = MediaFile.new_by_file_name(file_name)
         tags = snd_file.load_tags()
     with perfcontext('genius.search_song'):
         song = genius.search_song(tags.title, tags.artist)
@@ -286,8 +289,8 @@ def taged_mf_id3(file_name, mf, tags):
             tag = 'disk_slash_disks'
             value = tags[tag]
         try:
-            mapped_tag = qip.snd.tag_info['map'][tag]
-            id3_tag = qip.snd.tag_info['tags'][mapped_tag]['id3v2_30_tag']
+            mapped_tag = qip.mm.sound_tag_info['map'][tag]
+            id3_tag = qip.mm.sound_tag_info['tags'][mapped_tag]['id3v2_30_tag']
         except KeyError:
             raise NotImplementedError(tag)
         if id3_tag == 'TPE2':  # albumartist
@@ -308,42 +311,42 @@ def taged_mf_MP4Tags(file_name, mf, tags):
         app.log.debug('Old tags: %r', list(mf.tags.keys()))
     tags_to_set = set(tags.keys())
     #app.log.debug('tags %r, tags_to_set: %r', type(tags), tags_to_set)
-    if SoundTagEnum.disk in tags_to_set:
-        tags_to_set.discard(SoundTagEnum.disks)
-    if SoundTagEnum.track in tags_to_set:
-        tags_to_set.discard(SoundTagEnum.tracks)
-    if SoundTagEnum.contenttype in tags_to_set:
-        tags_to_set.discard(SoundTagEnum.contenttype)
-        tags_to_set.add(SoundTagEnum.type)
+    if MediaTagEnum.disk in tags_to_set:
+        tags_to_set.discard(MediaTagEnum.disks)
+    if MediaTagEnum.track in tags_to_set:
+        tags_to_set.discard(MediaTagEnum.tracks)
+    if MediaTagEnum.contenttype in tags_to_set:
+        tags_to_set.discard(MediaTagEnum.contenttype)
+        tags_to_set.add(MediaTagEnum.type)
     for tag in (
-            SoundTagEnum.barcode,
-            SoundTagEnum.isrc,
-            SoundTagEnum.asin,
-            SoundTagEnum.isrc,
-            SoundTagEnum.musicbrainz_discid,
-            SoundTagEnum.cddb_discid,
-            SoundTagEnum.accuraterip_discid,
+            MediaTagEnum.barcode,
+            MediaTagEnum.isrc,
+            MediaTagEnum.asin,
+            MediaTagEnum.isrc,
+            MediaTagEnum.musicbrainz_discid,
+            MediaTagEnum.cddb_discid,
+            MediaTagEnum.accuraterip_discid,
     ):
         if tag in tags_to_set:
             tags_to_set.remove(tag)
-            tags_to_set.add(SoundTagEnum.xid)
+            tags_to_set.add(MediaTagEnum.xid)
     for tag in tags_to_set:
         if tag in (
-                SoundTagEnum.musicbrainz_releaseid,
-                SoundTagEnum.mediatype,
+                MediaTagEnum.musicbrainz_releaseid,
+                MediaTagEnum.mediatype,
         ):
             continue
         tag = tag.name
         if tag == 'type':
-            snd_file = SoundFile(file_name)
+            snd_file = MediaFile.new_by_file_name(file_name)
             snd_file.tags = tags
             value = snd_file.deduce_type()
         else:
             value = tags[tag]
         try:
-            mapped_tag = qip.snd.tag_info['map'][tag]
-            mp4_tag = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_tag']
-            mp4v2_data_type = qip.snd.tag_info['tags'][mapped_tag]['mp4v2_data_type']
+            mapped_tag = qip.mm.sound_tag_info['map'][tag]
+            mp4_tag = qip.mm.sound_tag_info['tags'][mapped_tag]['mp4v2_tag']
+            mp4v2_data_type = qip.mm.sound_tag_info['tags'][mapped_tag]['mp4v2_data_type']
         except KeyError:
             raise NotImplementedError(tag)
         if mp4_tag in 'xid':
@@ -365,7 +368,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             elif mp4v2_data_type in ('int8', 'int16', 'int32', 'int64'):
                 if mp4_tag == 'sfID':
                     # raise ValueError('value %r = %r -> %s' % (type(value), value, value))
-                    mp4_value = [qip.snd.mp4_country_map[value]]
+                    mp4_value = [qip.mm.mp4_country_map[value]]
                 else:
                     mp4_value = int(value)
             elif mp4v2_data_type in ('binary',):
@@ -403,8 +406,8 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             elif mp4v2_data_type in ('enum8',):
                 if mp4_tag == 'stik':
                     if isinstance(value, str):
-                        value = qip.snd.tag_stik_info['map'][value.lower()]
-                    value = qip.snd.tag_stik_info['stik'][value]['stik']
+                        value = qip.mm.tag_stik_info['map'][value.lower()]
+                    value = qip.mm.tag_stik_info['stik'][value]['stik']
                     mp4_value = [value]
                 else:
                     raise NotImplementedError((tag, mp4v2_data_type))
@@ -457,53 +460,10 @@ def taged_Matroska(file_name, tags):
     import qip.matroska
     # https://matroska.org/technical/specs/tagging/index.html
     matroska_file = qip.matroska.MatroskaFile.new_by_file_name(file_name)
-    tags_list = None
-    for tag, value in tags.items():
-        tag = tag.name
-        if type(value) is tuple:
-            mkv_value = tuple(str(e) for e in value)
-        else:
-            mkv_value = str(value)
-        try:
-            TargetTypeValue, TargetType, mkv_tag = qip.matroska.mkv_tag_rev_map[tag]
-        except KeyError:
-            raise NotImplementedError(tag)
-            TargetType = None
-            TargetTypeValue = 50
-        # albumartist should be 50/ARTIST while artist should be on individual tracks
-        #if tag == 'albumartist':
-        #    mkv_tag = 'ARTIST'
-        if tag == 'title':
-            cmd = [
-                'mkvpropedit',
-                '--edit', 'info',
-                '--set', 'title=%s' % (value,),
-                file_name,
-            ]
-            do_exec_cmd(cmd)
-        if tags_list is None:
-            tags_xml = matroska_file.get_tags_xml()
-            tags_list = matroska_file.parse_tags_xml(tags_xml)
-        d_target = qip.matroska.MatroskaTagTarget(
-            TrackUID=0,
-            TargetTypeValue=TargetTypeValue,
-            TargetType=TargetType,
-        )
-        # Remove any existing similar tag
-        tags_list = [d_tag
-                     for d_tag in tags_list
-                     if d_tag.Target != d_target or d_tag.Name != mkv_tag]
-        tup_mkv_value = mkv_value if type(mkv_value) is tuple else (mkv_value,)
-        for one_mkv_value in tup_mkv_value:
-            d_tag = qip.matroska.MatroskaTagSimple(Target=d_target,
-                                                   Name=mkv_tag,
-                                                   String=one_mkv_value,
-                                                   )
-            if app.log.isEnabledFor(logging.DEBUG):
-                app.log.debug('Add %r', d_tag)
-            tags_list.append(d_tag)
+    matroska_file.tags = tags
+    tags_list = matroska_file.create_tags_list()
     if tags_list is not None:
-        tags_xml = matroska_file.create_tags_xml(tags_list)
+        tags_xml = matroska_file.create_tags_xml_from_list(tags_list)
         import qip.utils
         app.log.debug('tags_xml: %s', qip.utils.prettyxml(tags_xml))
         matroska_file.set_tags_xml(tags_xml)
@@ -549,7 +509,8 @@ def dump_tags(tags, *, deep=True, heading='Tags:'):
 
 def taglist(file_name):
     app.log.info('Listing %s...', file_name)
-    snd_file = SoundFile(file_name)
+    snd_file = MediaFile.new_by_file_name(file_name)
+    app.log.debug('snd_file = %r', snd_file)
     tags = snd_file.load_tags()
     assert tags is not None
     dump_tags(tags)

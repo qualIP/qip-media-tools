@@ -49,13 +49,17 @@ class File(object):
         type=propex.test_in(('', 't', 'b')))
 
     @classmethod
-    def new_by_file_name(cls, file_name, *args, default_class=None, **kwargs):
+    def new_by_file_name(cls, file_name, *args, default_class=True, **kwargs):
+        if default_class is True:
+            default_class = cls
         ext = os.path.splitext(file_name)[1]
-        factory_cls = cls._extension_to_class_map.get(ext, default_class)
-        if factory_cls is None:
+        if cls._extension_to_class_map is None:
+            cls._update_extension_to_class_map()
+        factory_cls = cls._extension_to_class_map.get(ext, None)
+        if not factory_cls:
             load_all_file_types()
             factory_cls = cls._extension_to_class_map.get(ext, default_class)
-        if factory_cls is None:
+        if not factory_cls:
             log.debug('%r._extension_to_class_map = %r', cls, cls._extension_to_class_map)
             raise ValueError('Unknown extension %r' % (ext,))
         return factory_cls(file_name, *args, **kwargs)
@@ -210,12 +214,26 @@ class File(object):
 
     @classmethod
     def _build_extension_to_class_map(cls):
-        cls._extension_to_class_map = {}
-        for subcls in cls.__subclasses__():
-            subcls._build_extension_to_class_map()
-            cls._extension_to_class_map.update(subcls._extension_to_class_map)
-        for k in cls.__dict__.get('_common_extensions', ()):
-            cls._extension_to_class_map[k] = cls
+        cls._extension_to_class_map = {
+            k: cls
+            for k in cls.__dict__.get('_common_extensions', ())
+        }
+        for sub_cls in cls.__subclasses__():
+            sub_cls._build_extension_to_class_map()
+        if cls._extension_to_class_map:
+            cls._update_extension_to_class_map()
+
+    @classmethod
+    def _update_extension_to_class_map(cls):
+        old_len = len(cls._extension_to_class_map)
+        for sub_cls in cls.__subclasses__():
+            cls._extension_to_class_map.update(sub_cls._extension_to_class_map)
+        if old_len != len(cls._extension_to_class_map):
+            for base_cls in cls.__bases__:
+                try:
+                    base_cls._update_extension_to_class_map()
+                except AttributeError:
+                    pass
 
 class TextFile(File):
 
@@ -380,7 +398,6 @@ def load_all_file_types():
     import qip.json
     import qip.mm
     import qip.img
-    import qip.snd
     import qip.mp4
     import qip.matroska
     import qip.mp3

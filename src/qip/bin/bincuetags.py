@@ -24,7 +24,7 @@ from qip.cdda import *
 from qip.exec import *
 from qip.extern import CDDB
 from qip.file import *
-from qip.snd import *
+from qip.mm import *
 from qip.utils import byte_decode
 import qip.cdda as cdda
 
@@ -292,22 +292,22 @@ def mbtrack_to_tags(track_tags, mbtrack):
 
 def cddbinfo_to_tags(album_tags, cddb_info):
     album_tag_map = {
-            'DISCID': SoundTagEnum.cddb_discid,  # 8f0ae30c
-            'disc_id': SoundTagEnum.cddb_discid,  # 8f0ae30c
-            'DTITLE': SoundTagEnum.title,  # Christina Aguilera / Christina Aguilera
-            'title': SoundTagEnum.title,  # Christina Aguilera / Christina Aguilera
-            'DYEAR': SoundTagEnum.date,  # 1999
-            'DGENRE': SoundTagEnum.genre,  # Pop
-            'EXTD': None,  # TODO SoundTagEnum.XXX,  #  YEAR: 1999 ID3G: 13
-            'PLAYORDER': None,  # TODO SoundTagEnum.XXX,
+            'DISCID': MediaTagEnum.cddb_discid,  # 8f0ae30c
+            'disc_id': MediaTagEnum.cddb_discid,  # 8f0ae30c
+            'DTITLE': MediaTagEnum.title,  # Christina Aguilera / Christina Aguilera
+            'title': MediaTagEnum.title,  # Christina Aguilera / Christina Aguilera
+            'DYEAR': MediaTagEnum.date,  # 1999
+            'DGENRE': MediaTagEnum.genre,  # Pop
+            'EXTD': None,  # TODO MediaTagEnum.XXX,  #  YEAR: 1999 ID3G: 13
+            'PLAYORDER': None,  # TODO MediaTagEnum.XXX,
             'submitted_via': None,
             'revision': None,
             'disc_len': None,
-            'category': SoundTagEnum.genre,
+            'category': MediaTagEnum.genre,
             }
     track_tag_map = {
-            'TTITLE': SoundTagEnum.title,  # Genie in a Bottle
-            'EXTT': None,  # TODO SoundTagEnum.XXX,
+            'TTITLE': MediaTagEnum.title,  # Genie in a Bottle
+            'EXTT': None,  # TODO MediaTagEnum.XXX,
             }
 
     for key, value in cddb_info.items():
@@ -321,7 +321,7 @@ def cddbinfo_to_tags(album_tags, cddb_info):
                 tag_type = track_tag_map[key]
                 if tag_type:
                     value = value.strip()
-                    if tag_type is SoundTagEnum.title:
+                    if tag_type is MediaTagEnum.title:
                         ls = [s.strip() for s in value.split('/')]
                         if len(ls) == 2:
                             album_tags.tracks_tags[track_no].artist, value = ls
@@ -330,7 +330,7 @@ def cddbinfo_to_tags(album_tags, cddb_info):
                 tag_type = album_tag_map[key]
                 if tag_type:
                     value = value.strip()
-                    if tag_type is SoundTagEnum.title:
+                    if tag_type is MediaTagEnum.title:
                         ls = [s.strip() for s in value.split('/')]
                         if len(ls) == 2:
                             album_tags.artist, value = ls

@@ -454,10 +454,10 @@ class ImageTagDict(json.JSONEncodable, json.JSONDecodable, collections.MutableMa
                 tag = ImageTagEnum(tag.lower()).value
             except ValueError:
                 try:
-                    tag = tag_info['map'][tag]
+                    tag = image_tag_info['map'][tag]
                 except KeyError:
                     try:
-                        tag = tag_info['map'][tag.lower()]
+                        tag = image_tag_info['map'][tag.lower()]
                     except:
                         log.debug('tag %r not known: %r', tag, value)
                         return False
@@ -539,9 +539,9 @@ class ImageTags(ImageTagDict):
 
 # }}}
 
-# tag_info {{{
+# image_tag_info {{{
 
-tag_info = {
+image_tag_info = {
         'tags': {},
         'map': {},
         }
@@ -573,15 +573,15 @@ for element, tag, aliases in [
     for v in ["element", "tag", "aliases"]:
         t = locals()[v]
         if t is not None:
-            tag_info['tags'].setdefault(tag, {})
-            tag_info['tags'][tag][v] = t
+            image_tag_info['tags'].setdefault(tag, {})
+            image_tag_info['tags'][tag][v] = t
     for t in [element, tag] + aliases:
         if t is not None:
-            tag_info['map'][t.lower()] = tag
-            tag_info['map'][t] = tag
+            image_tag_info['map'][t.lower()] = tag
+            image_tag_info['map'][t] = tag
 
 # }}}
-#import pprint ; pprint.pprint(tag_info)
+#import pprint ; pprint.pprint(image_tag_info)
 
 # class ImageAppSupport {{{
 

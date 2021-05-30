@@ -26,7 +26,7 @@ assert CDDA_TIMECODE_FRAME_PER_SECOND == 75
 CDDA_1X_SPEED = CDDA_BYTES_PER_SECOND
 
 from .file import *
-from .snd import *
+from .mm import *
 
 # class MSF {{{
 
@@ -994,18 +994,18 @@ class CDDACueSheetFile(TextFile):
                 return self.create(file=file)
         cur_file = None
         for cmd, tag_enum in (
-                ('PERFORMER', SoundTagEnum.artist),
-                ('TITLE', SoundTagEnum.title),
-                ('COMPOSER', SoundTagEnum.composer),
-                #('SONGWRITER', SoundTagEnum.composer),
-                #('ARRANGER', SoundTagEnum.composer),
-                ('CATALOG', SoundTagEnum.barcode),
-                ('REM GENRE', SoundTagEnum.genre),
-                ('REM DATE', SoundTagEnum.date),
-                ('REM DISCID', SoundTagEnum.cddb_discid),
-                ('REM ACCURATERIPID', SoundTagEnum.musicbrainz_discid),
-                ('REM DISCNUMBER', SoundTagEnum.disk),
-                ('REM TOTALDISCS', SoundTagEnum.disks),
+                ('PERFORMER', MediaTagEnum.artist),
+                ('TITLE', MediaTagEnum.title),
+                ('COMPOSER', MediaTagEnum.composer),
+                #('SONGWRITER', MediaTagEnum.composer),
+                #('ARRANGER', MediaTagEnum.composer),
+                ('CATALOG', MediaTagEnum.barcode),
+                ('REM GENRE', MediaTagEnum.genre),
+                ('REM DATE', MediaTagEnum.date),
+                ('REM DISCID', MediaTagEnum.cddb_discid),
+                ('REM ACCURATERIPID', MediaTagEnum.musicbrainz_discid),
+                ('REM DISCNUMBER', MediaTagEnum.disk),
+                ('REM TOTALDISCS', MediaTagEnum.disks),
                 ):
             v = self.tags[tag_enum]
             if v is not None:
@@ -1016,14 +1016,14 @@ class CDDACueSheetFile(TextFile):
                 print('FILE "%s" %s' % (cur_file.name, cur_file.format.value), file=file)
             print('%sTRACK %02d %s' % (indent * 1, track_no, track.type.value), file=file)
             for cmd, tag_enum in (
-                    ('PERFORMER', SoundTagEnum.artist),
-                    ('TITLE', SoundTagEnum.title),
-                    ('COMPOSER', SoundTagEnum.composer),
-                    #('SONGWRITER', SoundTagEnum.composer),
-                    #('ARRANGER', SoundTagEnum.composer),
+                    ('PERFORMER', MediaTagEnum.artist),
+                    ('TITLE', MediaTagEnum.title),
+                    ('COMPOSER', MediaTagEnum.composer),
+                    #('SONGWRITER', MediaTagEnum.composer),
+                    #('ARRANGER', MediaTagEnum.composer),
                     # TODO PREGAP [00:00:00]
                     #   -- unless track 1 is (HTOA)
-                    ('ISRC', SoundTagEnum.isrc),
+                    ('ISRC', MediaTagEnum.isrc),
                     ):
                 if track.tags.contains(tag_enum, strict=True):
                     v = track.tags[tag_enum]

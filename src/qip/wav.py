@@ -7,7 +7,8 @@ import struct
 import logging
 log = logging.getLogger(__name__)
 
-import qip.snd as snd
+from .mm import SoundFile
+import qip.mm as mm
 import qip.cdda as cdda
 
 WAV_RIFF_HLEN = 12
@@ -15,7 +16,7 @@ WAV_FORMAT_HLEN = 24
 WAV_DATA_HLEN = 8
 WAV_HEADER_LEN = WAV_RIFF_HLEN + WAV_FORMAT_HLEN + WAV_DATA_HLEN
 
-class WaveFile(snd.SoundFile):
+class WaveFile(SoundFile):
 
     _common_extensions = (
         '.wav',
@@ -23,12 +24,12 @@ class WaveFile(snd.SoundFile):
 
     @property
     def audio_type(self):
-        return snd.AudioType.wav
+        return mm.AudioType.wav
 
     @audio_type.setter
     def audio_type(self, value):
         if value is not None \
-                and snd.AudioType(value) is not snd.AudioType.wav:
+                and mm.AudioType(value) is not mm.AudioType.wav:
             raise ValueError(value)
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None, fp=None):
@@ -69,7 +70,7 @@ class WaveFile(snd.SoundFile):
 
     @property
     def tag_writer(self):
-        return snd.id3v2
+        return mm.id3v2
 
 WaveFile._build_extension_to_class_map()
 

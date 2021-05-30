@@ -16,10 +16,9 @@ from types import MappingProxyType
 import logging
 log = logging.getLogger(__name__)
 
-from .snd import *
+from .exec import Executable
+from .mm import MediaTagEnum
 import qip.file
-from .exec import *
-from .parser import *
 
 class Qaac(Executable):
 
@@ -87,20 +86,20 @@ class Qaac(Executable):
     tag_args_info = (
         # Tagging options:
         #  (same value is set to all files, so use with care for multiple files)
-        TagArgInfo(None, '--title', SoundTagEnum.title, STR, 'Set the title'),
-        TagArgInfo(None, '--artist', SoundTagEnum.artist, STR, 'Set the artist'),
-        TagArgInfo(None, '--band', SoundTagEnum.albumartist, STR, 'Set the album artist'),
-        TagArgInfo(None, '--album', SoundTagEnum.albumtitle, STR, 'Set the album title'),
-        TagArgInfo(None, '--grouping', SoundTagEnum.grouping, STR, 'Set the grouping name'),
-        TagArgInfo(None, '--composer', SoundTagEnum.composer, STR, 'Set the composer information'),
-        TagArgInfo(None, '--comment', SoundTagEnum.comment, STR, 'Set a general comment'),
-        TagArgInfo(None, '--genre', SoundTagEnum.genre, STR, 'Set the genre name'),
-        TagArgInfo(None, '--date', SoundTagEnum.year, STR, 'Set the release date'),  # Yes, year only
-        TagArgInfo(None, '--track', SoundTagEnum.track_slash_tracks, STR, 'Set the track number[/total]'),
-        TagArgInfo(None, '--disk', SoundTagEnum.disk_slash_disks, STR, 'Set the disk number[/total]'),
-        TagArgInfo(None, '--compilation', SoundTagEnum.disk_slash_disks, NUM, 'Set the compilation flag'),
-        # TagArgInfo(None, '--lyrics', SoundTagEnum.lyrics, FILE, 'Set the lyrics'),
-        TagArgInfo(None, '--artwork', SoundTagEnum.picture, PTH, 'Set the picture'),
+        TagArgInfo(None, '--title', MediaTagEnum.title, STR, 'Set the title'),
+        TagArgInfo(None, '--artist', MediaTagEnum.artist, STR, 'Set the artist'),
+        TagArgInfo(None, '--band', MediaTagEnum.albumartist, STR, 'Set the album artist'),
+        TagArgInfo(None, '--album', MediaTagEnum.albumtitle, STR, 'Set the album title'),
+        TagArgInfo(None, '--grouping', MediaTagEnum.grouping, STR, 'Set the grouping name'),
+        TagArgInfo(None, '--composer', MediaTagEnum.composer, STR, 'Set the composer information'),
+        TagArgInfo(None, '--comment', MediaTagEnum.comment, STR, 'Set a general comment'),
+        TagArgInfo(None, '--genre', MediaTagEnum.genre, STR, 'Set the genre name'),
+        TagArgInfo(None, '--date', MediaTagEnum.year, STR, 'Set the release date'),  # Yes, year only
+        TagArgInfo(None, '--track', MediaTagEnum.track_slash_tracks, STR, 'Set the track number[/total]'),
+        TagArgInfo(None, '--disk', MediaTagEnum.disk_slash_disks, STR, 'Set the disk number[/total]'),
+        TagArgInfo(None, '--compilation', MediaTagEnum.disk_slash_disks, NUM, 'Set the compilation flag'),
+        # TagArgInfo(None, '--lyrics', MediaTagEnum.lyrics, FILE, 'Set the lyrics'),
+        TagArgInfo(None, '--artwork', MediaTagEnum.picture, PTH, 'Set the picture'),
         # --artwork-size <n>    Specify maximum width or height of artwork in pixels.
         #                       If specified artwork (with --artwork) is larger than
         #                       this, artwork is automatically resized.

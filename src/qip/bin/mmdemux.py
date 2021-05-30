@@ -65,10 +65,10 @@ from qip.matroska import *
 from qip.mm import MediaFile, Chapters, FrameRate
 from qip.opusenc import opusenc
 from qip.perf import perfcontext
-from qip.snd import *
+from qip.mm import *
 from qip.threading import *
 from qip.utils import byte_decode, Ratio
-import qip.snd
+import qip.mm
 import qip.utils
 
 #map_RatioConverter = {
@@ -375,32 +375,32 @@ def main():
     pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
 
     pgroup = app.parser.add_argument_group('Tags')
-    pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--subtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--date', '--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--type', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--mediatype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Physical Media Type (%s)' % (', '.join((str(e) for e in qip.snd.MediaType)),))
-    pgroup.add_argument('--contenttype', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.snd.ContentType)),))
-    pgroup.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--track', dest='track_slash_tracks', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--tvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--season', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--episode', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--compilation', '-K', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
-    pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.snd.ArgparseSetTagAction)
+    pgroup.add_argument('--albumartist', '-R', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--albumtitle', '--album', '-A', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--artist', '-a', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--title', '--song', '-s', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--subtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--genre', '-g', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--writer', '--composer', '-w', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--date', '--year', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--type', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--mediatype', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='Physical Media Type (%s)' % (', '.join((str(e) for e in qip.mm.MediaType)),))
+    pgroup.add_argument('--contenttype', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='Content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
+    pgroup.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--track', dest='track_slash_tracks', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--picture', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--tvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--season', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--episode', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--language', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--country', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--compilation', '-K', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-artist', dest='sortartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumartist', dest='sortalbumartist', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+    pgroup.add_argument('--sort-tvshow', dest='sorttvshow', tags=in_tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
 
     pgroup = app.parser.add_argument_group('Options')
     pgroup.add_argument('--eject', default=False, action='store_true', help='eject cdrom when done')
@@ -811,7 +811,7 @@ def pick_framerate(stream_file_name, ffprobe_json, ffprobe_stream_json, mediainf
 
 def action_hb(inputfile, in_tags):
     app.log.info('HandBrake %s...', inputfile)
-    inputfile = SoundFile(inputfile)
+    inputfile = SoundFile.new_by_file_name(inputfile)
     inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
     outputfile_name = "%s.hb.mkv" % (inputfile_base,)
     if app.args.chain:
@@ -891,7 +891,7 @@ def action_hb(inputfile, in_tags):
 
 def action_mux(inputfile, in_tags):
     app.log.info('Muxing %s...', inputfile)
-    inputfile = SoundFile(inputfile)
+    inputfile = SoundFile.new_by_file_name(inputfile)
     inputfile_base, inputfile_ext = my_splitext(inputfile.file_name)
     outputdir = app.args.project or "%s" % (inputfile_base,)
     if app.args.chain:
@@ -948,17 +948,18 @@ def action_mux(inputfile, in_tags):
     mux_dict['tags'].update(in_tags)
 
     if app.args.interactive:
-        # for tag in set(SoundTagEnum) - set(SoundTagEnum.iTunesInternalTags):
+        # for tag in set(MediaTagEnum) - set(MediaTagEnum.iTunesInternalTags):
         for tag in (
-                SoundTagEnum.artist,
-                SoundTagEnum.contenttype,
-                SoundTagEnum.episode,
-                SoundTagEnum.genre,
-                SoundTagEnum.mediatype,
-                SoundTagEnum.season,
-                SoundTagEnum.title,
-                SoundTagEnum.tvshow,
-                SoundTagEnum.year,
+                MediaTagEnum.artist,
+                MediaTagEnum.contenttype,
+                MediaTagEnum.episode,
+                MediaTagEnum.genre,
+                MediaTagEnum.mediatype,
+                MediaTagEnum.season,
+                MediaTagEnum.subtitle,
+                MediaTagEnum.title,
+                MediaTagEnum.tvshow,
+                MediaTagEnum.year,
             ):
             # Force None values to actually exist
             if mux_dict['tags'][tag] is None:
@@ -1260,7 +1261,7 @@ def action_chop(inputdir, in_tags):
             stream_file_base, stream_file_ext = my_splitext(stream_file_name)
             stream_language = isolang(stream_dict.get('language', 'und'))
 
-            snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+            snd_file = SoundFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
             ffprobe_json = snd_file.extract_ffprobe_json()
 
             if (stream_codec_type == 'video'
@@ -1855,7 +1856,7 @@ def action_optimize(inputdir, in_tags):
                     )
 
             if stream_file_ext not in ok_formats:
-                snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+                snd_file = SoundFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
                 ffprobe_json = snd_file.extract_ffprobe_json()
                 app.log.debug(ffprobe_json['streams'][0])
                 channels = ffprobe_json['streams'][0]['channels']
@@ -2257,7 +2258,7 @@ def action_extract_music(inputdir, in_tags):
             if stream_codec_type == 'video':
                 pass
             elif stream_codec_type == 'audio':
-                snd_file = SoundFile(os.path.join(inputdir, stream_file_name))
+                snd_file = SoundFile.new_by_file_name(os.path.join(inputdir, stream_file_name))
                 ffprobe_json = snd_file.extract_ffprobe_json()
                 app.log.debug(ffprobe_json['streams'][0])
                 channels = ffprobe_json['streams'][0]['channels']
@@ -2269,7 +2270,7 @@ def action_extract_music(inputdir, in_tags):
                 except ValueError:
                     pass
 
-                stream_chapter_tmp_file = SoundFile(
+                stream_chapter_tmp_file = SoundFile.new_by_file_name(
                         os.path.join(inputdir, '%s-%02d%s' % (
                             stream_file_base,
                             chap.no,
@@ -2304,7 +2305,7 @@ def action_extract_music(inputdir, in_tags):
                     src_picture = m4a.tags.picture
                     picture = m4a.prep_picture(src_picture,
                                                yes=app.args.yes)
-                m4a.tags.picture = None  # Not supported by taged
+                m4a.tags.picture = None  # Not supported by taged TODO
 
                 if stream_chapter_tmp_file.file_name != m4a.file_name:
                     audio_bitrate = 640000 if channels >= 4 else 384000
