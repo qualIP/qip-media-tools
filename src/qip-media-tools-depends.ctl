@@ -47,27 +47,27 @@ Depends:
     libexpat1-dev,
     libswscale-dev,
     libudfread-dev,
-# sudo add-apt-repository ppa:team-xbmc/ppa (https://pkgs.org/search/?q=udfread)
+# NOTE: libudfread-dev: sudo add-apt-repository ppa:team-xbmc/ppa (https://pkgs.org/search/?q=udfread)
 Recommends:
     sox,
     gddrescue,
     safecopy,
-    mp4v2-utils,
     python3-bs4,
     python3-lxml,
-# NOTE: mp4v2-utils: https://www.deb-multimedia.org
-# NOTE: libdvdcss2: https://download.videolan.org/pub/debian/stable/
-# Suggests: <comma-separated list of packages>
+Suggests:
+    mp4v2-utils,
 # Provides: <comma-separated list of packages>
 # Replaces: <comma-separated list of packages>
+# NOTE: mp4v2-utils: https://www.deb-multimedia.org
+# NOTE: libdvdcss2: https://download.videolan.org/pub/debian/stable/
 # Architecture: all
 # Multi-Arch: <one of: foreign|same|allowed>
-# Copyright: <copyright file; defaults to GPL2>
+Copyright: GPL-3.0 License
 # Changelog: <changelog file; defaults to a generic changelog>
 # Readme: <README.Debian file; defaults to a generic one>
 # Extra-Files: <comma-separated list of additional files for the doc directory>
 # Links: <pair of space-separated paths; First is path symlink points at, second is filename of link>
 # Files: <pair of space-separated paths; First is file to include, second is destination>
 #  <more pairs, if there's more than one file to include. Notice the starting space>
-Description: Dependency package for qualIP's Tools
- Dependency package for qualIP's Tools
+Description: Dependency package for qualIP's Media Tools
+ Dependency package for qualIP's Media Tools
