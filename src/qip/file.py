@@ -412,8 +412,10 @@ class File(object):
         assert not self.fp
         if not self.file_name:
             raise ValueError('%r: file_name not defined' % (self,))
-        if 't' not in mode and 'b' not in mode:
+        if 't' not in mode and 'b' not in mode and encoding is None:
             mode += self.open_mode
+        if 'b' in mode:
+            encoding = None
         p = subprocess.Popen(['pv', self.file_name],
                              stdout=subprocess.PIPE,
                              text=(
@@ -428,15 +430,19 @@ class File(object):
         assert self.fp is None, f'File is already opened: {self}'
         encoding = encoding or self.open_encoding
         self.assert_file_name_defined()
-        if 't' not in mode and 'b' not in mode:
+        if 't' not in mode and 'b' not in mode and encoding is None:
             mode += self.open_mode
+        if 'b' in mode:
+            encoding = None
         return self.file_name.open(mode=mode, encoding=encoding, **kwargs)
 
     def fdopen(self, fd, mode='r', encoding=None):
         assert self.fp is None, f'File is already opened: {self}'
         encoding = encoding or self.open_encoding
-        if 't' not in mode and 'b' not in mode:
+        if 't' not in mode and 'b' not in mode and encoding is None:
             mode += self.open_mode
+        if 'b' in mode:
+            encoding = None
         return os.fdopen(fd, mode=mode, encoding=encoding)
 
     def read(self):

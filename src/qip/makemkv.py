@@ -34,6 +34,8 @@ from qip.file import TextFile
 
 class MakemkvSettingsConfigObj(ConfigObj):
 
+    encoding = 'utf-8'
+
     # groups: (list_values, single, empty_list, comment)
     _valueexp = re.compile(
         r'''^
@@ -812,7 +814,7 @@ class Makemkvcon(Executable):
             settings.filename = os.fspath(self.settings_file_name)
         settings_file = TextFile(settings.filename)
         with settings_file.rename_temporarily(replace_ok=True):
-            with settings_file.open('w') as fp:
+            with settings_file.open('wb') as fp:  # ConfigObj requires binary mode
                 return settings.write(fp)
 
     def build_cmd(self, *args, **kwargs):
