@@ -106,6 +106,7 @@ class ConfigParser(configparser.ConfigParser):
             if fp is not None:
                 raise TypeError('Both file_name and fp provided')
             file_name.parent.mkdir(parents=True, exist_ok=True)
+            from .file import TextFile
             config_file = TextFile(file_name)
             with config_file.rename_temporarily(replace_ok=True):
                 with config_file.open('w') as fp:
