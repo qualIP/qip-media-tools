@@ -490,7 +490,7 @@ def get_plex_contenttype_suffix(inputfile, *, default=None, dbtype='movie'):
 def get_dst_suffix(inputfile):
     suffix = inputfile.file_name.suffix
     if app.args.media_library_app == 'plex':
-        if isinstance(inputfile, MatroskaFile) and suffix != '.mkv':
+        if isinstance(inputfile, MatroskaFile) and suffix not in ('.mkv', '.webm'):
             suffix = '.mkv'
     return suffix
 
