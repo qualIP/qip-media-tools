@@ -3321,7 +3321,7 @@ def mux_dict_from_file(inputfile, outputdir):
                         app.log.debug('Correcting %s stream #%s start time %s to 0 (attached image)', stream.codec_type, stream.pprint_index, stream_start_time)
                         stream_start_time = qip.utils.Timestamp(0)
                     if stream_start_time:
-                        app.log.warning('%s stream #%s start time is %s', stream.codec_type.title(), stream.pprint_index, stream_start_time)
+                        app.log.warning('%s stream #%s start time is %s', str(stream.codec_type).title(), stream.pprint_index, stream_start_time)
                     if stream_start_time is None:
                         stream.pop('start_time', None)
                     else:
