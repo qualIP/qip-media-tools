@@ -4237,7 +4237,10 @@ def action_status(inputfile):
         mux_dict = MmdemuxTask(inputdir / 'mux.json')
 
     else:
-        raise ValueError(f'Not a file or directory: {inputfile}')
+        if inputfile.exists():
+            raise ValueError(f'Not a file or directory: {inputfile}')
+        else:
+            raise OSError(errno.ENOENT, f'No such file or directory: {inputfile}')
 
     mux_dict.print_streams_summary()
 
