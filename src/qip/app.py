@@ -23,7 +23,7 @@ import urllib
 from . import argparse
 from .propex import propex
 from .xdg import XdgResource
-from .utils import is_term_dark
+from .utils import is_term_dark, Ask
 
 HAVE_ARGCOMPLETE = False
 try:
@@ -159,6 +159,11 @@ class App(XdgResource):
     prompt_message = None
     prompt_mode = None
 
+    statsd = None
+    statsd_prefix = None
+    statsd_host = None
+    statsd_port = 8125
+
     def __init__(self):
         self.args = argparse.Namespace()
         pass
@@ -173,6 +178,10 @@ class App(XdgResource):
             parser_suppress_option_strings=None,
             # logging args:
             logging_level=None,
+            # statsd
+            add_statsd_args=None,
+            statsd_host=None,
+            statsd_port=None,
             ):
         if prog is None:
             prog = Path(sys.argv[0]).name
@@ -180,8 +189,15 @@ class App(XdgResource):
         self.version = version
         self.contact = contact
         self.description = description
+        if statsd_host is not None:
+            self.statsd_host = statsd_host
+        if statsd_port is not None:
+            self.statsd_port = statsd_port
+        if add_statsd_args is None and self.statsd_host is not None:
+            add_statsd_args = True
         self.init_encoding()
-        self.init_parser(parser_suppress_option_strings=parser_suppress_option_strings)
+        self.init_parser(parser_suppress_option_strings=parser_suppress_option_strings,
+                         add_statsd_args=add_statsd_args)
         self.init_logging(
                 level=logging_level,
                 )
@@ -204,6 +220,7 @@ class App(XdgResource):
 
     def init_parser(self, allow_config_file=True, fromfile_prefix_chars='@',
                     parser_suppress_option_strings=None,
+                    add_statsd_args=None,
                     **kwargs):
         parser_suppress_option_strings = tuple(parser_suppress_option_strings or ())
         description = self.description
@@ -268,6 +285,12 @@ class App(XdgResource):
             **kwargs)
         self.parser.version = self.version
 
+        if add_statsd_args:
+            pgroup = self.parser.add_argument_group('Statistics Collection')
+            pgroup.add_bool_argument('--statsd', default=Ask, choices=(True, False, Ask), help='enable statistics collection with StatsD client')
+            pgroup.add_argument('--statsd-host', metavar='HOST', default=self.statsd_host, help='StatsD server host')
+            pgroup.add_argument('--statsd-port', metavar='PORT', default=self.statsd_port, type=int, help='StatsD server port')
+
     def init_logging(self, level=None, **kwargs):
         self.log.name = self.prog
         level = level if level is not None else logging.INFO
@@ -297,6 +320,39 @@ class App(XdgResource):
             terminal_size = shutil.get_terminal_size()
             os.environ.setdefault('COLUMNS', str(terminal_size.columns))
             os.environ.setdefault('LINES', str(terminal_size.lines))
+
+    def init_statsd(self):
+        self.statsd = None  # Drop any previous connection as parameters may have changed
+        try:
+            self.log.debug('Connecting StatsD client to %s:%d', self.statsd_host, self.statsd_port)
+            if self.statsd_host is None:
+                raise ValueError('StatsD client enabled but host not set (Try --statsd-host)')
+            from statsd import StatsClient
+            self.statsd = StatsClient(
+                host=self.statsd_host,
+                port=self.statsd_port or 8125,
+                prefix=self.statsd_prefix or self.prog or None,
+            )
+        except Exception as e:
+            self.log.debug('Failed to setup StatsD client: %s', e)
+        if self.statsd:
+            import platform
+            self.statsd.incr(f'python.version.{sys.version_info.major}.{sys.version_info.minor}')
+            self.statsd.incr(f'platform.system.{platform.system() or "unknown"}')
+            self.statsd.incr(f'platform.processor.{platform.processor() or "unknown"}')
+            self.statsd.incr(f'platform.machine.{platform.machine() or "unknown"}')
+            self.statsd.incr(f'platform.release.{platform.release() or "unknown"}')
+            if platform.system() == 'Linux':
+                import subprocess
+                try:
+                    lsb_id = subprocess.run(args=['lsb_release', '--short', '--id'], capture_output=True, encoding='ascii').stdout.strip()
+                except:
+                    lsb_id = None
+                try:
+                    lsb_release = subprocess.run(args=['lsb_release', '--short', '--release'], capture_output=True, encoding='ascii').stdout.strip()
+                except:
+                    lsb_release = None
+                self.statsd.incr(f'platform.linux.distro.{lsb_id or "unknown"}.{lsb_release or "unknown"}')
 
     def set_logging_level(self, level):
         logging.getLogger().setLevel(level)
@@ -405,7 +461,33 @@ class App(XdgResource):
 
         logging_level = getattr(self.args, 'logging_level', None)
         if logging_level is not None:
-            app.set_logging_level(app.args.logging_level)
+            self.set_logging_level(self.args.logging_level)
+
+        try:
+            enable_statsd = self.args.statsd
+        except AttributeError:
+            pass
+        else:
+            if enable_statsd is Ask:
+                enable_statsd = self.buttons_dialog(
+                    f'Do you agree to share anonymous usage statistics of {self.prog} with qualIP Software?',
+                    buttons=(
+                        ('Yes', True),
+                        ('No', False),
+                        ('Later', Ask),
+                    ))
+                if enable_statsd in (True, False):
+                    assert self.config_file_parser is not None
+                    if self.config_file_parser is not None:
+                        self.config_file_parser['options']['statsd'] = str(enable_statsd)
+                        self.config_file_parser.write()
+            if enable_statsd is True:
+                self.log.debug('StatsD enabled...')
+                self.statsd_host = self.args.statsd_host
+                self.statsd_port = self.args.statsd_port
+                self.init_statsd()
+            else:
+                self.log.debug('StatsD not enabled.')
 
         return self.args
 
@@ -460,22 +542,40 @@ class App(XdgResource):
         return cache_file
 
     def main_wrapper(self, func):
+        from .perf import PerfTimer
         @functools.wraps(func)
         def wrapper():
+            t = PerfTimer()
+            stat_ret = f'unknown'
+            ret = 255
             try:
-                ret = func()
-            except Exception as e:
-                self.log.error("%s: %s", e.__class__.__name__, e)
-                if self.log.isEnabledFor(logging.DEBUG):
-                    etype, value, tb = sys.exc_info()
-                    self.log.error(''.join(traceback.format_exception(etype, value, tb)))
-                app.exit(1)
-            if ret is True or ret is None:
-                app.exit(0)
-            elif ret is False:
-                app.exit(1)
-            else:
-                app.exit(ret)
+
+                try:
+                    with t:
+                        ret = func()
+                except BaseException as e:
+                    ret = 1
+                    stat_ret = f'raise.{e.__class__.__name__}'
+                    if isinstance(e, (SystemExit,)):
+                        pass  # suppress
+                    else:
+                        self.log.error("%s: %s", e.__class__.__name__, e)
+                    if self.log.isEnabledFor(logging.DEBUG):
+                        etype, value, tb = sys.exc_info()
+                        self.log.error(''.join(traceback.format_exception(etype, value, tb)))
+                else:
+                    if ret is True or ret is None:
+                        ret = 0
+                    elif ret is False:
+                        ret = 1
+                    stat_ret = f'exit.{ret}'
+
+            finally:
+                statsd = self.statsd
+                if statsd:
+                    statsd.timing(stat=f'main.{stat_ret}', delta=t.ms)
+            if ret != 0:
+                self.exit(ret)
         return wrapper
 
     def exit(self, ret):
@@ -766,7 +866,7 @@ class App(XdgResource):
         if self.have_user_attention:
             yield
         else:
-            beep = getattr(app.args, 'beep', False) and getattr(app.args, 'interactive', False)
+            beep = getattr(self.args, 'beep', False) and getattr(self.args, 'interactive', False)
             if beep:
                 import qip.utils
                 qip.utils.beep()

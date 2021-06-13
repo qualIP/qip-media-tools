@@ -285,6 +285,7 @@ class Constants(enum.Enum):
     # True = 'True'
     Auto = 'Auto'
     NotSet = 'NotSet'
+    Ask = 'Ask'
 
     def __str__(self):
         return self.name
@@ -292,6 +293,7 @@ class Constants(enum.Enum):
     def __repr__(self):
         return self.name
 
+Ask = Constants.Ask
 Auto = Constants.Auto
 NotSet = Constants.NotSet
 
@@ -308,6 +310,9 @@ Constants._value2member_map_.update({
     Auto: Auto,
     'Auto': Auto,
     'auto': Auto,
+    Ask: Ask,
+    'Ask': Ask,
+    'ask': Ask,
     NotSet: NotSet,
     'NotSet': NotSet,
     'Notset': NotSet,

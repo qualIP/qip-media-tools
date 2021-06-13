@@ -10,6 +10,7 @@ def trace(func, **kwargs): return func
 
 from .utils import Constants as _Constants
 Auto = _Constants.Auto
+Ask = _Constants.Ask
 NotSet = _Constants.NotSet
 
 __all__ = list(_argparse.__all__) + [
@@ -466,3 +467,6 @@ class DefaultWrapper(object):
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.inner!r})'
+
+    def __str__(self):
+        return str(self.inner)
