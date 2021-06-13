@@ -570,31 +570,48 @@ class App(XdgResource):
             else:
                 return application.run()
 
-    def yes_no_dialog(self, title='', text='', yes_text='Yes', no_text="No",
-                      style=None, async_=False):
+    def yes_no_dialog(self, title='', text='',
+                      yes_text='Yes', no_text="No",
+                      **kwargs):
         """
         Display a Yes/No dialog.
         Return a boolean.
         """
+        return self.buttons_dialog(
+            title=title, text=text,
+            buttons=(
+                (yes_text, True),
+                (no_text, False),
+            ), **kwargs)
+
+    def buttons_dialog(self, title='', text='',
+                       buttons=None,  # [(text, value), ...]
+                       style=None, async_=False):
+        """
+        Display a Yes/No dialog.
+        Return a boolean.
+        """
+        from prompt_toolkit.application.current import get_app
         from prompt_toolkit.widgets import (
             Button,
             Dialog,
             Label,
         )
 
-        def yes_handler() -> None:
-            get_app().exit(result=True)
-
-        def no_handler() -> None:
-            get_app().exit(result=False)
+        wbuttons = []
+        for button_text, button_value in buttons:
+            if not button_text:
+                continue
+            def button_handler(button_value) -> None:
+                get_app().exit(result=button_value)
+            wbutton = Button(text=button_text,
+                             handler=functools.partial(button_handler, button_value=button_value))
+            wbuttons.append(wbutton)
 
         dialog = Dialog(
             title=title,
             body=Label(text=text, dont_extend_height=True),
-            buttons=[
-                Button(text=yes_text, handler=yes_handler),
-                Button(text=no_text, handler=no_handler),
-            ],
+            buttons=wbuttons,
             with_background=True,
         )
 
