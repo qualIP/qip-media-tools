@@ -1,0 +1,80 @@
+# Maintainer: Jean-Sebastien Trottier <jst@qualipsoft.com>
+# NOTES:
+# - PKGBUILD specs:
+#   - https://wiki.archlinux.org/title/PKGBUILD
+# - Search packages:
+#   - https://archlinux.org/packages/
+#   - https://aur.archlinux.org/packages/
+pkgname=qip-media-tools-depends
+pkgver=1.0
+pkgrel=1
+epoch=
+pkgdesc="Dependency package for qualIP's Media Tools"
+arch=('any')
+url="https://github.com/qualIP/qip-media-tools"
+license=('GPL3')
+groups=()
+depends=(
+    python
+    python-setuptools
+    python-pip
+    python-wheel
+    python-discid
+    cython
+    swig
+    graphicsmagick
+    cdparanoia
+    ffmpeg
+    mediainfo
+    dvd+rw-tools
+    id3lib
+    id3v2
+    cuetools
+    mkvtoolnix-cli
+    opus-tools
+    mjpegtools
+    lockfile-progs
+    icoutils
+    libdvdcss
+    ffmpeg
+    libdvdread
+    expat
+    libudfread-git  # AUR
+)
+makedepends=()
+checkdepends=()
+optdepends=(
+    ccextractor
+    sox
+    ddrescue
+    safecopy
+    python-beautifulsoup4
+    python-lxml
+)
+provides=()
+conflicts=()
+replaces=()
+backup=()
+options=()
+install=
+changelog=
+source=()
+noextract=()
+md5sums=()
+validpgpkeys=()
+
+prepare() {
+    :  # Nothing
+}
+
+build() {
+    :  # Nothing
+}
+
+check() {
+    :  # Nothing
+}
+
+package() {
+    :  # Nothing
+}
