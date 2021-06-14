@@ -16,6 +16,15 @@ PREFIX=${PREFIX:-/usr/local}
 PYTHON=python3
 PIP=pip3
 
+export TMPDIR=${TMPDIR:-/tmp}
+MY_TMPDIR="$TMPDIR/qip-media-tools-setup.$$.tmp"
+cleanup() {
+    [[ -n "$MY_TMPDIR" ]] && rm -Rf "$MY_TMPDIR/"
+}
+trap "cleanup ; exit 1" 1 2 9 14
+trap "cleanup" 0
+mkdir -p "$MY_TMPDIR"
+
 TEMP=`POSIXLY_CORRECT=1 getopt --long dummy,help,yes,system,user,develop,prefix:,install,uninstall,reinstall,clean,no-clean --options hy --name "$0" -- --system "$@"`
 eval set -- "$TEMP"
 
@@ -79,7 +88,15 @@ fi
 
 PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
 maybe_sudo=$([[ "$USER" = "root" ]] || echo sudo)
-lsb_codename=$(lsb_release -cs 2>/dev/null)
+
+lsb_codename=
+if [[ -z "$lsb_codename" ]] && type -P lsb_release > /dev/null ; then
+    lsb_codename=$(lsb_release -cs 2>/dev/null)
+fi
+if [[ -z "$lsb_codename" ]] && [[ -f /etc/os-release ]] ; then
+    lsb_codename=$(sed -n -e 's/^BUILD_ID=//p' /etc/os-release)
+fi
+lsb_codename=${lsb_codename:-unknown}
 
 print_h2() {
     echo
@@ -103,20 +120,127 @@ test_prog_installed() {
     fi
 }
 
-test_package_installed() {
-    local package=$1 ; shift
-    local v
+if [[ -e /etc/debian_version ]] ; then
+    PMS=apt-get
+    DISTRO=debian
 
-    echo -n "$package package installed? "
-    v=$(dpkg -s "$package" 2> /dev/null | sed -n -e 's/^Version: //p ; T ; q' || true)
-    if [[ -n "$v" ]] ; then
-        echo "Yes: $v"
-    else
-        echo "No"
-        echo "Error: $package package not found!" >&2
-        return 1
-    fi
-}
+    test_package_installed() {
+        local package=$1 ; shift
+        local v
+
+        echo -n "$package package installed? "
+        v=$(dpkg -s "$package" 2> /dev/null | sed -n -e 's/^Version: //p ; T ; q' || true)
+        if [[ -n "$v" ]] ; then
+            echo "Yes: $v"
+        else
+            echo "No"
+            echo "Error: $package package not found!" >&2
+            return 1
+        fi
+    }
+
+    install_package() {
+        local package=$1 ; shift
+        local ask=true
+        local v=
+        while [[ "$#" != 0 ]] ; do
+            case "$1" in
+                -y) ask=false ;;
+                *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+            esac
+        done
+
+        set -- apt-get install $($OPT_YES && echo -y) $package
+        [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
+
+        if ! $ask || ask_yes_no "Install $package package ($*)?" ; then
+            (set -x && "$@") || exit 1
+        else
+            return 1
+        fi
+    }
+
+elif [[ -e /etc/arch-release ]] ; then
+    PMS=pacman
+    DISTRO=arch
+
+    test_package_installed() {
+        local package=$1 ; shift
+        local v
+
+        echo -n "$package package installed? "
+        if v=$(pacman -Q "$package" 2> /dev/null) && [[ -n "$v" ]] ; then
+            echo "Yes: $v"
+        else
+            echo "No"
+            echo "Error: $package package not found!" >&2
+            return 1
+        fi
+    }
+
+    install_package() {
+        local package=$1 ; shift
+        local ask=true
+        local v=
+        while [[ "$#" != 0 ]] ; do
+            case "$1" in
+                -y) ask=false ;;
+                *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+            esac
+        done
+
+        set -- pacman $($OPT_YES && echo --noconfirm) -S $package
+        [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
+
+        if ! $ask || ask_yes_no "Install $package package ($*)?" ; then
+            (set -x && "$@") || exit 1
+        else
+            return 1
+        fi
+    }
+
+    install_aur_package() {
+        local package=$1 ; shift
+        local package_file=
+        local ask=true
+        local v=
+        while [[ "$#" != 0 ]] ; do
+            case "$1" in
+                -y) ask=false ;;
+                *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+            esac
+        done
+
+        if ! $ask || ask_yes_no "Build & install $package package from AUR?" ; then
+
+            (set -x && git clone "https://aur.archlinux.org/$package.git" "$MY_TMPDIR/$package") || exit 1
+            (set -x && cd "$MY_TMPDIR/$package" ; makepkg) || exit 1
+            package_file=$(find "%MY_TMPDIR/$package" -name "$package-*.pkg.tar.zst")
+            if [[ -z "$package_file" ]] ; then
+                echo "Failed to build package $package" >&2
+                return 1
+            fi
+
+            set -- pacman $($OPT_YES && echo --noconfirm) -U "$package_file"
+            [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
+
+            (set -x && "$@") || exit 1
+        else
+            return 1
+        fi
+    }
+
+else
+    echo "ERROR: Unknown package management system." >&2
+    echo "Sorry, your system is not supported at this time." >&2
+    exit 1
+fi
+
+# osInfo[/etc/redhat-release]=yum
+# osInfo[/etc/arch-release]=pacman
+# osInfo[/etc/gentoo-release]=emerge
+# osInfo[/etc/SuSE-release]=zypp
+# osInfo[/etc/debian_version]=apt-get
 
 test_docker_image_installed() {
     local image=$1 ; shift
@@ -164,8 +288,8 @@ need_docker() {
             echo "See https://www.docker.com"
             echo
 
-            case "$lsb_codename" in
-                bullseye|buster)
+            case "$DISTRO-$lsb_codename" in
+                *-bullseye|*-buster)
                     echo "Following Docker install instructions for Debian $lsb_codename:"
                     echo "    https://docs.docker.com/engine/install/debian/"
                     echo
@@ -177,7 +301,7 @@ need_docker() {
                     $maybe_sudo apt-get update
                     ;;
 
-                hirsute|groovy|focal|bionic|xental)
+                *-hirsute|*-groovy|*-focal|*-bionic|*-xental)
                     echo "Following Docker install instructions for Ubuntu $lsb_codename:"
                     echo "    https://docs.docker.com/engine/install/ubuntu/"
                     echo
@@ -189,18 +313,34 @@ need_docker() {
                     $maybe_sudo apt-get update
                     ;;
 
+                arch-*)
+                    # Rolling release; Expect latest.
+                    echo "Following Docker install instructions for Arch $lsb_codename:"
+                    echo "    https://wiki.archlinux.org/title/docker"
+                    echo
+                    $maybe_sudo pacman $($OPT_YES && echo --noconfirm) -S docker
+                    ;;
+
                 *)
-                    echo "No special instructions known for release codename '$lsb_codename'"
+                    echo "No special instructions known for $DISTRO release codename '$lsb_codename'"
                     echo
                     ;;
             esac
 
-            install_package docker-ce
+            case "$DISTRO" in
+                debian|ubuntu)
+                    package_name=docker-ce
+                    ;;
+                *)
+                    package_name=docker
+                    ;;
+            esac
+            install_package $package_name
 
             if test_prog_installed docker ; then
                 _has_docker=true
             else
-                echo "docker installed by docker-ce is not found!" >&2
+                echo "docker (installed by $package_name package) is not found!" >&2
                 exit 1
             fi
         fi
@@ -305,27 +445,6 @@ ask_yes_no() {
     $v
 }
 
-install_package() {
-    local package=$1 ; shift
-    local ask=true
-    local v=
-    while [[ "$#" != 0 ]] ; do
-        case "$1" in
-            -y) ask=false ;;
-            *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
-        esac
-    done
-
-    set -- apt-get install $($OPT_YES && echo -y) $package
-    [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
-
-    if ! $ask || ask_yes_no "Install $package package ($*)?" ; then
-        (set -x && "$@") || exit 1
-    else
-        return 1
-    fi
-}
-
 
 #print_h2 "Prologue"
 echo
@@ -363,13 +482,21 @@ echo
 if $OPT_INSTALL ; then
     if $OPT_REINSTALL || ! test_package_installed qip-media-tools-depends ; then
         if ask_yes_no "Install qip-media-tools-depends package?" ; then
+
+            if [[ "$PMS" = "pacman" ]] && [[ "$DISTRO" = "arch" ]] ; then
+                if $OPT_REINSTALL || ! test_package_installed libudfread-git ; then
+                    install_aur_package libudfread-git
+                fi
+            fi
+
             (set -x && $MAKE -C src install-qip-media-tools-depends)
+
         fi
         if ! test_package_installed qip-media-tools-depends ; then
             echo
             echo "The qip-media-tools-depends package failed to install."
-            case "$lsb_codename" in
-                buster)
+            case "$DISTRO-$lsb_codename" in
+                *-buster)
                     echo
                     echo "Debian buster may require extra preparations."
                     echo
@@ -387,7 +514,7 @@ if $OPT_INSTALL ; then
                     exit 1
                     ;;
 
-                focal)
+                *-focal)
                     echo
                     echo "Ubuntu $lsb_codename may require extra preparations."
                     echo
@@ -403,8 +530,8 @@ if $OPT_INSTALL ; then
 
                 *)
                     echo
-                    echo "Sorry, there are no special instructions at this time for release"
-                    echo "codename '$lsb_codename'"
+                    echo "Sorry, there are no special instructions at this time for $DISTRO"
+                    echo "release codename '$lsb_codename'"
                     echo
                     exit 1
                     ;;
