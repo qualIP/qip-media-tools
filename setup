@@ -351,6 +351,15 @@ need_docker() {
                 echo "Try:"
                 echo
                 echo "    docker info"
+                if type -P systemctl > /dev/null ; then
+                    echo
+                    ( (set -x && systemctl status docker) | cat ) || true
+                    echo
+                    echo "If the docker service is not active, you may need to enable and start it:"
+                    echo
+                    echo "    sudo systemctl enable docker"
+                    echo "    sudo systemctl start docker"
+                fi
                 if groups | grep -qw docker ; then
                     : #echo ; echo "You are part of the docker group."
                 else
@@ -358,7 +367,7 @@ need_docker() {
                     echo "You are not part of the docker group. You probably need to run the"
                     echo "following command to be added to the group:"
                     echo
-                    echo "    sudo adduser $USER docker"
+                    echo "    sudo gpasswd -a $USER docker"
                     echo
                     echo "Once done, please start a new login session (or reboot) for the change to"
                     echo "be effective."
