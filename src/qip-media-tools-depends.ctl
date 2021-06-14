@@ -18,23 +18,19 @@ Depends:
     python3-libdiscid,
     cython3,
     swig,
-    progress,
+# XXXJST TODO remove dependency on graphicsmagick
     graphicsmagick,
     cdparanoia,
     ffmpeg,
     mediainfo,
-    dvd+rw-mediainfo | dvd+rw-tools,
+    dvd+rw-tools | dvd+rw-mediainfo,
     libid3-tools,
     id3v2,
     cuetools,
     mkvtoolnix,
     opus-tools,
     mjpegtools,
-    tesseract-ocr-eng,
-    tesseract-ocr-fra,
-    libtesseract-dev,
     lockfile-progs,
-    ccextractor,
     icoutils,
     libdvdcss2,
     libavcodec-dev,
@@ -42,18 +38,20 @@ Depends:
     libavfilter-dev,
     libavformat-dev,
     libavutil-dev,
-    libdvdread-dev,
+    libswscale-dev,
     libdvdread-dev,
     libexpat1-dev,
-    libswscale-dev,
     libudfread-dev,
 # NOTE: libudfread-dev: sudo add-apt-repository ppa:team-xbmc/ppa (https://pkgs.org/search/?q=udfread)
+# NOTE: Non-docker SubtitleEdit Depends: tesseract-ocr, libtesseract-dev
 Recommends:
+    ccextractor,
     sox,
     gddrescue,
     safecopy,
     python3-bs4,
     python3-lxml,
+# NOTE: makemkv now bundles ccextractor
 Suggests:
     mp4v2-utils,
 # Provides: <comma-separated list of packages>
