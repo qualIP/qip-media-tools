@@ -17,6 +17,25 @@ fi
 prog="$0"
 cd "$(dirname "$prog")"
 
+if type -P wget > /dev/null ; then
+    function dl() {
+	wget -c "$1"
+    }
+    function dl_pipe() {
+	wget -O - -c "$1"
+    }
+elif type -P curl > /dev/null ; then
+    function dl() {
+	curl -L -o "$(basename "$1")" "$1"
+    }
+    function dl_pipe() {
+	curl -L "$1"
+    }
+else
+    echo "Neither wget or curl is installed. Please install one." >&2
+    exit 1
+fi
+
 if [[ -z "$version" ]] ; then
     echo -n "MakeMKV version [latest]: "
     read version
@@ -24,7 +43,7 @@ fi
 
 if [[ -z "$version" ]] || [[ "$version" = "latest" ]] ; then
     echo "Looking for latest MakeMKV version..."
-    version=$( (wget -O - "$release_url" 2> /dev/null || true) | sed -n -e 's/.*MakeMKV \([0-9.]\+\) for Linux is available.*/\1/p ; T ; q')
+    version=$( (dl_pipe "$release_url" 2> /dev/null || true) | sed -n -e 's/.*MakeMKV \([0-9.]\+\) for Linux is available.*/\1/p ; T ; q')
     if [[ -z "$version" ]] ; then
         echo "Latest version not found in $release_url" >&2
         exit 1
@@ -34,8 +53,8 @@ fi
 
 (set -x && $maybe_sudo apt-get install qtbase5-dev libssl-dev zlib1g-dev libexpat1-dev libavcodec-dev libavutil-dev)
 
-wget -c http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
-wget -c http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
+dl http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
+dl http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
 
 tar xzf makemkv-oss-${version}.tar.gz
 tar xzf makemkv-bin-${version}.tar.gz
