@@ -3,7 +3,7 @@
  */
 
 FROM ubuntu:20.04
-LABEL maintainer="j.sebastien.trottier@gmail.com"
+LABEL maintainer="jst@qualipsoft.com"
 
 ARG WINE_TAG
 ARG WINE_VER

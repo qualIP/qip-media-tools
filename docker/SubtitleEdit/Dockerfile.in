@@ -1,7 +1,7 @@
 #include <Dockerfile.macros.in>
 
 FROM mono:6.8
-LABEL maintainer="j.sebastien.trottier@gmail.com"
+LABEL maintainer="jst@qualipsoft.com"
 
 
 /* contrib is required by ttf-mscorefonts-installer */

@@ -6,7 +6,7 @@ ARG WINE_TAG
 ARG WINE_VER
 
 FROM qualip/wine64-build:${WINE_VER}
-LABEL maintainer="j.sebastien.trottier@gmail.com"
+LABEL maintainer="jst@qualipsoft.com"
 
 ARG WINE_TAG
 ARG WINE_VER

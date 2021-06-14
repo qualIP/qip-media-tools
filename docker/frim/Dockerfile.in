@@ -4,7 +4,7 @@ ARG WINE_VER=3.0.3
 
 FROM qualip/wine64:${WINE_VER}
 ARG WINEPREFIX="/home/developer/.wine"
-LABEL maintainer="j.sebastien.trottier@gmail.com"
+LABEL maintainer="jst@qualipsoft.com"
 
 ARG FRIM_VER
 
