@@ -113,6 +113,7 @@ if [[ -z "$lsb_codename" ]] && [[ -f /etc/os-release ]] ; then
     lsb_codename=$(sed -n -e 's/^BUILD_ID=//p' /etc/os-release)
 fi
 lsb_codename=${lsb_codename:-unknown}
+UNAME_S=$(uname -s || true)
 
 print_h2() {
     echo
@@ -246,6 +247,72 @@ elif [[ -e /etc/arch-release ]] ; then
         fi
     }
 
+elif [[ "$UNAME_S" = 'Darwin' ]] ; then
+    PMS=brew
+    DISTRO=darwin
+
+    # qip-media-tools is not signed by Apple, you might need to adjust gatekeeper options in order to install the program:
+    #     https://support.apple.com/en-us/HT202491
+
+    test_package_installed_pkgutil() {
+        local package=$1 ; shift
+        local v
+
+        echo -n "$package package installed? "
+        if v=$(pkgutil --pkgs="$package" 2> /dev/null) && [[ -n "$v" ]] ; then
+            echo "Yes: $v"
+        else
+            echo "No"
+            echo "Error: $package package not found!" >&2
+            return 1
+        fi
+    }
+
+    test_package_installed_brew() {
+        local package=$1 ; shift
+        local v
+
+        echo -n "$package package installed? "
+        if v=$(brew list --versions "$package" 2> /dev/null) && [[ -n "$v" ]] ; then
+            echo "Yes: $v"
+        else
+            echo "No"
+            echo "Error: $package package not found!" >&2
+            return 1
+        fi
+    }
+
+    test_package_installed() {
+        test_package_installed_brew "$@"
+    }
+
+    install_package_brew() {
+        local package=$1 ; shift
+        local ask=true
+        local v=
+        while [[ "$#" != 0 ]] ; do
+            case "$1" in
+                -y) ask=false ;;
+                *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+            esac
+        done
+
+        set -- brew install $package
+        if ! $OPT_USER ; then
+            [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
+        fi
+
+        if ! $ask || ask_yes_no "Install $package package ($*)?" ; then
+            (set -x && "$@") || exit 1
+        else
+            return 1
+        fi
+    }
+
+    install_package() {
+        install_package_brew "$@"
+    }
+
 else
     echo "ERROR: Unknown package management system." >&2
     echo "Sorry, your system is not supported at this time." >&2
@@ -335,6 +402,15 @@ need_docker() {
                     echo "    https://wiki.archlinux.org/title/docker"
                     echo
                     $maybe_sudo pacman $($OPT_YES && echo --noconfirm) -S docker
+                    ;;
+
+                darwin-*)
+                    echo "Please follow the Docker Desktop installation instructions for Mac OS X:"
+                    echo "    https://docs.docker.com/docker-for-mac/install/"
+                    echo
+                    echo "Don't forget to run the application once to complete the installation."
+                    echo "Please fix the issue and run $0 again."
+                    exit 1
                     ;;
 
                 *)
