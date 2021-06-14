@@ -25,7 +25,7 @@ uninstall-user:
 
 .PHONY: install-system
 install-system: swig-targets
-	$(maybe_sudo) pip3 install . --system
+	$(maybe_sudo) pip3 install .
 
 .PHONY: uninstall-system
 uninstall-system:

@@ -569,7 +569,7 @@ if $OPT_INSTALL ; then
             elif $OPT_USER ; then
                 (set -x ; cd "$src_pyav_dir" ; $PIP install . --user)
             else
-                (set -x ; cd "$src_pyav_dir" ; $PREFIX_SUDO $PIP install . --system)
+                (set -x ; cd "$src_pyav_dir" ; $PREFIX_SUDO $PIP install .)
             fi
             test_python_module_installed av
         fi
