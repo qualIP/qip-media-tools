@@ -425,8 +425,13 @@ def taged_mf_id3(file_name, mf, tags):
         if id3_tag == 'TPE2':  # albumartist
             if mf.tags.pop('TXXX:QuodLibet::albumartist', None) is not None:
                 app.log.verbose(' Removed %s (%s)', tag, 'TXXX:QuodLibet::albumartist')
+        # Remove any conflicting alternate naming/language tags
+        for k in list(mf.tags.keys()):
+            if k.startswith(f'{id3_tag}:'):
+                if mf.tags.pop(k, None) is not None:
+                    app.log.verbose(' Removed %s (%s)', tag, k)
         if value is None:
-            if mf.tags.pop(id3_tag, None) is not None:
+            if mf.tags.pop(k, None) is not None:
                 app.log.verbose(' Removed %s (%s)', tag, id3_tag)
         else:
             mf.tags[id3_tag] = getattr(mutagen.id3, id3_tag)(encoding=mutagen.id3.Encoding.UTF8, text=str(value))

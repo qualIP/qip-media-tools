@@ -134,10 +134,10 @@ def _tBool(value):
 def _tCommentTag(value):
     if value is None:
         return None
-    elif type(value) is str:
-        return (value,)
-    else:
-        return tuple(value)
+    if type(value) is str:
+        value = (value,)
+    value = tuple(filter(None, value))
+    return value or None
 
 def _tIntOrList(value):
     if type(value) is int:
@@ -766,6 +766,10 @@ class MediaFile(File):
                 id3_tag = id3_tag[0:-5]
             elif id3_tag.endswith(':eng'):
                 id3_tag = id3_tag[0:-4]
+            elif id3_tag.endswith('::XXX'):  # easytag mess?
+                id3_tag = id3_tag[0:-5]
+            elif id3_tag.endswith('::\x00\x00\x00'):  # easytag mess?
+                id3_tag = id3_tag[0:-5]
             if id3_tag.startswith('APIC:'):
                 id3_tag = 'APIC'
             if id3_tag in (
