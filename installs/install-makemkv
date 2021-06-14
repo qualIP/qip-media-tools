@@ -51,7 +51,11 @@ if [[ -z "$version" ]] || [[ "$version" = "latest" ]] ; then
     echo "Using MakeMKV version $version"
 fi
 
-(set -x && $maybe_sudo apt-get install qtbase5-dev libssl-dev zlib1g-dev libexpat1-dev libavcodec-dev libavutil-dev)
+if [[ -e /etc/debian_version ]] ; then
+    (set -x && $maybe_sudo apt-get install qtbase5-dev libssl-dev zlib1g-dev libexpat1-dev libavcodec-dev libavutil-dev)
+elif [[ -e /etc/arch-release ]] ; then
+    (set -x && $maybe_sudo pacman --needed -S base-devel qt5-base openssl zlib expat ffmpeg)
+fi
 
 dl http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
 dl http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
