@@ -434,7 +434,35 @@ def taged_mf_id3(file_name, mf, tags):
             if mf.tags.pop(k, None) is not None:
                 app.log.verbose(' Removed %s (%s)', tag, id3_tag)
         else:
-            mf.tags[id3_tag] = getattr(mutagen.id3, id3_tag)(encoding=mutagen.id3.Encoding.UTF8, text=str(value))
+            if id3_tag == 'APIC':  # picture
+                assert tag == 'picture'
+                from qip.file import cache_url
+                value = cache_url(value)
+                if getattr(app.args, 'prep_picture', False):
+                    from qip.mp3 import Mp3File
+                    value = Mp3File.prep_picture(value)
+                img_file = ImageFile(value)
+                with img_file.open('rb') as fp:
+                    id3_value = getattr(mutagen.id3, id3_tag)(
+                        encoding=mutagen.id3.Encoding.UTF8,
+                        mime=img_file.mime_type,
+                        type=mutagen.id3.PictureType.COVER_FRONT,
+                        desc='',
+                        data=fp.read())
+            else:
+                id3_value = getattr(mutagen.id3, id3_tag)(encoding=mutagen.id3.Encoding.UTF8, text=str(value))
+            try:
+                mf.tags[id3_tag] = id3_value
+            except:
+                if id3_tag in ('APIC',):
+                    app.log.debug('ERROR! mf.tags[%r] = ...', id3_tag)
+                else:
+                    app.log.debug('ERROR! mf.tags[%r] = %r', id3_tag, id3_value)
+                raise
+            if id3_tag in ('APIC',):
+                app.log.verbose(' Set %s (%s)', tag, id3_tag)
+            else:
+                app.log.verbose(' Set %s (%s): %r', tag, id3_tag, id3_value)
             app.log.verbose(' Set %s (%s): %r', tag, id3_tag, value)
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('New tags: %r', list(mf.tags.keys()))
