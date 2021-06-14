@@ -563,6 +563,7 @@ def taged_mf_MP4Tags(file_name, mf, tags):
                 from qip.file import cache_url
                 value = cache_url(value)
                 if getattr(app.args, 'prep_picture', False):
+                    from qip.mp4 import Mpeg4ContainerFile
                     value = Mpeg4ContainerFile.prep_picture(value)
                 img_file = ImageFile(value)
                 img_type = img_file.image_type
@@ -708,15 +709,17 @@ def taged(file_name, tags):
 def tageditor(file_name):
     app.log.info('Editing %s tags...', file_name)
     mm_file = MediaFile.new_by_file_name(file_name)
-    import qip.matroska
-    if isinstance(mm_file, qip.matroska.MatroskaFile):
+    from qip.matroska import MatroskaFile
+    if isinstance(mm_file, MatroskaFile):
         tags_xml = mm_file.get_tags_xml()
         modified, tags_xml = edvar(
             tags_xml,
-            preserve_whitespace_tags=qip.matroska.MatroskaFile.XML_VALUE_ELEMENTS)
+            preserve_whitespace_tags=MatroskaFile.XML_VALUE_ELEMENTS)
         if modified:
             mm_file.set_tags_xml(tags_xml)
-    elif isinstance(mm_file, qip.mp4.Mpeg4ContainerFile):
+        return True
+    from qip.mp4 import Mpeg4ContainerFile
+    if isinstance(mm_file, Mpeg4ContainerFile):
         tags = mm_file.load_tags()
         try:
             del tags.picture
@@ -725,9 +728,8 @@ def tageditor(file_name):
         modified, tags = edvar(tags)
         if modified:
             mm_file.write_tags(tags=tags)
-    else:
-        raise NotImplementedError(mm_file)
-    return True
+        return True
+    raise NotImplementedError(mm_file)
 
 def taglist(file_name, format):
     if format == 'human':
