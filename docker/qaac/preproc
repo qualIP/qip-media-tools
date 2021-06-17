@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -ex
+
+# gcc and clang don't preprocess \\ at end of line the same way.
+# gcc will leave a single \ and a newline.
+# clang (Apple's, at least) will leave a slash, a space and no newline.
+
+# To remedy, join lines manually first
+
+sed -e '
+    :start
+    / \\\\$/ {
+	N
+	s/ \\\\\n/ /
+	b start
+    }
+' \
+    | gcc -E -iquote -traditional -undef "$@" - \
+    | sed -e '/^#/ d' -e 's/ \\ / /g'

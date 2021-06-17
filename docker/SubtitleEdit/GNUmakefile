@@ -38,7 +38,7 @@ PREFIX_SUDO := $(shell [ -w "$(PREFIX)" ] || echo sudo)
 FILES_PREPROC =
 % : %.in
 	rm -f "$@"
-	gcc -E -iquote -traditional -undef $(DEFINES) -I "../include" - < "$<" | sed -e '/^#/ d' > "$@"
+	./preproc $(DEFINES) -I "../include" < "$<" > "$@"
 	chmod a-w "$@"
 
 FILE_SUBTITLEEDIT_SETUP_ZIP = SubtitleEdit-$(SUBTITLEEDIT_VER)-Setup.zip
