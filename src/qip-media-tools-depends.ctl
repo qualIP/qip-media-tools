@@ -3,7 +3,7 @@
 # Source: <source package name; defaults to package name>
 Section: misc
 Priority: optional
-# Homepage: <enter URL here; no default>
+Homepage: https://github.com/qualIP/qip-media-tools
 Standards-Version: 3.9.2
 
 Package: qip-media-tools-depends
