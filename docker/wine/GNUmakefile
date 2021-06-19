@@ -14,8 +14,9 @@ latest: all
 	$(MAKE) tag-latest
 
 all:
-all: build
-all: install-deps
+	# build must happen before install-deps!
+	$(MAKE) build
+	$(MAKE) install-deps
 
 .DELETE_ON_ERROR:
 
