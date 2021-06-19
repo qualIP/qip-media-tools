@@ -112,9 +112,12 @@ XDG_DATA_DIRS0 = $(PREFIX)/share
 
 .PHONY: install
 install: install-deps
-	$(PREFIX_SUDO) install -m 755 -D -T SubtitleEdit         "$(PREFIX)/bin/SubtitleEdit"
-	$(PREFIX_SUDO) install -m 644 -D -T SubtitleEdit.desktop "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
-	$(PREFIX_SUDO) install -m 644 -D -T SubtitleEdit.png     "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
+	d='$(PREFIX)/bin' ; test -d "$$d" || $(PREFIX_SUDO) mkdir -p "$$d"
+	$(PREFIX_SUDO) install -m 755 SubtitleEdit         "$(PREFIX)/bin/SubtitleEdit"
+	d='$(XDG_DATA_DIRS0)/applications' ; test -d "$$d" || $(PREFIX_SUDO) mkdir -p "$$d"
+	$(PREFIX_SUDO) install -m 644 SubtitleEdit.desktop "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
+	d='$(XDG_DATA_DIRS0)/icons' ; test -d "$$d" || $(PREFIX_SUDO) mkdir -p "$$d"
+	$(PREFIX_SUDO) install -m 644 SubtitleEdit.png     "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
 	$(PREFIX_SUDO) update-desktop-database "$(XDG_DATA_DIRS0)/applications"
 
 .PHONY: uninstall

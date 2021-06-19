@@ -118,7 +118,8 @@ XDG_DATA_DIRS0 = $(PREFIX)/share
 
 .PHONY: install
 install: install-deps
-	$(PREFIX_SUDO) install -m 755 -D -T qaac         "$(PREFIX)/bin/qaac"
+	d='$(PREFIX)/bin' ; test -d "$$d" || $(PREFIX_SUDO) mkdir -p "$$d"
+	$(PREFIX_SUDO) install -m 755 qaac         "$(PREFIX)/bin/qaac"
 
 .PHONY: uninstall
 uninstall:

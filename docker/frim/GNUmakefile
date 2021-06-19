@@ -83,9 +83,10 @@ XDG_DATA_DIRS0 = $(PREFIX)/share
 
 .PHONY: install
 install: install-deps
-	$(PREFIX_SUDO) install -m 755 -D -T FRIMDecode         "$(PREFIX)/bin/FRIMDecode"
-	$(PREFIX_SUDO) install -m 755 -D -T FRIMEncode         "$(PREFIX)/bin/FRIMEncode"
-	$(PREFIX_SUDO) install -m 755 -D -T FRIMTranscode      "$(PREFIX)/bin/FRIMTranscode"
+	d='$(PREFIX)/bin' ; test -d "$$d" || $(PREFIX_SUDO) mkdir -p "$$d"
+	$(PREFIX_SUDO) install -m 755 FRIMDecode         "$(PREFIX)/bin/FRIMDecode"
+	$(PREFIX_SUDO) install -m 755 FRIMEncode         "$(PREFIX)/bin/FRIMEncode"
+	$(PREFIX_SUDO) install -m 755 FRIMTranscode      "$(PREFIX)/bin/FRIMTranscode"
 
 .PHONY: uninstall
 uninstall:
