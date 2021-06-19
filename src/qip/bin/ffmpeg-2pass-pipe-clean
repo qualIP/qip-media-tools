@@ -11,6 +11,18 @@ prog_tmp_dir_pat="$prog.*.tmp"
 
 prog_tmp_dirs="$( (set -x ; find "${TMPDIR:-/tmp}" type d -name "$prog_tmp_dir_pat" 2>/dev/null) || true)"
 
+do_lockfile=false
+do_shlock=false
+if type -P lockfile-create > /dev/null ; then
+    do_lockfile=true
+elif type -P shlock > /dev/null ; then
+    do_shlock=true
+fi
+if ! $do_lockfile ; then
+    echo "Cannot use $0: File locking not supported." >&2
+    exit 1
+fi
+
 while read prog_tmp_dir ; do
     [[ -n "$prog_tmp_dir" ]] || continue
     echo

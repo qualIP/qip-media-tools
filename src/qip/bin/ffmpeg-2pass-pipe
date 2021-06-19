@@ -29,9 +29,19 @@ extra_args=("$@")
 prog_tmp_dir="${TMPDIR:-/tmp}/$prog.$$.tmp"
 tmp_running_file="$prog_tmp_dir/running"
 
+do_lockfile=false
+do_shlock=false
+if type -P lockfile-create > /dev/null ; then
+    do_lockfile=true
+elif type -P shlock > /dev/null ; then
+    do_shlock=true
+fi
+
 cleanup() {
     set +u
-    lockfile-remove "$tmp_running_file" || true
+    if $do_lockfile ; then
+        lockfile-remove "$tmp_running_file" || true
+    fi
     rm -Rf "$prog_tmp_dir"
     return 0
 }
@@ -44,9 +54,17 @@ tmp_pass1output_file="$prog_tmp_dir/pass1output"
 tmp_pass1output_file="pipe:"
 passlogfile_file="$prog_tmp_dir/passlogfile"
 
-lockfile-create --verbose --use-pid "$tmp_running_file" < /dev/null
-lockfile-touch "$tmp_running_file" &
-BADGER_PID="$!"
+if $do_lockfile ; then
+    lockfile-create --verbose --use-pid "$tmp_running_file" < /dev/null
+    lockfile-touch "$tmp_running_file" &
+    BADGER_PID="$!"
+elif $do_shlock ; then
+    BADGER_PID=
+    if ! shlock -f "$tmp_running_file" -p $$ ; then
+        echo "Failed to create $tmp_running_file" >&2
+        exit 1
+    fi
+fi
 
 log "PASS 1"
 set -- ffmpeg $init_args -i "$input_file" \
@@ -67,4 +85,4 @@ log "PASS 2"
     "${extra_args[@]}" \
     -- "$output_file" < /dev/null)
 
-kill $BADGER_PID
+[[ -n "$BADGER_PID" ]] && kill $BADGER_PID
