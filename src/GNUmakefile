@@ -71,11 +71,27 @@ arch-install-qip-media-tools-depends: $(FILE_DEPS_PACKAGE_ARCH)
 arch-uninstall-qip-media-tools-depends:
 	$(maybe_sudo) apt-get purge qip-media-tools-depends || true
 
+
+.PHONY: brew-build-qip-media-tools-depends
+brew-build-qip-media-tools-depends:
+	# Nothing
+
+.PHONY: brew-install-qip-media-tools-depends
+brew-install-qip-media-tools-depends: qip-media-tools-depends.rb
+	brew install --formulae ./$<
+
+.PHONY: brew-uninstall-qip-media-tools-depends
+brew-uninstall-qip-media-tools-depends:
+	brew uninstall qip-media-tools-depends
+
+
 .PHONY: build-qip-media-tools-depends
 .PHONY: install-qip-media-tools-depends
 .PHONY: uninstall-qip-media-tools-depends
 
 ifneq ($(wildcard /etc/debian_version),)
+PMS=apt-get
+DISTRO=debian
 
 build-qip-media-tools-depends: debian-build-qip-media-tools-depends
 install-qip-media-tools-depends: debian-install-qip-media-tools-depends
@@ -83,10 +99,21 @@ uninstall-qip-media-tools-depends: debian-uninstall-qip-media-tools-depends
 
 else
 ifneq ($(wildcard /etc/arch-release),)
+PMS=pacman
+DISTRO=arch
 
 build-qip-media-tools-depends: arch-build-qip-media-tools-depends
 install-qip-media-tools-depends: arch-install-qip-media-tools-depends
 uninstall-qip-media-tools-depends: arch-uninstall-qip-media-tools-depends
+
+else
+ifeq ($(shell uname -s),Darwin)
+PMS=brew
+DISTRO=darwin
+
+build-qip-media-tools-depends: brew-build-qip-media-tools-depends
+install-qip-media-tools-depends: brew-install-qip-media-tools-depends
+uninstall-qip-media-tools-depends: brew-uninstall-qip-media-tools-depends
 
 else
 
@@ -94,6 +121,7 @@ build-qip-media-tools-depends: unsupported-pms
 install-qip-media-tools-depends: unsupported-pms
 uninstall-qip-media-tools-depends: unsupported-pms
 
+endif
 endif
 endif
 
