@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-release_url="https://www.makemkv.com/forum/viewtopic.php?f=3&t=224"
+main_release_url="https://www.makemkv.com/download/"
+linux_release_url="https://www.makemkv.com/forum/viewtopic.php?f=3&t=224"
 
 PREFIX=${PREFIX:-/usr/local}
 PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
@@ -36,6 +37,26 @@ else
     exit 1
 fi
 
+UNAME_S=$(uname -s || true)
+
+if [[ -e /etc/debian_version ]] ; then
+    PMS=apt-get
+    DISTRO=debian
+elif [[ -e /etc/arch-release ]] ; then
+    PMS=pacman
+    DISTRO=arch
+elif [[ "$UNAME_S" = 'Darwin' ]] ; then
+    PMS=brew
+    DISTRO=darwin
+fi
+
+if [[ "$DISTRO" = "darwin" ]] ; then
+    if [[ -d /Applications/MakeMKV.app ]] ; then
+        echo WARNING: MakeMKV already installed in /Applications/MakeMKV.app.
+        exit 0
+    fi
+fi
+
 if [[ -z "$version" ]] ; then
     echo -n "MakeMKV version [latest]: "
     read version
@@ -43,7 +64,13 @@ fi
 
 if [[ -z "$version" ]] || [[ "$version" = "latest" ]] ; then
     echo "Looking for latest MakeMKV version..."
-    version=$( (dl_pipe "$release_url" 2> /dev/null || true) | sed -n -E -e 's/.*MakeMKV ([0-9.]+) for Linux is available.*/\1/p' | head -n1)
+    if [[ "$DISTRO" = "darwin" ]] ; then
+        release_url=$main_release_url
+        version=$( (dl_pipe "$release_url" 2> /dev/null || true) | sed -n -E -e 's/.*_osx\.dmg.*MakeMKV ([0-9.]+) for Mac OS X.*/\1/p' | head -n1)
+    else
+        release_url=$linux_release_url
+        version=$( (dl_pipe "$release_url" 2> /dev/null || true) | sed -n -E -e 's/.*MakeMKV ([0-9.]+) for Linux is available.*/\1/p' | head -n1)
+    fi
     if [[ -z "$version" ]] ; then
         echo "Latest version not found in $release_url" >&2
         exit 1
@@ -51,39 +78,71 @@ if [[ -z "$version" ]] || [[ "$version" = "latest" ]] ; then
     echo "Using MakeMKV version $version"
 fi
 
-if [[ -e /etc/debian_version ]] ; then
-    (set -x && $maybe_sudo apt-get install qtbase5-dev libssl-dev zlib1g-dev libexpat1-dev libavcodec-dev libavutil-dev)
-elif [[ -e /etc/arch-release ]] ; then
-    (set -x && $maybe_sudo pacman --needed -S base-devel qt5-base openssl zlib expat ffmpeg)
+if [[ "$DISTRO" = "darwin" ]] ; then
+    if [[ -d /Applications/MakeMKV.app ]] ; then
+        echo "WARNING: MakeMKV already installed in /Applications/MakeMKV.app."
+        exit 0
+    fi
+    if ! [[ -d /Applications ]] ; then
+        echo "ERROR: Directory does not exist: /Applications"
+        exit 1
+    fi
+
+    dl http://www.makemkv.com/download/makemkv_v${version}_osx.dmg
+
+    (set -x && $maybe_sudo hdiutil attach makemkv_v${version}_osx.dmg)
+    (set -x && $maybe_sudo cp -rf /Volumes/makemkv_v${version}/MakeMKV.app /Applications)
+    (set -x && $maybe_sudo hdiutil detach /Volumes/makemkv_v${version})
+
+else
+
+    dl http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
+    dl http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
+
+    LDFLAGS=
+    CPPFLAGS=
+
+    if [[ "$PMS" = "apt-get" ]] ; then
+        (set -x && $maybe_sudo apt-get install qtbase5-dev libssl-dev zlib1g-dev libexpat1-dev libavcodec-dev libavutil-dev)
+    elif [[ "$PMS" = "pacman" ]] ; then
+        (set -x && $maybe_sudo pacman --needed -S base-devel qt5-base openssl zlib expat ffmpeg)
+    elif [[ "$PMS" = "brew" ]] ; then
+        (set -x && brew install qt@5 openssl@1.1 zlib expat ffmpeg)
+        if [[ -d /usr/local/opt/openssl ]] ; then
+            LDFLAGS="${LDFLAGS:+$LDFLAGS }-L/usr/local/opt/openssl/lib"
+            CPPFLAGS="${CPPFLAGS:+$CPPFLAGS }-L/usr/local/opt/openssl/include"
+        fi
+    fi
+
+    tar xzf makemkv-oss-${version}.tar.gz
+    tar xzf makemkv-bin-${version}.tar.gz
+
+    #exit 1
+
+    (
+    set -x
+    cd makemkv-oss-${version}
+    patch -p0 < ../makemkv-oss.non-root-ldconfig.patch || true
+    ./configure \
+        --prefix "$PREFIX" \
+        ${LDFLAGS:+LDFLAGS="${LDFLAGS}"} \
+        ${CPPFLAGS:+CPPFLAGS="${CPPFLAGS}"}
+    make -O -j
+    $PREFIX_SUDO make install
+    )
+
+    #(cd makemkv-bin-${version} && mkdir -p tmp && touch tmp/eula_accepted)
+
+    (
+    set -x
+    cd makemkv-bin-${version}
+    make
+    $PREFIX_SUDO make install PREFIX="$PREFIX"
+    )
+
+    #exit 1
+
+    rm -Rf makemkv-oss-${version} makemkv-bin-${version}
+    rm -Rf makemkv-oss-${version}.tar.gz makemkv-bin-${version}.tar.gz
+
 fi
-
-dl http://www.makemkv.com/download/makemkv-oss-${version}.tar.gz
-dl http://www.makemkv.com/download/makemkv-bin-${version}.tar.gz
-
-tar xzf makemkv-oss-${version}.tar.gz
-tar xzf makemkv-bin-${version}.tar.gz
-
-#exit 1
-
-(
-set -x
-cd makemkv-oss-${version}
-patch -p0 < ../makemkv-oss.non-root-ldconfig.patch || true
-./configure --prefix "$PREFIX"
-make -O -j
-$PREFIX_SUDO make install
-)
-
-#(cd makemkv-bin-${version} && mkdir -p tmp && touch tmp/eula_accepted)
-
-(
-set -x
-cd makemkv-bin-${version}
-make
-$PREFIX_SUDO make install PREFIX="$PREFIX"
-)
-
-#exit 1
-
-rm -Rf makemkv-oss-${version} makemkv-bin-${version}
-rm -Rf makemkv-oss-${version}.tar.gz makemkv-bin-${version}.tar.gz

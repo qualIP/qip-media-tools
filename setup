@@ -251,6 +251,8 @@ elif [[ "$UNAME_S" = 'Darwin' ]] ; then
     PMS=brew
     DISTRO=darwin
 
+    PATH="${PATH}:/Applications/MakeMKV.app/Contents/MacOS"
+
     # qip-media-tools is not signed by Apple, you might need to adjust gatekeeper options in order to install the program:
     #     https://support.apple.com/en-us/HT202491
 
