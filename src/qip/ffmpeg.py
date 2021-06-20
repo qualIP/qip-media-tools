@@ -818,10 +818,12 @@ class _Ffmpeg(Executable):
                 kwargs['loglevel'] = 'level+verbose'
             elif log.isEnabledFor(logging.VERBOSE):
                 kwargs['loglevel'] = 'info'
-                # kwargs.setdefault('stats', True)  # included in info
+                if 'ffmpeg' in os.fspath(self.name):
+                    pass # kwargs.setdefault('stats', True)  # included in info
             else:
                 kwargs['loglevel'] = 'warning'
-                kwargs.setdefault('stats', True)
+                if 'ffmpeg' in os.fspath(self.name):
+                    kwargs.setdefault('stats', True)
 
         if 'hide_banner' not in kwargs and '-hide_banner' not in args:
             if not log.isEnabledFor(logging.VERBOSE):
