@@ -119,7 +119,9 @@ install: install-deps
 	$(PREFIX_SUDO) install -m 644 SubtitleEdit.desktop "$(XDG_DATA_DIRS0)/applications/SubtitleEdit.desktop"
 	d='$(XDG_DATA_DIRS0)/icons' ; test -d "$$d" || $(PREFIX_SUDO) mkdir -p "$$d"
 	$(PREFIX_SUDO) install -m 644 SubtitleEdit.png     "$(XDG_DATA_DIRS0)/icons/SubtitleEdit.png"
-	$(PREFIX_SUDO) update-desktop-database "$(XDG_DATA_DIRS0)/applications"
+	if type update-desktop-database > /dev/null 2>&1 ; then \
+	    $(PREFIX_SUDO) update-desktop-database "$(XDG_DATA_DIRS0)/applications" ; \
+	fi
 
 .PHONY: uninstall
 uninstall:
