@@ -28,18 +28,6 @@ RUN apt-get update && \\
 // #include <Dockerfile.add-developer-user.in>
 USER developer
 
-RUN mkdir -v -p \\
-        "/home/developer/Downloads" \\
-        "/home/developer/Desktop" \\
-        "/home/developer/My Documents" && \\
-    rmdir -v "${WINEPREFIX}/drive_c/users/developer/Downloads" && \\
-    ln -v -s "/home/developer/Downloads" "${WINEPREFIX}/drive_c/users/developer/Downloads" && \\
-    rmdir -v "${WINEPREFIX}/drive_c/users/developer/Desktop" && \\
-    ln -v -s "/home/developer/Desktop" "${WINEPREFIX}/drive_c/users/developer/Desktop" && \\
-    ln -v -s "/home/developer" "/home/developer/Desktop/Home" && \\
-    rm -v "${WINEPREFIX}/drive_c/users/developer/My Documents" && \\
-    ln -v -s "/home/developer/My Documents" "${WINEPREFIX}/drive_c/users/developer/My Documents"
-
 ARG FILE_FRIM_ZIP
 COPY --chown=developer:developer ${FILE_FRIM_ZIP} ./
 RUN unzip ${FILE_FRIM_ZIP} && \\
