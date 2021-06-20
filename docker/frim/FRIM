@@ -71,11 +71,12 @@ export XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 set -- docker container run
 set -- "$@" $($OPT_RM && echo --rm || echo --name FRIM)
 if [ -n "${DISPLAY:-}" ] ; then
-    set -- "$@" -v /tmp/.X11-unix:/tmp/.X11-unix
-    set -- "$@" -v "$HOME/.Xauthority":"/home/developer/.Xauthority"
+    [[ -d "/tmp/.X11-unix" ]] && \
+        set -- "$@" -v /tmp/.X11-unix:/tmp/.X11-unix
+    [[ -d "$HOME/.Xauthority" ]] && \
+        set -- "$@" -v "$HOME/.Xauthority":"/home/developer/.Xauthority"
     set -- "$@" ${DISPLAY:+-e DISPLAY="$DISPLAY"}
 fi
-set -- "$@" -v "$HOME/Downloads":"/home/developer/Downloads"
 set -- "$@" -v "$d":"/home/developer/pwd"
 set -- "$@" -v "$d":"$d" -w "$d"
 set -- "$@" --log-driver="$arg_log_driver"

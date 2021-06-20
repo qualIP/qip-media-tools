@@ -33,19 +33,25 @@ done
 
 $OPT_X && set -x
 
+# qaac/refalac doesn't need X
+DISPLAY=
+
 app_args=("${app_args[@]}" "$@")
 
 $OPT_SHELL && docker_args=("${docker_args[@]}" -i -t)
 
 set -- docker container run
 set -- "$@" $($OPT_RM && echo --rm || echo --name qaac)
-set -- "$@" -v /tmp/.X11-unix:/tmp/.X11-unix
-set -- "$@" -v "$HOME/.Xauthority":"/home/developer/.Xauthority"
-set -- "$@" -v "$HOME/Downloads":"/home/developer/Downloads"
+if [ -n "${DISPLAY:-}" ] ; then
+    [[ -d "/tmp/.X11-unix" ]] && \
+        set -- "$@" -v /tmp/.X11-unix:/tmp/.X11-unix
+    [[ -d "$HOME/.Xauthority" ]] && \
+        set -- "$@" -v "$HOME/.Xauthority":"/home/developer/.Xauthority"
+    set -- "$@" ${DISPLAY:+-e DISPLAY="$DISPLAY"}
+fi
 set -- "$@" -v "${TMPDIR:-/tmp}":"/tmp"
 set -- "$@" -v "$d":"/home/developer/pwd"
 set -- "$@" -v "$d":"$d" -w "$d"
-set -- "$@" ${DISPLAY:+-e DISPLAY="$DISPLAY"}
 set -- "$@" "${docker_args[@]}"
 
 $OPT_SHELL && set -- "$@" --entrypoint /bin/bash
