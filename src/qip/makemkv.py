@@ -763,6 +763,14 @@ class Makemkvcon(Executable):
 
     name = 'makemkvcon'
 
+    def which(self, mode=os.F_OK | os.X_OK, path=None, assert_found=True):
+        cmd = super().which(mode=mode, path=path, assert_found=False)
+        if cmd is None and path is None:
+            cmd = super().which(mode=mode, path=f'/Applications/MakeMKV.app/Contents/MacOS/{os.path(self.name)}', assert_found=False)
+        if cmd is None and assert_found:
+            raise OSError(errno.ENOENT, f'Command not found: {self.name}')
+        return cmd
+
     nice_adjustment = 19  # the nicest
     ionice_level = 7      # lowest priority
 
