@@ -16,12 +16,12 @@
 %{
 #include <dvdread/ifo_types.h>
 %}
-%include "/usr/include/dvdread/ifo_types.h"
+%include <dvdread/ifo_types.h>
 
 %{
 #include <dvdread/ifo_read.h>
 %}
-%include "/usr/include/dvdread/ifo_read.h"
+%include <dvdread/ifo_read.h>
 
 %extend pgc_t { uint16_t get_audio_control(int i) { return $self->audio_control[i]; } }
 %extend pgc_t { uint32_t get_subp_control(int i) { return $self->subp_control[i]; } }

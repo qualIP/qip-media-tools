@@ -8,11 +8,11 @@ maybe_sudo=$(if $(filter $(USER),root),,sudo)
 swig_targets =
 
 qip/libdvdread_swig_wrap.c qip/libdvdread_swig.py: qip/libdvdread_swig.i
-	swig -Wall -I/usr/include -python -py3 $<
+	swig -Wall -I/usr/local/include -I/usr/include -python -py3 $<
 swig_targets += qip/libdvdread_swig_wrap.c qip/libdvdread_swig.py
 
 qip/libudfread_swig_wrap.c qip/libudfread_swig.py: qip/libudfread_swig.i
-	swig -Wall -I/usr/include -python -py3 $<
+	swig -Wall -I/usr/local/include -I/usr/include -python -py3 $<
 swig_targets += qip/libudfread_swig_wrap.c qip/libudfread_swig.py
 
 .PHONY: install-user
