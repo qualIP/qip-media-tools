@@ -94,6 +94,7 @@ setup(
             'bs4',
             'lxml',
             'statsd',
+            'pyxdg',
             ],
 
     # List additional groups of dependencies here (e.g. development
