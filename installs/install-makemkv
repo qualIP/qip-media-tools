@@ -43,7 +43,7 @@ fi
 
 if [[ -z "$version" ]] || [[ "$version" = "latest" ]] ; then
     echo "Looking for latest MakeMKV version..."
-    version=$( (dl_pipe "$release_url" 2> /dev/null || true) | sed -n -e 's/.*MakeMKV \([0-9.]\+\) for Linux is available.*/\1/p ; T ; q')
+    version=$( (dl_pipe "$release_url" 2> /dev/null || true) | sed -n -E -e 's/.*MakeMKV ([0-9.]+) for Linux is available.*/\1/p' | head -n1)
     if [[ -z "$version" ]] ; then
         echo "Latest version not found in $release_url" >&2
         exit 1

@@ -146,7 +146,7 @@ if [[ -e /etc/debian_version ]] ; then
         local v
 
         echo -n "$package package installed? "
-        v=$(dpkg -s "$package" 2> /dev/null | sed -n -e 's/^Version: //p ; T ; q' || true)
+        v=$(dpkg -s "$package" 2> /dev/null | sed -n -e 's/^Version: //p' | head -n1 || true)
         if [[ -n "$v" ]] ; then
             echo "Yes: $v"
         else
