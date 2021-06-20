@@ -132,7 +132,9 @@ class App(XdgResource):
         try:
             return self._xdg_resource
         except AttributeError:
-            return self.prog
+            if self.prog:
+                return self.prog
+            raise
 
     @xdg_resource.setter
     def xdg_resource(self, value):
@@ -479,7 +481,9 @@ class App(XdgResource):
                 if enable_statsd in (True, False):
                     assert self.config_file_parser is not None
                     if self.config_file_parser is not None:
+                        self.config_file_parser.setdefault('options', {})
                         self.config_file_parser['options']['statsd'] = str(enable_statsd)
+                        self.prep_save_config_path(self.config_file_parser.file_name)
                         self.config_file_parser.write()
             if enable_statsd is True:
                 self.log.debug('StatsD enabled...')

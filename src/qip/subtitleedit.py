@@ -43,6 +43,7 @@ class CSubtitleEdit(XdgExecutable):
     def save_settings_xml(self, settings_xml):
         from qip.file import XmlFile
         settings_file = XmlFile(self.save_config_path() / self.settings_file_name)
+        self.prep_save_config_path(settings_file)
         with settings_file.rename_temporarily(replace_ok=True):
             settings_file.write_xml(settings_xml)
 
