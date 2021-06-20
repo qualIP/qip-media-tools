@@ -29,6 +29,7 @@ class QipMediaToolsDepends < Formula
   depends_on "libdvdcss"
   depends_on "ffmpeg"
   depends_on "libdvdread"
+  depends_on "libudfread"
   depends_on "expat"
 
   depends_on "ccextractor" => :recommended
@@ -36,7 +37,6 @@ class QipMediaToolsDepends < Formula
   depends_on "ddrescue" => :recommended
   # TODO depends_on "safecopy" => :recommended
 
-  # TODO depends_on "libudfread"
   # TODO depends_on "lockfile-progs" vs "shlock"
 
   def install

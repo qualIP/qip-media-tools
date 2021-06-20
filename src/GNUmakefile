@@ -76,8 +76,12 @@ arch-uninstall-qip-media-tools-depends:
 brew-build-qip-media-tools-depends:
 	# Nothing
 
+.PHONY: brew-install-libudfread
+brew-install-libudfread: libudfread.rb
+	brew install --formulae ./$<
+
 .PHONY: brew-install-qip-media-tools-depends
-brew-install-qip-media-tools-depends: qip-media-tools-depends.rb
+brew-install-qip-media-tools-depends: qip-media-tools-depends.rb brew-install-libudfread
 	brew install --formulae ./$<
 
 .PHONY: brew-uninstall-qip-media-tools-depends
