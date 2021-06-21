@@ -28,7 +28,7 @@ class Cdparanoia(Executable):
                 return self._run(*args, **kwargs)
             except subprocess.CalledProcessError as e:
                 if retry_no_audio_cd and e.returncode in (1, 2) and e.output and re.search(
-                        r'Unable to open disc\.  Is there an audio CD in the drive\?[\r\n]*$',
+                        r'Unable to open disc\.(  Is there an audio CD in the drive\?)?[\r\n]*$',
                         e.output):
                     time.sleep(2)
                     retry_no_audio_cd -= 1
