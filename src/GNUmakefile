@@ -158,3 +158,4 @@ clean-dl:
 distclean: clean-all
 	rm -f $(swig_targets)
 	rm -f qip/_*.cpython-*.so
+	rm -Rf qip.egg-info/
