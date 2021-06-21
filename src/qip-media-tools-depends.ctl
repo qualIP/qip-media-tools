@@ -21,6 +21,7 @@ Depends:
 # XXXJST TODO remove dependency on graphicsmagick
     graphicsmagick,
     cdparanoia,
+    cdrdao,
     ffmpeg,
     mediainfo,
     dvd+rw-tools | dvd+rw-mediainfo,

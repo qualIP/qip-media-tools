@@ -16,6 +16,7 @@ class QipMediaToolsDepends < Formula
   depends_on "swig"
   depends_on "graphicsmagick"
   depends_on "cdparanoia"
+  depends_on "cdrdao"
   depends_on "ffmpeg"
   depends_on "mediainfo"
   depends_on "dvd+rw-tools"
