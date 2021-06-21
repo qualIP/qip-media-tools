@@ -93,6 +93,7 @@ setup(
             'Send2Trash',
             'bs4',
             'lxml',
+            'statsd',
             ],
 
     # List additional groups of dependencies here (e.g. development
