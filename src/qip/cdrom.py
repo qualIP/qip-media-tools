@@ -31,6 +31,11 @@ import os
 import time
 log = logging.getLogger(__name__)
 
+try:
+    errno.ENOMEDIUM
+except AttributeError:
+    errno.ENOMEDIUM = 123
+
 INT_MAX = 2147483647
 
 ########################################################
