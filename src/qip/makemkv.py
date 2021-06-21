@@ -13,6 +13,7 @@ import functools
 import logging
 import os
 import pexpect
+import platform
 import progress
 import re
 import subprocess
@@ -794,14 +795,22 @@ class Makemkvcon(Executable):
 
     @property
     def config_dir(self):
-        config_home = Path.home()
+        if platform.system() == 'Darwin':
+            config_home = Path.home() / 'Library/MakeMKV'
+        else:
+            config_home = Path.home()
         return config_home / '.MakeMKV'
 
     @property
     def share_dir(self):
-        p = Path(self.which())  # /usr/bin/makemkvcon
-        p = p.parent.parent     # /usr
-        p = p / 'share/MakeMKV' # /usr/share/MakeMKV
+        if platform.system() == 'Darwin':
+            p = Path(self.which())  # /Applications/MakeMKV.app/Contents/MacOS/makemkvcon
+            p = p.parent.parent     # /Applications/MakeMKV.app/Contents
+            p = p / 'Resources'     # /Applications/MakeMKV.app/Contents/Resources
+        else:
+            p = Path(self.which())  # /usr/bin/makemkvcon
+            p = p.parent.parent     # /usr
+            p = p / 'share/MakeMKV' # /usr/share/MakeMKV
         return p
 
     @property
