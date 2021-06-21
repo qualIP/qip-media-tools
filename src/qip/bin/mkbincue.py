@@ -262,8 +262,12 @@ def mkbincue(file_name_prefix, in_tags):
             print('')
 
     app.log.info('Creating %s...', bin_file)
-    # TODO continue
-    if app.args.ripper == 'safecopy':
+    if bin_file.exists():
+        if app.args._continue:
+            app.log.info('... CONTINUE: file exists.')
+        else:
+            raise Exception('File exists: %s' % (bin_file,))
+    elif app.args.ripper == 'safecopy':
         stage1_badblocks_file = TextFile(file_name_prefix + '.stage1.badblocks')
         stage2_badblocks_file = TextFile(file_name_prefix + '.stage2.badblocks')
         stage3_badblocks_file = TextFile(file_name_prefix + '.stage3.badblocks')
