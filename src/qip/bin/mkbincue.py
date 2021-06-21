@@ -31,6 +31,7 @@ from qip.file import *
 from qip.safecopy import *
 from qip.mm import *
 from qip.utils import byte_decode
+from qip.eject import eject
 import qip.cdda as cdda
 import qip.mm
 
@@ -585,10 +586,7 @@ def mkbincue(file_name_prefix, in_tags):
 
     if app.args.eject:
         app.log.info('Ejecting...')
-        cmd = [shutil.which('eject')]
-        cmd += [app.args.device]
-        out = do_spawn_cmd(cmd)
-        # out = clean_cmd_output(out)
+        eject(app.args.device)
         print('')
 
     app.log.info('DONE!')

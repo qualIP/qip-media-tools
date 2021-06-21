@@ -109,6 +109,7 @@ from qip.opusenc import opusenc
 from qip.perf import perfcontext, perfcontext_wrapper
 from qip.propex import propex
 from qip.utils import byte_decode, Ratio, round_half_away_from_zero, dict_from_swig_obj, Auto
+from qip.eject import eject
 import qip.file
 import qip.mm
 import qip.utils
@@ -2127,11 +2128,7 @@ def action_rip_iso(rip_iso, device, in_tags):
     if map_file.is_finished():
         if app.args.eject and device.is_block_device():
             app.log.info('Ejecting...')
-            cmd = [
-                shutil.which('eject'),
-                device,
-            ]
-            out = do_spawn_cmd(cmd)
+            eject(device)
 
 def device_type_for_stat(device):
     if device.is_block_device():
@@ -2409,11 +2406,7 @@ def action_rip(rip_dir, device, in_tags):
 
     if app.args.eject and device.is_block_device():
         app.log.info('Ejecting...')
-        cmd = [
-            shutil.which('eject'),
-            device,
-        ]
-        out = do_spawn_cmd(cmd)
+        eject(device)
 
     if app.args.chain:
         with os.scandir(rip_dir) as it:
@@ -2611,11 +2604,7 @@ def action_backup(backup_dir, device, in_tags):
 
     if app.args.eject and device.is_block_device():
         app.log.info('Ejecting...')
-        cmd = [
-            shutil.which('eject'),
-            device,
-        ]
-        out = do_spawn_cmd(cmd)
+        eject(device)
 
     if app.args.chain:
         with os.scandir(backup_dir) as it:
