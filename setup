@@ -4,6 +4,32 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+usage() {
+    echo "Usage: $0 [options...]"
+    echo "Options:"
+    echo "  -h, --help          Print this help and exit"
+    echo "  -y, --yes           Answer yes to all prompts (unattended)"
+    echo
+    echo "  -i, --install       Install (default)"
+    echo "  -r, --reinstall     Reinstall even if already installed"
+    echo "  -u, --uninstall     Uninstall instead of installing"
+    echo
+    echo "  -U, --user          Select user installation target (~/.local)"
+    echo "  -S, --system        Select system installation target (/usr/local)"
+    echo "  -D, --develop       Select development installation target (~/.local)"
+    echo "  --prefix PREFIX     Specify custom installation prefix (or PREFIX environment variable)"
+    echo
+    echo "  -c, --clean         Clean build artifacts after installing/uninstalling (use less space)"
+    echo "  --no-clean          Do not clean build artifacts (faster re-builds) (default)"
+}
+
+if ! [[ -e "shfuncs/VERSION" ]] || [[ "$(<"shfuncs/VERSION")" -lt 1 ]] ; then
+    echo "Updating shfuncs..."
+    git submodule update --init --recursive shfuncs
+fi
+. shfuncs/func-print.sh
+. shfuncs/func-cmd.sh
+
 OPT_HELP=false
 OPT_YES=false
 OPT_USER=false
@@ -64,37 +90,22 @@ while true ; do
         --no-clean) OPT_CLEAN=false ; shift ;;
 
         --) shift ; break ;;
-        *) echo "Internal error!" >&2 ; exit 1 ;;
+        *) print_err "Internal error!" ; exit 1 ;;
 
     esac
 done
 if [[ "$#" != 0 ]] ; then
-    echo "Extraneous arguments: $*" >&2
+    print_err "Extraneous arguments: $*"
     exit 1
 fi
 
 if $OPT_HELP ; then
-    echo "Usage: $0 [options...]"
-    echo "Options:"
-    echo "  -h, --help          Print this help and exit"
-    echo "  -y, --yes           Answer yes to all prompts (unattended)"
-    echo
-    echo "  -i, --install       Install (default)"
-    echo "  -r, --reinstall     Reinstall even if already installed"
-    echo "  -u, --uninstall     Uninstall instead of installing"
-    echo
-    echo "  -U, --user          Select user installation target (~/.local)"
-    echo "  -S, --system        Select system installation target (/usr/local)"
-    echo "  -D, --develop       Select development installation target (~/.local)"
-    echo "  --prefix PREFIX     Specify custom installation prefix (or PREFIX environment variable)"
-    echo
-    echo "  -c, --clean         Clean build artifacts after installing/uninstalling (use less space)"
-    echo "  --no-clean          Do not clean build artifacts (faster re-builds) (default)"
+    usage
     exit 0
 fi
 
 if [[ -z "$PREFIX" ]] ; then
-    echo "Please specify installation target (e.g.: --user, --system)" >&2
+    print_err "Please specify installation target (e.g.: --user, --system)"
     exit 1
 fi
 
@@ -108,24 +119,17 @@ fi
 lsb_codename=${lsb_codename:-unknown}
 UNAME_S=$(uname -s || true)
 
-print_h2() {
-    echo
-    echo
-    echo "## $*"
-    echo
-}
-
 test_prog_installed() {
     local prog=$1 ; shift
     local v
 
-    echo -n "$prog installed? "
+    print_q "$prog installed?"
     v=$(which "$prog" 2> /dev/null || true)
     if [[ -n "$v" ]] ; then
-        echo "Yes: $v"
+        print_a YES "$v"
     else
-        echo "No"
-        echo "Error: $prog not found!" >&2
+        print_a NO
+        print_err "Error: $prog not found!"
         return 1
     fi
 }
@@ -138,13 +142,13 @@ if [[ -e /etc/debian_version ]] ; then
         local package=$1 ; shift
         local v
 
-        echo -n "$package package installed? "
+        print_q "$package package installed?"
         v=$(dpkg -s "$package" 2> /dev/null | sed -n -e 's/^Version: //p' | head -n1 || true)
         if [[ -n "$v" ]] ; then
-            echo "Yes: $v"
+            print_a YES "$v"
         else
-            echo "No"
-            echo "Error: $package package not found!" >&2
+            print_a NO
+            print_err "Error: $package package not found!"
             return 1
         fi
     }
@@ -156,7 +160,7 @@ if [[ -e /etc/debian_version ]] ; then
         while [[ "$#" != 0 ]] ; do
             case "$1" in
                 -y) ask=false ;;
-                *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+                *) print_err "Invalid argument: $1" ; exit 1 ;;
             esac
         done
 
@@ -164,7 +168,7 @@ if [[ -e /etc/debian_version ]] ; then
         [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
 
         if ! $ask || ask_yes_no "Install $package package ($*)?" ; then
-            (set -x && "$@") || exit 1
+            log_cmd_live_pty "$@"
         else
             return 1
         fi
@@ -178,12 +182,12 @@ elif [[ -e /etc/arch-release ]] ; then
         local package=$1 ; shift
         local v
 
-        echo -n "$package package installed? "
+        print_q "$package package installed"
         if v=$(pacman -Q "$package" 2> /dev/null) && [[ -n "$v" ]] ; then
-            echo "Yes: $v"
+            print_a YES "$v"
         else
-            echo "No"
-            echo "Error: $package package not found!" >&2
+            print_a NO
+            print_err "Error: $package package not found!"
             return 1
         fi
     }
@@ -195,7 +199,7 @@ elif [[ -e /etc/arch-release ]] ; then
         while [[ "$#" != 0 ]] ; do
             case "$1" in
                 -y) ask=false ;;
-                *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+                *) print_err "Invalid argument: $1" ; exit 1 ;;
             esac
         done
 
@@ -203,7 +207,7 @@ elif [[ -e /etc/arch-release ]] ; then
         [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
 
         if ! $ask || ask_yes_no "Install $package package ($*)?" ; then
-            (set -x && "$@") || exit 1
+            log_cmd_live_pty "$@"
         else
             return 1
         fi
@@ -217,24 +221,25 @@ elif [[ -e /etc/arch-release ]] ; then
         while [[ "$#" != 0 ]] ; do
             case "$1" in
                 -y) ask=false ;;
-                *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+                *) print_err "Invalid argument: $1" ; exit 1 ;;
             esac
         done
 
         if ! $ask || ask_yes_no "Build & install $package package from AUR?" ; then
 
-            (set -x && git clone "https://aur.archlinux.org/$package.git" "$MY_TMPDIR/$package") || exit 1
-            (set -x && cd "$MY_TMPDIR/$package" ; makepkg) || exit 1
+            log_cmd_live_pty git clone "https://aur.archlinux.org/$package.git" "$MY_TMPDIR/$package"
+            log_cmd cd "$MY_TMPDIR/$package"
+            log_cmd_live_pty makepkg
+            log_cmd cd ..
             package_file=$(find "%MY_TMPDIR/$package" -name "$package-*.pkg.tar.zst")
             if [[ -z "$package_file" ]] ; then
-                echo "Failed to build package $package" >&2
+                print_err "Failed to build package $package"
                 return 1
             fi
 
             set -- pacman $($OPT_YES && echo --noconfirm) -U "$package_file"
             [[ "$USER" = "root" ]] || set -- $maybe_sudo "$@"
-
-            (set -x && "$@") || exit 1
+            log_cmd_live_pty "$@"
         else
             return 1
         fi
@@ -253,12 +258,12 @@ elif [[ "$UNAME_S" = 'Darwin' ]] ; then
         local package=$1 ; shift
         local v
 
-        echo -n "$package package installed? "
+        print_q "$package package installed?"
         if v=$(pkgutil --pkgs="$package" 2> /dev/null) && [[ -n "$v" ]] ; then
-            echo "Yes: $v"
+            print_a YES "$v"
         else
-            echo "No"
-            echo "Error: $package package not found!" >&2
+            print_a NO
+            print_err "Error: $package package not found!"
             return 1
         fi
     }
@@ -267,12 +272,12 @@ elif [[ "$UNAME_S" = 'Darwin' ]] ; then
         local package=$1 ; shift
         local v
 
-        echo -n "$package package installed? "
+        print_q "$package package installed?"
         if v=$(brew list --versions "$package" 2> /dev/null) && [[ -n "$v" ]] ; then
-            echo "Yes: $v"
+            print_a YES "$v"
         else
-            echo "No"
-            echo "Error: $package package not found!" >&2
+            print_a NO
+            print_err "Error: $package package not found!"
             return 1
         fi
     }
@@ -288,7 +293,7 @@ elif [[ "$UNAME_S" = 'Darwin' ]] ; then
         while [[ "$#" != 0 ]] ; do
             case "$1" in
                 -y) ask=false ;;
-                *) echo "Invalid argument: $1" >&2 ; exit 1 ;;
+                *) print_err "Invalid argument: $1" ; exit 1 ;;
             esac
         done
 
@@ -298,7 +303,7 @@ elif [[ "$UNAME_S" = 'Darwin' ]] ; then
         fi
 
         if ! $ask || ask_yes_no "Install $package package ($*)?" ; then
-            (set -x && "$@") || exit 1
+            log_cmd_live_pty "$@"
         else
             return 1
         fi
@@ -309,8 +314,8 @@ elif [[ "$UNAME_S" = 'Darwin' ]] ; then
     }
 
 else
-    echo "ERROR: Unknown package management system." >&2
-    echo "Sorry, your system is not supported at this time." >&2
+    print_err "ERROR: Unknown package management system."
+    print_err "Sorry, your system is not supported at this time."
     exit 1
 fi
 
@@ -324,13 +329,13 @@ test_docker_image_installed() {
     local image=$1 ; shift
     local v=
 
-    echo -n "Docker $image image installed? "
+    print_q "Docker $image image installed?"
     v=$(docker image ls -q "$image")
     if [[ -n "$v" ]] ; then
-        echo " Yes"
+        print_a YES
     else
-        echo " No"
-        echo "Error: docker $image not found!" >&2
+        print_a NO
+        print_err "Error: docker $image not found!"
         return 1
     fi
 }
@@ -339,14 +344,14 @@ test_python_module_installed() {
     local module=$1 ; shift
     local v=
 
-    echo -n "Python module $module installed? "
+    print_q "Python module $module installed?"
     # v=$($PYTHON -c "import importlib ; print(importlib.util.find_spec('${module}') is not None)" 2> /dev/null)
     v=$($PYTHON -c "import ${module} ; print(True)" 2> /dev/null)
     if [[ "$v" = "True" ]] ; then
-        echo " Yes"
+        print_a "YES"
     else
-        echo " No"
-        echo "Error: Python module $module not found!" >&2
+        print_a NO
+        print_err "Error: Python module $module not found!"
         return 1
     fi
 }
@@ -359,18 +364,18 @@ need_docker() {
         else
             _has_docker=false
             print_h2 "Docker"
-            echo "Docker is a container framework that reduces complexity of porting"
-            echo "applications. Several 3rd-party applications used by qualIP's Media Tools"
-            echo "are made available in dockers."
-            echo
-            echo "See https://www.docker.com"
-            echo
+            print "Docker is a container framework that reduces complexity of porting"
+            print "applications. Several 3rd-party applications used by qualIP's Media Tools"
+            print "are made available in dockers."
+            print
+            print "See https://www.docker.com"
+            print
 
             case "$DISTRO-$lsb_codename" in
                 *-bullseye|*-buster)
-                    echo "Following Docker install instructions for Debian $lsb_codename:"
-                    echo "    https://docs.docker.com/engine/install/debian/"
-                    echo
+                    print "Following Docker install instructions for Debian $lsb_codename:"
+                    print "    https://docs.docker.com/engine/install/debian/"
+                    print
                     $maybe_sudo apt-get install $($OPT_YES && echo -y) apt-transport-https ca-certificates curl gnupg lsb-release
                     curl -fsSL https://download.docker.com/linux/debian/gpg \
                         | $maybe_sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -380,9 +385,9 @@ need_docker() {
                     ;;
 
                 *-hirsute|*-groovy|*-focal|*-bionic|*-xental)
-                    echo "Following Docker install instructions for Ubuntu $lsb_codename:"
-                    echo "    https://docs.docker.com/engine/install/ubuntu/"
-                    echo
+                    print "Following Docker install instructions for Ubuntu $lsb_codename:"
+                    print "    https://docs.docker.com/engine/install/ubuntu/"
+                    print
                     $maybe_sudo apt-get install $($OPT_YES && echo -y) apt-transport-https ca-certificates curl gnupg lsb-release
                     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
                         | $maybe_sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -393,24 +398,24 @@ need_docker() {
 
                 arch-*)
                     # Rolling release; Expect latest.
-                    echo "Following Docker install instructions for Arch $lsb_codename:"
-                    echo "    https://wiki.archlinux.org/title/docker"
-                    echo
+                    print "Following Docker install instructions for Arch $lsb_codename:"
+                    print "    https://wiki.archlinux.org/title/docker"
+                    print
                     $maybe_sudo pacman $($OPT_YES && echo --noconfirm) -S docker
                     ;;
 
                 darwin-*)
-                    echo "Please follow the Docker Desktop installation instructions for Mac OS X:"
-                    echo "    https://docs.docker.com/docker-for-mac/install/"
-                    echo
-                    echo "Don't forget to run the application once to complete the installation."
-                    echo "Please fix the issue and run $0 again."
+                    print "Please follow the Docker Desktop installation instructions for Mac OS X:"
+                    print "    https://docs.docker.com/docker-for-mac/install/"
+                    print
+                    print "Don't forget to run the application once to complete the installation."
+                    print "Please fix the issue and run $0 again."
                     exit 1
                     ;;
 
                 *)
-                    echo "No special instructions known for $DISTRO release codename '$lsb_codename'"
-                    echo
+                    print "No special instructions known for $DISTRO release codename '$lsb_codename'"
+                    print
                     ;;
             esac
 
@@ -427,40 +432,42 @@ need_docker() {
             if test_prog_installed docker ; then
                 _has_docker=true
             else
-                echo "docker (installed by $package_name package) is not found!" >&2
+                print_err "docker (installed by $package_name package) is not found!"
                 exit 1
             fi
         fi
         if $_has_docker ; then
-            if ! (set -x && docker info) ; then
-                echo
-                echo "You don't seem to be able to run docker commands."
-                echo "Try:"
-                echo
-                echo "    docker info"
+            if ! log_cmd docker info ; then
+                print
+                print_err "You don't seem to be able to run docker commands."
+                print "Try:"
+                print
+                print "    docker info"
                 if type -P systemctl > /dev/null ; then
-                    echo
-                    ( (set -x && systemctl status docker) | cat ) || true
-                    echo
-                    echo "If the docker service is not active, you may need to enable and start it:"
-                    echo
-                    echo "    sudo systemctl enable docker"
-                    echo "    sudo systemctl start docker"
+                    print
+                    # no tty to avoid more prompt
+                    log_cmd systemctl status docker || true
+                    print
+                    print "If the docker service is not active, you may need to enable and start it:"
+                    print
+                    print "    sudo systemctl enable docker"
+                    print "    sudo systemctl start docker"
                 fi
                 if groups | grep -qw docker ; then
-                    : #echo ; echo "You are part of the docker group."
+                    : #print ; print "You are part of the docker group."
                 else
-                    echo
-                    echo "You are not part of the docker group. You probably need to run the"
-                    echo "following command to be added to the group:"
-                    echo
-                    echo "    sudo gpasswd -a $USER docker"
-                    echo
-                    echo "Once done, please start a new login session (or reboot) for the change to"
-                    echo "be effective."
-                    echo
+                    print
+                    print_err "You are not part of the docker group."
+                    print "You probably need to run the following command to be added to the"
+                    print "group:"
+                    print
+                    print "    sudo gpasswd -a $USER docker"
+                    print
+                    print "Once done, please start a new login session (or reboot) for the change to"
+                    print "be effective."
+                    print
                 fi
-                echo "Please fix the issue and run $0 again."
+                print_err "Please fix the issue and run $0 again."
                 exit 1
             fi
         fi
@@ -491,19 +498,19 @@ need_docker_wine() {
         if $OPT_INSTALL ; then
             if $OPT_REINSTALL || ! $_has_docker_wine ; then
                 print_h2 "Wine"
-                echo "Wine is a Windows compatibility layer for Linux which allows running some"
-                echo "3rd-party Windows applications used by qualIP's Media Tools."
-                echo "Dockers for wine32 and wine64 are used as standard base for these"
-                echo "3rd-party Windows applications."
-                echo
-                echo "See https://www.docker.com"
-                echo
+                print "Wine is a Windows compatibility layer for Linux which allows running some"
+                print "3rd-party Windows applications used by qualIP's Media Tools."
+                print "Dockers for wine32 and wine64 are used as standard base for these"
+                print "3rd-party Windows applications."
+                print
+                print "See https://www.docker.com"
+                print
                 if ask_yes_no "Build and install wine dockers?" \
                         && need_docker \
                     ; then
-                    (set -x && $MAKE -C docker/wine) || exit $?
-                    (set -x && $MAKE -C docker/wine tag-latest) || exit $?
-                    $OPT_CLEAN && (set -x && $MAKE -C docker/wine clean)
+                    log_cmd_live_pty $MAKE -C docker/wine
+                    log_cmd_live_pty $MAKE -C docker/wine tag-latest
+                    $OPT_CLEAN && log_cmd_live_pty $MAKE -C docker/wine clean
                     _has_docker_wine=true
                 fi
             fi
@@ -511,8 +518,8 @@ need_docker_wine() {
             if $_has_docker_wine \
                     && ask_yes_no "Uninstall wine dockers?" \
                 ; then
-                (set -x && $MAKE -C docker/wine PREFIX="$PREFIX" uninstall)
-                $OPT_CLEAN && (set -x && $MAKE -C docker/wine clean)
+                log_cmd_live_pty $MAKE -C docker/wine PREFIX="$PREFIX" uninstall
+                $OPT_CLEAN && log_cmd_live_pty $MAKE -C docker/wine clean
                 _has_docker_wine=false
             fi
         fi
@@ -525,17 +532,18 @@ ask_yes_no() {
     local v=
 
     while true ; do
-        echo -n "$q [Y/n] "
+        print_q "$q" "Y/n"
         if $OPT_YES ; then
             v=yes
-            echo "$v"
+            print_a "$v"
         else
             read v
         fi
+        _last_print_is_nl=false
         case "x$v" in
             x|xY|xy|xyes) v=true ; break ;;
             xN|xn|xno) v=false ; break ;;
-            *) echo "Invalid input! Please try again" ;;
+            *) print_err "Invalid input! Please try again" ;;
         esac
     done
     $v
@@ -543,29 +551,29 @@ ask_yes_no() {
 
 
 #print_h2 "Prologue"
-echo
-echo "This program will help you install qualIP's Media Tools and its"
-echo "dependencies."
-echo "Sudo access will be required to install certain tools."
+print
+print "This program will help you install qualIP's Media Tools and its"
+print "dependencies."
+print "Sudo access will be required to install certain tools."
 
 print_h2 "System Information"
-echo "Installation mode: $( \
+print_value "Installation mode" "$( \
     $OPT_REINSTALL && echo "Reinstall" || \
     ($OPT_INSTALL && echo "Install" || \
      echo "Uninstall"))"
-echo "Installation target: $( \
+print_value "Installation target" "$( \
     $OPT_DEVELOP && echo "Development" || \
     ($OPT_USER && echo "User" || \
      echo "System"))"
-echo "Installation prefix: $PREFIX"
-echo "Prompt mode: $($OPT_YES && echo "Answer yes" || echo "Prompt")"
-echo "Clean mode: $($OPT_CLEAN && echo "Clean" || echo "No clean")"
-echo "LSB release codename: $lsb_codename"
+print_value "Installation prefix" "$PREFIX"
+print_value "Prompt mode" "$($OPT_YES && echo "Answer yes" || echo "Prompt")"
+print_value "Clean mode" "$($OPT_CLEAN && echo "Clean" || echo "No clean")"
+print_value "LSB release codename" "$lsb_codename"
 
-echo
-echo "Run "'`'"$0 --help"'`'" for more options."
+print
+print "Run "'`'"$0 --help"'`'" for more options."
 
-echo
+print
 ask_yes_no "Ready to proceed?"
 
 
@@ -578,11 +586,11 @@ PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
 
 
 print_h2 "Package dependencies"
-echo "qualIP's Media Tools require several 3rd-party application packages"
-echo "available in most Linux distributions."
-echo "A small dependency-only package, \"qip-media-tools-depends\" is used to"
-echo "make sure all required applications are installed."
-echo
+print "qualIP's Media Tools require several 3rd-party application packages"
+print "available in most Linux distributions."
+print "A small dependency-only package, \"qip-media-tools-depends\" is used to"
+print "make sure all required applications are installed."
+print
 if $OPT_INSTALL ; then
     if $OPT_REINSTALL || ! test_package_installed qip-media-tools-depends ; then
         if ask_yes_no "Install qip-media-tools-depends package?" ; then
@@ -593,50 +601,50 @@ if $OPT_INSTALL ; then
                 fi
             fi
 
-            (set -x && $MAKE -C src install-qip-media-tools-depends)
+            log_cmd_live_pty $MAKE -C src install-qip-media-tools-depends
 
         fi
         if ! test_package_installed qip-media-tools-depends ; then
-            echo
-            echo "The qip-media-tools-depends package failed to install."
+            print
+            print_err "The qip-media-tools-depends package failed to install."
             case "$DISTRO-$lsb_codename" in
                 *-buster)
-                    echo
-                    echo "Debian buster may require extra preparations."
-                    echo
-                    echo "Extra contrib and non-free package sources:"
-                    echo
-                    echo "    sudo sed -i -e 's/ main *$/ main contrib non-free/' /etc/apt/sources.list"
-                    echo "    sudo apt-get update"
-                    echo
-                    echo "libudfread-dev is not available in Debian $lsb_codename, add backports:"
-                    echo
-                    echo "    echo deb http://deb.debian.org/debian/ buster-backports main contrib non-free | sudo tee /etc/apt/sources.list.d/buster-backports.list"
-                    echo "    sudo apt-get update"
-                    echo
-                    echo "Please fix the issue and run $0 again."
+                    print
+                    print "Debian buster may require extra preparations."
+                    print
+                    print "Extra contrib and non-free package sources:"
+                    print
+                    print "    sudo sed -i -e 's/ main *$/ main contrib non-free/' /etc/apt/sources.list"
+                    print "    sudo apt-get update"
+                    print
+                    print "libudfread-dev is not available in Debian $lsb_codename, add backports:"
+                    print
+                    print "    echo deb http://deb.debian.org/debian/ buster-backports main contrib non-free | sudo tee /etc/apt/sources.list.d/buster-backports.list"
+                    print "    sudo apt-get update"
+                    print
+                    print_err "Please fix the issue and run $0 again."
                     exit 1
                     ;;
 
                 *-focal)
-                    echo
-                    echo "Ubuntu $lsb_codename may require extra preparations."
-                    echo
-                    echo "libudfread-dev is not available in Ubuntu $lsb_codename, get it from groovy:"
-                    echo
-                    echo "    wget http://mirrors.kernel.org/ubuntu/pool/universe/libu/libudfread/libudfread-dev_1.1.0-1_amd64.deb"
-                    echo "    wget http://mirrors.kernel.org/ubuntu/pool/universe/libu/libudfread/libudfread0_1.1.0-1_amd64.deb"
-                    echo "    sudo dpkg -i libudfread-dev_1.1.0-1_amd64.deb libudfread0_1.1.0-1_amd64.deb"
-                    echo
-                    echo "Please fix the issue and run $0 again."
+                    print
+                    print "Ubuntu $lsb_codename may require extra preparations."
+                    print
+                    print "libudfread-dev is not available in Ubuntu $lsb_codename, get it from groovy:"
+                    print
+                    print "    wget http://mirrors.kernel.org/ubuntu/pool/universe/libu/libudfread/libudfread-dev_1.1.0-1_amd64.deb"
+                    print "    wget http://mirrors.kernel.org/ubuntu/pool/universe/libu/libudfread/libudfread0_1.1.0-1_amd64.deb"
+                    print "    sudo dpkg -i libudfread-dev_1.1.0-1_amd64.deb libudfread0_1.1.0-1_amd64.deb"
+                    print
+                    print_err "Please fix the issue and run $0 again."
                     exit 1
                     ;;
 
                 *)
-                    echo
-                    echo "Sorry, there are no special instructions at this time for $DISTRO"
-                    echo "release codename '$lsb_codename'"
-                    echo
+                    print
+                    print_err "Sorry, there are no special instructions at this time for $DISTRO"
+                    print_err "release codename '$lsb_codename'"
+                    print
                     exit 1
                     ;;
             esac
@@ -646,18 +654,18 @@ else
     if test_package_installed qip-media-tools-depends \
             && ask_yes_no "Uninstall qip-media-tools-depends package?" \
         ; then
-        (set -x && $MAKE -C src uninstall-qip-media-tools-depends)
+        log_cmd_live_pty $MAKE -C src uninstall-qip-media-tools-depends
     fi
 fi
 
 
 print_h2 "PyAV (qualIP fork)"
-echo "PyAV is a Pythonic binding for the FFmpeg libraries."
-echo "The qualIP/PyAV fork has many enhancements required."
-echo
-#echo "See https://github.com/PyAV-Org/PyAV"
-echo "See https://github.com/qualIP/PyAV"
-echo
+print "PyAV is a Pythonic binding for the FFmpeg libraries."
+print "The qualIP/PyAV fork has many enhancements required."
+print
+#print "See https://github.com/PyAV-Org/PyAV"
+print "See https://github.com/qualIP/PyAV"
+print
 
 src_pyav_dir="$(pwd)/src/qip/PyAV"
 if $OPT_INSTALL ; then
@@ -665,41 +673,42 @@ if $OPT_INSTALL ; then
         if ask_yes_no "Build and install Python module av (qualIP/PyAV)?" \
             ; then
             if ! [[ -d "$src_pyav_dir" ]] ; then
-                (set -x && git clone "https://github.com/qualIP/PyAV.git" "$src_pyav_dir")
+                log_cmd_live_pty git clone "https://github.com/qualIP/PyAV.git" "$src_pyav_dir"
             fi
-            (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py build)
+            log_cmd cd "$src_pyav_dir"
+            log_cmd_live_pty $PYTHON setup.py build
             if $OPT_DEVELOP ; then
-                (set -x ; cd "$src_pyav_dir" ; $PYTHON setup.py develop --user)
+                log_cmd_live_pty $PYTHON setup.py develop --user
             elif $OPT_USER ; then
-                (set -x ; cd "$src_pyav_dir" ; $PIP install . --user)
+                log_cmd_live_pty $PIP install . --user
             else
-                (set -x ; cd "$src_pyav_dir" ; $PREFIX_SUDO $PIP install .)
+                log_cmd_live_pty $PREFIX_SUDO $PIP install .
             fi
+            log_cmd cd ..
             test_python_module_installed av
         fi
     fi
 else
-    if (test_python_module_installed av \
-        ) \
+    if test_python_module_installed av \
             && ask_yes_no "Uninstall Python module av (qualIP/PyAV)?" \
         ; then
         if $OPT_USER ; then
-            (set -x ; $PIP uninstall "av")
+            log_cmd_live_pty $PIP uninstall "av"
         else
-            (set -x ; $PREFIX_SUDO $PIP uninstall "av")
+            log_cmd_live_pty $PREFIX_SUDO $PIP uninstall "av"
         fi
-        $OPT_CLEAN && (set -x && $MAKE -C "$src_pyav_dir" clean)
+        $OPT_CLEAN && log_cmd_live_pty $MAKE -C "$src_pyav_dir" clean
     fi
 fi
 
 print_h2 "qaac"
-echo "qaac is a CLI QuickTime AAC/ALAC encoder."
-echo "It is required to encode audio files (music, audiobooks) in .m4a format"
-echo "using Apple/iTunes's own AAC encoder resulting in widely compatible"
-echo "high-quality compressed audio files."
-echo
-echo "See https://github.com/nu774/qaac"
-echo
+print "qaac is a CLI QuickTime AAC/ALAC encoder."
+print "It is required to encode audio files (music, audiobooks) in .m4a format"
+print "using Apple/iTunes's own AAC encoder resulting in widely compatible"
+print "high-quality compressed audio files."
+print
+print "See https://github.com/nu774/qaac"
+print
 
 if $OPT_INSTALL ; then
     if $OPT_REINSTALL || ! test_prog_installed qaac ; then
@@ -707,32 +716,33 @@ if $OPT_INSTALL ; then
                 && need_docker \
                 && need_docker_wine \
             ; then
-            (set -x && $MAKE -C docker/qaac)
-            (set -x && $MAKE -C docker/qaac tag-latest)
-            (set -x && $MAKE -C docker/qaac PREFIX="$PREFIX" install)
-            $OPT_CLEAN && (set -x && $MAKE -C docker/qaac clean)
+            log_cmd_live_pty $MAKE -C docker/qaac
+            log_cmd_live_pty $MAKE -C docker/qaac tag-latest
+            log_cmd_live_pty $MAKE -C docker/qaac PREFIX="$PREFIX" install
+            $OPT_CLEAN && log_cmd_live_pty $MAKE -C docker/qaac clean
         fi
     fi
 else
-    if (test_prog_installed qaac \
-            || test_docker_image_installed qualIP/qaac \
-        ) \
-            && ask_yes_no "Uninstall qaac docker?" \
+    t() {
+        test_prog_installed qaac || \
+        test_docker_image_installed qualIP/qaac
+    }
+    if t && ask_yes_no "Uninstall qaac docker?" \
         ; then
-        (set -x && $MAKE -C docker/qaac PREFIX="$PREFIX" uninstall)
-        $OPT_CLEAN && (set -x && $MAKE -C docker/qaac clean)
+        log_cmd_live_pty $MAKE -C docker/qaac PREFIX="$PREFIX" uninstall
+        $OPT_CLEAN && log_cmd_live_pty $MAKE -C docker/qaac clean
     fi
 fi
 
 
 print_h2 "SubtitleEdit"
-echo "Subtitle Edit is an editor for video subtitles"
-echo "It is required to view subtitles and convert them between different"
-echo "formats, including using character recognition (OCR) to convert video"
-echo "subtitles, often found in DVD and Blu-ray movies, into text subtitles."
-echo
-echo "See https://nikse.dk/SubtitleEdit/"
-echo
+print "Subtitle Edit is an editor for video subtitles"
+print "It is required to view subtitles and convert them between different"
+print "formats, including using character recognition (OCR) to convert video"
+print "subtitles, often found in DVD and Blu-ray movies, into text subtitles."
+print
+print "See https://nikse.dk/SubtitleEdit/"
+print
 
 if $OPT_INSTALL ; then
     if $OPT_REINSTALL || ! test_prog_installed SubtitleEdit ; then
@@ -740,31 +750,32 @@ if $OPT_INSTALL ; then
                 && need_docker \
                 && need_docker_wine \
             ; then
-            (set -x && $MAKE -C docker/SubtitleEdit)
-            (set -x && $MAKE -C docker/SubtitleEdit tag-latest)
-            (set -x && $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" install)
-            $OPT_CLEAN && (set -x && $MAKE -C docker/SubtitleEdit clean)
+            log_cmd_live_pty $MAKE -C docker/SubtitleEdit
+            log_cmd_live_pty $MAKE -C docker/SubtitleEdit tag-latest
+            log_cmd_live_pty $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" install
+            $OPT_CLEAN && log_cmd_live_pty $MAKE -C docker/SubtitleEdit clean
         fi
     fi
 else
-    if (test_prog_installed SubtitleEdit \
-            || test_docker_image_installed qualIP/subtitleedit \
-        ) \
-            && ask_yes_no "Uninstall SubtitleEdit docker?" \
+    t() {
+        test_prog_installed SubtitleEdit || \
+        test_docker_image_installed qualIP/subtitleedit
+    }
+    if t && ask_yes_no "Uninstall SubtitleEdit docker?" \
         ; then
-        (set -x && $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" uninstall)
-        $OPT_CLEAN && (set -x && $MAKE -C docker/SubtitleEdit clean)
+        log_cmd_live_pty $MAKE -C docker/SubtitleEdit PREFIX="$PREFIX" uninstall
+        $OPT_CLEAN && log_cmd_live_pty $MAKE -C docker/SubtitleEdit clean
     fi
 fi
 
 
 print_h2 "FRIMDecode"
-echo "FRIMDecode is a 3D-MVC Decoder."
-echo "It is required to decode 3D movies that are encoded in Multiview Video"
-echo "Coding format. For example, 3D Blu-ray movies."
-echo
-echo "See https://www.videohelp.com/software/FRIM"
-echo
+print "FRIMDecode is a 3D-MVC Decoder."
+print "It is required to decode 3D movies that are encoded in Multiview Video"
+print "Coding format. For example, 3D Blu-ray movies."
+print
+print "See https://www.videohelp.com/software/FRIM"
+print
 
 if $OPT_INSTALL ; then
     if $OPT_REINSTALL || ! test_prog_installed FRIMDecode ; then
@@ -772,20 +783,21 @@ if $OPT_INSTALL ; then
                 && need_docker \
                 && need_docker_wine \
             ; then
-            (set -x && $MAKE -C docker/frim)
-            (set -x && $MAKE -C docker/frim tag-latest)
-            (set -x && $MAKE -C docker/frim PREFIX="$PREFIX" install)
-            $OPT_CLEAN && (set -x && $MAKE -C docker/frim clean)
+            log_cmd_live_pty $MAKE -C docker/frim
+            log_cmd_live_pty $MAKE -C docker/frim tag-latest
+            log_cmd_live_pty $MAKE -C docker/frim PREFIX="$PREFIX" install
+            $OPT_CLEAN && log_cmd_live_pty $MAKE -C docker/frim clean
         fi
     fi
 else
-    if (test_prog_installed FRIMDecode \
-            || test_docker_image_installed qualIP/frim \
-        ) \
-            && ask_yes_no "Uninstall FRIM docker?" \
+    t() {
+        test_prog_installed FRIMDecode || \
+        test_docker_image_installed qualIP/frim
+    }
+    if t && ask_yes_no "Uninstall FRIM docker?" \
         ; then
-        (set -x && $MAKE -C docker/frim PREFIX="$PREFIX" uninstall)
-        $OPT_CLEAN && (set -x && $MAKE -C docker/frim clean)
+        log_cmd_live_pty $MAKE -C docker/frim PREFIX="$PREFIX" uninstall
+        $OPT_CLEAN && log_cmd_live_pty $MAKE -C docker/frim clean
     fi
 fi
 
@@ -797,27 +809,27 @@ fi
 
 
 print_h2 "MakeMKV"
-echo "MakeMKV is a format converter, otherwise called \"transcoder\" that can"
-echo "extract video/audio tracks from DVD and Blu-ray discs you own."
-echo "qualIP's Media Tools uses the console version of MakeMKV, makemkvcon."
-echo
-echo "NOTE: You must have a paid license key or a valid Linux Beta key:"
-echo "      https://www.makemkv.com/forum/viewtopic.php?t=1053"
-echo
-echo "See https://www.makemkv.com/"
-echo
+print "MakeMKV is a format converter, otherwise called \"transcoder\" that can"
+print "extract video/audio tracks from DVD and Blu-ray discs you own."
+print "qualIP's Media Tools uses the console version of MakeMKV, makemkvcon."
+print
+print "NOTE: You must have a paid license key or a valid Linux Beta key:"
+print "      https://www.makemkv.com/forum/viewtopic.php?t=1053"
+print
+print "See https://www.makemkv.com/"
+print
 
 if $OPT_INSTALL ; then
     if $OPT_REINSTALL || ! test_prog_installed makemkvcon ; then
         if ask_yes_no "Build and install MakeMKV?" ; then
-            (set -x && PREFIX="$PREFIX" installs/install-makemkv latest)
+            log_cmd_live_pty PREFIX="$PREFIX" installs/install-makemkv latest
         fi
     fi
 else
     if test_prog_installed makemkvcon \
             && ask_yes_no "Uninstall MakeMKV?" \
         ; then
-        (set -x && PREFIX="$PREFIX" installs/uninstall-makemkv)
+        log_cmd_live_pty PREFIX="$PREFIX" installs/uninstall-makemkv
     fi
 fi
 
@@ -827,24 +839,24 @@ print_h2 "qualIP's Media Tools"
 if $OPT_INSTALL ; then
     if ask_yes_no "Install qualIP's Media Tools?" ; then
         if $OPT_DEVELOP ; then
-            (set -x && $MAKE -C src develop)
+            log_cmd_live_pty $MAKE -C src develop
         elif $OPT_USER ; then
-            (set -x && $MAKE -C src install-user)
+            log_cmd_live_pty $MAKE -C src install-user
         else
-            (set -x && $MAKE -C src install-system)
+            log_cmd_live_pty $MAKE -C src install-system
         fi
     fi
 else
     if ask_yes_no "Uninstall qualIP's Media Tools?" ; then
         if $OPT_USER ; then
-            (set -x && $MAKE -C src uninstall-user)
+            log_cmd_live_pty $MAKE -C src uninstall-user
         else
-            (set -x && $MAKE -C src uninstall-system)
+            log_cmd_live_pty $MAKE -C src uninstall-system
         fi
     fi
 fi
 
 
-echo
-echo "All done. Enjoy!"
-echo
+print
+print_em "All done!"
+print
