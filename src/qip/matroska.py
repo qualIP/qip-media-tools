@@ -38,21 +38,25 @@ class MatroskaTagTarget(KwVarsObject):
 
     TargetType = None
     TrackUID = None
+    AttachmentUID = None
 
     def __init__(self, *,
                  TargetTypeValue,
                  TargetType=None,
-                 TrackUID=0,
+                 TrackUID=None,
+                 AttachmentUID=None,
                  **kwargs):
         self.TargetTypeValue = TargetTypeValue
         if TargetType is not None:
             self.TargetType = TargetType
         if TrackUID is not None:
             self.TrackUID = TrackUID
+        if AttachmentUID is not None:
+            self.AttachmentUID = AttachmentUID
         super().__init__(**kwargs)
 
     def apply_default_TargetTypes(self, default_TargetTypes):
-        if self.TargetType is None and self.TrackUID == 0:
+        if self.TargetType is None and self.TrackUID == 0 and self.AttachmentUID is None:
             newTargetType = default_TargetTypes.get(self.TargetTypeValue, None)
             if newTargetType is not None:
                 self.TargetType = newTargetType
@@ -263,12 +267,14 @@ class MatroskaFile(BinaryMediaFile):
         'TargetType',
         'TargetTypeValue',
         'TrackUID',
+        'AttachmentUID',
     ))
 
     # <Tags>
     #   <Tag>
     #     <Targets>
     #       <TrackUID>1</TrackUID>
+    #       <AttachmentUID>1</AttachmentUID>
     #       <TargetType>MOVIE</TargetType>
     #       <TargetTypeValue>50</TargetTypeValue>
     #     </Targets>
@@ -457,12 +463,16 @@ class MatroskaFile(BinaryMediaFile):
     @classmethod
     def _parse_tags_xml_Target(cls, eTarget):
         vTrackUID = None
+        vAttachmentUID = None
         vTargetTypeValue = None
         vTargetType = None
         for eSub in eTarget:
             if eSub.tag == 'TrackUID':
                 assert vTrackUID is None
                 vTrackUID = 0 if eSub.text is None else int(eSub.text)
+            elif eSub.tag == 'AttachmentUID':
+                assert vAttachmentUID is None
+                vAttachmentUID = 0 if eSub.text is None else int(eSub.text)
             elif eSub.tag == 'TargetTypeValue':
                 assert vTargetTypeValue is None
                 vTargetTypeValue = 50 if eSub.text is None else int(eSub.text)
@@ -471,7 +481,7 @@ class MatroskaFile(BinaryMediaFile):
                 vTargetType = eSub.text or ''
             else:
                 raise NotImplementedError('Unsupported Matroska XML tag %r' % (eSub.tag,))
-        if vTrackUID is None:
+        if vTrackUID is None and vAttachmentUID is None:
             vTrackUID = 0
         if vTargetTypeValue is None:
             vTargetTypeValue = {
@@ -501,6 +511,7 @@ class MatroskaFile(BinaryMediaFile):
         vTargetType = vTargetType or None
         return MatroskaTagTarget(
             TrackUID=vTrackUID,
+            AttachmentUID=vAttachmentUID,
             TargetTypeValue=vTargetTypeValue,
             TargetType=vTargetType,  # Can be None
         )
@@ -656,8 +667,12 @@ class MatroskaFile(BinaryMediaFile):
         for d_target, tags_list in d_tags_per_target.items():
             eTag = ET.SubElement(root, 'Tag')
             eTargets = ET.SubElement(eTag, 'Targets')
-            eTrackUID = ET.SubElement(eTargets, 'TrackUID')
-            eTrackUID.text = str(d_target.TrackUID)
+            if d_target.TrackUID is not None:
+                eTrackUID = ET.SubElement(eTargets, 'TrackUID')
+                eTrackUID.text = str(d_target.TrackUID)
+            if d_target.AttachmentUID is not None:
+                eAttachmentUID = ET.SubElement(eTargets, 'eAttachmentUID')
+                eAttachmentUID.text = str(d_target.eAttachmentUID)
             eTargetTypeValue = ET.SubElement(eTargets, 'TargetTypeValue')
             eTargetTypeValue.text = str(d_target.TargetTypeValue)
             if d_target.TargetType is not None:
@@ -706,7 +721,7 @@ class MatroskaFile(BinaryMediaFile):
         tags.type = file_type
         if tags.type is None:
             for d_tag in tags_list:
-                if (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue) == (0, 50):
+                if (d_tag.Target.TrackUID, d_tag.Target.AttachmentUID, d_tag.Target.TargetTypeValue) == (0, None, 50):
                     try:
                         tags.type = {
                             'ALBUM': 'normal',
@@ -723,7 +738,7 @@ class MatroskaFile(BinaryMediaFile):
                         break
         if tags.contenttype is None:
             for d_tag in tags_list:
-                if (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue, d_tag.Name) == (0, 50, 'CONTENT_TYPE'):
+                if (d_tag.Target.TrackUID, d_tag.Target.AttachmentUID, d_tag.Target.TargetTypeValue, d_tag.Name) == (0, None, 50, 'CONTENT_TYPE'):
                     tags.contenttype = d_tag.String
                     log.debug('Deduced contenttype is %r based on %r', tags.contenttype, d_tag)
                     break
@@ -733,9 +748,9 @@ class MatroskaFile(BinaryMediaFile):
             d_tag_collection_title = None
             d_tag_episode = None
             for d_tag in tags_list:
-                if (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue, d_tag.Target.TargetType, d_tag.Name) == (0, 70, 'COLLECTION', 'TITLE'):
+                if (d_tag.Target.TrackUID, d_tag.Target.AttachmentUID, d_tag.Target.TargetTypeValue, d_tag.Target.TargetType, d_tag.Name) == (0, None, 70, 'COLLECTION', 'TITLE'):
                     d_tag_collection_title = d_tag
-                elif (d_tag.Target.TrackUID, d_tag.Target.TargetTypeValue, d_tag.Target.TargetType) == (0, 50, 'EPISODE'):
+                elif (d_tag.Target.TrackUID, d_tag.Target.AttachmentUID, d_tag.Target.TargetTypeValue, d_tag.Target.TargetType) == (0, None, 50, 'EPISODE'):
                     d_tag_episode = d_tag
                 else:
                     continue
@@ -753,9 +768,9 @@ class MatroskaFile(BinaryMediaFile):
                 '3d-plane': '3D-PLANE',
             }.get(d_tag.Name, d_tag.Name)
             if False:
-                target_tags = tags if d_tag.Target.TrackUID == 0 else tags.tracks_tags[d_tag.Target.TrackUID]
+                target_tags = tags if d_tag.Target.TrackUID in (0, None) else tags.tracks_tags[d_tag.Target.TrackUID]
             else:
-                if d_tag.Target.TrackUID != 0:
+                if d_tag.Target.TrackUID not in (0, None):
                     target_tags = tags.tracks_tags[d_tag.Target.TrackUID]
                 elif False and d_tag.Target.TargetTypeValue is not None and d_tag.Target.TargetTypeValue <= default_TargetTypeValue:
                     target_tags = tags.tracks_tags[1]
