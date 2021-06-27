@@ -91,6 +91,7 @@ Supported systems:
   - Linux Debian 10 (buster), 11 (bullseye)
   - Linux Ubuntu 20.04.2 LTS (focal)
   - Arch Linux 2021-05-01
+  - macOS Big Sur 11.4 *experimental*
 
 Support for more systems will be added soon. Feel free to contribute, it's
 mostly a question of identifying and installing the right os-specific
