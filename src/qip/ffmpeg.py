@@ -459,8 +459,10 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             else:
                 if stop_crop:
                     log.debug('No cropping possible; Quit!')
-                    self.send(b'q' if self.string_type is bytes else 'q')
-                    # return False
+                    try:
+                        self.send(b'q' if self.string_type is bytes else 'q')
+                    except OSError:  # [Errno 5] Input/output error
+                        return False
         else:
             str = byte_decode(str).rstrip('\r\n')
             if self.on_progress_bar_line:
