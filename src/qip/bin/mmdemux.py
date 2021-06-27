@@ -6698,6 +6698,8 @@ def action_demux(inputdir, in_tags):
         if not app.args.interactive:
             raise
 
+        mux_dict.print_streams_summary(current_stream=stream_dict)
+
         with app.need_user_attention():
             from prompt_toolkit.formatted_text import FormattedText
             from prompt_toolkit.completion import WordCompleter
@@ -6714,6 +6716,8 @@ def action_demux(inputdir, in_tags):
                 subparsers = parser.add_subparsers(dest='action', required=True, help='Commands')
                 subparser = subparsers.add_parser('help', aliases=('h', '?'), help='print this help')
                 subparser = subparsers.add_parser('skip', aliases=('s',), help='skip this stream -- done')
+                subparser.add_argument('--index', '-i', help='target stream index', nargs='?')
+                subparser.add_argument('comment', nargs='?')
                 subparser = subparsers.add_parser('print', aliases=('p',), help='print streams summary')
                 subparser = subparsers.add_parser('default', help='toggle default disposition')
                 subparser = subparsers.add_parser('language', help='edit language')
@@ -6775,9 +6779,28 @@ def action_demux(inputdir, in_tags):
                 if ns.action == 'help':
                     print(parser.format_help())
                 elif ns.action == 'skip':
-                    stream_dict['skip'] = True
+                    skip_index = ns.index
+                    if skip_index is None:
+                        d = stream_dict
+                    else:
+                        skip_index = int(skip_index)
+                        forward = False
+                        for i, d in enumerate(sorted_streams):
+                            if d.index == skip_index:
+                                break
+                            if d is stream_dict:
+                                forward = True
+                        else:
+                            app.log.error('Stream index %r not found', skip_index)
+                            continue
+                    d['skip'] = ns.comment or True
                     update_mux_conf = True
-                    break
+                    if stream_dict is d:
+                        break
+                    elif forward:
+                        pass
+                    else:
+                        pass  # TODO
                 elif ns.action == 'open':
                     try:
                         if stream_dict.codec_type in (CodecType.subtitle,):
