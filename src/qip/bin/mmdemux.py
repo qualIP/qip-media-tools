@@ -1887,7 +1887,7 @@ def init_inputfile_tags(inputfile, in_tags, ffprobe_dict=None):
             # TITLE -- CONTENTTYPE
             # CONTENTTYPE: COMMENT
             # CONTENTTYPE
-            m = re.match(r'^(?:(?P<title>.+) -- )?(?P<contenttype>[^:]+)(?:: (?P<comment>.+))?$', d['title'])
+            m = re.match(r'^(?:(?P<title>.+) -- )?(?P<contenttype>[^:,|]+)(?:[:,|] (?P<comment>.+))?$', d['title'])
             if m:
                 try:
                     d['contenttype'] = ContentType(m.group('contenttype').strip())
