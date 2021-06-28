@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 PREFIX=${PREFIX:-/usr/local}
 PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
