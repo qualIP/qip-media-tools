@@ -70,7 +70,7 @@ log "PASS 1"
 set -- ffmpeg $init_args -i "$input_file" \
     -pass 1 -passlogfile "$passlogfile_file" \
     -speed 4 \
-    "${extra_args[@]}" \
+    ${extra_args[@]+"${extra_args[@]}"} \
     -- "$tmp_pass1output_file"
 if [ "$input_file" = "pipe:0" ] ; then
     ( set -o pipefail ; tee --output-error=exit "$tmp_input_file" | "$@" ) > /dev/null
@@ -82,7 +82,7 @@ fi
 log "PASS 2"
 (set -x ; ffmpeg $init_args -i "$input_file" \
     -pass 2 -passlogfile "$passlogfile_file" \
-    "${extra_args[@]}" \
+    ${extra_args[@]+"${extra_args[@]}"} \
     -- "$output_file" < /dev/null)
 
 [[ -n "$BADGER_PID" ]] && kill $BADGER_PID

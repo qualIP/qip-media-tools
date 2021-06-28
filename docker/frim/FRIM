@@ -29,7 +29,7 @@ while [[ "$#" > 0 ]] ; do
         -x)      OPT_X=true ; shift ;;
         --shell) OPT_SHELL=true ; shift ;;
         -i|-t)
-            docker_args=("${docker_args[@]}" "$1")
+            docker_args=(${docker_args[@]+"${docker_args[@]}"} "$1")
             shift
             ;;
         --log-driver=)
@@ -41,7 +41,7 @@ while [[ "$#" > 0 ]] ; do
             shift 2
             ;;
         --TODO)
-            app_args=("${app_args[@]}" "$1" "$2")
+            app_args=(${app_args[@]+"${app_args[@]}"} "$1" "$2")
             shift 2
             ;;
         --)      shift ; break ;;
@@ -61,9 +61,9 @@ $OPT_X && set -x
 #   Current serial number in output stream:  163
 DISPLAY=
 
-app_args=("${app_args[@]}" "$@")
+app_args=(${app_args[@]+"${app_args[@]}"} "$@")
 
-$OPT_SHELL && docker_args=("${docker_args[@]}" -i -t)
+$OPT_SHELL && docker_args=(${docker_args[@]+"${docker_args[@]}"} -i -t)
 
 export XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 #mkdir -pv "$XDG_DATA_HOME/FRIM"
@@ -82,7 +82,7 @@ set -- "$@" -v "$d":"$d" -w "$d"
 set -- "$@" --log-driver="$arg_log_driver"
 #set -- "$@" --mount type=bind,source="$XDG_DATA_HOME/FRIM",target="/home/developer/FRIM"
 #set -- "$@" -t --stop-signal SIGKILL
-set -- "$@" "${docker_args[@]}"
+set -- "$@" ${docker_args[@]+"${docker_args[@]}"}
 
 #X Error of failed request:  BadValue (integer parameter out of range for operation)
 #  Major opcode of failed request:  130 (MIT-SHM)
@@ -96,5 +96,5 @@ $OPT_SHELL && set -- "$@" --entrypoint /bin/bash
 
 set -- "$@" qualip/frim
 $OPT_SHELL || set -- "$@" $tool
-set -- "$@" "${app_args[@]}"
+set -- "$@" ${app_args[@]+"${app_args[@]}"}
 "$@"

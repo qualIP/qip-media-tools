@@ -13,7 +13,7 @@ while true ; do
     case "$1" in
         -x)      OPT_X=true ; shift ;;
         --language|--seed-file-name)
-            edit_args=("${edit_args[@]}" "$1" "$2")
+            edit_args=(${edit_args[@]+"${edit_args[@]}"} "$1" "$2")
             shift 2
             ;;
         --)      shift ; break ;;
@@ -34,7 +34,7 @@ export TERM=xterm
 
 if [[ "${#edit_args[@]}" != 0 ]] ; then
     ~/SubtitleEdit-edit-Settings \
-        "${edit_args[@]}"
+        ${edit_args[@]+"${edit_args[@]}"}
 fi
 
 mono ~/SubtitleEdit/SubtitleEdit.exe "$@" &

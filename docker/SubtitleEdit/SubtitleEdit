@@ -22,12 +22,12 @@ while true ; do
         -x)      OPT_X=true ; shift ;;
         --shell) OPT_SHELL=true ; shift ;;
         -i|-t)
-            docker_args=("${docker_args[@]}" "$1")
+            docker_args=(${docker_args[@]+"${docker_args[@]}"} "$1")
             shift
             ;;
         --conf)  SUBTITLEEDIT_CONF=$2 ; shift 2 ;;
         --language|--seed-file-name)
-            app_args=("${app_args[@]}" "$1" "$2")
+            app_args=(${app_args[@]+"${app_args[@]}"} "$1" "$2")
             shift 2
             ;;
         --)      shift ; break ;;
@@ -47,9 +47,9 @@ esac
 
 $OPT_X && set -x
 
-app_args=("${app_args[@]}" "$@")
+app_args=(${app_args[@]+"${app_args[@]}"} "$@")
 
-$OPT_SHELL && docker_args=("${docker_args[@]}" -i -t)
+$OPT_SHELL && docker_args=(${docker_args[@]+"${docker_args[@]}"} -i -t)
 
 # Make sure the configuration directory already exists or docker will create
 # one owned by root and SubtitleEdit won't have permissions to modify anything.
@@ -72,10 +72,10 @@ if [ -n "$d2" ] ; then
     set -- "$@" --mount "type=bind,\"source=${d2//\"/\"\"}\",\"destination=${d2//\"/\"\"}\""
     set -- "$@" --mount "type=bind,\"source=${d2//\"/\"\"}\",\"destination=/home/developer/src\""
 fi
-set -- "$@" "${docker_args[@]}"
+set -- "$@" ${docker_args[@]+"${docker_args[@]}"}
 $OPT_SHELL && set -- "$@" --entrypoint /bin/bash
 
 set -- "$@" qualip/subtitleedit
 set -- "$@" $($OPT_X && echo -x)
-set -- "$@" "${app_args[@]}"
+set -- "$@" ${app_args[@]+"${app_args[@]}"}
 "$@"

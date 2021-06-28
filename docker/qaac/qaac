@@ -19,11 +19,11 @@ while true ; do
         -x)      OPT_X=true ; shift ;;
         --shell) OPT_SHELL=true ; shift ;;
         -i|-t)
-            docker_args=("${docker_args[@]}" "$1")
+            docker_args=(${docker_args[@]+"${docker_args[@]}"} "$1")
             shift
             ;;
         --TODO)
-            app_args=("${app_args[@]}" "$1" "$2")
+            app_args=(${app_args[@]+"${app_args[@]}"} "$1" "$2")
             shift 2
             ;;
         --)      shift ; break ;;
@@ -36,9 +36,9 @@ $OPT_X && set -x
 # qaac/refalac doesn't need X
 DISPLAY=
 
-app_args=("${app_args[@]}" "$@")
+app_args=(${app_args[@]+"${app_args[@]}"} "$@")
 
-$OPT_SHELL && docker_args=("${docker_args[@]}" -i -t)
+$OPT_SHELL && docker_args=(${docker_args[@]+"${docker_args[@]}"} -i -t)
 
 set -- docker container run
 set -- "$@" $($OPT_RM && echo --rm || echo --name qaac)
@@ -52,10 +52,10 @@ fi
 set -- "$@" -v "${TMPDIR:-/tmp}":"/tmp"
 set -- "$@" -v "$d":"/home/developer/pwd"
 set -- "$@" -v "$d":"$d" -w "$d"
-set -- "$@" "${docker_args[@]}"
+set -- "$@" ${docker_args[@]+"${docker_args[@]}"}
 
 $OPT_SHELL && set -- "$@" --entrypoint /bin/bash
 
 set -- "$@" qualip/qaac
-set -- "$@" "${app_args[@]}"
+set -- "$@" ${app_args[@]+"${app_args[@]}"}
 "$@"
