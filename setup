@@ -98,13 +98,6 @@ if [[ -z "$PREFIX" ]] ; then
     exit 1
 fi
 
-if ! [[ -d "$PREFIX" ]] ; then
-    $(PREFIX_SUDO) mkdir "$PREFIX"
-fi
-
-PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
-maybe_sudo=$([[ "$USER" = "root" ]] || echo sudo)
-
 lsb_codename=
 if [[ -z "$lsb_codename" ]] && type -P lsb_release > /dev/null ; then
     lsb_codename=$(lsb_release -cs 2>/dev/null)
@@ -574,6 +567,14 @@ echo "Run "'`'"$0 --help"'`'" for more options."
 
 echo
 ask_yes_no "Ready to proceed?"
+
+
+if ! [[ -d "$PREFIX" ]] ; then
+    mkdir "$PREFIX"
+fi
+
+maybe_sudo=$([[ "$USER" = "root" ]] || echo sudo)
+PREFIX_SUDO=$([[ -w "$PREFIX" ]] || echo sudo)
 
 
 print_h2 "Package dependencies"
