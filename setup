@@ -480,16 +480,16 @@ _has_docker_wine=
 need_docker_wine() {
     if [[ -z "$_has_docker_wine" ]] ; then
         if $OPT_INSTALL ; then
-            if test_docker_image_installed qualIP/wine64 \
-                    && test_docker_image_installed qualIP/wine32 \
+            if test_docker_image_installed qualip/wine64 \
+                    && test_docker_image_installed qualip/wine32 \
                 ; then
                 _has_docker_wine=true
             else
                 _has_docker_wine=false
             fi
         else
-            if test_docker_image_installed qualIP/wine64 \
-                    || test_docker_image_installed qualIP/wine32 \
+            if test_docker_image_installed qualip/wine64 \
+                    || test_docker_image_installed qualip/wine32 \
                 ; then
                 _has_docker_wine=true
             else
@@ -727,7 +727,7 @@ if $OPT_INSTALL ; then
 else
     t() {
         test_prog_installed qaac || \
-        test_docker_image_installed qualIP/qaac
+        test_docker_image_installed qualip/qaac
     }
     if t && ask_yes_no "Uninstall qaac docker?" \
         ; then
@@ -761,7 +761,7 @@ if $OPT_INSTALL ; then
 else
     t() {
         test_prog_installed SubtitleEdit || \
-        test_docker_image_installed qualIP/subtitleedit
+        test_docker_image_installed qualip/subtitleedit
     }
     if t && ask_yes_no "Uninstall SubtitleEdit docker?" \
         ; then
@@ -794,7 +794,7 @@ if $OPT_INSTALL ; then
 else
     t() {
         test_prog_installed FRIMDecode || \
-        test_docker_image_installed qualIP/frim
+        test_docker_image_installed qualip/frim
     }
     if t && ask_yes_no "Uninstall FRIM docker?" \
         ; then
