@@ -368,7 +368,7 @@ def dbg_spawn_cmd(cmd, hidden_args=[],
                         list2cmdline(cmd))
     out = ''
     if logfile is True:
-        logfile = sys.stdout.buffer
+        logfile = sys.stdout if encoding else sys.stdout.buffer
     elif logfile is False:
         logfile = None
     spawn_func = functools.partial(fdspawn, fd=fd) if fd is not None else spawn
