@@ -549,7 +549,6 @@ ask_yes_no() {
     $v
 }
 
-
 #print_h2 "Prologue"
 print
 print "This program will help you install qualIP's Media Tools and its"
@@ -568,6 +567,8 @@ print_value "Installation target" "$( \
 print_value "Installation prefix" "$PREFIX"
 print_value "Prompt mode" "$($OPT_YES && echo "Answer yes" || echo "Prompt")"
 print_value "Clean mode" "$($OPT_CLEAN && echo "Clean" || echo "No clean")"
+print_value "Packaging" "$PMS"
+print_value "Distro" "$DISTRO"
 print_value "LSB release codename" "$lsb_codename"
 
 print
