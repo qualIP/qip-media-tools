@@ -2,7 +2,7 @@ class QipMediaToolsDepends < Formula
   desc "Dependency package for qualIP's Media Tools"
   homepage "https://github.com/qualIP/qip-media-tools"
   license "GPL-3.0-or-later"
-  version "1.0"
+  version "1.0.1"
   revision 1
 
   url "file:///dev/null"
@@ -31,6 +31,7 @@ class QipMediaToolsDepends < Formula
   depends_on "ffmpeg"
   depends_on "libdvdread"
   depends_on "libudfread"
+  depends_on "libdiscid"
   depends_on "expat"
 
   depends_on "ccextractor" => :recommended
@@ -48,7 +49,7 @@ class QipMediaToolsDepends < Formula
     # end
 
     #depends_on "python-discid"
-    system "pip3", "install", "discid"
+    system "pip3", "install", "python-libdiscid"
     system "pip3", "install", "beautifulsoup4"
     system "pip3", "install", "lxml"
 
