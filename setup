@@ -347,11 +347,11 @@ test_python_module_installed() {
 
     print_q "Python module $module installed?"
     # v=$($PYTHON -c "import importlib ; print(importlib.util.find_spec('${module}') is not None)" 2> /dev/null)
-    v=$($PYTHON -c "import ${module} ; print(True)" 2> /dev/null)
-    if [[ "$v" = "True" ]] ; then
-        print_a "YES"
+    v=$($PYTHON -c "import ${module} ; import sys ; print('True: %r' % (sys.modules['${module}'],))" 2>&1 || true)
+    if [[ "${v:0:6}" = "True: " ]] ; then
+        print_a "YES" "${v:6}"
     else
-        print_a NO
+        print_a NO "$v"
         print_err "Error: Python module $module not found!"
         return 1
     fi
