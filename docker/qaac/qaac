@@ -50,6 +50,7 @@ if [ -n "${DISPLAY:-}" ] ; then
     set -- "$@" ${DISPLAY:+-e DISPLAY="$DISPLAY"}
 fi
 set -- "$@" -v "${TMPDIR:-/tmp}":"/tmp"
+set -- "$@" -v "${TMPDIR:-/tmp}":"${TMPDIR:-/tmp}"
 set -- "$@" -v "$d":"/home/developer/pwd"
 set -- "$@" -v "$d":"$d" -w "$d"
 set -- "$@" ${docker_args[@]+"${docker_args[@]}"}
