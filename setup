@@ -3,6 +3,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+qip_top_dir="$(pwd)"
 
 usage() {
     echo "Usage: $0 [options...]"
@@ -228,9 +229,9 @@ elif [[ -e /etc/arch-release ]] ; then
         if ! $ask || ask_yes_no "Build & install $package package from AUR?" ; then
 
             log_cmd_live_pty git clone "https://aur.archlinux.org/$package.git" "$MY_TMPDIR/$package"
-            log_cmd cd "$MY_TMPDIR/$package"
+            log_cmd_interactive cd "$MY_TMPDIR/$package"
             log_cmd_live_pty makepkg
-            log_cmd cd ..
+            log_cmd_interactive cd "$qip_top_dir"
             package_file=$(find "%MY_TMPDIR/$package" -name "$package-*.pkg.tar.zst")
             if [[ -z "$package_file" ]] ; then
                 print_err "Failed to build package $package"
@@ -668,7 +669,7 @@ print
 print "See https://github.com/qualIP/PyAV"
 print
 
-src_pyav_dir="$(pwd)/src/qip/PyAV"
+src_pyav_dir="$qip_top_dir/src/qip/PyAV"
 if $OPT_INSTALL ; then
     if $OPT_REINSTALL || ! test_python_module_installed av ; then
         if ask_yes_no "Build and install Python module av (qualIP/PyAV)?" \
@@ -676,7 +677,7 @@ if $OPT_INSTALL ; then
             if ! [[ -d "$src_pyav_dir" ]] ; then
                 log_cmd_live_pty git clone "https://github.com/qualIP/PyAV.git" "$src_pyav_dir"
             fi
-            log_cmd cd "$src_pyav_dir"
+            log_cmd_interactive cd "$src_pyav_dir"
             log_cmd_live_pty $PYTHON setup.py build
             if $OPT_DEVELOP ; then
                 log_cmd_live_pty $PYTHON setup.py develop --user
@@ -685,7 +686,7 @@ if $OPT_INSTALL ; then
             else
                 log_cmd_live_pty $PREFIX_SUDO $PIP install .
             fi
-            log_cmd cd ..
+            log_cmd_interactive cd "$qip_top_dir"
             test_python_module_installed av
         fi
     fi
