@@ -7,6 +7,7 @@
 #    import os, sys
 #    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir, "lib", "python"))
 
+from pathlib import Path
 import argparse
 import logging
 import os
@@ -73,7 +74,14 @@ def main():
     pgroup.add_argument('--country', dest='country_list', default=None, nargs='*', help='specify country list')
     # }}}
 
-    app.parser.add_argument('cue_files', nargs='*', default=None, type=CDDACueSheetFile.argparse_type(), help='cue file names')
+    def _cue_file_Path(value):
+        path = Path(value)
+        if path.suffix == '.bin':
+            path = path.with_suffix('.cue')
+        value = os.fspath(path)
+        return CDDACueSheetFile.argparse_type()(value)
+
+    app.parser.add_argument('cue_files', nargs='*', default=None, type=_cue_file_Path, help='cue file names')
 
     app.parse_args()
 

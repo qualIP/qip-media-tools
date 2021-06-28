@@ -579,9 +579,6 @@ class TextFile(File):
 
     open_encoding = 'utf-8'
 
-    def read(self):
-        return str(super().read())
-
 
 class BinaryFile(File):
 
