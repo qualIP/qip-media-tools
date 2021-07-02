@@ -61,7 +61,7 @@ Suggests:
 # NOTE: libdvdcss2: https://download.videolan.org/pub/debian/stable/
 # Architecture: all
 # Multi-Arch: <one of: foreign|same|allowed>
-Copyright: GPL-3.0 License
+Copyright: ../LICENSE.txt
 # Changelog: <changelog file; defaults to a generic changelog>
 # Readme: <README.Debian file; defaults to a generic one>
 # Extra-Files: <comma-separated list of additional files for the doc directory>
