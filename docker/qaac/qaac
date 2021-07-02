@@ -10,8 +10,6 @@ OPT_SHELL=false
 declare -a docker_args=()
 declare -a app_args=()
 
-# eval set -- "$(POSIXLY_CORRECT=1 getopt --long "rm,no-rm,shell" --options "xit" --name "$0" -- "$@")"
-
 while true ; do
     case "${1:-}" in
         --rm)    OPT_RM=true ; shift ;;

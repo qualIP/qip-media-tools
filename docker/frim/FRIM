@@ -18,12 +18,10 @@ case "$tool" in
     FRIMTranscode*) tool=FRIMTranscode ;;
 esac
 
-#eval set -- "$(POSIXLY_CORRECT=1 getopt --long "rm,no-rm,shell" --options "xit" --name "$0" -- "$@")"
-
 set -- -i "$@"
 
-while [[ "$#" > 0 ]] ; do
-    case "$1" in
+while true ; do
+    case "${1:-}" in
         --rm)    OPT_RM=true ; shift ;;
         --no-rm) OPT_RM=false ; shift ;;
         -x)      OPT_X=true ; shift ;;

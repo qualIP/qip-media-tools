@@ -13,10 +13,8 @@ declare -a app_args=()
 
 SUBTITLEEDIT_CONF=${SUBTITLEEDIT_CONF:-"$HOME/.config/Subtitle Edit"}
 
-eval set -- "$(POSIXLY_CORRECT=1 getopt --long "rm,no-rm,shell,conf:,language:,seed-file-name:" --options "xit" --name "$0" -- "$@")"
-
 while true ; do
-    case "$1" in
+    case "${1:-}" in
         --rm)    OPT_RM=true ; shift ;;
         --no-rm) OPT_RM=false ; shift ;;
         -x)      OPT_X=true ; shift ;;
@@ -31,7 +29,7 @@ while true ; do
             shift 2
             ;;
         --)      shift ; break ;;
-        *)       echo "Internal error!" >&2 ; exit 255 ;;
+        *)       break ;;
     esac
 done
 
