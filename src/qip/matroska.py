@@ -859,49 +859,12 @@ class MatroskaFile(BinaryMediaFile):
                         '--chapters', chapters_file,
                     ))
 
-    @classmethod
-    def prep_picture(cls, src_picture, *,
-            yes=False,  # unused
-            ipod_compat=True,  # unused
-            keep_picture_file_name=None,
-            ):
-        from .exec import do_exec_cmd
-
-        if not src_picture:
-            return None
-        src_picture = Path(src_picture)
-
-        return cls._lru_prep_picture(src_picture,
-                                     keep_picture_file_name)
-
-    @classmethod
-    @functools.lru_cache()
-    def _lru_prep_picture(cls,
-                          src_picture : Path,
-                          keep_picture_file_name):
-        picture = src_picture
-
-        if src_picture.suffix not in (
-                #'.gif',
-                '.png',
-                '.jpg',
-                '.jpeg'):
-            if keep_picture_file_name:
-                picture = ImageFile.new_by_file_name(keep_picture_file_name)
-            else:
-                picture = PngFile.NamedTemporaryFile()
-            if src_picture.resolve() != picture.file_name.resolve():
-                log.info('Writing new picture %s...', picture)
-                from .ffmpeg import ffmpeg
-                ffmpeg_args = []
-                if True:  # yes
-                    ffmpeg_args += ['-y']
-                ffmpeg_args += ['-i', src_picture]
-                ffmpeg_args += ['-an', str(picture)]
-                ffmpeg(*ffmpeg_args)
-            src_picture = picture
-
-        return picture
+    _picture_extensions = (
+        # '.gif',
+        '.png',
+        '.jpg',
+        '.jpeg',
+    )
 
     def encode(self, *,
                inputfiles,

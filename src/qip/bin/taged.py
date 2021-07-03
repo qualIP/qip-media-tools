@@ -631,41 +631,59 @@ def taged_mf_MP4Tags(file_name, mf, tags):
     return True
 
 def taged_mf_VCFLACDict(file_name, mf, tags):
+    from qip.flac import FlacFile
+    return taged_mf_VComment(file_name, mf, tags, tag_map=FlacFile.tag_map)
+
+def taged_mf_OggFLACVComment(file_name, mf, tags):
+    from qip.ogg import OggFile
+    return taged_mf_VComment(file_name, mf, tags, tag_map=OggFile.tag_map)
+
+def taged_mf_OggTheoraCommentDict(file_name, mf, tags):
+    from qip.ogg import OggFile
+    return taged_mf_VComment(file_name, mf, tags, tag_map=OggFile.tag_map)
+
+def taged_mf_VComment(file_name, mf, tags, tag_map):
+
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('Old tags: %r', list(mf.tags.keys()))
 
     tags_to_set = set(tags.keys())
     app.log.debug('tags %r, tags_to_set: %r', type(tags), tags_to_set)
-    from qip.flac import FlacFile
-    rev_tag_map = {v: k for k, v in FlacFile.tag_map.items()}
+    rev_tag_map = {v: k for k, v in tag_map.items()}
 
     for tag in tags_to_set:
+        if tag in (
+                MediaTagEnum.contenttype,  # TODO
+                MediaTagEnum.language,  # TODO
+        ):
+            continue
         tag = tag.name
         value = tags[tag]
 
         try:
-            flac_tag = rev_tag_map[tag]
+            vorbis_tag = rev_tag_map[tag]
         except KeyError:
+            if value is None:
+                continue
             raise NotImplementedError(tag)
-        #print(f'XXXJST tag={tag}, flac_tag={flac_tag}, value={value!r}')
 
         if value is None:
             try:
-                del mf.tags[flac_tag]
+                del mf.tags[vorbis_tag]
             except KeyError:
                 pass
             else:
-                app.log.verbose(' Removed %s (%s)', tag, flac_tag)
+                app.log.verbose(' Removed %s (%s)', tag, vorbis_tag)
             continue
         else:
             flac_value = str(value)
 
         try:
-            mf.tags[flac_tag] = flac_value
+            mf.tags[vorbis_tag] = flac_value
         except:
-            app.log.debug('ERROR! mf.tags[%r] = %r', flac_tag, flac_value)
+            app.log.debug('ERROR! mf.tags[%r] = %r', vorbis_tag, flac_value)
             raise
-        app.log.verbose(' Set %s (%s): %r', tag, flac_tag, flac_value)
+        app.log.verbose(' Set %s (%s): %r', tag, vorbis_tag, flac_value)
 
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('New tags: %r', list(mf.tags.keys()))
@@ -680,6 +698,10 @@ def taged_mf(file_name, mf, tags):
         return taged_mf_MP4Tags(file_name, mf, tags)
     if isinstance(mf.tags, mutagen.flac.VCFLACDict):
         return taged_mf_VCFLACDict(file_name, mf, tags)
+    if isinstance(mf.tags, mutagen.oggflac.OggFLACVComment):
+        return taged_mf_OggFLACVComment(file_name, mf, tags)
+    if isinstance(mf.tags, mutagen.oggtheora.OggTheoraCommentDict):
+        return taged_mf_OggTheoraCommentDict(file_name, mf, tags)
     raise NotImplementedError(mf.tags.__class__.__name__)
 
 def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):

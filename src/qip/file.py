@@ -727,7 +727,9 @@ def load_all_file_types():
     import qip.mp2
     import qip.mp3
     import qip.mp4
+    import qip.ogg
     import qip.pgs
+    #import qip.vorbis
     import qip.wav
 
 File._build_extension_to_class_map()

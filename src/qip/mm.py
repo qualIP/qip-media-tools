@@ -719,6 +719,7 @@ class MediaFile(File):
                 ffmpeg_args = [
                     '-i', self,
                     '-i', metadata_file,
+                    '-map', 0,
                     '-map_metadata', 1,
                     '-codec', 'copy',
                     '-y',
@@ -759,6 +760,10 @@ class MediaFile(File):
             return self._load_tags_mf_MP4Tags(mf)
         if isinstance(mf.tags, mutagen.flac.VCFLACDict):
             return self._load_tags_mf_VCFLACDict(mf)
+        if isinstance(mf.tags, mutagen.oggflac.OggFLACVComment):
+            return self._load_tags_mf_OggFLACVComment(mf)
+        if isinstance(mf.tags, mutagen.oggtheora.OggTheoraCommentDict):
+            return self._load_tags_mf_OggTheoraCommentDict(mf)
         raise NotImplementedError(mf.tags.__class__.__name__)
 
     def _load_tags_mf_id3(self, mf):
@@ -922,25 +927,36 @@ class MediaFile(File):
         return tags
 
     def _load_tags_mf_VCFLACDict(self, mf):
+        from qip.flac import FlacFile
+        return self._load_tags_mf_VComment(mf, tag_map=FlacFile.tag_map)
+
+    def _load_tags_mf_OggFLACVComment(self, mf):
+        from qip.ogg import OggFile
+        return self._load_tags_mf_VComment(mf, tag_map=OggFile.tag_map)
+
+    def _load_tags_mf_OggTheoraCommentDict(self, mf):
+        from qip.ogg import OggFile
+        return self._load_tags_mf_VComment(mf, tag_map=OggFile.tag_map)
+
+    def _load_tags_mf_VComment(self, mf, tag_map):
         # import mutagen
         tags = TrackTags(album_tags=AlbumTags())
-        from .flac import FlacFile
-        for flac_tag, tag_value in mf.items():
+        for vorbis_tag, tag_value in mf.items():
             try:
-                mapped_tag = FlacFile.tag_map[flac_tag]
+                mapped_tag = tag_map[vorbis_tag]
             except KeyError:
-                raise NotImplementedError(f'{flac_tag} = {tag_value!r}')
+                raise NotImplementedError(f'{vorbis_tag} = {tag_value!r}')
             if isinstance(tag_value, list):
                 if len(tag_value) == 1:
                     tag_value = tag_value[0]
                     if isinstance(tag_value, str):
                         pass
                     else:
-                        raise NotImplementedError(f'{flac_tag} / {mapped_tag} = {tag_value!r}')
+                        raise NotImplementedError(f'{vorbis_tag} / {mapped_tag} = {tag_value!r}')
                 else:
-                    raise NotImplementedError(f'{flac_tag} / {mapped_tag} = {tag_value!r}')
+                    raise NotImplementedError(f'{vorbis_tag} / {mapped_tag} = {tag_value!r}')
             else:
-                raise NotImplementedError(f'{flac_tag} / {mapped_tag} = {tag_value!r}')
+                raise NotImplementedError(f'{vorbis_tag} / {mapped_tag} = {tag_value!r}')
             tags.set_tag(mapped_tag, tag_value)
         return tags
 
@@ -1326,6 +1342,8 @@ class MediaFile(File):
                             pass
                         elif parser.line == 'Vorbis audio':
                             self.audio_type = parser.line
+                        elif parser.line == 'FLAC audio':
+                            self.audio_type = parser.line
                         elif parser.line == 'WAVE audio':
                             self.audio_type = parser.line
                         elif parser.line == 'stereo':
@@ -1409,6 +1427,55 @@ class MediaFile(File):
             if isinstance(self, SubtitleFile):
                 return 'subtitle'
         raise MissingMediaTagError(MediaTagEnum.type, file=self)
+
+    _picture_extensions = (
+        # '.gif',
+        '.png',
+        '.jpg',
+        '.jpeg',
+    )
+
+    @classmethod
+    def prep_picture(cls, src_picture, *,
+            yes=False,  # unused
+            ipod_compat=True,  # unused
+            keep_picture_file_name=None,
+            ):
+        from .exec import do_exec_cmd
+
+        if not src_picture:
+            return None
+        src_picture = Path(src_picture)
+
+        return cls._lru_prep_picture(src_picture,
+                                     keep_picture_file_name)
+
+    @classmethod
+    @functools.lru_cache()
+    def _lru_prep_picture(cls,
+                          src_picture : Path,
+                          keep_picture_file_name):
+        picture = src_picture
+
+        if src_picture.suffix not in cls._picture_extensions:
+            if keep_picture_file_name:
+                from .img import ImageFile
+                picture = ImageFile.new_by_file_name(keep_picture_file_name)
+            else:
+                from .img import PngFile
+                picture = PngFile.NamedTemporaryFile()
+            if src_picture.resolve() != picture.file_name.resolve():
+                log.info('Writing new picture %s...', picture)
+                from .ffmpeg import ffmpeg
+                ffmpeg_args = []
+                if True:  # yes
+                    ffmpeg_args += ['-y']
+                ffmpeg_args += ['-i', src_picture]
+                ffmpeg_args += ['-an', str(picture)]
+                ffmpeg(*ffmpeg_args)
+            src_picture = picture
+
+        return picture
 
 class BinaryMediaFile(MediaFile, BinaryFile):
     pass
@@ -5086,6 +5153,8 @@ class AudioType(enum.Enum):
                 (r'^MPEG audio \(layer I, II or III\)$', 'mp3'),
                 (r'^Vorbis audio$', 'vorbis'),
                 (r'^Vorbis$', 'vorbis'),
+                (r'^FLAC audio$', 'flac'),
+                (r'^FLAC$', 'flac'),
                 (r'^WAVE audio$', 'wav'),
                 (r'^m4a$', 'aac'),
                 (r'^m4b$', 'aac'),
@@ -5105,9 +5174,7 @@ AudioType.__new__ = AudioType.__new_override__
 
 class SoundFile(BinaryMediaFile):
 
-    _common_extensions = (
-        '.ogg',
-    )
+    _common_extensions = ()
 
     @property
     def audio_type(self):

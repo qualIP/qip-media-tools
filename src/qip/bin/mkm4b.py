@@ -30,6 +30,7 @@ from qip.cmp import *
 from qip.exec import *
 from qip.file import *
 from qip.matroska import MkaFile, MatroskaChaptersFile
+from qip.ogg import OgaFile
 from qip.mm import *
 from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps, Mp4chapsFile
 from qip.parser import *
@@ -38,9 +39,11 @@ import qip.mm
 import qip.utils
 Auto = qip.utils.Constants.Auto
 
-import qip.wav
+import qip.flac
 import qip.mp3
 import qip.mp4
+import qip.ogg
+import qip.wav
 
 # https://www.ffmpeg.org/ffmpeg.html
 
@@ -226,7 +229,7 @@ def main():
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--single', action='store_true', help='create single audiobooks files')
     pgroup.add_argument('--output', '-o', dest='outputfile', default=argparse.SUPPRESS, type=Path, help='specify the output file name')
-    pgroup.add_argument('--format', default=Auto, choices=('m4b', 'mka'), help='specify the output file format')
+    pgroup.add_argument('--format', default=Auto, choices=('m4b', 'mka', 'oga'), help='specify the output file format')
 
     pgroup = app.parser.add_argument_group('Compatibility')
     pgroup.add_bool_argument('--ipod-compat', default=False, help='enable iPod compatibility')
@@ -325,6 +328,10 @@ def mkm4b(inputfiles, default_tags):
                 qip.wav.WaveFile,
                 qip.mp3.Mp3File)):
             m4b = M4bFile(file_name=None)
+        elif isinstance(inputfiles[0], (
+                qip.ogg.OggFile,
+                qip.flac.FlacFile)):
+            m4b = OgaFile(file_name=None)
         else:
             m4b = MkaFile(file_name=None)
     else:
@@ -332,6 +339,8 @@ def mkm4b(inputfiles, default_tags):
             m4b = M4bFile(file_name=None)
         elif app.args.format == 'mka':
             m4b = MkaFile(file_name=None)
+        elif app.args.format == 'oga':
+            m4b = OgaFile(file_name=None)
         else:
             raise NotImplementedError(app.args.format)
     m4b.tags.update(default_tags)

@@ -607,6 +607,9 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [ac3 @ 0x563251c008c0] Estimating duration from bitrate, this may be inaccurate
             (fr'^(?:\[\S+ @ \w+\]\s)?Estimating duration from bitrate, this may be inaccurate{re_eol}', self.generic_debug_line),
 
+            # Multiple -c, -codec, -acodec, -vcodec, -scodec or -dcodec options specified for stream 1, only the last option '-c:1 libtheora' will be used.
+            (fr'^Multiple -c, -codec, -acodec, -vcodec, -scodec or -dcodec options specified for stream (?P<stream>\S+), only the last option \'(?P<option>.*)\' will be used\.{re_eol}', self.generic_debug_line),
+
             (fr'^\[info\]\s[^\r\n]*?{re_eol}', self.unknown_info_line),
             (fr'^\[verbose\]\s[^\r\n]*?{re_eol}', self.unknown_verbose_line),
             (fr'^\[warning\]\s[^\r\n]*?{re_eol}', self.unknown_warning_line),

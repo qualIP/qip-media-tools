@@ -5,13 +5,16 @@ __all__ = (
     'FlacFile',
 )
 
+import contextlib
+import copy
 import logging
-import struct
-import tempfile
-log = logging.getLogger(__name__)
+import re
+_log = log = logging.getLogger(__name__)
 
-from . import mm
-from .mm import SoundFile
+from .mm import MediaFile, SoundFile, taged, AudioType, parse_time_duration
+from .vorbis import _vorbis_tag_map, _vorbis_picture_extensions
+
+# ffmpeg -i audio.flac -i image.png -map 0:a -map 1 -codec copy -metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" -disposition:v attached_pic output.flac
 
 class FlacFile(SoundFile):
 
@@ -21,48 +24,21 @@ class FlacFile(SoundFile):
 
     @property
     def audio_type(self):
-        return mm.AudioType.flac
+        return AudioType.flac
 
     @audio_type.setter
     def audio_type(self, value):
         if value is not None \
-                and mm.AudioType(value) is not mm.AudioType.flac:
+                and AudioType(value) is not AudioType.flac:
             raise ValueError(value)
 
     @property
     def tag_writer(self):
-        return mm.taged
+        return taged
 
-    # https://xiph.org/flac/faq.html#general__tagging
-    tag_map = {
-        # https://xiph.org/vorbis/doc/v-comment.html
-        'title': 'title',
-        'version': 'subtitle',  # TODO CHECK!
-        'album': 'albumtitle',
-        'tracknumber': 'track',
-        'artist': 'artist',
-        'performer': 'performer',
-        'copyright': 'copyright',
-        'license': 'license',
-        'organization': 'record_label',
-        'description': 'description',
-        'genre': 'genre',
-        'date': 'date',  # TODO vs recording_date
-        'location': 'recording_location',
-        'contact': 'encodedby',  # TODO CHECK!
-        'isrc': 'isrc',
-        # More:
-        'composer': 'composer',
-        'albumartist': 'albumartist',
-        'comment': 'comment',
-        'discnumber': 'disk',
-        'disctotal': 'disks',
-        'totaldiscs': 'disks',  # HDtracks
-        'tracktotal': 'tracks',
-        'totaltracks': 'tracks',  # HDtracks
-        'publisher': 'publisher',  # HDtracks
-        'upc': 'barcode',  # HDtracks
-    }
+    tag_map = dict(_vorbis_tag_map)
+
+    _picture_extensions = tuple(_vorbis_picture_extensions)
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None, yes=False):
         from .ffmpeg import ffmpeg
