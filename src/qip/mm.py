@@ -578,7 +578,8 @@ class Chapters(json.JSONEncodable, collections.UserList):
         print(
             tabulate(chaps_table,
                      headers=['No', 'Start', 'End', 'Title'],
-                     colalign=['right', 'right', 'right', 'left'],
+                     # colalign: Avoid "IndexError: list assignment index out of range" error
+                     colalign=['right', 'right', 'right', 'left'] if chaps_table else None,
                      tablefmt='simple'),
             file=StreamTransform.indenter(file))
 

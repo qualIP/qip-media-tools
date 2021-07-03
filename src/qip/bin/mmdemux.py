@@ -4190,12 +4190,13 @@ def action_verify(inputfile, in_tags):
                        'Duration',
                        'Total time',
                    ],
+                   # colalign: Avoid "IndexError: list assignment index out of range" error
                    colalign=[
                        'left',
                        'right',
                        'right',
                        'right',
-                   ],
+                   ] if stream_duration_table else None,
                    tablefmt='simple',
                    ))
 
@@ -4520,6 +4521,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
                                'Title',
                                'Disposition',
                            ],
+                           # colalign: Avoid "IndexError: list assignment index out of range" error
                            colalign=[
                                'right',
                                'ĺeft',
@@ -4528,7 +4530,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
                                'ĺeft',
                                'ĺeft',
                                'ĺeft',
-                           ],
+                           ] if table else None,
                            tablefmt='simple',
                            ))
 

@@ -300,7 +300,8 @@ class ConcatScriptFile(TextFile):
         print(
             tabulate(files_table,
                      headers=['No', 'Name', 'Duration'],
-                     colalign=['right', 'left', 'right'],
+                     # colalign: Avoid "IndexError: list assignment index out of range" error
+                     colalign=['right', 'left', 'right'] if files_table else None,
                      tablefmt='simple'),
             file=StreamTransform.indenter(file))
 
