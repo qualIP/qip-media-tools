@@ -33,8 +33,13 @@ class LibrivoxIndexFile(XmlFile):
         if load:
             load()
 
-    def load(self):
-        tree = ET.parse(self.file_name)
+    def load(self, file=None):
+        if file is None:
+            file = self.fp
+        if file is None:
+            tree = ET.parse(self.file_name)
+        else:
+            tree = ET.parse(file)
         root = tree.getroot()
         self.originals = set()
         self.files = {}

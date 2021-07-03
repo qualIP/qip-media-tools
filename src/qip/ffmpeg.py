@@ -118,56 +118,60 @@ class MetadataFile(TextFile):
         self.sections = []
         super().__init__(*args, **kwargs)
 
-    def load(self):
+    def load(self, file=None):
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('r') as file:
+                return self.load(file=file)
         self.version = None
         self.sections = []
         from .parser import lines_parser
-        with self.open('r') as fp:  # Could already be opened (temp file, write, load)
-            parser = lines_parser(fp)
+        parser = lines_parser(file)
 
-            # [ffmpeg-1] A file consists of a header and a number of metadata tags divided into sections, each on its own line.
+        # [ffmpeg-1] A file consists of a header and a number of metadata tags divided into sections, each on its own line.
 
-            parser.advance()
-            parser.line = (parser.line or '').rstrip('\r\n')
-            if parser.re_match(r'^;FFMETADATA(?P<version>\d+)\s*$'):
-                # [ffmpeg-1] The header is a ‘;FFMETADATA’ string, followed by a version number (now 1).
-                self.version = int(parser.match.group('version'))
-                if self.version == 1:
-                    pass
-                else:
-                    raise ValueError(f'Unsupported ffmpeg metadata version: {self.version}')
+        parser.advance()
+        parser.line = (parser.line or '').rstrip('\r\n')
+        if parser.re_match(r'^;FFMETADATA(?P<version>\d+)\s*$'):
+            # [ffmpeg-1] The header is a ‘;FFMETADATA’ string, followed by a version number (now 1).
+            self.version = int(parser.match.group('version'))
+            if self.version == 1:
+                pass
             else:
-                parser.raiseValueError('Invalid ffmpeg metadata header: {line!r}', input=self)
+                raise ValueError(f'Unsupported ffmpeg metadata version: {self.version}')
+        else:
+            parser.raiseValueError('Invalid ffmpeg metadata header: {line!r}', input=self)
 
-            # [ffmpeg-1] Immediately after header follows global metadata
-            section = 'GLOBAL'
-            section_tags = collections.OrderedDict()
-            self.sections.append((section, section_tags))
-            while parser.advance():
-                parser.line = (parser.line or '').rstrip('\r\n')
-                if parser.re_match(r'^\s*[;#]|^\s*$'):
-                    # [ffmpeg-1] Empty lines and lines starting with ‘;’ or ‘#’ are ignored.
+        # [ffmpeg-1] Immediately after header follows global metadata
+        section = 'GLOBAL'
+        section_tags = collections.OrderedDict()
+        self.sections.append((section, section_tags))
+        while parser.advance():
+            parser.line = (parser.line or '').rstrip('\r\n')
+            if parser.re_match(r'^\s*[;#]|^\s*$'):
+                # [ffmpeg-1] Empty lines and lines starting with ‘;’ or ‘#’ are ignored.
+                pass
+            elif parser.re_match(r'^(?P<key>[^=]+)=(?P<value>.*)'):
+                # [ffmpeg-1] Metadata tags are of the form ‘key=value’
+                # [ffmpeg-1] Note that whitespace in metadata (e.g. ‘foo = bar’) is considered to be a part of the tag (in the example above key is ‘foo ’, value is ‘ bar’).
+                key = parser.match.group('key')
+                value = parser.match.group('value')
+                section_tags[key] = value
+            elif parser.re_match(r'\[(?P<section>\w+)\]'):
+                # [ffmpeg-1] After global metadata there may be sections with per-stream/per-chapter metadata.
+                # [ffmpeg-1] A section starts with the section name in uppercase (i.e. STREAM or CHAPTER) in brackets (‘[’, ‘]’) and ends with next section or end of file.
+                section = parser.match.group('section')
+                section_tags = collections.OrderedDict()
+                if section in ('STREAM', 'CHAPTER'):
                     pass
-                elif parser.re_match(r'^(?P<key>[^=]+)=(?P<value>.*)'):
-                    # [ffmpeg-1] Metadata tags are of the form ‘key=value’
-                    # [ffmpeg-1] Note that whitespace in metadata (e.g. ‘foo = bar’) is considered to be a part of the tag (in the example above key is ‘foo ’, value is ‘ bar’).
-                    key = parser.match.group('key')
-                    value = parser.match.group('value')
-                    section_tags[key] = value
-                elif parser.re_match(r'\[(?P<section>\w+)\]'):
-                    # [ffmpeg-1] After global metadata there may be sections with per-stream/per-chapter metadata.
-                    # [ffmpeg-1] A section starts with the section name in uppercase (i.e. STREAM or CHAPTER) in brackets (‘[’, ‘]’) and ends with next section or end of file.
-                    section = parser.match.group('section')
-                    section_tags = collections.OrderedDict()
-                    if section in ('STREAM', 'CHAPTER'):
-                        pass
-                    else:
-                        raise ValueError(f'Unsupported ffmpeg metadata section: {section}')
-                    self.sections.append((section, section_tags))
                 else:
-                    parser.raiseValueError('Invalid ffmpeg metadata line: {line!r}', input=self)
+                    raise ValueError(f'Unsupported ffmpeg metadata section: {section}')
+                self.sections.append((section, section_tags))
+            else:
+                parser.raiseValueError('Invalid ffmpeg metadata line: {line!r}', input=self)
 
-            # TODO [ffmpeg-1] Metadata keys or values containing special characters (‘=’, ‘;’, ‘#’, ‘\’ and a newline) must be escaped with a backslash ‘\’.
+        # TODO [ffmpeg-1] Metadata keys or values containing special characters (‘=’, ‘;’, ‘#’, ‘\’ and a newline) must be escaped with a backslash ‘\’.
 
     def create(self, file=None):
         if file is None:

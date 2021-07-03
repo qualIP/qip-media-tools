@@ -255,59 +255,63 @@ class DdrescueMapFile(TextFile):
                 continue
             yield linenum, line
 
-    def load(self, default_sblock_status=None):
+    def load(self, file=None, default_sblock_status=None):
         """Returns true if mapfile exists and is readable.
         Fills the gaps if 'default_sblock_status' is a valid status character.
         NOTE: Shamelessly ported from GNU ddrescue 1.23 (GPLv2) to Python by Jean-Sebastien Trottier.
         """
-        with self.open('r') as fp:
-            loose = Sblock.isstatus(default_sblock_status)
-            self.sblocks = []
-            self._cached_tot_size = None
-            iter_lines = self.enumerate_lines(fp)
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('r') as file:
+                return self.load(file=file, default_sblock_status=default_sblock_status)
+        loose = Sblock.isstatus(default_sblock_status)
+        self.sblocks = []
+        self._cached_tot_size = None
+        iter_lines = self.enumerate_lines(file)
+        try:
+            linenum, line = next(iter_lines)
+        except StopIteration:
+            return  # Empty
+        # status line
+        self.current_pass = 1  # default value
+        m = re.match(r'^(?P<pos>\d+|0[xX][A-Fa-f0-9]+)\s+(?P<ch>\S+)(?:\s+(?P<pass>\d+))?', line)  # "%lli %c %d\n"
+        if m:
+            self.current_pos = int(m.group('pos'), 0)
+            ch = m.group('ch')
             try:
-                linenum, line = next(iter_lines)
-            except StopIteration:
-                return  # Empty
-            # status line
-            self.current_pass = 1  # default value
-            m = re.match(r'^(?P<pos>\d+|0[xX][A-Fa-f0-9]+)\s+(?P<ch>\S+)(?:\s+(?P<pass>\d+))?', line)  # "%lli %c %d\n"
+                self.current_pass = int(m.group('pass'))
+            except KeyError:
+                pass
+        if m and self.current_pos >= 0 and Sblock.isstatus(ch) and self.current_pass >= 1:
+            self.current_status = Sblock.Status(ch)
+        else:
+            raise DdrescueMapFileError(self, linenum, line=line)
+        re_sblock = re.compile(r'^(?P<pos>\d+|0[xX][A-Fa-f0-9]+)\s+(?P<size>\d+|0[xX][A-Fa-f0-9]+)\s+(?P<ch>\S)$')  # "%lli %lli %c\n"
+        for linenum, line in iter_lines:
+            m = re_sblock.match(line)
             if m:
-                self.current_pos = int(m.group('pos'), 0)
+                pos = int(m.group('pos'), 0)
+                size = int(m.group('size'), 0)
                 ch = m.group('ch')
+            if m and pos >= 0 and Sblock.isstatus(ch) and (size > 0 or (size == 0 and pos == 0)):
+                st = Sblock.Status(ch)
+                sb = Sblock(pos, size, st)
                 try:
-                    self.current_pass = int(m.group('pass'))
-                except KeyError:
-                    pass
-            if m and self.current_pos >= 0 and Sblock.isstatus(ch) and self.current_pass >= 1:
-                self.current_status = Sblock.Status(ch)
+                    b = self.sblocks[-1]
+                except IndexError:
+                    end = 0
+                else:
+                    end = b.end
+                if sb.pos != end:
+                    if loose and sb.pos > end:
+                        sb2 = Sblock(end, sb.pos - end, default_sblock_status)
+                        self.sblocks.append(sb2)
+                    elif end > 0:
+                        raise DdrescueMapFileError(self, linenum, line=line)
+                self.sblocks.append(sb)
             else:
                 raise DdrescueMapFileError(self, linenum, line=line)
-            re_sblock = re.compile(r'^(?P<pos>\d+|0[xX][A-Fa-f0-9]+)\s+(?P<size>\d+|0[xX][A-Fa-f0-9]+)\s+(?P<ch>\S)$')  # "%lli %lli %c\n"
-            for linenum, line in iter_lines:
-                m = re_sblock.match(line)
-                if m:
-                    pos = int(m.group('pos'), 0)
-                    size = int(m.group('size'), 0)
-                    ch = m.group('ch')
-                if m and pos >= 0 and Sblock.isstatus(ch) and (size > 0 or (size == 0 and pos == 0)):
-                    st = Sblock.Status(ch)
-                    sb = Sblock(pos, size, st)
-                    try:
-                        b = self.sblocks[-1]
-                    except IndexError:
-                        end = 0
-                    else:
-                        end = b.end
-                    if sb.pos != end:
-                        if loose and sb.pos > end:
-                            sb2 = Sblock(end, sb.pos - end, default_sblock_status)
-                            self.sblocks.append(sb2)
-                        elif end > 0:
-                            raise DdrescueMapFileError(self, linenum, line=line)
-                    self.sblocks.append(sb)
-                else:
-                    raise DdrescueMapFileError(self, linenum, line=line)
 
     def is_finished(self):
         return all(

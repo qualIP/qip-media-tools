@@ -702,39 +702,43 @@ class MediaFile(File):
         if metadata_file.file_name is None:
             assert metadata_file.fp is None, 'metadata file is opened file with no name!?'
             with metadata_file.NamedTemporaryFile() as temp_file:
-                metadata_file.file_name = temp_file.name
-                metadata_file.fp = temp_file.fp
-                metadata_file.create()
-                # write -> read
-                metadata_file.flush()
-                metadata_file.seek(0)
                 try:
+                    metadata_file.file_name, metadata_file.fp = temp_file.file_name, temp_file.fp
+                    metadata_file.create()
+                    # write -> read
+                    metadata_file.flush()
+                    metadata_file.seek(0)
                     return self.write_ffmpeg_metadata(metadata_file)
                 finally:
-                    metadata_file.file_name = None
-                    metadata_file.fp = None
+                    metadata_file.file_name, metadata_file.fp = None, None
 
-        with self.NamedTemporaryFile(suffix=self.file_name.suffix) as output_file:
-            # log.debug('metadata_file:\n%s', metadata_file.read())
-            ffmpeg_args = [
-                '-i', self,
-                '-i', metadata_file,
-                '-map_metadata', 1,
-                '-codec', 'copy',
-                '-y',
-                output_file,
-            ]
-            with perfcontext('Write metadata w/ ffmpeg'):
-                ffmpeg(*ffmpeg_args,
-                       show_progress_bar=show_progress_bar,
-                       progress_bar_max=progress_bar_max,
-                       progress_bar_title=progress_bar_title or f'Write {self} metadata w/ ffmpeg',
-                       )
-            # write -> read
-            output_file.flush()
-            output_file.seek(0)
-            output_file.move(self)
-            output_file.fp.delete = False
+        delete = True
+        with self.NamedTemporaryFile(suffix=self.file_name.suffix, delete=False) as output_file:
+            try:
+                # log.debug('metadata_file:\n%s', metadata_file.read())
+                ffmpeg_args = [
+                    '-i', self,
+                    '-i', metadata_file,
+                    '-map_metadata', 1,
+                    '-codec', 'copy',
+                    '-y',
+                    output_file,
+                ]
+                with perfcontext('Write metadata w/ ffmpeg'):
+                    ffmpeg(*ffmpeg_args,
+                           show_progress_bar=show_progress_bar,
+                           progress_bar_max=progress_bar_max,
+                           progress_bar_title=progress_bar_title or f'Write {self} metadata w/ ffmpeg',
+                           )
+                # write -> read
+                output_file.flush()
+                output_file.seek(0)
+                output_file.move(self)
+                delete = False
+            finally:
+                if delete:
+                    output_file.close()
+                    output_file.unlink()
 
     def set_tag(self, tag, value, source=''):
         return self.tags.set_tag(tag, value, source=source)

@@ -208,8 +208,11 @@ class MatroskaChaptersFile(XmlFile):
         'ChapterLanguage',
     ))
 
-    def load(self, *, add_pre_gap=True, fix=True, return_raw_xml=False):
-        chapters_out = self.read()
+    def load(self, *, file=None, add_pre_gap=True, fix=True, return_raw_xml=False):
+        if file is None:
+            chapters_out = self.read()
+        else:
+            chapters_out = file.read()
         if fix:
             chapters_out = self.fix_chapters_out(chapters_out)
         if return_raw_xml:

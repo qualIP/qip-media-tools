@@ -502,23 +502,27 @@ class Mp4chapsFile(TextFile):
         self.chapters = Chapters()
         super().__init__(*args, **kwargs)
 
-    def load(self):
+    def load(self, file=None):
+        if file is None:
+            file = self.fp
+        if file is None:
+            with self.open('r') as file:
+                return self.load(file=file)
         from .parser import lines_parser
         self.chapters = Chapters()
-        with self.open('r') as fp:
-            parser = lines_parser(fp)
-            while parser.advance():
-                if parser.line == '':
-                    pass
-                elif parser.re_search(r'^(?P<start>\d+:\d+:\d+\.\d+)(?:\s+(?P<title>.*))?$'):
-                    # 00:00:00.000 Chapter 1
-                    self.chapters.append(Chapter(
-                        start=parser.match.group('start'), end=None,
-                        title=(parser.match.group('title') or '').strip(),
-                    ))
-                else:
-                    log.debug('TODO: %s', parser.line)
-                    parser.raiseValueError('Invalid MP4 chapters line: {line!r}', input=self)
+        parser = lines_parser(file)
+        while parser.advance():
+            if parser.line == '':
+                pass
+            elif parser.re_search(r'^(?P<start>\d+:\d+:\d+\.\d+)(?:\s+(?P<title>.*))?$'):
+                # 00:00:00.000 Chapter 1
+                self.chapters.append(Chapter(
+                    start=parser.match.group('start'), end=None,
+                    title=(parser.match.group('title') or '').strip(),
+                ))
+            else:
+                log.debug('TODO: %s', parser.line)
+                parser.raiseValueError('Invalid MP4 chapters line: {line!r}', input=self)
 
     def create(self, file=None):
         if file is None:
