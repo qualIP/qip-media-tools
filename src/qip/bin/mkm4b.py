@@ -65,15 +65,12 @@ def times_1000(v):
 
 def get_audio_file_chapters(snd_file, chapter_naming_format):
     chaps = Chapters()
-    if not chaps and app.args.OverDrive_MediaMarkers:
-        if hasattr(snd_file, 'OverDrive_MediaMarkers'):
+    if not chaps:
+        if app.args.OverDrive_MediaMarkers \
+                and hasattr(snd_file, 'OverDrive_MediaMarkers'):
             chaps = parse_OverDrive_MediaMarkers(snd_file.OverDrive_MediaMarkers)
-    if not chaps and snd_file.file_name.suffix in qip.mm.get_mp4v2_app_support().extensions_can_read:
-        try:
-            chaps = snd_file.load_chapters()
-        except subprocess.CalledProcessError:
-            # TODO
-            raise
+    if not chaps:
+        chaps = snd_file.load_chapters()
     if not chaps:
         chaps.append(qip.mm.Chapter(
             start=0, end=None,

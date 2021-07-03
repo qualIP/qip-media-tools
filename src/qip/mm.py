@@ -973,7 +973,7 @@ class MediaFile(File):
 
     def load_chapters(self):
         metadata_file = self.load_ffmpeg_metadata()
-        chaps = metadata_file.chapters()
+        chaps = metadata_file.chapters
         return chaps
 
     def write_chapters(self, chapters,
