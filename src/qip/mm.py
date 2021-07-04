@@ -4950,7 +4950,7 @@ for element, mp4v2_tag, mp4v2_data_type, mp4v2_name, id3v2_20_tag, id3v2_30_tag,
 
 class AudioAppSupport(types.SimpleNamespace):
 
-    def __init__(cls, app, formats=None):
+    def __init__(self, app, formats=None):
         super().__init__(
                 app=app,
                 formats=formats if formats is not None else {},

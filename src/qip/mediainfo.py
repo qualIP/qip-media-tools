@@ -172,7 +172,7 @@ class Mediainfo(Executable):
                     k = 'colour_range'
                 elif k == 'Chroma subsampling':
                     k = 'ChromaSubsampling'
-					# 4:2:0 (Type 2)
+                    # 4:2:0 (Type 2)
                     m = re.match(r'^(?P<cs>.+) \((?P<pos>Type \d+)\)$', v)
                     if m:
                         # <ChromaSubsampling>4:2:0</ChromaSubsampling>

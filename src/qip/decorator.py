@@ -195,7 +195,7 @@ def trace_generator(gen, gen_name=None, log=None, pyield=True, pexcept=True, ptr
 
 def func_once(func):
     """A decorator that runs a function only once.
-	From http://code.activestate.com/recipes/425445-once-decorator/
+    From http://code.activestate.com/recipes/425445-once-decorator/
     """
     def decorated(*args, **kwargs):
         try:

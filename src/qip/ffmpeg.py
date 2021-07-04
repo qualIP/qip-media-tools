@@ -979,6 +979,7 @@ class Ffmpeg(_Ffmpeg):
         ('jpeg', 2),                # ED.V...... JPEG (2^n-1)
     ))
 
+    @classmethod
     def get_option_value(cls, option, value):
         option_map = getattr(cls, f'{option}_option_map')
         if isinstance(value, int):
@@ -990,6 +991,7 @@ class Ffmpeg(_Ffmpeg):
                 return value
         raise ValueError(f'Invalid {option} value: {value!r}')
 
+    @classmethod
     def get_option_value_int(cls, option, value):
         option_map = getattr(cls, f'{option}_option_map')
         if isinstance(value, int):

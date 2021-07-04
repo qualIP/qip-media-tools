@@ -185,7 +185,7 @@ class JSONEncoder(_JSONEncoder):
     _builtin_encoders[_datetime.date] = _encode_date
 
     @classmethod
-    def encode_class_name(self, cls):
+    def encode_class_name(cls_, cls):
         try:
             return CLASS_TO_ALIAS[cls]
         except KeyError:

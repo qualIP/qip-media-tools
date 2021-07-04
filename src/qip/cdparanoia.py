@@ -62,7 +62,7 @@ class Cdparanoia(Executable):
                 # Using paranoia library version: 10.2
                 # Checking /dev/cdrom for cdrom...
                 #     Testing /dev/cdrom for SCSI/MMC interface
-                # 	SG_IO device: /dev/sr1
+                #   SG_IO device: /dev/sr1
                 #
                 # CDROM model sensed sensed: ASUS BW-12B1ST   a 1.00
                 #

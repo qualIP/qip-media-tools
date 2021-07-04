@@ -47,7 +47,7 @@ import qip.mp4
 import qip.ogg
 import qip.wav
 
-# https://www.ffmpeg.org/ffmpeg.html
+# TODO ffmpeg_input_cmd += ['-fflags', '+igndts']
 
 # times_1000 {{{
 
