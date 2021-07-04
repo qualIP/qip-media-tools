@@ -196,11 +196,20 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                         not force_encode and
                         not ipod_compat and
                         len(audio_type) == 1 and audio_type[0] in (
+                            # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
                             mm.AudioType.mp2,
                             mm.AudioType.mp3,
+                            mm.AudioType.aac,
+                            mm.AudioType.lc_aac,
+                            mm.AudioType.he_aac,
+                            mm.AudioType.ac3,
+                            # Others
+                            mm.AudioType.flac,
                             )):
-                    # https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio (Audio formats supported by MP4/M4A)
                     ffmpeg_output_cmd += ['-c:a', 'copy']
+                    if audio_type[0] is mm.AudioType.flac:
+                        # ffmpeg: flac in MP4 support is experimental
+                        ffmpeg_output_cmd += ['-strict', -2]
                     bCopied = True
                     ffmpeg_format = 'mp4'
                 else:
