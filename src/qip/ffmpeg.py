@@ -544,6 +544,13 @@ class _FfmpegSpawnMixin(_SpawnMixin):
     def terminal_escape_sequence(self, str):
         return True
 
+    def log_output_file_empty(self, str):
+        level = logging.WARNING
+        if self.args and ((b'ffmetadata' in self.args) if isinstance(self.args[0], bytes) else ('ffmetadata' in self.args)):
+            # Expected when extracting metadata
+            level = logging.DEBUG
+        return self.log_line(str, level=level)
+
     def eof(self, _dummy):
         str = byte_decode(self.before).rstrip('\r\n')
         if str:
@@ -627,6 +634,9 @@ class _FfmpegSpawnMixin(_SpawnMixin):
 
             # [ac3 @ 0x563251c008c0] Estimating duration from bitrate, this may be inaccurate
             (fr'^(?:\[\S+ @ \w+\]\s)?Estimating duration from bitrate, this may be inaccurate{re_eol}', self.generic_debug_line),
+
+            # Output file is empty, nothing was encoded
+            (fr'^(?:\[warning\]\s)? *Output file is empty, nothing was encoded\s*{re_eol}', self.log_output_file_empty),
 
             # Multiple -c, -codec, -acodec, -vcodec, -scodec or -dcodec options specified for stream 1, only the last option '-c:1 libtheora' will be used.
             (fr'^Multiple -c, -codec, -acodec, -vcodec, -scodec or -dcodec options specified for stream (?P<stream>\S+), only the last option \'(?P<option>.*)\' will be used\.{re_eol}', self.generic_debug_line),
