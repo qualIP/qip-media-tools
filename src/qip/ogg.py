@@ -19,7 +19,7 @@ import logging
 import re
 log = logging.getLogger(__name__)
 
-from .mm import MediaFile, BinaryMediaFile, SoundFile, MovieFile, taged, parse_time_duration
+from .mm import MediaFile, BinaryMediaFile, SoundFile, MovieFile, AudioType, taged, parse_time_duration
 from .vorbis import _vorbis_tag_map, _vorbis_picture_extensions
 
 
@@ -213,6 +213,16 @@ class OggFile(BinaryMediaFile):
                 output_file.write_tags(tags=tags)
                 tags_added = True
 
+    def write_ffmpeg_metadata(self, *args, **kwargs):
+        import mutagen
+        from .perf import perfcontext
+        with perfcontext('mf.load'):
+            mf = mutagen.File(self.file_name)
+        if isinstance(mf.tags, mutagen.oggtheora.OggTheoraCommentDict):
+            # [theora @ 0x55d94aa7c1c0] Corrupt extradata
+            raise NotImplementedError('Refusing to write metadata w/ ffmpeg on Ogg-Theora file to avoid corruption')
+        return super().write_ffmpeg_metadata(*args, **kwargs)
+
 class OggMovieFile(OggFile, MovieFile):
     pass
 
@@ -252,12 +262,12 @@ class OpusFile(OggSoundFile):
 
     @property
     def audio_type(self):
-        return mm.AudioType.opus
+        return AudioType.opus
 
     @audio_type.setter
     def audio_type(self, value):
         if value is not None \
-                and mm.AudioType(value) is not mm.AudioType.opus:
+                and AudioType(value) is not AudioType.opus:
             raise ValueError(value)
 
 OggFile._build_extension_to_class_map()

@@ -638,6 +638,10 @@ def taged_mf_OggFLACVComment(file_name, mf, tags):
     from qip.ogg import OggFile
     return taged_mf_VComment(file_name, mf, tags, tag_map=OggFile.tag_map)
 
+def taged_mf_OggOpusVComment(file_name, mf, tags):
+    from qip.ogg import OggFile
+    return taged_mf_VComment(file_name, mf, tags, tag_map=OggFile.tag_map)
+
 def taged_mf_OggTheoraCommentDict(file_name, mf, tags):
     from qip.ogg import OggFile
     return taged_mf_VComment(file_name, mf, tags, tag_map=OggFile.tag_map)
@@ -700,6 +704,8 @@ def taged_mf(file_name, mf, tags):
         return taged_mf_VCFLACDict(file_name, mf, tags)
     if isinstance(mf.tags, mutagen.oggflac.OggFLACVComment):
         return taged_mf_OggFLACVComment(file_name, mf, tags)
+    if isinstance(mf.tags, mutagen.oggopus.OggOpusVComment):
+        return taged_mf_OggOpusVComment(file_name, mf, tags)
     if isinstance(mf.tags, mutagen.oggtheora.OggTheoraCommentDict):
         return taged_mf_OggTheoraCommentDict(file_name, mf, tags)
     raise NotImplementedError(mf.tags.__class__.__name__)

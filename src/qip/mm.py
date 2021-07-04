@@ -763,6 +763,8 @@ class MediaFile(File):
             return self._load_tags_mf_VCFLACDict(mf)
         if isinstance(mf.tags, mutagen.oggflac.OggFLACVComment):
             return self._load_tags_mf_OggFLACVComment(mf)
+        if isinstance(mf.tags, mutagen.oggopus.OggOpusVComment):
+            return self._load_tags_mf_OggOpusVComment(mf)
         if isinstance(mf.tags, mutagen.oggtheora.OggTheoraCommentDict):
             return self._load_tags_mf_OggTheoraCommentDict(mf)
         raise NotImplementedError(mf.tags.__class__.__name__)
@@ -935,17 +937,23 @@ class MediaFile(File):
         from qip.ogg import OggFile
         return self._load_tags_mf_VComment(mf, tag_map=OggFile.tag_map)
 
+    def _load_tags_mf_OggOpusVComment(self, mf):
+        from qip.ogg import OggFile
+        return self._load_tags_mf_VComment(mf, tag_map=OggFile.tag_map, opus_chapters=True)
+
     def _load_tags_mf_OggTheoraCommentDict(self, mf):
         from qip.ogg import OggFile
         return self._load_tags_mf_VComment(mf, tag_map=OggFile.tag_map)
 
-    def _load_tags_mf_VComment(self, mf, tag_map):
+    def _load_tags_mf_VComment(self, mf, tag_map, opus_chapters=False):
         # import mutagen
         tags = TrackTags(album_tags=AlbumTags())
         for vorbis_tag, tag_value in mf.items():
             try:
                 mapped_tag = tag_map[vorbis_tag]
             except KeyError:
+                if opus_chapters and re.match(r'^chapter\d+(name)?', vorbis_tag):
+                    continue
                 raise NotImplementedError(f'{vorbis_tag} = {tag_value!r}')
             if isinstance(tag_value, list):
                 if len(tag_value) == 1:
