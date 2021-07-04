@@ -320,6 +320,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
     current_info_section = None
     streams_info = None
     progress_match = None
+    log_counter = None
 
     def __init__(self, *args, invocation_purpose=None,
                  show_progress_bar=None, progress_bar_max=None, progress_bar_title=None,
@@ -339,6 +340,7 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             'input': {},
             'output': {},
         }
+        self.log_counter = collections.Counter()
         if self.invocation_purpose == 'cropdetect':
             self.cropdetect_result = None
             self.cropdetect_frames_count = 0
@@ -350,14 +352,22 @@ class _FfmpegSpawnMixin(_SpawnMixin):
                          encoding=encoding, errors=errors,
                          **kwargs)
 
-    def log_line(self, str, *, level=logging.INFO):
+    def log_line(self, str, *, level=logging.INFO, id=None):
+        if id:
+            self.log_counter[id] += 1
+            count = self.log_counter[id]
+        else:
+            count = 0
         if log.isEnabledFor(level):
             str = str.rstrip('\r\n')
             if str:
-                if self.on_progress_bar_line:
-                    print('')
-                    self.on_progress_bar_line = False
-                log.log(level, str)
+                if count <= 100:
+                    if self.on_progress_bar_line:
+                        print('')
+                        self.on_progress_bar_line = False
+                    log.log(level, str)
+                    if count == 100:
+                        log.log(level, f'(message repeated {count} times. Further occurrences will be silenced)')
         return True
 
     def print_line(self, str, *, level=logging.INFO, style=None):
@@ -509,11 +519,17 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             self.print_line(f'UNKNOWN: {str!r}', **kwargs)
         return True
 
-    def generic_error(self, str, level=logging.ERROR, error_tag=None):
+    def generic_error(self, str, level=logging.ERROR, error_tag=None, id=None):
         str = str.rstrip('\r\n')
-        self.log_line(str, level=level)
+        id = id or error_tag
+        error_tag = error_tag or str
+        self.log_line(str, level=level, id=id)
         self.num_errors += 1
-        self.errors_seen.add(error_tag or str)
+        self.errors_seen.add(error_tag)
+        return True
+
+    def generic_warning_line(self, str, id=None):
+        self.log_line(str, level=logging.WARNING, id=id)
         return True
 
     def generic_debug_line(self, str):
@@ -591,19 +607,23 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # [mp4 @ 0x55ce3d6c48c0] [warning] pts has no value
             (fr'^\[\S+ @ 0x[0-9a-f]+\] (?:\[warning\]\s)?pts has no value{re_eol}', self.generic_debug_line),
 
-            #     Last message repeated 1604 times
-            (fr'^\s*Last message repeated (?P<count>\d+) times{re_eol}', self.generic_debug_line),
-
             # [stream_segment,ssegment @ 0x55d20668d080] [warning] Non-monotonous DTS in output stream 0:0; previous: 75717, current: 75717; changing to 75718. This may result in incorrect timestamps in the output file.
             # [ipod @ 0x564125e0a940] Non-monotonous DTS in output stream 0:0; previous: 1554006132, current: 1554005644; changing to 1554006133. This may result in incorrect timestamps in the output file.
             # [ipod @ 0x55b1ace8a280] [warning] Non-monotonous DTS in output stream 0:0; previous: 1628578383, current: 1628577279; changing to 1628578384. This may result in incorrect timestamps in the output file.
-            (fr'^(?:\[\S+ @ \w+\]\s)?(?:\[warning\]\s)? *Non-monotonous DTS in output stream (?P<stream>\S+); previous: (?P<previous_dts>\d+), current: (?P<current_dts>\d+); changing to (?P<changing_dts>\d+)\. This may result in incorrect timestamps in the output file\.{re_eol}', self.generic_debug_line),
+            (fr'^(?:\[\S+ @ \w+\]\s)?(?:\[warning\]\s)? *Non-monotonous DTS in output stream (?P<stream>\S+); previous: (?P<previous_dts>\d+), current: (?P<current_dts>\d+); changing to (?P<changing_dts>\d+)\. This may result in incorrect timestamps in the output file\.{re_eol}', functools.partial(self.generic_warning_line, id='out-stream-non-monotone-dts')),
             # [stream_segment,ssegment @ 0x55842aa56b40] [verbose] segment:'Labyrinth4K/Labyrinth (1986)/track-00-video-chap02.h265' starts with packet stream:0 pts:6000 pts_time:250.25 frame:6000
             (fr'^(?:\[\S+ @ \w+\]\s)?(?:\[verbose\]\s)? *segment:\'(?P<segment_file>.+)\' starts with packet stream:(?P<stream>\S+) pts:(?P<pts>\S+) pts_time:(?P<pts_time>\S+) frame:(?P<frame>\S+){re_eol}', self.start_segment_file),
+            # [flac @ 0x562193faef40] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 30753792 >= 1875456
+            # [flac @ 0x55c9765da980] [error] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 697365 >= 697365
+
+            # [NULL @ 0x5607c5d80480] [warning] sample/frame number mismatch in adjacent frames
+            (fr'(?:\[\S+ @ \w+\]\s)?(?:\[warning\]\s)? *sample/frame number mismatch in adjacent frames{re_eol}', functools.partial(self.generic_error, level=logging.WARNING, error_tag='adjacent-sample-frame-mismatch')),
 
             # [NULL @ 0x555ff5d3b1c0] sample/frame number mismatch in adjacent frames
             # TODO Re-open https://trac.ffmpeg.org/ticket/5937 ?
             (fr'^(?:\[\S+ @ \w+\]\s)?sample/frame number mismatch in adjacent frames{re_eol}', self.generic_debug_line),
+
+            (fr'(?:\[\S+ @ \w+\]\s)?(?:\[error\]\s)? *Application provided invalid, non monotonically increasing dts to muxer in stream (?P<stream>\S+): (?P<dts1>\d+) >= (?P<dts2>\d+){re_eol}', functools.partial(self.generic_error, level=logging.WARNING, error_tag='in-stream-non-monotone-dts')),
 
             # [ac3 @ 0x563251c008c0] Estimating duration from bitrate, this may be inaccurate
             (fr'^(?:\[\S+ @ \w+\]\s)?Estimating duration from bitrate, this may be inaccurate{re_eol}', self.generic_debug_line),
@@ -619,6 +639,9 @@ class _FfmpegSpawnMixin(_SpawnMixin):
             # \x1b[48;5;0m
             # \x1b[38;5;226m
             (fr'^\x1b\[[0-9;]+m', self.terminal_escape_sequence),  # Should not happen with AV_LOG_FORCE_NOCOLOR
+
+            #     Last message repeated 1604 times
+            (fr'^(\s*Last message repeated (?P<count>\d+) times{re_eol})+', None),
 
             (fr'[^\n]*?{re_eol}', self.unknown_line),
             (pexpect.EOF, self.eof),
@@ -807,12 +830,21 @@ class _Ffmpeg(Executable):
                 '_class': 'class',
                 '_continue': 'continue',
             }.get(k, k)
-            if True or len(k) == 1:  # Always a single dash
-                cmdargs.append('-' + k)
+            if (
+                    k in (
+                        'loglevel', 'v',
+                    )
+                    and isinstance(v, (list, tuple))):
+                lv = v
             else:
-                cmdargs.append('--' + k)
-            if v is not True:
-                cmdargs.append(arg2cmdarg(v))
+                lv = (v,)
+            for v in lv:
+                if True or len(k) == 1:  # Always a single dash
+                    cmdargs.append('-' + k)
+                else:
+                    cmdargs.append('--' + k)
+                if v is not True:
+                    cmdargs.append(arg2cmdarg(v))
         return cmdargs
 
     def build_cmd(self, *args, **kwargs):
@@ -824,16 +856,18 @@ class _Ffmpeg(Executable):
             out_file_args = [args.pop(-1)] + out_file_args
 
         if 'loglevel' not in kwargs and '-loglevel' not in args:
+            kwargs['loglevel'] = []
             if log.isEnabledFor(logging.DEBUG):
-                kwargs['loglevel'] = 'level+verbose'
+                kwargs['loglevel'].append('level+verbose')
             elif log.isEnabledFor(logging.VERBOSE):
-                kwargs['loglevel'] = 'info'
+                kwargs['loglevel'].append('info')
                 if 'ffmpeg' in os.fspath(self.name):
                     pass # kwargs.setdefault('stats', True)  # included in info
             else:
-                kwargs['loglevel'] = 'warning'
+                kwargs['loglevel'].append('warning')
                 if 'ffmpeg' in os.fspath(self.name):
                     kwargs.setdefault('stats', True)
+            kwargs['loglevel'].append('-repeat')
 
         if 'hide_banner' not in kwargs and '-hide_banner' not in args:
             if not log.isEnabledFor(logging.VERBOSE):

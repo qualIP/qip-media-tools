@@ -98,12 +98,18 @@ class _SpawnMixin(pexpect.spawnbase.SpawnBase):
     def __init__(self, *args, errors=None, timeout=None, **kwargs):
         super().__init__(*args, codec_errors=errors, timeout=timeout, **kwargs)
 
-    def communicate(self, pattern_dict, **kwargs):
+    def communicate(self, pattern_dict,
+                    timeout=-1, searchwindowsize=-1):
         pattern_kv_list = list(pattern_dict.items())
         pattern_list = [k for k, v in pattern_kv_list]
         compiled_pattern_list = self.compile_pattern_list(pattern_list)
+        if timeout == -1:
+            timeout = self.timeout
+        from pexpect.expect import Expecter, searcher_re
+        searcher = searcher_re(compiled_pattern_list)
+        exp = Expecter(spawn=self, searcher=searcher, searchwindowsize=searchwindowsize)
         while True:
-            idx = self.expect_list(compiled_pattern_list, **kwargs)
+            idx = exp.expect_loop(timeout=timeout)
             if idx is None:
                 break
             k, v = pattern_kv_list[idx]
