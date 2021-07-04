@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 
 from qip.propex import propex
 from qip.decorator import func_once
+from qip.utils import Auto
 
 _osPath = type(Path(''))
 
@@ -570,6 +571,30 @@ class File(object):
                     if ext not in seen:
                         yield ext
                         seen.add(ext)
+
+    @classmethod
+    def generate_file_name(cls, dirname=None, basename=None, ext=Auto):
+        dirname = Path(dirname) if dirname else None
+        if not basename:
+            basename = cls.__class__.__name__
+            basename = re.sub(r'File$', '', basename)
+            basename = re.sub(r'(?=[A-Z][a-z])(?<!Mc)(?<!Mac)', r' ', basename)       # AbCDef ->  AbC Def (not Mc Donald)
+            basename = re.sub(r'[a-z](?=[A-Z])(?<!Mc)(?<!Mac)', r'\g<0> ', basename)  # AbC Def -> Ab C Def (not Mc Donald)
+            basename = re.sub(r'[A-Za-z](?=\d)', r'\g<0> ', basename)  # ABC123 -> ABC 123
+            basename = re.sub(r'[^A-Za-z0-9]+', r'-', basename)      # AB$_12 -> AB-12
+            basename = basename.strip('-')                           # -ABC-  -> ABC
+        if not basename:
+            basename = 'file'
+        basename = Path(basename)
+        file_name = dirname / basename if dirname else basename
+        if ext is Auto:
+            for ext in cls.get_default_extensions():
+                break
+            else:
+                ext = None
+        if ext:
+            file_name = Path(os.fspath(file_name) + ext)
+        return file_name
 
     def decode_ffmpeg_args(self, **kwargs):
         return kwargs
