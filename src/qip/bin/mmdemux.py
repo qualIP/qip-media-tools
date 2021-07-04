@@ -125,6 +125,7 @@ from qip.json import JsonFile
 from qip.matroska import MatroskaChaptersFile
 from qip.matroska import MatroskaFile
 from qip.matroska import MkvFile
+from qip.matroska import WebmFile
 from qip.mm import BinarySubtitleFile
 from qip.mm import MediaFile
 from qip.mm import MovieFile
@@ -6976,7 +6977,8 @@ def action_demux(inputdir, in_tags):
             if stream_dict.is_external_subtitle(webm=False):
                 # External
                 continue
-            if stream_dict.codec_type is CodecType.image:
+            if stream_dict.codec_type is CodecType.image \
+                    and not WebmFile.supports_picture:
                 # attachments not supported
                 # External -- This should not block creating a webm.
                 continue
@@ -6999,6 +7001,12 @@ def action_demux(inputdir, in_tags):
                 app.log.warning('Stream #%s: Disabling webm format due to %s codec', stream_dict.pprint_index, stream_codec_name)
                 webm = False
                 break
+
+    output_file_cls = WebmFile if webm else MkvFile
+
+    output_file = output_file_cls(
+        output_file_cls.generate_file_name(basename=output_file_name_stem)
+        if app.args.output_file is Auto else app.args.output_file)
 
     # Write external files
     sorted_streams = sorted_stream_dicts(mux_dict['streams'])
@@ -7033,7 +7041,8 @@ def action_demux(inputdir, in_tags):
                 continue
             continue
 
-        if webm and stream_dict.codec_type is CodecType.image:
+        if stream_dict.codec_type is CodecType.image \
+                and not output_file.supports_picture:
             # attachments not supported
             # External
             attachment_type = stream_dict['attachment_type']
@@ -7049,10 +7058,6 @@ def action_demux(inputdir, in_tags):
                                 external_stream_file_name,
                                 follow_symlinks=True)
             continue
-
-    output_file = MkvFile(
-        os.fspath(output_file_name_stem) + ('.webm' if webm else '.mkv')
-        if app.args.output_file is Auto else app.args.output_file)
 
     if use_mkvmerge:
         video_angle = 0
@@ -7076,7 +7081,8 @@ def action_demux(inputdir, in_tags):
             if stream_dict.is_external_subtitle(webm=webm):
                 # External
                 continue
-            if webm and stream_dict.codec_type is CodecType.image:
+            if stream_dict.codec_type is CodecType.image \
+                    and not output_file.supports_picture:
                 # attachments not supported
                 # External
                 continue
@@ -7156,7 +7162,8 @@ def action_demux(inputdir, in_tags):
             if stream_dict.is_external_subtitle(webm=webm):
                 # External
                 continue
-            if webm and stream_dict.codec_type is CodecType.image:
+            if stream_dict.codec_type is CodecType.image \
+                    and not output_file.supports_picture:
                 # attachments not supported
                 # External
                 continue

@@ -213,14 +213,34 @@ class OggFile(BinaryMediaFile):
                 output_file.write_tags(tags=tags)
                 tags_added = True
 
-    def write_ffmpeg_metadata(self, *args, **kwargs):
-        import mutagen
-        from .perf import perfcontext
-        with perfcontext('mf.load'):
-            mf = mutagen.File(self.file_name)
-        if isinstance(mf.tags, mutagen.oggtheora.OggTheoraCommentDict):
+    def assert_supports_ffmpeg_metadata(self):
+        is_oggtheora = False
+        if self.tags.picture:
+            is_oggtheora = True
+        else:
+            import mutagen
+            from .perf import perfcontext
+            try:
+                with perfcontext('mf.load'):
+                    mf = mutagen.File(self.file_name)
+            except FileNotFoundError:
+                mf = None
+            if mf and isinstance(mf.tags, mutagen.oggtheora.OggTheoraCommentDict):
+                is_oggtheora = True
+        if is_oggtheora:
             # [theora @ 0x55d94aa7c1c0] Corrupt extradata
             raise NotImplementedError('Refusing to write metadata w/ ffmpeg on Ogg-Theora file to avoid corruption')
+
+    @property
+    def supports_chapters(self):
+        try:
+            self.assert_supports_ffmpeg_metadata()
+        except NotImplementedError:
+            return False
+        return True
+
+    def write_ffmpeg_metadata(self, *args, **kwargs):
+        self.assert_supports_ffmpeg_metadata()
         return super().write_ffmpeg_metadata(*args, **kwargs)
 
 class OggMovieFile(OggFile, MovieFile):
@@ -259,6 +279,8 @@ class OpusFile(OggSoundFile):
     _common_extensions = (
         '.opus',
     )
+
+    supports_chapters = True
 
     @property
     def audio_type(self):

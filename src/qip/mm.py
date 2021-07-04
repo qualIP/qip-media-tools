@@ -585,6 +585,10 @@ class Chapters(json.JSONEncodable, collections.UserList):
 
 class MediaFile(File):
 
+    supports_tags = True      # Embedded tags
+    supports_picture = True   # Embedded cover picture attachment (not generic Video)
+    supports_chapters = True  # Embedded chapters
+
     def __init__(self, file_name, *args, tags=None, **kwargs):
         if tags is None:
             tags = TrackTags()

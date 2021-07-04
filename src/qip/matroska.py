@@ -1019,6 +1019,8 @@ class WebmFile(MkvFile):
         '.webm',
     )
 
+    supports_picture = False
+
 class MkaFile(MatroskaFile, SoundFile):
 
     _common_extensions = (

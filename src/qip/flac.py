@@ -93,6 +93,8 @@ class FlacFile(SoundFile):
                 raise FileNotFoundError(errno.ENOENT,
                                         os.strerror(errno.ENOENT),
                                         f'Picture file not found: {picture}')
+        if chapters:
+            raise NotImplementedError('FLAC does not support chapters')
         with contextlib.ExitStack() as exit_stack:
 
             if show_progress_bar:
@@ -217,9 +219,11 @@ class FlacFile(SoundFile):
                 output_file.write_tags(tags=tags, run_func=do_exec_cmd)
                 tags_added = True
 
+    supports_chapters = False
+
     def write_chapters(self, chapters,
                        show_progress_bar=None, progress_bar_max=None, progress_bar_title=None,
                        log=False):
-        _log.warning('FLAC does not support chapters')
+        raise NotImplementedError('FLAC does not support chapters')
 
 FlacFile._build_extension_to_class_map()
