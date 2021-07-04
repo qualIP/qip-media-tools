@@ -230,11 +230,30 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                         kbitrate = kbitrate[0]
                         if use_qaac:
                             use_qaac_cmd = True
-                            if len(audio_type) == 1 and audio_type[0] in (
-                                    mm.AudioType.mp2,
-                                    mm.AudioType.mp3,
-                                    mm.AudioType.dts,
-                            ):
+                            # https://github.com/nu774/qaac/wiki/About-input-format
+                            # > qaac accepts raw PCM, WAV, ALAC, MP3 AAC(LC), and other LPCM formats supported by Apple AudioFile service. Also, qaac can read cue sheets.
+                            # https://developer.apple.com/documentation/audiotoolbox/audio_file_stream_services
+                            # > Audio File Stream Services supports the following audio data types:
+                            # > - AIFF
+                            # > - AIFC
+                            # > - WAVE
+                            # > - CAF
+                            # > - NeXT
+                            # > - ADTS
+                            # > - MPEG Audio Layer 3
+                            # > - AAC
+                            if any(
+                                    e not in (
+                                        mm.AudioType.pcm_s16le,
+                                        mm.AudioType.wav,
+                                        mm.AudioType.alac,
+                                        mm.AudioType.mp3,
+                                        mm.AudioType.aac,
+                                        # TODO mm.AudioType.he_aac,
+                                        mm.AudioType.lc_aac,
+                                        # TODO mm.AudioType.ac3,
+                                    )
+                                    for e in audio_type):
                                 use_qaac_intermediate = True
                                 ffmpeg_format = 'wav'
                             qaac_cmd += ['--no-smart-padding']  # Like iTunes

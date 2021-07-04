@@ -5142,6 +5142,7 @@ class AudioType(enum.Enum):
     eac3 = 'eac3'
     dts = 'dts'
     flac = 'flac'
+    alac = 'alac'
     pcm_s16le = 'pcm_s16le'
 
     def __eq__(self, other):

@@ -248,7 +248,7 @@ def main():
     pgroup.add_argument('--bitrate', type=int, default=argparse.SUPPRESS, help='force the encoding bitrate')  # TODO support <int>k
     pgroup.add_argument('--target-bitrate', dest='target_bitrate', type=int, default=argparse.SUPPRESS, help='specify the resampling target bitrate')
     pgroup.add_argument('--channels', type=int, default=argparse.SUPPRESS, help='force the number of audio channels')
-    pgroup.add_bool_argument('--qaac', dest='use_qaac', help='use qaac, if available', neg_help='do not use qaac')
+    pgroup.add_bool_argument('--qaac', dest='use_qaac', default=True, help='use qaac, if available', neg_help='do not use qaac')
 
     pgroup = app.parser.add_argument_group('Database Control')
     pgroup.add_bool_argument('--goodreads', dest='use_goodreads', default=False, help='query Goodreads')
