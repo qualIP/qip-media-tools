@@ -565,8 +565,8 @@ class File(object):
                 yield ext
                 seen.add(ext)
         for base_cls in cls.__bases__:
-            if isinstance(base_cls, File):
-                for ext in cls.get_default_extensions():
+            if issubclass(base_cls, File):
+                for ext in base_cls.get_default_extensions():
                     if ext not in seen:
                         yield ext
                         seen.add(ext)
