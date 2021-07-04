@@ -1331,6 +1331,8 @@ class MediaFile(File):
                         parser.line = parser.line.strip()
                         if parser.re_search(r'^(\d+) Hz$'):
                             self.frequency = int(parser.match.group(1))
+                        elif parser.re_search(r'^(\d+(?:\.\d+)?) kHz$'):
+                            self.frequency = times_1000(parser.match.group(1))
                         elif parser.re_search(r'^stereo (\d+) Hz$'):
                             self.channels = 2
                             self.frequency = int(parser.match.group(1))
@@ -1343,7 +1345,7 @@ class MediaFile(File):
                             pass
                         elif parser.line == 'Vorbis audio':
                             self.audio_type = parser.line
-                        elif parser.line == 'FLAC audio':
+                        elif parser.line in ('FLAC audio', 'FLAC audio bitstream data'):
                             self.audio_type = parser.line
                         elif parser.line == 'WAVE audio':
                             self.audio_type = parser.line
@@ -5154,6 +5156,7 @@ class AudioType(enum.Enum):
                 (r'^MPEG audio \(layer I, II or III\)$', 'mp3'),
                 (r'^Vorbis audio$', 'vorbis'),
                 (r'^Vorbis$', 'vorbis'),
+                (r'^FLAC audio bitstream data$', 'flac'),
                 (r'^FLAC audio$', 'flac'),
                 (r'^FLAC$', 'flac'),
                 (r'^WAVE audio$', 'wav'),
