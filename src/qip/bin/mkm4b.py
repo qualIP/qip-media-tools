@@ -33,6 +33,7 @@ from qip.matroska import MkaFile, MatroskaChaptersFile
 from qip.ogg import OgaFile
 from qip.flac import FlacFile
 from qip.mm import *
+from qip.img import ImageFile
 from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps, Mp4chapsFile
 from qip.parser import *
 from qip.utils import byte_decode, save_and_restore_tcattr, replace_html_entities
@@ -504,6 +505,16 @@ def mkm4b(inputfiles, default_tags):
     if not app.args.yes and m4b.exists():
         raise FileExistsError(m4b.file_name)
 
+    mux_dir = m4b.file_name.with_suffix('')
+    if os.fspath(mux_dir) == os.fspath(m4b):
+        mux_dir = Path(os.fspath(mux_dir) + '.tmp')
+
+    if not mux_dir.is_dir():
+        if app.args.dry_run:
+            app.log.verbose('CMD (dry-run): %s', list2cmdline(['mkdir', mux_dir]))
+        else:
+            os.mkdir(mux_dir)
+
     try:
         expected_duration = sum(
             (inputfile.duration
@@ -549,7 +560,7 @@ def mkm4b(inputfiles, default_tags):
         if expected_duration is not None:
             app.log.info('Expected final duration: %s (%.3f seconds)', mp4chaps.Timestamp(expected_duration), expected_duration)
 
-    chapters_file = Mp4chapsFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
+    chapters_file = Mp4chapsFile(Mp4chapsFile.generate_file_name(dirname=mux_dir, basename='chapters'))
     if app.args.chapters_file:
         if chapters_file.exists() and chapters_file.samefile(app.args.chapters_file):
             app.log.info('Reusing %s...', chapters_file)
@@ -611,7 +622,7 @@ def mkm4b(inputfiles, default_tags):
                 src_picture,
                 yes=app.args.yes,
                 ipod_compat=app.args.ipod_compat,
-                keep_picture_file_name=m4b.file_name.with_suffix('.png'))
+                keep_picture_file_name=mux_dir / 'picture.png')
 
     # }}}
     select_src_picture(src_picture)
@@ -731,8 +742,30 @@ def mkm4b(inputfiles, default_tags):
                 else:
                     app.log.error('Invalid input: %r' % (ns.action,))
 
+    encode_chapters = chapters_file.chapters
+    ext_chapters_file = None
+    if encode_chapters and not m4b.supports_chapters:
+        ext_chapters_file = type(chapters_file)(chapters_file.generate_file_name(basename=m4b.file_name.with_suffix('.chapters')))
+        if ext_chapters_file.exists() and ext_chapters_file.samefile(chapters_file):
+            pass
+        else:
+            app.log.info('Writing external %s...', ext_chapters_file)
+            shutil.copyfile(chapters_file, ext_chapters_file)
+        encode_chapters = None
+
+    encode_picture = picture
+    ext_picture_file = None
+    if encode_picture and not m4b.supports_picture:
+        ext_picture_file = ImageFile.new_by_file_name(ImageFile.generate_file_name(basename=m4b.file_name.with_suffix('.cover'), ext=picture.suffix))
+        if ext_picture_file.exists() and ext_picture_file.samefile(picture):
+            pass
+        else:
+            app.log.info('Writing external %s...', ext_picture_file)
+            shutil.copyfile(picture, ext_picture_file)
+        encode_picture = None
+
     m4b.encode(inputfiles=inputfiles,
-               chapters=chapters_file.chapters,
+               chapters=encode_chapters,
                force_input_bitrate=getattr(app.args, 'bitrate', None),
                target_bitrate=getattr(app.args, 'target_bitrate', None),
                yes=app.args.yes,
@@ -741,7 +774,7 @@ def mkm4b(inputfiles, default_tags):
                itunes_compat=app.args.itunes_compat,
                use_qaac=app.args.use_qaac,
                channels=getattr(app.args, 'channels', None),
-               picture=picture,
+               picture=encode_picture,
                expected_duration=expected_duration,
                show_progress_bar=True)
 
@@ -754,7 +787,12 @@ def mkm4b(inputfiles, default_tags):
             tags.pprint()
         chapters = m4b.load_chapters()
         if chapters is not None:
-            chapters.pprint()
+            if chapters or not ext_chapters_file:
+                chapters.pprint()
+        if ext_chapters_file:
+            print(f'External chapters: {ext_chapters_file}')
+        if ext_picture_file:
+            print(f'External picture: {ext_picture_file}')
 
     return True
 
