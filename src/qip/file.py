@@ -522,6 +522,12 @@ class File(object):
             fp.close()
         # No exception if no fp, like file objects
 
+    def samefile(self, other):
+        self.assert_file_name_defined()
+        if not isinstance(other, Path):
+            other = Path(other)
+        return self.file_name.samefile(other)
+
     @classmethod
     def _build_extension_to_class_map(cls):
         cls._extension_to_class_map = {

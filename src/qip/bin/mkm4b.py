@@ -551,7 +551,7 @@ def mkm4b(inputfiles, default_tags):
 
     chapters_file = Mp4chapsFile(file_name=m4b.file_name.with_suffix('.chapters.txt'))
     if app.args.chapters_file:
-        if chapters_file.exists() and app.args.chapters_file.samefile(chapters_file.file_name):
+        if chapters_file.exists() and chapters_file.samefile(app.args.chapters_file):
             app.log.info('Reusing %s...', chapters_file)
             chapters_file.load()
         else:
