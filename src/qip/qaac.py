@@ -25,6 +25,7 @@ import qip.file
 class Qaac(Executable):
 
     name = 'qaac'
+    encoding = 'utf-8'
 
     class Preset(enum.Enum):
         spoken_podcast = ('Spoken Podcast(64k)', MappingProxyType({'abr': 64, 'quality': 0, 'he': True}))
