@@ -873,17 +873,16 @@ class MatroskaFile(BinaryMediaFile):
                target_bitrate=None,
                yes=False,
                force_encode=False,
-               ipod_compat=True,
-               itunes_compat=True,
-               use_qaac=True,
+               ipod_compat=True,  # unused
+               itunes_compat=True,  # unused
+               use_qaac=True,  # unused
                channels=None,
                picture=None,
                expected_duration=None,
                show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
-        from .exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
-        from .parser import lines_parser
-        from .qaac import qaac
+        from .exec import clean_cmd_output
         from .ffmpeg import ffmpeg
+        from .parser import lines_parser
         output_file = self
         chapters_added = False
         tags_added = False
@@ -908,12 +907,17 @@ class MatroskaFile(BinaryMediaFile):
             ffmpeg_cmd = []
 
             ffmpeg_input_cmd = []
+            ffmpeg_chapters_cmd = []
             ffmpeg_output_cmd = []
             if yes:
                 ffmpeg_cmd += ['-y']
+            else:
+                if self.exists():
+                    raise OSError(errno.EEXIST, f'File exists: {self}')
+
             ffmpeg_cmd += ['-stats']
             # ffmpeg_output_cmd += ['-vn']
-            ffmpeg_format = 'matroska'
+            ffmpeg_format = 'webm' if isinstance(self, WebmFile) else 'matroska'
             bCopied = False
 
             if len(inputfiles) > 1:
@@ -926,33 +930,59 @@ class MatroskaFile(BinaryMediaFile):
                 concat_file.flush()
                 concat_file.seek(0)
                 if log.isEnabledFor(logging.DEBUG):
-                    log.debug('Files:\n' +
-                              re.sub(r'^', '    ', concat_file.read(), flags=re.MULTILINE))
-                    concat_file.seek(0)
+                    concat_file.pprint()
                 ffmpeg_input_cmd += [
                     '-f', 'concat', '-safe', '0', '-i', concat_file,
                 ]
             else:
                 ffmpeg_input_cmd += ffmpeg.input_args(inputfiles[0])
+            input_id = 0
+            metadata_input_id = -1
+            chapters_input_id = -1
             ffmpeg_output_cmd += [
-                '-map', '0:a',
+                '-map', f'{input_id}:a',
             ]
+            output_id = 0
+
+            if isinstance(self, WebmFile):
+                supported_audio_types = (
+                    mm.AudioType.opus,
+                    mm.AudioType.vorbis,
+                )
+            else:
+                # Is there an unsupported codec?
+                supported_audio_types = (
+                    mm.AudioType.opus,  # default
+                ) + tuple(mm.AudioType)
+            audio_type = [inputfile.audio_type for inputfile in inputfiles]
+            audio_type = sorted(set(audio_type))
+            if not force_encode \
+                    and len(audio_type) == 1 \
+                    and audio_type[0] in supported_audio_types:
+                ffmpeg_output_cmd += ['-codec:a', 'copy']
+                bCopied = True
+            else:
+                ffmpeg_output_cmd += [
+                    '-codec:a', {
+                        mm.AudioType.opus: 'opus',
+                        mm.AudioType.vorbis: 'libvorbis',
+                    }[supported_audio_types[0]],
+                ]
 
             if not picture_added and picture is not None:
                 ffmpeg_input_cmd += ffmpeg.input_args(picture, attach=True)
+                input_id += 1
+                output_id += 1
                 ffmpeg_output_cmd += [
-                    '-metadata:s:1', 'mimetype={}'.format(picture.mime_type),
-                    '-metadata:s:1', f'filename=cover{picture.file_name.suffix}',
+                    f'-codec:{output_id}', 'copy',
+                    f'-metadata:s:{output_id}', f'mimetype={picture.mime_type}',
+                    f'-metadata:s:{output_id}', f'filename=cover{picture.file_name.suffix}',
                 ]
                 picture_added = True
 
             ffmpeg_output_cmd += [
-                '-codec', 'copy',
-            ]
-
-            ffmpeg_output_cmd += [
-                '-map_metadata', -1,
-                '-map_chapters', -1,
+                '-map_metadata', metadata_input_id,
+                '-map_chapters', chapters_input_id,
             ]
 
             ffmpeg_output_cmd += [
@@ -960,28 +990,12 @@ class MatroskaFile(BinaryMediaFile):
                 output_file,
             ]
 
-            out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd),
+            out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_chapters_cmd + ffmpeg_output_cmd),
                          show_progress_bar=show_progress_bar,
                          progress_bar_max=progress_bar_max,
                          progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
                          )
-            out = out.out
-            out_time = None
-            # {{{
-            out = clean_cmd_output(out)
-            parser = lines_parser(out.split('\n'))
-            while parser.advance():
-                parser.line = parser.line.strip()
-                if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
-                    # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
-                    # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
-                    out_time = parse_time_duration(parser.match.group('out_time'))
-                elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
-                    log.warning('TODO: %s', parser.line)
-                    pass
-                else:
-                    pass  # TODO
-            # }}}
+            out_time = ffmpeg.Timestamp(out.spawn.progress_match.group('time'))
             print('')
             if expected_duration is not None:
                 expected_duration = ffmpeg.Timestamp(expected_duration)
@@ -1001,10 +1015,14 @@ class MatroskaFile(BinaryMediaFile):
                 chapters_added = True
 
             if not tags_added and output_file.tags is not None:
-                log.info('Adding tags...')
                 tags = copy.copy(output_file.tags)
-                tags.picture = None  # Already added
-                output_file.write_tags(tags=tags, run_func=do_exec_cmd)
+                log.info('Adding tags...')
+                if picture_added:
+                    try:
+                        del tags.picture  # Already added
+                    except AttributeError:
+                        pass
+                output_file.write_tags(tags=tags)
                 tags_added = True
 
 class MkvFile(MatroskaFile, MovieFile):
