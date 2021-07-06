@@ -10,9 +10,30 @@ __all__ = (
     'TextMediaFile',
     'FrameRate',
     'SoundFile',
+    'MovieFile',
+    'AudiobookFile',
     'SubtitleFile',
     'BinarySubtitleFile',
     'TextSubtitleFile',
+    'RawAc3File',
+    'RawEac3File',
+    'RawDtsFile',
+    'RawTrueHdFile',
+    'RawAacFile',
+    'RawYuvFile',
+    'Y4mFile',
+    'RawMjpegFile',
+    'RawH264File',
+    'RawH265File',
+    'IvfContainerFile',
+    'RawVp8File',
+    'RawVp9File',
+    'AsfContainerFile',
+    'RawVc1File',
+    'VobSubFile',
+    'SubRipFile',
+    'SubStationAlphaFile',
+    'WebVttFile',
     'MediaTagEnum',
     'TrackTags',
     'AlbumTags',
@@ -593,6 +614,8 @@ class MediaFile(File):
     supports_picture = True   # Embedded cover picture attachment (not generic Video)
     supports_chapters = True  # Embedded chapters
 
+    ffmpeg_container_format = None  # See `ffmpeg -formats`
+
     def __init__(self, file_name, *args, tags=None, **kwargs):
         if tags is None:
             tags = TrackTags()
@@ -692,7 +715,7 @@ class MediaFile(File):
         with ffmpeg.MetadataFile.NamedTemporaryFile() as metadata_file:
             ffmpeg_args = [
                 '-i', self,
-                '-f', 'ffmetadata',
+                '-f', metadata_file.ffmpeg_container_format or 'ffmetadata',
                 '-y',
                 metadata_file,
             ]
@@ -5400,37 +5423,157 @@ def get_audio_file_ffmpeg_stats(d):
 
 class RingtoneFile(SoundFile): pass  # TODO
 
-class MovieFile(SoundFile):
+class MovieFile(SoundFile): pass
+
+class AudiobookFile(SoundFile): pass
+
+class SubtitleFile(MediaFile): pass
+
+class BinarySubtitleFile(SubtitleFile, BinaryMediaFile): pass
+
+class TextSubtitleFile(SubtitleFile, TextMediaFile): pass
+
+class RawAc3File(SoundFile):
 
     _common_extensions = (
-        '.h264',
-        '.h265',
-        '.ivf',
-        '.mjpeg',
-        '.vc1',
-        '.vp8',
-        '.vp9',
+        '.ac3',
+    )
+
+    ffmpeg_container_format = 'ac3'
+
+class RawEac3File(SoundFile):
+
+    _common_extensions = (
+        '.eac3',
+    )
+
+    ffmpeg_container_format = 'eac3'
+
+class RawDtsFile(SoundFile):
+
+    _common_extensions = (
+        '.dts',
+    )
+
+    ffmpeg_container_format = 'dts'
+
+class RawTrueHdFile(SoundFile):
+
+    _common_extensions = (
+        '.truehd',
+    )
+
+    ffmpeg_container_format = 'truehd'
+
+class RawAacFile(SoundFile):
+
+    _common_extensions = (
+        '.aac',
+    )
+
+    ffmpeg_container_format = 'aac'
+
+class RawYuvFile(MovieFile):
+
+    _common_extensions = (
+        '.yuv',
+    )
+
+    ffmpeg_container_format = 'rawvideo'
+
+class Y4mFile(MovieFile):
+
+    _common_extensions = (
         '.y4m',
     )
 
-class AudiobookFile(SoundFile): pass  # TODO
+    ffmpeg_container_format = 'yuv4mpegpipe'
 
-class SubtitleFile(MediaFile): pass  # TODO
-
-class BinarySubtitleFile(SubtitleFile, BinaryMediaFile):
+class RawMjpegFile(MovieFile):
 
     _common_extensions = (
-        '.sub',
-        #'.sup',  # See PgsFile
+        '.mjpeg',
     )
 
-class TextSubtitleFile(SubtitleFile, TextMediaFile):
+    ffmpeg_container_format = 'mjpeg'
+
+class RawH264File(MovieFile):
+
+    _common_extensions = (
+        '.h264',
+    )
+
+    ffmpeg_container_format = 'h264'
+
+class RawH265File(MovieFile):
+
+    _common_extensions = (
+        '.h265',
+    )
+
+    ffmpeg_container_format = 'hevc'
+
+class IvfContainerFile(MovieFile):
+
+    _common_extensions = (
+        '.ivf',
+    )
+
+    ffmpeg_container_format = 'ivf'
+
+class RawVp8File(IvfContainerFile):
+
+    _common_extensions = (
+        '.vp8',
+    )
+
+class RawVp9File(IvfContainerFile):
+
+    _common_extensions = (
+        '.vp9',
+    )
+
+class AsfContainerFile(BinaryMediaFile):
+
+    ffmpeg_container_format = 'asf'
+
+class RawVc1File(AsfContainerFile, MovieFile):
+
+    _common_extensions = (
+        '.vc1',
+    )
+
+class VobSubFile(BinarySubtitleFile):
+
+    _common_extensions = (
+        '.sub',  # w/ .idx
+    )
+
+    ffmpeg_container_format = 'vobsub'
+
+class SubRipFile(TextSubtitleFile):
 
     _common_extensions = (
         '.srt',
+    )
+
+    ffmpeg_container_format = 'srt'
+
+class SubStationAlphaFile(TextSubtitleFile):
+
+    _common_extensions = (
         '.ass',
+    )
+
+    ffmpeg_container_format = 'ass'
+
+class WebVttFile(TextSubtitleFile):
+
+    _common_extensions = (
         '.vtt',
     )
+
+    ffmpeg_container_format = 'webvtt'
 
 # class ArgparseSetTagAction {{{
 

@@ -106,6 +106,8 @@ class TimestampInterval(object):
 class MetadataFile(TextFile):
     # [ffmpeg-1]: https://ffmpeg.org/ffmpeg-formats.html#Metadata-1
 
+    ffmpeg_container_format = 'ffmetadata'
+
     open_encoding = 'utf-8'
 
     version = 1

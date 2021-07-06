@@ -22,6 +22,8 @@ class FlacFile(SoundFile):
         '.flac',
     )
 
+    ffmpeg_container_format = 'flac'
+
     @property
     def audio_type(self):
         return AudioType.flac
@@ -56,7 +58,7 @@ class FlacFile(SoundFile):
                     '-y',
                 ]
             ffmpeg_args += [
-                '-f', 'flac',
+                '-f', self.ffmpeg_container_format or 'flac',
                 self,
             ]
             ffmpeg(*ffmpeg_args)
@@ -116,7 +118,6 @@ class FlacFile(SoundFile):
 
             ffmpeg_cmd += ['-stats']
             # ffmpeg_output_cmd += ['-vn']
-            ffmpeg_format = 'flac'
             bCopied = False
 
             if len(inputfiles) > 1:
@@ -183,7 +184,7 @@ class FlacFile(SoundFile):
             ]
 
             ffmpeg_output_cmd += [
-                '-f', ffmpeg_format,
+                '-f', output_file.ffmpeg_container_format or 'flac',
                 output_file,
             ]
 

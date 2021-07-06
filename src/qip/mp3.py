@@ -20,6 +20,8 @@ class Mp3File(SoundFile):
         '.mp3',
     )
 
+    ffmpeg_container_format = 'mp3'
+
     @property
     def audio_type(self):
         return mm.AudioType.mp3

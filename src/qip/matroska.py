@@ -257,6 +257,8 @@ class MatroskaChaptersFile(XmlFile):
 
 class MatroskaFile(BinaryMediaFile):
 
+    ffmpeg_container_format = 'matroska'
+
     @property
     def tag_writer(self):
         return taged
@@ -917,7 +919,6 @@ class MatroskaFile(BinaryMediaFile):
 
             ffmpeg_cmd += ['-stats']
             # ffmpeg_output_cmd += ['-vn']
-            ffmpeg_format = 'webm' if isinstance(self, WebmFile) else 'matroska'
             bCopied = False
 
             if len(inputfiles) > 1:
@@ -986,7 +987,7 @@ class MatroskaFile(BinaryMediaFile):
             ]
 
             ffmpeg_output_cmd += [
-                '-f', ffmpeg_format,
+                '-f', output_file.ffmpeg_container_format or 'mkv',
                 output_file,
             ]
 
@@ -1036,6 +1037,8 @@ class WebmFile(MkvFile):
     _common_extensions = (
         '.webm',
     )
+
+    ffmpeg_container_format = 'webm'
 
     supports_picture = False
 

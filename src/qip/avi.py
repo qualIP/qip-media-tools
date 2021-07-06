@@ -22,6 +22,8 @@ class AviFile(MovieFile):
         '.avi',
     )
 
+    ffmpeg_container_format = 'avi'
+
     @property
     def tag_writer(self):
         return mm.taged

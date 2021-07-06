@@ -199,21 +199,27 @@ class File(object):
 
     @classmethod
     def new_by_file_name(cls, file_name, *args, default_class=True, **kwargs):
-        if default_class is True:
-            default_class = cls
         file_name = toPath(file_name)
         ext = file_name.suffix
+        factory_cls = cls.cls_from_suffix(file_name.suffix,
+                                          default_class=default_class)
+        return factory_cls(file_name, *args, **kwargs)
+
+    @classmethod
+    def cls_from_suffix(cls, suffix, default_class=True):
+        if default_class is True:
+            default_class = cls
         if cls.__dict__.get('_extension_to_class_map', None) is None:
             cls._extension_to_class_map = {}
             cls._update_extension_to_class_map()
-        factory_cls = cls._extension_to_class_map.get(ext, None)
+        factory_cls = cls._extension_to_class_map.get(suffix, None)
         if not factory_cls:
             load_all_file_types()
-            factory_cls = cls._extension_to_class_map.get(ext, default_class)
+            factory_cls = cls._extension_to_class_map.get(suffix, default_class)
         if not factory_cls:
             log.debug('%r._extension_to_class_map = %r', cls, cls._extension_to_class_map)
-            raise ValueError('Unknown extension %r' % (ext,))
-        return factory_cls(file_name, *args, **kwargs)
+            raise ValueError('Unknown extension %r' % (suffix,))
+        return factory_cls
 
     @classmethod
     def NamedTemporaryFile(cls, mode=None, buffering=-1, encoding=None, newline=None, suffix=None, prefix=None, dir=None, delete=True, *, errors=None):
@@ -760,6 +766,7 @@ def load_all_file_types():
     import qip.mp4
     import qip.ogg
     import qip.pgs
+    #import qip.vob
     #import qip.vorbis
     import qip.wav
 

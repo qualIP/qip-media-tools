@@ -129,9 +129,11 @@ from qip.matroska import WebmFile
 from qip.mm import BinarySubtitleFile
 from qip.mm import MediaFile
 from qip.mm import MovieFile
+from qip.mm import RawYuvFile
 from qip.mm import SoundFile
 from qip.mm import SubtitleFile
 from qip.mm import TextSubtitleFile
+from qip.mm import Y4mFile
 from qip.mp2 import Mpeg2ContainerFile
 from qip.mp2 import VobFile
 from qip.mp4 import M4aFile
@@ -1204,39 +1206,9 @@ def codec_name_to_ext(codec_name):
 
 def ext_to_container(ext):
     ext = (Path('x' + ext) if isinstance(ext, str) else toPath(ext)).suffix
-    try:
-        ext_container = {
-            '.mkv': 'matroska',
-            '.webm': 'webm',
-            # video
-            '.y4m': 'yuv4mpegpipe',
-            '.yuv': 'rawvideo',
-            '.mpeg2': 'mpeg2video',
-            '.mp2v': 'mpeg2video',
-            '.mpegts': 'mpegts',
-            '.h264': 'h264',  # raw H.264 video
-            '.h265': 'hevc',  # raw HEVC/H.265 video
-            '.vp8': 'ivf',
-            '.vp9': 'ivf',
-            '.ivf': 'ivf',
-            # audio
-            #'.ac3': 'ac3',
-            #'.eac3': 'eac3',
-            #'.dts': 'dts',
-            #'.truehd': 'truehd',
-            '.vorbis': 'ogg',
-            '.opus': 'ogg',
-            '.ogg': 'ogg',
-            '.mka': 'matroska',
-            #'.aac': 'aac',
-            '.wav': 'wav',
-            # subtitles
-            'sub': 'vobsub',
-            #'.idx': 'dvd_subtitle',
-            #'.sup': 'hdmv_pgs_subtitle',
-            '.vtt': 'webvtt',
-        }[ext]
-    except KeyError as err:
+    cls = MediaFile.cls_from_suffix(ext)
+    ext_container = cls.ffmpeg_container_format
+    if ext_container is None:
         raise ValueError('Unsupported extension %r' % (ext,)) from err
     return ext_container
 
@@ -2818,12 +2790,6 @@ def chop_chapters(chaps,
         for chap in chaps:
             app.log.verbose('Chapter %s', chap)
 
-            force_format = None
-            try:
-                force_format = ext_to_container(stream_file_ext)
-            except ValueError:
-                pass
-
             stream_chapter_file_name = '%s-%02d%s' % (
                 stream_file_base,
                 chap.no,
@@ -2837,11 +2803,8 @@ def chop_chapters(chaps,
                     '-ss', ffmpeg.Timestamp(chap.start),
                     '-to', ffmpeg.Timestamp(chap.end),
                     ]
-                if force_format:
-                    ffmpeg_args += [
-                        '-f', force_format,
-                        ]
                 ffmpeg_args += [
+                    '-f', ext_to_container(stream_file_ext),
                     inputdir / stream_chapter_file_name,
                     ]
                 ffmpeg(*ffmpeg_args,
@@ -3838,11 +3801,6 @@ def action_mux(inputfile, in_tags,
                                 '.vp9.ivf',
                                 ))):
                     with perfcontext('Extract %s stream #%s w/ ffmpeg' % (stream.codec_type, stream.pprint_index,), log=True, stat=f'extract.{stream.codec_type}.ffmpeg'):
-                        force_format = None
-                        try:
-                            force_format = ext_to_container(stream_file_ext)
-                        except ValueError:
-                            pass
                         ffmpeg_args = [] + default_ffmpeg_args
                         if app.args.seek_video:
                             ffmpeg_args += [
@@ -3865,12 +3823,9 @@ def action_mux(inputfile, in_tags,
                         ffmpeg_args += [
                             '-start_at_zero',
                             ]
-                        if force_format:
-                            ffmpeg_args += [
-                                '-f', force_format,
-                                ]
                         ffmpeg_args += [
-                            outputdir / stream_file_name,
+                            '-f', stream.file.ffmpeg_container_format,
+                            stream.path,
                             ]
                         ffmpeg(*ffmpeg_args,
                             progress_bar_max=estimate_stream_duration(inputfile=inputfile),
@@ -5059,7 +5014,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 '-codec', 'copy',
                                 ] + ffmpeg_concat_args + [
                                 '-start_at_zero',
-                                '-f', ext_to_container(new_stream.file_name),
+                                '-f', new_stream.file.ffmpeg_container_format,
                                 new_stream.path.relative_to(cwd),
                                 ]
                             ffmpeg(*ffmpeg_args,
@@ -5186,7 +5141,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                         else:
                             raise NotImplementedError(stereo_3d_mode)
                         ffmpeg_enc_args += [
-                            '-f', 'rawvideo',
+                            '-f', RawYuvFile.ffmpeg_container_format,
                             '-i', 'pipe:0',
                         ]
                         if stereo_3d_mode is Stereo3DMode.full_side_by_side:
@@ -5214,7 +5169,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                               codec=codec,
                                               lossless=lossless)
                         ffmpeg_enc_args += [
-                            '-f', ext_to_container(new_stream_file_ext),
+                            '-f', new_stream.file.ffmpeg_container_format,
                             new_stream.path,
                         ]
 
@@ -5311,7 +5266,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 if limit_duration:
                                     ffmpeg_dec_args += ['-t', ffmpeg.Timestamp(limit_duration)]
                                 ffmpeg_dec_args += [
-                                    '-f', ext_to_container('.y4m'),
+                                    '-f', Y4mFile.ffmpeg_container_format,
                                     '--', 'pipe:',
                                 ]
 
@@ -5351,7 +5306,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             ] + ext_to_codec_args(new_stream_file_ext,
                                                   codec=codec,
                                                   lossless=lossless) + [
-                                '-f', ext_to_container(new_stream_file_ext),
+                                '-f', new_stream.file.ffmpeg_container_format,
                                 new_stream.path,
                             ]
 
@@ -5445,7 +5400,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             if limit_duration:
                                 ffmpeg_args += ['-t', ffmpeg.Timestamp(limit_duration)]
                             ffmpeg_args += [
-                                '-f', ext_to_container(new_stream_file_ext),
+                                '-f', new_stream.file.ffmpeg_container_format,
                                 new_stream.path,
                             ]
 
@@ -5905,7 +5860,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             '-r', framerate,
                         ]
                     ffmpeg_args += [
-                        '-f', ext_to_container(new_stream_file_ext), new_stream.path,
+                        '-f', new_stream.file.ffmpeg_container_format,
+                        new_stream.path,
                         ]
                     if need_2pass or new_stream_file_ext in (
                             '.vp8.ivf',
@@ -6040,7 +5996,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                     '-rf64', 'auto',  # Use RF64 header rather than RIFF for large files
                                 ]
                             ffmpeg_args += [
-                                '-f', 'wav', new_stream.path,
+                                '-f', new_stream.file.ffmpeg_container_format,
+                                new_stream.path,
                                 ]
                             ffmpeg(*ffmpeg_args,
                                    progress_bar_max=stream_dict.estimated_duration,
@@ -6105,7 +6062,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 #'-channel', str(channels), '-mapping_family', '1', '-af', 'aformat=channel_layouts=%s' % (channel_layout,),
                                 ]
                             ffmpeg_args += [
-                                '-f', 'ogg', new_stream.path,
+                                '-f', new_stream.file.ffmpeg_container_format,
+                                new_stream.path,
                                 ]
                             ffmpeg(*ffmpeg_args,
                                    progress_bar_max=stream_dict.estimated_duration,
@@ -6140,7 +6098,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True, stat=f'optimize.{self.codec_type}.ffmpeg'):
                                 ffmpeg_args = default_ffmpeg_args + [
                                 ] + ffmpeg.input_args(stream_dict.file) + [
-                                    '-f', ext_to_container(new_stream.path),
+                                    '-f', new_stream.file.ffmpeg_container_format,
                                     new_stream.path,
                                     ]
                                 ffmpeg(*ffmpeg_args,
@@ -6362,34 +6320,17 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                                 new_stream['file_name'] = stream_file_base + new_stream_file_ext
                                 app.log.verbose('Stream #%s %s -> %s', stream_dict.pprint_index, stream_file_ext, new_stream.file_name)
 
-                                if False:
-                                    with perfcontext('Convert %s -> %s w/ ffmpeg' % (stream_file_ext, new_stream.file_name), log=True, stat=f'optimize.{self.codec_type}.ffmpeg'):
-                                        ffmpeg_args = default_ffmpeg_args + [
-                                        ] + ffmpeg.input_args(stream_dict.file) + [
-                                            '-scodec', 'dvdsub',
-                                            '-map', '0',
-                                            ]
-                                        ffmpeg_args += [
-                                            '-f', 'mpeg', new_stream.path,
-                                            ]
-                                        ffmpeg(*ffmpeg_args,
-                                               # TODO progress_bar_max=stream_dict.estimated_duration,
-                                               # TODO progress_bar_title=,
-                                               slurm=app.args.slurm,
-                                               dry_run=app.args.dry_run,
-                                               y=app.args.yes)
-                                else:
-                                    with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream.file_name), log=True, stat=f'optimize.{self.codec_type}.bdsup2sub'):
-                                        # https://www.videohelp.com/software/BDSup2Sub
-                                        # https://github.com/mjuhasz/BDSup2Sub/wiki/Command-line-Interface
-                                        cmd = [
-                                            'bdsup2sub',
-                                            # TODO --forced-only
-                                            '--language', stream_dict.language.code2,
-                                            '--output', new_stream.path,
-                                            stream_dict.path,
-                                            ]
-                                        out = do_spawn_cmd(cmd)
+                                with perfcontext('Convert %s -> %s w/ bdsup2sub' % (stream_file_ext, new_stream.file_name), log=True, stat=f'optimize.{self.codec_type}.bdsup2sub'):
+                                    # https://www.videohelp.com/software/BDSup2Sub
+                                    # https://github.com/mjuhasz/BDSup2Sub/wiki/Command-line-Interface
+                                    cmd = [
+                                        'bdsup2sub',
+                                        # TODO --forced-only
+                                        '--language', stream_dict.language.code2,
+                                        '--output', new_stream.path,
+                                        stream_dict.path,
+                                        ]
+                                    out = do_spawn_cmd(cmd)
 
                                 done_optimize_iter(new_stream=new_stream)
                                 # continue
@@ -6423,7 +6364,8 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             ] + ffmpeg.input_args(stream_dict.file) + [
                                 ]
                             ffmpeg_args += [
-                                '-f', 'png', new_stream.path,
+                                '-f', new_stream.file.ffmpeg_container_format,
+                                new_stream.path,
                                 ]
                             ffmpeg(*ffmpeg_args,
                                    #slurm=app.args.slurm,
@@ -6514,12 +6456,6 @@ def action_extract_music(inputdir, in_tags):
                 channels = stream_dict.file.ffprobe_dict['streams'][0]['channels']
                 channel_layout = stream_dict.file.ffprobe_dict['streams'][0].get('channel_layout', None)
 
-                force_format = None
-                try:
-                    force_format = ext_to_container(stream_file_ext)
-                except ValueError:
-                    pass
-
                 if has_chapters:
                     stream_chapter_tmp_file = SoundFile.new_by_file_name(
                             inputdir / ('%s-%02d%s' % (
@@ -6535,11 +6471,8 @@ def action_extract_music(inputdir, in_tags):
                             '-ss', ffmpeg.Timestamp(chap.start),
                             '-to', ffmpeg.Timestamp(chap.end),
                             ]
-                        if force_format:
-                            ffmpeg_args += [
-                                '-f', force_format,
-                                ]
                         ffmpeg_args += [
+                            '-f', stream_chapter_tmp_file.ffmpeg_container_format,
                             stream_chapter_tmp_file,
                             ]
                         ffmpeg(*ffmpeg_args,
@@ -7425,7 +7358,7 @@ def action_demux(inputdir, in_tags):
                     '-map', stream_dict['_temp'].out_index,
                     ]
         ffmpeg_output_args += [
-            '-f', ext_to_container(output_file),
+            '-f', output_file.ffmpeg_container_format,
             output_file,
             ]
         ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args + ffmpeg_output_args
@@ -7497,7 +7430,7 @@ def action_demux(inputdir, in_tags):
         #  headers (see mkvinfo). Some players, like VLC, exhibit playback
         #  issues with images stretched vertically, a lot.
         ffmpeg_args += [
-            '-f', ext_to_container(output_file),
+            '-f', output_file.ffmpeg_container_format,
             output_file,
             ]
         with perfcontext('Merge subtitles w/ ffmpeg', log=True, stat=f'merge.subtitles.ffmpeg'):
@@ -7656,7 +7589,7 @@ def action_concat(concat_files, in_tags):
             '-codec', 'copy',
         ] + ffmpeg_concat_args + [
             '-start_at_zero',
-            '-f', ext_to_container(concat_file),
+            '-f', concat_file.ffmpeg_container_format,
             concat_file,
         ]
         with perfcontext('Concat w/ ffmpeg', log=True, stat=f'concat.multiple.ffmpeg'):

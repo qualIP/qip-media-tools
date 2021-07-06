@@ -9,6 +9,7 @@ __all__ = (
     'OgmFile',
     'OgaFile',
     'OpusFile',
+    'VorbisFile',
 )
 
 # https://en.wikipedia.org/wiki/Ogg
@@ -34,6 +35,8 @@ class OggFile(BinaryMediaFile):
         '.spx',
         # '.opus',
     )
+
+    ffmpeg_container_format = 'ogg'
 
     @property
     def tag_writer(self):
@@ -94,7 +97,6 @@ class OggFile(BinaryMediaFile):
 
             ffmpeg_cmd += ['-stats']
             # ffmpeg_output_cmd += ['-vn']
-            ffmpeg_format = 'oga'
             bCopied = False
 
             if len(inputfiles) > 1:
@@ -174,7 +176,7 @@ class OggFile(BinaryMediaFile):
             ]
 
             ffmpeg_output_cmd += [
-                '-f', ffmpeg_format,
+                '-f', output_file.ffmpeg_container_format or 'oga',
                 output_file,
             ]
 
@@ -255,6 +257,8 @@ class OgvFile(OggMovieFile):
         '.ogv',
     )
 
+    ffmpeg_container_format = 'ogv'
+
 class OgmFile(OggMovieFile):
     """Discontinued format. Use OgvFile"""
 
@@ -268,6 +272,8 @@ class OgaFile(OggSoundFile):
         '.oga',
     )
 
+    ffmpeg_container_format = 'oga'
+
 class VorbisFile(OgaFile):
 
     _common_extensions = (
@@ -279,6 +285,8 @@ class OpusFile(OggSoundFile):
     _common_extensions = (
         '.opus',
     )
+
+    ffmpeg_container_format = 'opus'
 
     supports_chapters = True
 

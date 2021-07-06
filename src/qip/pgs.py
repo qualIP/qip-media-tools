@@ -307,13 +307,16 @@ def pgs_iter_segments(fp):
         yield pgs_segment
 
 class PgsFile(BinarySubtitleFile):
-
-    SegmentType = PgsSegmentTypeEnum
-    OdsSequenceFlags = PgsOdsSequenceFlags
+    # HDMV Presentation Graphic Stream subtitles
 
     _common_extensions = (
         '.sup',
     )
+
+    ffmpeg_container_format = 'sup'
+
+    SegmentType = PgsSegmentTypeEnum
+    OdsSequenceFlags = PgsOdsSequenceFlags
 
     def iter_pgs_segments(self):
         if self.fp is not None:

@@ -480,6 +480,8 @@ class PngFile(ImageFile):
         '.png',
     )
 
+    ffmpeg_container_format = 'png_pipe'
+
     @property
     def image_type(self):
         return ImageType.png
@@ -497,6 +499,8 @@ class JpegFile(ImageFile):
         '.jpeg',
     )
 
+    ffmpeg_container_format = 'image2'
+
     @property
     def image_type(self):
         return ImageType.jpg
@@ -512,6 +516,8 @@ class GifFile(ImageFile):
     _common_extensions = (
         '.gif',
     )
+
+    ffmpeg_container_format = 'gif'
 
     @property
     def image_type(self):
@@ -530,6 +536,8 @@ class TiffFile(ImageFile):
         '.tif',
     )
 
+    ffmpeg_container_format = 'tiff_pipe'
+
     @property
     def image_type(self):
         return ImageType.tiff
@@ -545,6 +553,8 @@ class BmpFile(ImageFile):
     _common_extensions = (
         '.bmp',
     )
+
+    ffmpeg_container_format = 'bmp_pipe'
 
     @property
     def image_type(self):

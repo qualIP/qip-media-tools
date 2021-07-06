@@ -24,6 +24,8 @@ class WaveFile(SoundFile):
         '.wav',
     )
 
+    ffmpeg_container_format = 'wav'
+
     @property
     def audio_type(self):
         return mm.AudioType.wav

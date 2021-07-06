@@ -24,6 +24,8 @@ class VobFile(MultiFile, BinaryMediaFile):
         '.vob',
     )
 
+    ffmpeg_container_format = 'vob'
+
     dvd_reader = None
     vts = None
 

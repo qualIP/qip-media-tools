@@ -7,6 +7,7 @@ __all__ = (
     'M4aFile',
     'M4bFile',
     'M4rFile',
+    'AlacFile',
     # 'mp4chaps',  # Deprecated
     'Mp4chapsFile',
 )
@@ -41,6 +42,8 @@ from .mm import TrackTags
 from .utils import Timestamp, Timestamp as _BaseTimestamp, replace_html_entities
 
 class Mpeg4ContainerFile(BinaryMediaFile):
+
+    ffmpeg_container_format = 'mp4'  # ipod
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None, yes=False):
         from qip.wav import WaveFile
@@ -343,7 +346,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                         ffmpeg('-i', inputfile,
                                '-map', '0:a', '-codec:a', 'alac',
                                '-y',  # Temp file already exists
-                               '-f', ffmpeg_format,
+                               '-f', intermediate_file.ffmpeg_container_format or 'mp4',
                                intermediate_file)
                         inputfiles[i] = intermediate_file
                     else:
@@ -353,6 +356,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                         ffmpeg('-i', inputfile,
                                '-map', '0:a',
                                '-y',  # Temp file already exists
+                               '-f', intermediate_file.ffmpeg_container_format or 'wav',
                                intermediate_file)
                         inputfiles[i] = intermediate_file
 
@@ -420,7 +424,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 ]
 
                 ffmpeg_output_cmd += [
-                    '-f', ffmpeg_format,
+                    '-f', output_file.ffmpeg_container_format or 'mp4',
                     output_file,
                 ]
 
@@ -509,6 +513,12 @@ class M4aFile(Mpeg4ContainerFile, SoundFile):
     _common_extensions = (
         '.m4a',
         '.m4p',  # encrypted by FairPlay Digital Rights Management
+    )
+
+class AlacFile(M4aFile):
+
+    _common_extensions = (
+        '.alac',
     )
 
 class M4rFile(M4aFile, RingtoneFile):
