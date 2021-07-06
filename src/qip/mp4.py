@@ -407,6 +407,11 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                     ffmpeg_chapters_cmd += ffmpeg.input_args(metadata_file)
                     input_id += 1
                     metadata_input_id = chapters_input_id = input_id
+                    if len(chapters) > 255:
+                        # ffmpeg's (n4.5-dev) 'chpl' atom implementation is limited to 255 chapters
+                        ffmpeg_chapters_cmd += [
+                            '-movflags', 'disable_chpl',
+                        ]
                     chapters_added = True
 
                 ffmpeg_output_cmd += [
@@ -469,10 +474,27 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 picture_added = True
 
     def load_chapters(self):
-        import mutagen
-        mf = mutagen.File(self.file_name)
-        chaps = Chapters.from_mutagen_mp4_chapters(mf.chapters)
+        chaps = None
+        # ffmpeg documentation aludes that QuickTime chapters are more
+        # compatible and writing Nero chapters may cause issues.
+        if not chaps:
+            # ffmpeg reads only QuickTime chapters
+            chaps = super().load_chapters()
+        if not chaps:
+            # mutagen reads only Nero chapters ('chpl' atom)
+            import mutagen
+            mf = mutagen.File(self.file_name)
+            chaps = Chapters.from_mutagen_mp4_chapters(mf.chapters)
         return chaps
+
+    def write_chapters(self, chapters, ffmpeg_args=None, *args, **kwargs):
+        if chapters and len(chapters) > 255:
+            # ffmpeg's (n4.5-dev) 'chpl' atom implementation is limited to 255 chapters
+            ffmpeg_args = list(ffmpeg_args or [])
+            ffmpeg_args += [
+                '-movflags', 'disable_chpl',
+            ]
+        return super().write_chapters(chapters=chapters, ffmpeg_args=ffmpeg_args, *args, **kwargs)
 
 class Mp4File(Mpeg4ContainerFile, MovieFile):
 

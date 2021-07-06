@@ -705,6 +705,7 @@ class MediaFile(File):
         return metadata_file
 
     def write_ffmpeg_metadata(self, metadata_file,
+                              ffmpeg_args=None,
                               show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
         from qip.ffmpeg import ffmpeg
         assert isinstance(metadata_file, ffmpeg.MetadataFile)
@@ -717,7 +718,7 @@ class MediaFile(File):
                     # write -> read
                     metadata_file.flush()
                     metadata_file.seek(0)
-                    return self.write_ffmpeg_metadata(metadata_file)
+                    return self.write_ffmpeg_metadata(metadata_file, ffmpeg_args=ffmpeg_args)
                 finally:
                     metadata_file.file_name, metadata_file.fp = None, None
 
@@ -994,12 +995,14 @@ class MediaFile(File):
         return chaps
 
     def write_chapters(self, chapters,
+                       ffmpeg_args=None,
                        show_progress_bar=None, progress_bar_max=None, progress_bar_title=None,
                        log=False):
         with perfcontext('Write chapters w/ ffmpeg', log=log):
             metadata_file = self.load_ffmpeg_metadata()
             metadata_file.chapters = chapters
             self.write_ffmpeg_metadata(metadata_file,
+                                       ffmpeg_args=ffmpeg_args,
                                        show_progress_bar=show_progress_bar,
                                        progress_bar_max=progress_bar_max,
                                        progress_bar_title=progress_bar_title or f'Write {self} chapters w/ ffmpeg',
