@@ -172,8 +172,8 @@ def main():
     url_file = urllib.parse.urljoin(book_info.url_download_base, cover_file_info.name)
     rel_cover_file = Path(urllib.parse.urlparse(url_file).path).name
     book_info.cover_file = rel_cover_file
-    audiobook.cover_file = ImageFile.new_by_file_name(app.args.dir / rel_cover_file)
-    audiobook.cover_file.download(url=url_file, md5=cover_file_info.md5)
+    audiobook.tags.picture = ImageFile.new_by_file_name(app.args.dir / rel_cover_file)
+    audiobook.tags.picture.download(url=url_file, md5=cover_file_info.md5)
 
     book_info_file = json.JsonFile(file_name=app.args.dir / 'librivox-dl.book_info.json')
     book_info_file.write_json(

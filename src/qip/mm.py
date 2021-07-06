@@ -5238,12 +5238,6 @@ class SoundFile(BinaryMediaFile):
             value = AudioType(value)
         self._audio_type = value
 
-    def __init__(self, file_name, cover_file=None, *args, tags=None, **kwargs):
-        if tags is None:
-            tags = TrackTags()
-        super().__init__(file_name=file_name, *args, tags=tags, **kwargs)
-        self.cover_file = cover_file  # TODO -- use tags.picture?
-
 class AlbumTagsCache(dict):
 
     def __missing__(self, key):

@@ -546,9 +546,9 @@ class M4bFile(M4aFile, AudiobookFile):
             cmd = [
                     'mkm4b',
                     ]
-            if self.cover_file:
+            if self.tags.picture:
                 cmd += [
-                        '--cover', oldcwd / self.cover_file,
+                        '--cover', oldcwd / self.tags.picture,
                         ]
             if interactive:
                 cmd += ['--interactive']
