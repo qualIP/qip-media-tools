@@ -71,15 +71,15 @@ class FlacFile(SoundFile):
                yes=False,
                force_encode=False,
                ipod_compat=True,  # unused
-               itunes_compat=True,
+               itunes_compat=True,  # unused
                use_qaac=True,  # unused
                channels=None,
                picture=None,
                expected_duration=None,
                show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
-        from .exec import do_exec_cmd, do_spawn_cmd, clean_cmd_output
-        from .parser import lines_parser
+        from .exec import clean_cmd_output
         from .ffmpeg import ffmpeg
+        from .parser import lines_parser
         output_file = self
         chapters_added = False
         tags_added = False
@@ -106,18 +106,18 @@ class FlacFile(SoundFile):
             ffmpeg_cmd = []
 
             ffmpeg_input_cmd = []
+            ffmpeg_chapters_cmd = []
             ffmpeg_output_cmd = []
             if yes:
                 ffmpeg_cmd += ['-y']
+            else:
+                if self.exists():
+                    raise OSError(errno.EEXIST, f'File exists: {self}')
+
             ffmpeg_cmd += ['-stats']
             # ffmpeg_output_cmd += ['-vn']
             ffmpeg_format = 'flac'
             bCopied = False
-
-            ffmpeg_output_cmd += [
-                '-map_metadata', -1,
-                '-map_chapters', -1,
-            ]
 
             if len(inputfiles) > 1:
                 concat_file = ffmpeg.ConcatScriptFile.NamedTemporaryFile()
@@ -129,19 +129,36 @@ class FlacFile(SoundFile):
                 concat_file.flush()
                 concat_file.seek(0)
                 if log.isEnabledFor(logging.DEBUG):
-                    log.debug('Files:\n' +
-                              re.sub(r'^', '    ', concat_file.read(), flags=re.MULTILINE))
-                    concat_file.seek(0)
+                    concat_file.pprint()
                 ffmpeg_input_cmd += [
                     '-f', 'concat', '-safe', '0', '-i', concat_file,
                 ]
             else:
                 ffmpeg_input_cmd += ffmpeg.input_args(inputfiles[0])
             input_id = 0
+            metadata_input_id = -1
+            chapters_input_id = -1
             ffmpeg_output_cmd += [
                 '-map', f'{input_id}:a',
             ]
             output_id = 0
+
+            supported_audio_types = (
+                mm.AudioType.flac,
+            )
+            audio_type = [inputfile.audio_type for inputfile in inputfiles]
+            audio_type = sorted(set(audio_type))
+            if not force_encode \
+                    and len(audio_type) == 1 \
+                    and audio_type[0] in supported_audio_types:
+                ffmpeg_output_cmd += ['-codec:a', 'copy']
+                bCopied = True
+            else:
+                ffmpeg_output_cmd += [
+                    '-codec:a', {
+                        mm.AudioType.flac: 'flac',
+                    }[supported_audio_types[0]],
+                ]
 
             if not picture_added and picture is not None:
                 ffmpeg_input_cmd += ffmpeg.input_args(picture)
@@ -151,6 +168,7 @@ class FlacFile(SoundFile):
                 ]
                 output_id += 1
                 ffmpeg_output_cmd += [
+                    f'-codec:{output_id}', 'copy',
                     #f'-metadata:s:{output_id}', f'mimetype={picture.mime_type}',
                     f'-metadata:s:{output_id}', f'title=cover',
                     #f'-metadata:s:{output_id}', f'comment=cover',  # TODO Can't get rid of ffmpeg generating/reporting "Comment : Other"
@@ -160,7 +178,8 @@ class FlacFile(SoundFile):
                 picture_added = True
 
             ffmpeg_output_cmd += [
-                '-codec', 'copy',
+                '-map_metadata', metadata_input_id,
+                '-map_chapters', chapters_input_id,
             ]
 
             ffmpeg_output_cmd += [
@@ -168,28 +187,12 @@ class FlacFile(SoundFile):
                 output_file,
             ]
 
-            out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_output_cmd),
+            out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_chapters_cmd + ffmpeg_output_cmd),
                          show_progress_bar=show_progress_bar,
                          progress_bar_max=progress_bar_max,
                          progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
                          )
-            out = out.out
-            out_time = None
-            # {{{
-            out = clean_cmd_output(out)
-            parser = lines_parser(out.split('\n'))
-            while parser.advance():
-                parser.line = parser.line.strip()
-                if parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
-                    # size=  223575kB time=07:51:52.35 bitrate=  64.7kbits/s
-                    # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
-                    out_time = parse_time_duration(parser.match.group('out_time'))
-                elif parser.re_search(r' time= *(?P<out_time>\S+) bitrate='):
-                    log.warning('TODO: %s', parser.line)
-                    pass
-                else:
-                    pass  # TODO
-            # }}}
+            out_time = ffmpeg.Timestamp(out.spawn.progress_match.group('time'))
             print('')
             if expected_duration is not None:
                 expected_duration = ffmpeg.Timestamp(expected_duration)
@@ -209,14 +212,14 @@ class FlacFile(SoundFile):
                 chapters_added = True
 
             if not tags_added and output_file.tags is not None:
-                log.info('Adding tags...')
                 tags = copy.copy(output_file.tags)
+                log.info('Adding tags...')
                 if picture_added:
                     try:
                         del tags.picture  # Already added
                     except AttributeError:
                         pass
-                output_file.write_tags(tags=tags, run_func=do_exec_cmd)
+                output_file.write_tags(tags=tags)
                 tags_added = True
 
     supports_chapters = False
