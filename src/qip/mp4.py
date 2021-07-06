@@ -399,7 +399,12 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 if out_time_match is not None:
                     out_time = mm.parse_time_duration(out_time_match.group('out_time'))
             else:
-                if not chapters_added and chapters:
+                if (not chapters_added and chapters
+                        # ffmpeg wants end times; Try again later when duration
+                        # is (hopefully) known to avoid falling back to a final
+                        # chapter with 1 second duration.
+                        and (expected_duration is not None
+                             or chapters[-1].end is not None)):
                     metadata_file = ffmpeg.MetadataFile.NamedTemporaryFile()
                     exit_stack.enter_context(metadata_file)
                     chapters.fill_end_times(duration=expected_duration)
