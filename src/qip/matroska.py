@@ -841,16 +841,16 @@ class MatroskaFile(BinaryMediaFile):
                 # write -> read
                 chapters_file.flush()
                 chapters_file.seek(0)
-                return
-            if isinstance(chaps, str) and chaps.startswith('<'):
-                # XML string -> Chapters
-                # This allows for verification and standardization
-                chaps = Chapters.from_mkv_xml(chaps)
-            chapters_file.chapters = chaps
-            chapters_file.create()
-            # write -> read
-            chapters_file.flush()
-            chapters_file.seek(0)
+            else:
+                if isinstance(chaps, str) and chaps.startswith('<'):
+                    # XML string -> Chapters
+                    # This allows for verification and standardization
+                    chaps = Chapters.from_mkv_xml(chaps)
+                chapters_file.chapters = chaps
+                chapters_file.create()
+                # write -> read
+                chapters_file.flush()
+                chapters_file.seek(0)
             from qip.perf import perfcontext
             with perfcontext('Write chapters w/ mkvpropedit', log=log):
                 mkvpropedit(
