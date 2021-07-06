@@ -518,7 +518,11 @@ class Chapters(json.JSONEncodable, collections.UserList):
                     #
                     #     ffmetadata @ 0x55fa1a8c8e40] [error] Chapter end time 0 before start 9549540
                     #     [error] metadata.txt: Cannot allocate memory
-                    chap.end = duration or chap.start
+                    #
+                    # Setting end = start or empty(None) may be silently ignored
+                    #
+                    # Setting end = start + 1 seems a good compromise
+                    chap.end = duration or (chap.start + 1)
                 else:
                     chap.end = next_chap.start
             next_chap = chap

@@ -184,12 +184,16 @@ class MetadataFile(TextFile):
             if section == 'GLOBAL':
                 for key, value in section_tags.items():
                     print(f'{key}={value}', file=file)
+                break  # There shouldn't be multiple GLOBAL sections
         for section, section_tags in self.sections:
             if section == 'GLOBAL':
                 pass
             else:
                 print(f'[{section}]', file=file)
                 for key, value in section_tags.items():
+                    if value is None:
+                        # Case of 'END='
+                        value = ''
                     print(f'{key}={value}', file=file)
 
     @classmethod
