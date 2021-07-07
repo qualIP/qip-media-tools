@@ -479,7 +479,7 @@ class App(XdgResource):
                         ('Later', Ask),
                     ))
                 if enable_statsd in (True, False):
-                    assert self.config_file_parser is not None
+                    # config_file_parser may be None with --no-config
                     if self.config_file_parser is not None:
                         self.config_file_parser.setdefault('options', {})
                         self.config_file_parser['options']['statsd'] = str(enable_statsd)
