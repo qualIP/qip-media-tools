@@ -26,6 +26,7 @@ import re
 import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
+from . import mm
 from .exec import Executable
 from .ffmpeg import ffmpeg
 from .file import XmlFile

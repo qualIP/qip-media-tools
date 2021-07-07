@@ -5229,20 +5229,10 @@ class SoundFile(BinaryMediaFile):
 
     _common_extensions = ()
 
-    @property
-    def audio_type(self):
-        audio_type = getattr(self, '_audio_type', None)
-        if audio_type is None:
-            ext = self.file_name.suffix
-            if ext:
-                audio_type = AudioType(ext[1:])
-        return audio_type
-
-    @audio_type.setter
-    def audio_type(self, value):
-        if value is not None:
-            value = AudioType(value)
-        self._audio_type = value
+    audio_type = propex(
+        name='audio_type',
+        default=None,
+        type=(None, AudioType))
 
     def __copy__(self):
         other = super().__copy__()
@@ -5446,6 +5436,11 @@ class RawAc3File(SoundFile):
 
     ffmpeg_container_format = 'ac3'
 
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.ac3,
+        type=propex.test_type_in(AudioType, (AudioType.ac3,)))
+
 class RawEac3File(SoundFile):
 
     _common_extensions = (
@@ -5454,6 +5449,11 @@ class RawEac3File(SoundFile):
 
     ffmpeg_container_format = 'eac3'
 
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.eac3,
+        type=propex.test_type_in(AudioType, (AudioType.eac3,)))
+
 class RawDtsFile(SoundFile):
 
     _common_extensions = (
@@ -5461,6 +5461,11 @@ class RawDtsFile(SoundFile):
     )
 
     ffmpeg_container_format = 'dts'
+
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.dts,
+        type=propex.test_type_in(AudioType, (AudioType.dts,)))
 
 class RawTrueHdFile(SoundFile):
 
@@ -5477,6 +5482,15 @@ class RawAacFile(SoundFile):
     )
 
     ffmpeg_container_format = 'aac'
+
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.aac,
+        type=propex.test_type_in(AudioType, (
+            AudioType.aac,
+            AudioType.he_aac,
+            AudioType.lc_aac,
+        )))
 
 class RawYuvFile(MovieFile):
 

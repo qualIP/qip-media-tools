@@ -40,7 +40,7 @@ from .mm import RingtoneFile
 from .mm import SoundFile
 from .mm import TrackTags
 from .utils import Timestamp, Timestamp as _BaseTimestamp, replace_html_entities
-from .propex import dynamicmethod
+from .propex import propex, dynamicmethod
 
 class Mpeg4ContainerFile(BinaryMediaFile):
 
@@ -523,6 +523,11 @@ class AlacFile(M4aFile):
     _common_extensions = (
         '.alac',
     )
+
+    audio_type = propex(
+        name='audio_type',
+        default=mm.AudioType.alac,
+        type=propex.test_type_in(mm.AudioType, (mm.AudioType.alac,)))
 
 class M4rFile(M4aFile, RingtoneFile):
 

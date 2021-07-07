@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 # vim: set fileencoding=utf-8 :
 
+######################################
+# WARNING: This file is experimental #
+######################################
+
 __all__ = (
     'VobFile',
 )
@@ -15,10 +19,11 @@ log = logging.getLogger(__name__)
 from .mm import BinaryMediaFile
 from .file import MultiFile
 import qip.libdvdread as libdvdread
+from .mp2 import Mpeg2MovieFile
 
 MAX_MULTIVOB_FILES = 10
 
-class VobFile(MultiFile, BinaryMediaFile):
+class VobFile(MultiFile, Mpeg2MovieFile):
 
     _common_extensions = (
         '.vob',

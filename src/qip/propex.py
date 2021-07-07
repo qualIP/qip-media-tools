@@ -139,6 +139,19 @@ class propex(object):
         return f
 
     @staticmethod
+    def test_type_in(type_, container):
+
+        msg = 'Not in %r.' % (container,)
+
+        def f(value):
+            value = type_(value)
+            if value not in container:
+                raise ValueError(msg)
+            return value
+
+        return f
+
+    @staticmethod
     def test_set_of(transforms):
 
         if type(transforms) is not tuple:

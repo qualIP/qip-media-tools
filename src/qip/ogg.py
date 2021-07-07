@@ -20,7 +20,9 @@ import logging
 import re
 log = logging.getLogger(__name__)
 
+from . import mm
 from .mm import MediaFile, BinaryMediaFile, SoundFile, MovieFile, AudioType, taged, parse_time_duration
+from .propex import propex
 from .vorbis import _vorbis_tag_map, _vorbis_picture_extensions
 
 
@@ -279,6 +281,11 @@ class VorbisFile(OgaFile):
         '.vorbis',
     )
 
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.vorbis,
+        type=propex.test_type_in(AudioType, (AudioType.vorbis,)))
+
 class OpusFile(OggSoundFile):
 
     _common_extensions = (
@@ -289,14 +296,9 @@ class OpusFile(OggSoundFile):
 
     supports_chapters = True
 
-    @property
-    def audio_type(self):
-        return AudioType.opus
-
-    @audio_type.setter
-    def audio_type(self, value):
-        if value is not None \
-                and AudioType(value) is not AudioType.opus:
-            raise ValueError(value)
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.opus,
+        type=propex.test_type_in(AudioType, (AudioType.opus,)))
 
 OggFile._build_extension_to_class_map()

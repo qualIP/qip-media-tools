@@ -11,8 +11,10 @@ import logging
 import struct
 log = logging.getLogger(__name__)
 
-from .mm import SoundFile
 from . import mm
+from .mm import AudioType
+from .mm import SoundFile
+from .propex import propex
 
 class Mp3File(SoundFile):
 
@@ -22,15 +24,10 @@ class Mp3File(SoundFile):
 
     ffmpeg_container_format = 'mp3'
 
-    @property
-    def audio_type(self):
-        return mm.AudioType.mp3
-
-    @audio_type.setter
-    def audio_type(self, value):
-        if value is not None \
-                and mm.AudioType(value) is not mm.AudioType.mp3:
-            raise ValueError(value)
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.mp3,
+        type=propex.test_type_in(AudioType, (AudioType.mp3,)))
 
     @property
     def tag_writer(self):

@@ -9,9 +9,11 @@ import struct
 import logging
 log = logging.getLogger(__name__)
 
+from .mm import AudioType
 from .mm import SoundFile
-import qip.mm as mm
+from .propex import propex
 import qip.cdda as cdda
+import qip.mm as mm
 
 WAV_RIFF_HLEN = 12
 WAV_FORMAT_HLEN = 24
@@ -26,18 +28,13 @@ class WaveFile(SoundFile):
 
     ffmpeg_container_format = 'wav'
 
-    @property
-    def audio_type(self):
-        return mm.AudioType.wav
-
-    @audio_type.setter
-    def audio_type(self, value):
-        if value is not None \
-                and mm.AudioType(value) not in (
-                    mm.AudioType.wav,
-                    mm.AudioType.pcm_s16le,
-                ):
-            raise ValueError(value)
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.wav,
+        type=propex.test_type_in(AudioType, (
+            AudioType.wav,
+            AudioType.pcm_s16le,
+        )))
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None, fp=None, yes=False):
         if bin_file is None:

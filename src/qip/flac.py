@@ -11,7 +11,9 @@ import logging
 import re
 _log = log = logging.getLogger(__name__)
 
+from . import mm
 from .mm import MediaFile, SoundFile, taged, AudioType, parse_time_duration
+from .propex import propex
 from .vorbis import _vorbis_tag_map, _vorbis_picture_extensions
 
 # ffmpeg -i audio.flac -i image.png -map 0:a -map 1 -codec copy -metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" -disposition:v attached_pic output.flac
@@ -24,15 +26,10 @@ class FlacFile(SoundFile):
 
     ffmpeg_container_format = 'flac'
 
-    @property
-    def audio_type(self):
-        return AudioType.flac
-
-    @audio_type.setter
-    def audio_type(self, value):
-        if value is not None \
-                and AudioType(value) is not AudioType.flac:
-            raise ValueError(value)
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.flac,
+        type=propex.test_type_in(AudioType, (AudioType.flac,)))
 
     @property
     def tag_writer(self):

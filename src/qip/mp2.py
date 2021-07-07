@@ -14,13 +14,15 @@ import logging
 import os
 log = logging.getLogger(__name__)
 
-from .mm import BinaryMediaFile
-from .mm import SoundFile
-from .mm import RingtoneFile
-from .mm import MovieFile
-from .mm import AlbumTags
-import qip.mm as mm
 from .exec import Executable
+from .mm import AlbumTags
+from .mm import AudioType
+from .mm import BinaryMediaFile
+from .mm import MovieFile
+from .mm import RingtoneFile
+from .mm import SoundFile
+from .propex import propex
+import qip.mm as mm
 
 class Mpeg2ContainerFile(BinaryMediaFile):
 
@@ -100,9 +102,10 @@ class Mp2File(Mpeg2ContainerFile, SoundFile):
         tags = AlbumTags()
         return tags
 
-    @property
-    def audio_type(self):
-        return mm.AudioType.mp2
+    audio_type = propex(
+        name='audio_type',
+        default=AudioType.mp2,
+        type=propex.test_type_in(AudioType, (AudioType.mp2,)))
 
 
 Mpeg2ContainerFile._build_extension_to_class_map()
