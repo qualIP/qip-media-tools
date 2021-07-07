@@ -231,6 +231,7 @@ def main():
     pgroup.add_argument('--format', default=Auto, choices=('m4b', 'mka', 'flac', 'oga'), help='specify the output file format')
 
     pgroup = app.parser.add_argument_group('Compatibility')
+    pgroup.add_bool_argument('--prep-picture', default=True, help='prepare picture')
     pgroup.add_bool_argument('--ipod-compat', default=False, help='enable iPod compatibility')
     pgroup.add_bool_argument('--itunes-compat', default=True, help='enable iTunes compatibility')
 
@@ -346,6 +347,9 @@ def mkm4b(inputfiles, default_tags):
             m4b = OgaFile(file_name=None)
         else:
             raise NotImplementedError(app.args.format)
+    if app.args.ipod_compat:
+        if isinstance(m4b, qip.mp4.Mpeg4ContainerFile):
+            m4b.ffmpeg_container_format = 'ipod'
     m4b.tags.update(default_tags)
 
     def task_extract_info(inputfile):
@@ -618,11 +622,13 @@ def mkm4b(inputfiles, default_tags):
         else:
             src_picture = new_picture
             app.log.info('Using picture from %s...', src_picture)
-            picture = m4b.prep_picture(
-                src_picture,
-                yes=app.args.yes,
-                ipod_compat=app.args.ipod_compat,
-                keep_picture_file_name=mux_dir / 'picture.png')
+            if app.args.prep_picture:
+                picture = m4b.prep_picture(
+                    src_picture,
+                    yes=app.args.yes,
+                    keep_picture_file_name=mux_dir / 'picture.png')
+            else:
+                picture = cache_url(src_picture)
 
     # }}}
     select_src_picture(src_picture)
@@ -770,7 +776,6 @@ def mkm4b(inputfiles, default_tags):
                target_bitrate=getattr(app.args, 'target_bitrate', None),
                yes=app.args.yes,
                force_encode=app.args.force_encode,
-               ipod_compat=app.args.ipod_compat,
                itunes_compat=app.args.itunes_compat,
                use_qaac=app.args.use_qaac,
                channels=getattr(app.args, 'channels', None),

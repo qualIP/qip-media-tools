@@ -29,10 +29,11 @@ from qip.app import app
 from qip.cmp import *
 from qip.exec import *
 from qip.file import *
+from qip.file import cache_url
+from qip.img import *
+from qip.mm import *
 from qip.parser import *
 from qip.perf import perfcontext
-from qip.mm import *
-from qip.img import *
 from qip.utils import byte_decode
 import qip.mm
 
@@ -95,9 +96,8 @@ def main():
     xgroup.add_argument('--id-audiobooks', dest='action', default=argparse.SUPPRESS, action='store_const', const='id_audiobooks', help='identify audiobooks')
 
     pgroup = app.parser.add_argument_group('Compatibility')
-    pgroup.add_argument('--prep-picture', dest='prep_picture', action='store_true', help='prepare picture')
-    xgroup = pgroup.add_mutually_exclusive_group()
-    xgroup.add_bool_argument('--ipod-compat', dest='ipod_compat', default=True, help='enable iPod compatibility')
+    pgroup.add_bool_argument('--prep-picture', default=True, help='prepare picture')
+    pgroup.add_bool_argument('--ipod-compat', default=False, help='enable iPod compatibility')
 
     pgroup = app.parser.add_argument_group('Other')
     pgroup.add_argument('--format', default='human', choices=('human', 'json'), help='output list format')
@@ -117,6 +117,14 @@ def main():
     app.parser.add_argument('files', nargs='*', default=None, type=Path, help='audio files')
 
     app.parse_args()
+    def to_mm_file(file_name):
+        if file_name is None:
+            return None
+        mm_file = MediaFile.new_by_file_name(file_name)
+        if app.args.ipod_compat:
+            if isinstance(mm_file, qip.mp4.Mpeg4ContainerFile):
+                mm_file.ffmpeg_container_format = 'ipod'
+        return mm_file
 
     if app.args.import_file:
         if getattr(app.args, 'action', None) is None:
@@ -159,7 +167,7 @@ def main():
             raise Exception('No files provided')
         for file_name in app.args.files:
             with perfcontext(app.args.action):
-                taged(file_name, in_tags)
+                taged(to_mm_file(file_name), in_tags)
 
         # }}}
     elif app.args.action == 'edit':
@@ -169,7 +177,7 @@ def main():
             raise Exception('No files provided')
         for file_name in app.args.files:
             with perfcontext(app.args.action):
-                tageditor(file_name)
+                tageditor(to_mm_file(file_name))
 
         # }}}
     elif app.args.action == 'edit_chapters':
@@ -179,7 +187,7 @@ def main():
             raise Exception('No files provided')
         for file_name in app.args.files:
             with perfcontext(app.args.action):
-                chaptereditor(file_name)
+                chaptereditor(to_mm_file(file_name))
 
         # }}}
     elif app.args.action == 'list':
@@ -189,7 +197,7 @@ def main():
             raise Exception('No files provided')
         for file_name in app.args.files:
             with perfcontext(app.args.action):
-                taglist(file_name, app.args.format)
+                taglist(to_mm_file(file_name), format=app.args.format)
 
         # }}}
     elif app.args.action == 'list_chapters':
@@ -199,7 +207,7 @@ def main():
             raise Exception('No files provided')
         for file_name in app.args.files:
             with perfcontext(app.args.action):
-                chapterlist(file_name, app.args.format)
+                chapterlist(to_mm_file(file_name), format=app.args.format)
 
         # }}}
     elif app.args.action == 'find_lyrics':
@@ -225,9 +233,13 @@ def main():
                 raise Exception('%s: --artist and --title required to find lyrics' % (prog,))
 
         for file_name in file_names:
-            lyrics = find_lyrics(file_name, genius=genius, tags=in_tags).rstrip()
+            mm_file = to_mm_file(file_name)
+            lyrics = find_lyrics(mm_file, genius=genius, tags=in_tags).rstrip()
             if not lyrics:
-                app.log.error('%s: Lyrics not found for %s', prog, file_name)
+                if mm_file is None:
+                    app.log.error('%s: Lyrics not found', prog)
+                else:
+                    app.log.error('%s: Lyrics not found for %s', prog, mm_file)
                 continue
             print_lyrics = True
             if app.args.interactive:
@@ -248,15 +260,15 @@ def main():
                         break
                     else:
                         app.log.error('Invalid input')
-            if file_name is not None:
+            if mm_file is not None:
                 if app.args.lyrics_save:
-                    lyrics_file = TextFile(file_name.with_suffix('.txt'))
+                    lyrics_file = TextFile(mm_file.file_name.with_suffix('.txt'))
                     assert app.args.yes or not lyrics_file.exists()
                     app.log.info('Writing lyrics to %s', lyrics_file)
                     lyrics_file.write(lyrics)
                     print_lyrics = False
                 if app.args.lyrics_embed:
-                    taged(file_name, TrackTags(lyrics=lyrics))
+                    taged(mm_file, TrackTags(lyrics=lyrics))
                     print_lyrics = False
             if print_lyrics:
                 print(lyrics)
@@ -278,13 +290,13 @@ def main():
         file_names = app.args.files
 
         for file_name in file_names:
-            mm_file = MediaFile.new_by_file_name(file_name)
+            mm_file = to_mm_file(file_name)
             orig_tags = mm_file.load_tags()
             tags = copy.copy(orig_tags)
 
             books = gc.search_books(tags.albumtitle or tags.title, search_field='title')
             if not books:
-                app.log.error('%s: Book not found for %s', prog, file_name)
+                app.log.error('%s: Book not found for %s', prog, mm_file)
                 continue
 
             book = app.radiolist_dialog(title='Books',
@@ -313,8 +325,8 @@ def main():
                         break
                     else:
                         app.log.error('Invalid input')
-            if file_name is not None:
-                taged(file_name, tags - orig_tags)
+            if mm_file is not None:
+                taged(mm_file, tags - orig_tags)
                 print_tags = False
             if print_tags:
                 tags.pprint()
@@ -381,7 +393,8 @@ def goodreads_book_to_tags(book):
 
     return tags
 
-def find_lyrics(file_name, *, genius=None, tags=None, **kwargs):
+def find_lyrics(file, *, genius=None, tags=None, **kwargs):
+    mm_file = None if file is None else (file if isinstance(file, MediaFile) else MediaFile.new_by_file_name(file))
 
     if not genius:
         client_access_token = kwargs.get('client_access_token', None)
@@ -395,8 +408,7 @@ def find_lyrics(file_name, *, genius=None, tags=None, **kwargs):
                 os.environ['GENIUS_CLIENT_ACCESS_TOKEN'],
                 **kwargs)
 
-    if file_name is not None:
-        mm_file = MediaFile.new_by_file_name(file_name)
+    if tags is None and mm_file is not None:
         tags = mm_file.load_tags()
     with perfcontext('genius.search_song'):
         song = genius.search_song(tags.title, tags.artist)
@@ -404,7 +416,7 @@ def find_lyrics(file_name, *, genius=None, tags=None, **kwargs):
         return song.lyrics
     return None
 
-def taged_mf_id3(file_name, mf, tags):
+def taged_mf_id3(mm_file, mf, tags):
     # http://id3.org/Developer%20Information
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('Old tags: %r', list(mf.tags.keys()))
@@ -436,11 +448,10 @@ def taged_mf_id3(file_name, mf, tags):
         else:
             if id3_tag == 'APIC':  # picture
                 assert tag == 'picture'
-                from qip.file import cache_url
-                value = cache_url(value)
                 if getattr(app.args, 'prep_picture', False):
-                    from qip.mp3 import Mp3File
-                    value = Mp3File.prep_picture(value)
+                    value = mm_file.prep_picture(value)
+                else:
+                    value = cache_url(value)
                 img_file = ImageFile(value)
                 with img_file.open('rb') as fp:
                     id3_value = getattr(mutagen.id3, id3_tag)(
@@ -468,7 +479,7 @@ def taged_mf_id3(file_name, mf, tags):
         app.log.debug('New tags: %r', list(mf.tags.keys()))
     return True
 
-def taged_mf_MP4Tags(file_name, mf, tags):
+def taged_mf_MP4Tags(mm_file, mf, tags):
     assert mutagen.version >= (1, 42, 0), f'Update mutagen ({mutagen.version_string}) module to at least 1.42.0'
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('Old tags: %r', list(mf.tags.keys()))
@@ -520,9 +531,9 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             continue
         tag = tag.name
         if tag == 'type':
-            mm_file = MediaFile.new_by_file_name(file_name)
-            mm_file.tags = tags
-            value = mm_file.deduce_type()
+            tmp_mm_file = copy.copy(mm_file)
+            tmp_mm_file.tags = tags
+            value = tmp_mm_file.deduce_type()
         else:
             value = tags[tag]
 
@@ -588,11 +599,10 @@ def taged_mf_MP4Tags(file_name, mf, tags):
             elif mp4v2_data_type in ('picture',):
                 assert mp4_tag == 'covr'
                 mp4_value = []
-                from qip.file import cache_url
-                value = cache_url(value)
                 if getattr(app.args, 'prep_picture', False):
-                    from qip.mp4 import Mpeg4ContainerFile
-                    value = Mpeg4ContainerFile.prep_picture(value)
+                    value = mm_file.prep_picture(value)
+                else:
+                    value = cache_url(value)
                 img_file = ImageFile(value)
                 img_type = img_file.image_type
                 if img_type is ImageType.jpg:
@@ -630,23 +640,23 @@ def taged_mf_MP4Tags(file_name, mf, tags):
         app.log.debug('New tags: %r', list(mf.tags.keys()))
     return True
 
-def taged_mf_VCFLACDict(file_name, mf, tags):
+def taged_mf_VCFLACDict(mm_file, mf, tags):
     from qip.flac import FlacFile
-    return taged_mf_VComment(file_name, mf, tags, tag_map=FlacFile.tag_map)
+    return taged_mf_VComment(mm_file, mf, tags, tag_map=FlacFile.tag_map)
 
-def taged_mf_OggFLACVComment(file_name, mf, tags):
+def taged_mf_OggFLACVComment(mm_file, mf, tags):
     from qip.ogg import OggFile
-    return taged_mf_VComment(file_name, mf, tags, tag_map=OggFile.tag_map)
+    return taged_mf_VComment(mm_file, mf, tags, tag_map=OggFile.tag_map)
 
-def taged_mf_OggOpusVComment(file_name, mf, tags):
+def taged_mf_OggOpusVComment(mm_file, mf, tags):
     from qip.ogg import OggFile
-    return taged_mf_VComment(file_name, mf, tags, tag_map=OggFile.tag_map)
+    return taged_mf_VComment(mm_file, mf, tags, tag_map=OggFile.tag_map)
 
-def taged_mf_OggTheoraCommentDict(file_name, mf, tags):
+def taged_mf_OggTheoraCommentDict(mm_file, mf, tags):
     from qip.ogg import OggFile
-    return taged_mf_VComment(file_name, mf, tags, tag_map=OggFile.tag_map)
+    return taged_mf_VComment(mm_file, mf, tags, tag_map=OggFile.tag_map)
 
-def taged_mf_VComment(file_name, mf, tags, tag_map):
+def taged_mf_VComment(mm_file, mf, tags, tag_map):
 
     if app.log.isEnabledFor(logging.DEBUG):
         app.log.debug('Old tags: %r', list(mf.tags.keys()))
@@ -693,21 +703,21 @@ def taged_mf_VComment(file_name, mf, tags, tag_map):
         app.log.debug('New tags: %r', list(mf.tags.keys()))
     return True
 
-def taged_mf(file_name, mf, tags):
+def taged_mf(mm_file, mf, tags):
     if mf.tags is None:
         mf.add_tags()
     if isinstance(mf.tags, mutagen.id3.ID3):
-        return taged_mf_id3(file_name, mf, tags)
+        return taged_mf_id3(mm_file, mf, tags)
     if isinstance(mf.tags, mutagen.mp4.MP4Tags):
-        return taged_mf_MP4Tags(file_name, mf, tags)
+        return taged_mf_MP4Tags(mm_file, mf, tags)
     if isinstance(mf.tags, mutagen.flac.VCFLACDict):
-        return taged_mf_VCFLACDict(file_name, mf, tags)
+        return taged_mf_VCFLACDict(mm_file, mf, tags)
     if isinstance(mf.tags, mutagen.oggflac.OggFLACVComment):
-        return taged_mf_OggFLACVComment(file_name, mf, tags)
+        return taged_mf_OggFLACVComment(mm_file, mf, tags)
     if isinstance(mf.tags, mutagen.oggopus.OggOpusVComment):
-        return taged_mf_OggOpusVComment(file_name, mf, tags)
+        return taged_mf_OggOpusVComment(mm_file, mf, tags)
     if isinstance(mf.tags, mutagen.oggtheora.OggTheoraCommentDict):
-        return taged_mf_OggTheoraCommentDict(file_name, mf, tags)
+        return taged_mf_OggTheoraCommentDict(mm_file, mf, tags)
     raise NotImplementedError(mf.tags.__class__.__name__)
 
 def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):
@@ -730,11 +740,12 @@ def find_Tag_element(root, *, TargetTypeValue, TargetType=None, TrackUID=0):
             continue
         return eTag
 
-def taged_Matroska(file_name, tags):
+def taged_Matroska(mm_file, tags):
     import qip.matroska
     import qip.utils
     # https://matroska.org/technical/specs/tagging/index.html
-    matroska_file = qip.matroska.MatroskaFile.new_by_file_name(file_name)
+    matroska_file = copy.copy(mm_file)
+    assert isinstance(matroska_file, qip.matroska.MatroskaFile), 'Not a MatroskaFile object: {mm_file!r}'
     matroska_file.tags = matroska_file.load_tags()
     matroska_file.tags.update(tags)
     tags_list = matroska_file.create_tags_list()
@@ -742,13 +753,14 @@ def taged_Matroska(file_name, tags):
     app.log.debug('tags_xml: %s', qip.utils.prettyxml(tags_xml))
     matroska_file.set_tags_xml(tags_xml)
 
-def taged(file_name, tags):
-    app.log.info('Setting %s tags...', file_name)
+def taged(file, tags):
+    mm_file = file if isinstance(file, MediaFile) else MediaFile.new_by_file_name(file)
+    app.log.info('Setting %s tags...', mm_file)
     import qip.matroska
     with perfcontext('mf.load'):
-        mf = mutagen.File(file_name)
+        mf = mutagen.File(os.fspath(mm_file))
     if mf is not None:
-        if not taged_mf(file_name, mf, tags):
+        if not taged_mf(mm_file, mf, tags):
             app.log.verbose('Nothing to do.')
             return False
         if getattr(app.args, 'dry_run', False):
@@ -756,15 +768,15 @@ def taged(file_name, tags):
         else:
             with perfcontext('mf.save'):
                 mf.save()
-    elif file_name.suffix in qip.matroska.MatroskaFile.get_common_extensions():
-        return taged_Matroska(file_name, tags)
+    elif isinstance(mm_file, qip.matroska.MatroskaFile):
+        return taged_Matroska(mm_file, tags)
     else:
-        raise NotImplementedError(file_name.suffix)
+        raise NotImplementedError(mm_file)
     return True
 
-def tageditor(file_name):
-    app.log.info('Editing %s tags...', file_name)
-    mm_file = MediaFile.new_by_file_name(file_name)
+def tageditor(file):
+    mm_file = file if isinstance(file, MediaFile) else MediaFile.new_by_file_name(file)
+    app.log.info('Editing %s tags...', mm_file)
     from qip.matroska import MatroskaFile
     if isinstance(mm_file, MatroskaFile):
         tags_xml = mm_file.get_tags_xml()
@@ -787,11 +799,10 @@ def tageditor(file_name):
         return True
     raise NotImplementedError(mm_file)
 
-def taglist(file_name, format):
+def taglist(file, format):
+    mm_file = file if isinstance(file, MediaFile) else MediaFile.new_by_file_name(file)
     if format == 'human':
-        app.log.info('Listing %s tags...', file_name)
-    mm_file = MediaFile.new_by_file_name(file_name)
-    app.log.debug('mm_file = %r', mm_file)
+        app.log.info('Listing %s tags...', mm_file)
     tags = mm_file.load_tags()
     assert tags is not None
     if format == 'human':
@@ -805,9 +816,9 @@ def taglist(file_name, format):
         raise NotImplementedError(format)
     return True
 
-def chaptereditor(file_name):
-    app.log.info('Editing %s chapters...', file_name)
-    mm_file = MediaFile.new_by_file_name(file_name)
+def chaptereditor(file):
+    mm_file = file if isinstance(file, MediaFile) else MediaFile.new_by_file_name(file)
+    app.log.info('Editing %s chapters...', mm_file)
     import qip.matroska
     if isinstance(mm_file, qip.matroska.MatroskaFile):
         chapters_xml = mm_file.load_chapters(return_raw_xml=True)
@@ -823,10 +834,10 @@ def chaptereditor(file_name):
             mm_file.write_chapters(chapters=chaps)
     return True
 
-def chapterlist(file_name, format):
+def chapterlist(file, format):
+    mm_file = file if isinstance(file, MediaFile) else MediaFile.new_by_file_name(file)
     if format == 'human':
-        app.log.info('Listing %s chapters...', file_name)
-    mm_file = MediaFile.new_by_file_name(file_name)
+        app.log.info('Listing %s chapters...', mm_file)
     app.log.debug('mm_file = %r', mm_file)
     chaps = mm_file.load_chapters()
     assert chaps is not None

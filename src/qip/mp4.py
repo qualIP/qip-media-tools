@@ -40,10 +40,11 @@ from .mm import RingtoneFile
 from .mm import SoundFile
 from .mm import TrackTags
 from .utils import Timestamp, Timestamp as _BaseTimestamp, replace_html_entities
+from .propex import dynamicmethod
 
 class Mpeg4ContainerFile(BinaryMediaFile):
 
-    ffmpeg_container_format = 'mp4'  # ipod
+    ffmpeg_container_format = 'mp4'  # Also: ipod
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None, yes=False):
         from qip.wav import WaveFile
@@ -61,19 +62,18 @@ class Mpeg4ContainerFile(BinaryMediaFile):
     def tag_writer(self):
         return mm.taged
 
-    @classmethod
-    def prep_picture(cls, src_picture, *,
+    @dynamicmethod
+    def prep_picture(self, src_picture, *,
             yes=False,  # unused
-            ipod_compat=True,
             keep_picture_file_name=None,
             ):
-        from .exec import do_exec_cmd
+        ipod_compat = self.ffmpeg_container_format == 'ipod'
 
         if not src_picture:
             return None
         src_picture = cache_url(src_picture)
 
-        return cls._lru_prep_picture(src_picture,
+        return self._lru_prep_picture(src_picture,
                                      ipod_compat,
                                      keep_picture_file_name)
 
@@ -83,6 +83,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                           src_picture : Path,
                           ipod_compat,
                           keep_picture_file_name):
+        from .exec import do_exec_cmd
         picture = src_picture
 
         if src_picture.suffix not in (
@@ -126,7 +127,6 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                target_bitrate=None,
                yes=False,
                force_encode=False,
-               ipod_compat=True,
                itunes_compat=True,
                use_qaac=True,
                channels=None,
@@ -151,6 +151,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                 raise FileNotFoundError(errno.ENOENT,
                                         os.strerror(errno.ENOENT),
                                         f'Picture file not found: {picture}')
+        ipod_compat = self.ffmpeg_container_format == 'ipod'
         with contextlib.ExitStack() as exit_stack:
 
             # if chapters and len(chapters) > 255:
@@ -182,7 +183,6 @@ class Mpeg4ContainerFile(BinaryMediaFile):
 
             ffmpeg_cmd += ['-stats']
             # ffmpeg_output_cmd += ['-vn']
-            ffmpeg_format = 'ipod'
             bCopied = False
 
             if ipod_compat:
@@ -219,7 +219,6 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                         # ffmpeg: flac in MP4 support is experimental
                         ffmpeg_output_cmd += ['-strict', -2]
                     bCopied = True
-                    ffmpeg_format = 'mp4'
                 else:
                     # TODO select preferred encoder based on bitrate: https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio
                     kbitrate = [target_bitrate]
@@ -263,7 +262,6 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                                     )
                                     for e in audio_type):
                                 use_qaac_intermediate = True
-                                ffmpeg_format = 'wav'
                             qaac_args += ['--no-smart-padding']  # Like iTunes
                             # qaac_args += ['--ignorelength']
                             if kbitrate >= 256:

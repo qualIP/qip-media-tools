@@ -41,10 +41,8 @@ class Mp3File(SoundFile):
     @classmethod
     def prep_picture(cls, src_picture, *,
             yes=False,  # unused
-            ipod_compat=True,  # unused
             keep_picture_file_name=None,
             ):
-        from .exec import do_exec_cmd
 
         if not src_picture:
             return None

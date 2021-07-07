@@ -875,7 +875,6 @@ class MatroskaFile(BinaryMediaFile):
                target_bitrate=None,
                yes=False,
                force_encode=False,
-               ipod_compat=True,  # unused
                itunes_compat=True,  # unused
                use_qaac=True,  # unused
                channels=None,

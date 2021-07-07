@@ -2,11 +2,43 @@
 # vim: set fileencoding=utf-8 :
 
 __all__ = (
+    'is_descriptor',
+    'dynamicmethod',
     'propex',
 )
 
 import enum
 import weakref
+
+
+def is_descriptor(obj):
+	"""
+	Returns True if obj is a descriptor, False otherwise.
+	"""
+	return any(
+		hasattr(obj, attr)
+		for attr in (
+				'__get__',
+				'__set__',
+				'__delete__',
+		))
+
+
+class dynamicmethod(object):
+
+    def __init__(self, method, *args, **kwargs):
+        self.__method = method
+        self.__cmethod = classmethod(method)
+        super().__init__(*args, **kwargs)
+
+    def __get__(self, inst, ownerclass=None):
+        if inst is None:
+            r = self.__cmethod
+        else:
+            r = self.__method
+        if is_descriptor(r):
+            r = r.__get__(inst, ownerclass)
+        return r
 
 
 class propex(object):

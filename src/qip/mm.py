@@ -610,6 +610,8 @@ class Chapters(json.JSONEncodable, collections.UserList):
 
 class MediaFile(File):
 
+    tags = None
+
     supports_tags = True      # Embedded tags
     supports_picture = True   # Embedded cover picture attachment (not generic Video)
     supports_chapters = True  # Embedded chapters
@@ -621,6 +623,12 @@ class MediaFile(File):
             tags = TrackTags()
         super().__init__(file_name=file_name, *args, **kwargs)
         self.tags = tags
+
+    def __copy__(self):
+        other = super().__copy__()
+        other.tags = copy.copy(self.tags)
+        other.ffmpeg_container_format = self.ffmpeg_container_format
+        return other
 
     def test_integrity(self):
         if not self.file_name:
@@ -780,7 +788,7 @@ class MediaFile(File):
     def write_tags(self, *, tags=None, **kwargs):
         if tags is None:
             tags = self.tags
-        self.tag_writer.write_tags(tags=tags, file_name=self.file_name, **kwargs)
+        self.tag_writer.write_tags(tags=tags, file=self, **kwargs)
 
     def _load_tags_mf(self, mf):
         import mutagen
@@ -1483,10 +1491,8 @@ class MediaFile(File):
     @classmethod
     def prep_picture(cls, src_picture, *,
             yes=False,  # unused
-            ipod_compat=True,  # unused
             keep_picture_file_name=None,
             ):
-        from .exec import do_exec_cmd
 
         if not src_picture:
             return None
@@ -5238,6 +5244,11 @@ class SoundFile(BinaryMediaFile):
             value = AudioType(value)
         self._audio_type = value
 
+    def __copy__(self):
+        other = super().__copy__()
+        other.audio_type = self.audio_type
+        return other
+
 class AlbumTagsCache(dict):
 
     def __missing__(self, key):
@@ -5806,9 +5817,9 @@ class Mp4tags(Executable):
                 tagargs += [tag_info.long_arg or tag_info.short_arg, value]
         return tuple(tagargs)
 
-    def write_tags(self, *, tags, file_name, **kwargs):
+    def write_tags(self, *, tags, file, **kwargs):
         tagargs = tuple(str(e) for e in self.get_tag_args(tags))
-        self(*(tagargs + (file_name,)), **kwargs)
+        self(*(tagargs + (file,)), **kwargs)
 
 mp4tags = Mp4tags()
 
@@ -5933,11 +5944,11 @@ class Id3v2(Executable):
                     tagargs += [arg, value]
         return tuple(tagargs)
 
-    def write_tags(self, *, tags, file_name, **kwargs):
+    def write_tags(self, *, tags, file, **kwargs):
         tagargs = tuple(str(e) for e in self.get_tag_args(tags))
         self(
                 '-2',  # TODO
-                *(tagargs + (file_name,)), **kwargs)
+                *(tagargs + (file,)), **kwargs)
 
 
 id3v2 = Id3v2()
@@ -6005,9 +6016,9 @@ class Operon(Executable):
                 tagargs += [tag_info.arg, value]
         return tuple(tagargs)
 
-    def write_tags(self, *, tags, file_name, **kwargs):
+    def write_tags(self, *, tags, file, **kwargs):
         for arg, value in pairwise(self.get_tag_args(tags)):
-            self('set', arg, value, file_name, **kwargs)
+            self('set', arg, value, file, **kwargs)
 
 operon = Operon()
 
@@ -6022,16 +6033,16 @@ class Taged(Executable):
             tagargs += ['--%s' % (tag.name,), value]
         return tuple(tagargs)
 
-    def write_tags(self, *, tags, file_name, **kwargs):
+    def write_tags(self, *, tags, file, **kwargs):
         kwargs_dup = dict(kwargs)
         if not kwargs_dup.pop('dry_run', False) \
                 and kwargs_dup.pop('run_func', None) in (None, do_exec_cmd) \
                 and not kwargs_dup:
             import qip.bin.taged
-            qip.bin.taged.taged(file_name, tags)
+            qip.bin.taged.taged(file, tags)
         else:
             tagargs = tuple(str(e) for e in self.get_tag_args(tags))
-            self(*(tagargs + (file_name,)), **kwargs)
+            self(*(tagargs + (file,)), **kwargs)
 
 taged = Taged()
 

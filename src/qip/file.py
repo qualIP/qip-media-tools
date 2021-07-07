@@ -260,6 +260,13 @@ class File(object):
             self.open_mode = open_mode or ''
         super().__init__()
 
+    def __copy__(self):
+        other = self.__class__(file_name=self.file_name)
+        other.open_mode = self.open_mode
+        other.mime_type = self.mime_type
+        # other.fp = self.fp
+        return other
+
     def __fspath__(self):
         if self.file_name is None:
             raise ValueError('%r: file_name not defined' % (self,))

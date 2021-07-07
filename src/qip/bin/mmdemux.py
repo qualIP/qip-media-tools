@@ -940,6 +940,8 @@ def main():
     pgroup.add_bool_argument('--ffv1', default=False, help='enable lossless ffv1 video codec')
     pgroup.add_argument('--media-library-app', '--app', default='plex', choices=['emby', 'plex'], help='app compatibility mode')
     pgroup.add_argument('--preferred-broadcast-format', type=BroadcastFormat_or_None, default=None, help='preferred broadcast format')
+    pgroup.add_bool_argument('--prep-picture', default=True, help='prepare picture')
+    pgroup.add_bool_argument('--ipod-compat', default=False, help='enable iPod compatibility')
 
     pgroup = app.parser.add_argument_group('Encoding')
     pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
@@ -6484,6 +6486,9 @@ def action_extract_music(inputdir, in_tags):
                     stream_chapter_tmp_file = stream_dict.file
 
                 m4a = M4aFile(my_splitext(stream_chapter_tmp_file)[0] + '.m4a')
+                if app.args.ipod_compat:
+                    if isinstance(m4a, Mpeg4ContainerFile):
+                        m4a.ffmpeg_container_format = 'ipod'
                 m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
                 m4a.album_tags = copy.copy(mux_dict['tags'])
                 m4a.tags.track = track_no  # Since a copy was taken and not fully connected to album_tags anymore
@@ -6503,8 +6508,11 @@ def action_extract_music(inputdir, in_tags):
 
                 if src_picture != m4a.tags.picture:
                     src_picture = m4a.tags.picture
-                    picture = m4a.prep_picture(src_picture,
-                                               yes=app.args.yes)
+                    if app.args.prep_picture:
+                        picture = m4a.prep_picture(src_picture,
+                                                   yes=app.args.yes)
+                    else:
+                        picture = cache_url(src_picture)
                 m4a.tags.picture = None  # Not supported by taged TODO
 
                 if stream_chapter_tmp_file.file_name.resolve() != m4a.file_name.resolve():

@@ -119,8 +119,8 @@ class Qaac(Executable):
                 tagargs += [tag_info.long_arg or tag_info.short_arg, value]
         return tuple(tagargs)
 
-    def write_tags(self, *, tags, file_name, **kwargs):
+    def write_tags(self, *, tags, file, **kwargs):
         tagargs = tuple(str(e) for e in self.get_tag_args(tags))
-        self(*(tagargs + (file_name,)), **kwargs)
+        self(*(tagargs + (file,)), **kwargs)
 
 qaac = Qaac()

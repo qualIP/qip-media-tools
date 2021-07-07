@@ -336,14 +336,6 @@ class ImageFile(MediaFile):
             return False
         return True
 
-    def set_tag(self, tag, value, source=''):
-        return self.tags.set_tag(tag, value, source=source)
-
-    def write_tags(self, *, tags=None, **kwargs):
-        if tags is None:
-            tags = self.tags
-        self.tag_writer.write_tags(tags=tags, file_name=self.file_name, **kwargs)
-
     def extract_ffprobe_dict(self,
             show_streams=True,
             show_format=True,
