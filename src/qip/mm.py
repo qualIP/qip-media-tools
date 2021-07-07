@@ -3057,10 +3057,6 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
         tags = self
         if heading:
             print(heading)
-        for tag_info in mp4tags.tag_args_info:
-            # Force None values to actually exist
-            if tags[tag_info.tag_enum] is None:
-                tags[tag_info.tag_enum] = None
         tags_keys = tags.keys() if deep else tags.keys(deep=False)
 
         for tag in sorted(tags_keys, key=functools.cmp_to_key(dictionarycmp)):
