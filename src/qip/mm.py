@@ -5397,10 +5397,10 @@ def get_audio_file_ffmpeg_stats(d):
         parser.line = parser.line.strip()
         if parser.line == '':
             pass
-        elif parser.re_search(r'^size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
+        elif parser.re_search(r'^(?:\[info\] )?size= *(?P<out_size>\S+) time= *(?P<out_time>\S+) bitrate= *(?P<out_bitrate>\S+)(?: speed= *(?P<out_speed>\S+))?$'):
             # size=N/A time=00:02:17.71 bitrate=N/A
             # size=N/A time=00:12:32.03 bitrate=N/A speed= 309x
-            # size= 3571189kB time=30:47:24.86 bitrate= 263.9kbits/s speed= 634x
+            # [info] size=N/A time=02:49:34.27 bitrate=N/A speed=2.92e+03x
             # There will be multiple; Only the last one is relevant.
             d.actual_duration = parse_time_duration(parser.match.group('out_time'))
         elif parser.re_search(r'Error while decoding stream .*: Invalid data found when processing input'):

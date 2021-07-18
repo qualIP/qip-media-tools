@@ -615,10 +615,10 @@ class _FfmpegSpawnMixin(_SpawnMixin):
 
             # [h264 @ 0x55f98a7caa00] [error] sps_id 1 out of range
             # [NULL @ 0x55f98a7c3b80] [error] sps_id 1 out of range
-            (fr'^\[\S+ @ 0x[0-9a-f]+\] (?:\[error\]\s)?sps_id 1 out of range{re_eol}', self.generic_debug_line),
+            (fr'^(?:\[\S+ @ 0x[0-9a-f]+\]\s)?(?:\[error\]\s)? *sps_id 1 out of range{re_eol}', self.generic_debug_line),
 
             # [mp4 @ 0x55ce3d6c48c0] [warning] pts has no value
-            (fr'^\[\S+ @ 0x[0-9a-f]+\] (?:\[warning\]\s)?pts has no value{re_eol}', self.generic_debug_line),
+            (fr'^(?:\[\S+ @ 0x[0-9a-f]+\]\s)?(?:\[warning\]\s)? *pts has no value{re_eol}', self.generic_debug_line),
 
             # [stream_segment,ssegment @ 0x55d20668d080] [warning] Non-monotonous DTS in output stream 0:0; previous: 75717, current: 75717; changing to 75718. This may result in incorrect timestamps in the output file.
             # [ipod @ 0x564125e0a940] Non-monotonous DTS in output stream 0:0; previous: 1554006132, current: 1554005644; changing to 1554006133. This may result in incorrect timestamps in the output file.
