@@ -472,7 +472,7 @@ class PngFile(ImageFile):
         '.png',
     )
 
-    ffmpeg_container_format = 'png_pipe'
+    ffmpeg_container_format = 'image2'  # w/ -codec png
 
     @property
     def image_type(self):

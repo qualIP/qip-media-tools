@@ -1139,10 +1139,7 @@ def get_codec_encoding_delay(file, *, mediainfo_track_dict=None, ffprobe_stream_
         raise AssertionError('Expected a single mediainfo track: {!r}'.format(file.mediainfo_dict['media']['track']))
     return get_codec_encoding_delay(file, mediainfo_track_dict=mediainfo_track_dict)
 
-still_image_exts = {
-    '.png',
-    '.jpg', '.jpeg',
-}
+still_image_exts = ImageFile.get_common_extensions()
 
 iso_image_exts = {
     '.iso',
@@ -3786,7 +3783,7 @@ def action_mux(inputfile, in_tags,
                         # https://www.makemkv.com/forum/viewtopic.php?t=2530
                         or stream_file_ext == '.wav'  # stream_codec_name in ('pcm_s16le', 'pcm_s24le')
                         # Avoid mkvextract error: Track 0 with the CodecID 'V_MS/VFW/FOURCC' is missing the "default duration" element and cannot be extracted.
-                        or stream_file_ext in still_image_exts
+                        or stream.is_still_image
                         or (app.args.track_extract_tool is Auto
                             # For some codecs, mkvextract is not reliable and may encode the wrong frame rate; Use ffmpeg.
                             and stream_file_ext in (  # stream_codec_name in ('vp8', 'vp9')
@@ -3805,7 +3802,7 @@ def action_mux(inputfile, in_tags,
                             '-map_chapters', '-1',
                             '-map', '0:%d' % (stream.index,),
                             ]
-                        if stream_file_ext in still_image_exts:
+                        if stream.is_still_image:
                             ffmpeg_args += [
                                 '-frames:v', 1,
                                 ]
@@ -4104,10 +4101,7 @@ def action_verify(inputfile, in_tags):
             continue
         stream_file_name = stream_dict['file_name']
         stream_file_base, stream_file_ext = my_splitext(stream_file_name)
-        if stream_dict.codec_type in (
-                CodecType.video,
-                CodecType.image,
-        ) and stream_file_ext in still_image_exts:
+        if stream_dict.is_still_image:
             continue
         if stream_dict.codec_type in (
                 CodecType.video,
@@ -4613,18 +4607,30 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
             return True
         return False
 
+    @property
+    def is_still_image(self):
+        if self.codec_type is CodecType.image:
+            return True
+        if self.codec_type is CodecType.video:
+            if self.file_name.suffix in still_image_exts:
+                return True
+        return False
+
     file = propex(
         name='file',
         type=propex.test_isinstance(File))
 
     @file.initter
     def file(self):
-        cls = {
-            CodecType.video: MovieFile,
-            CodecType.audio: SoundFile,
-            CodecType.subtitle: SubtitleFile,
-            CodecType.image: ImageFile,
-        }[self.codec_type]
+        if self.is_still_image:
+            cls = ImageFile
+        else:
+            cls = {
+                CodecType.video: MovieFile,
+                CodecType.audio: SoundFile,
+                CodecType.subtitle: SubtitleFile,
+                CodecType.image: ImageFile,
+            }[self.codec_type]
         return cls.new_by_file_name(self.path)
 
     def __str__(self):
@@ -5616,7 +5622,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             display_aspect_ratio = pixel_aspect_ratio * new_storage_aspect_ratio  # 128:147
                             new_stream['display_aspect_ratio'] = str(display_aspect_ratio)
 
-                    if stream_file_ext in still_image_exts:
+                    if stream_dict.is_still_image:
                         if framerate == 1:
                             try:
                                 framerate = {
@@ -5636,7 +5642,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
                     pad_video = app.args.pad_video
                     if pad_video is None:
-                        if stream_file_ext in still_image_exts:
+                        if stream_dict.is_still_image:
                             pad_video = 'clone'
                     if pad_video is None:
                         pass
@@ -5848,7 +5854,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     ffmpeg_args += ffmpeg.input_args(stream_dict.file)
                     ffmpeg_args += ffmpeg_conv_args
                     if app.args.force_constant_framerate \
-                            or stream_file_ext in still_image_exts:
+                            or stream_dict.is_still_image:
                         ffmpeg_args += [
                             '-r', framerate,
                         ]
@@ -7336,7 +7342,7 @@ def action_demux(inputdir, in_tags):
                     stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
                 elif stream_file_ext.endswith('.mkv'):
                     pass
-                elif stream_file_ext in still_image_exts:
+                elif stream_dict.is_still_image:
                     pass
                 elif stream_file_ext in {'.h264', '.h265'}:
                     pass
