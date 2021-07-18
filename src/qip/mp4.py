@@ -130,6 +130,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                itunes_compat=True,
                use_qaac=True,
                channels=None,
+               fflags=None,
                picture=None,
                expected_duration=None,
                show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
@@ -168,6 +169,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             use_qaac_intermediate = False
 
             ffmpeg_cmd = []
+            ffmpeg_format_args = []
 
             ffmpeg_input_cmd = []
             ffmpeg_chapters_cmd = []
@@ -182,6 +184,8 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                     raise OSError(errno.EEXIST, f'File exists: {self}')
 
             ffmpeg_cmd += ['-stats']
+            if fflags is not None:
+                ffmpeg_cmd += ffmpeg.fflags_arguments_to_ffmpeg_args(fflags)
             # ffmpeg_output_cmd += ['-vn']
             bCopied = False
 
@@ -217,7 +221,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                     ffmpeg_output_cmd += ['-codec:a', 'copy']
                     if audio_type[0] is mm.AudioType.flac:
                         # ffmpeg: flac in MP4 support is experimental
-                        ffmpeg_output_cmd += ['-strict', -2]
+                        ffmpeg_format_args += ['-strict', -2]
                     bCopied = True
                 else:
                     # TODO select preferred encoder based on bitrate: https://trac.ffmpeg.org/wiki/Encode/HighQualityAudio
@@ -431,7 +435,7 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                     output_file,
                 ]
 
-                out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_chapters_cmd + ffmpeg_output_cmd),
+                out = ffmpeg(*(ffmpeg_cmd + ffmpeg_input_cmd + ffmpeg_chapters_cmd + ffmpeg_format_args + ffmpeg_output_cmd),
                              show_progress_bar=show_progress_bar,
                              progress_bar_max=progress_bar_max,
                              progress_bar_title=progress_bar_title or f'Encode {self} w/ ffmpeg',
@@ -450,9 +454,10 @@ class Mpeg4ContainerFile(BinaryMediaFile):
             if not chapters_added and chapters:
                 chapters.fill_end_times(duration=out_time if out_time is not None else expected_duration)
                 output_file.write_chapters(chapters,
-                                   show_progress_bar=show_progress_bar,
-                                   progress_bar_max=progress_bar_max,
-                                   log=True)
+                                           ffmpeg_args=ffmpeg_format_args,
+                                           show_progress_bar=show_progress_bar,
+                                           progress_bar_max=progress_bar_max,
+                                           log=True)
                 chapters_added = True
 
             if not tags_added and output_file.tags is not None:

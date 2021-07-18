@@ -879,6 +879,7 @@ class MatroskaFile(BinaryMediaFile):
                itunes_compat=True,  # unused
                use_qaac=True,  # unused
                channels=None,
+               fflags=None,
                picture=None,
                expected_duration=None,
                show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
@@ -918,6 +919,8 @@ class MatroskaFile(BinaryMediaFile):
                     raise OSError(errno.EEXIST, f'File exists: {self}')
 
             ffmpeg_cmd += ['-stats']
+            if fflags is not None:
+                ffmpeg_cmd += ffmpeg.fflags_arguments_to_ffmpeg_args(fflags)
             # ffmpeg_output_cmd += ['-vn']
             bCopied = False
 

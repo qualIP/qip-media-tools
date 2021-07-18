@@ -11,6 +11,7 @@ import struct
 
 from qip import argparse
 from qip.app import app
+from qip.ffmpeg import ffmpeg, ffprobe
 
 def av_reorder_packets(av_packets):  # TODO RENAME
     prev_av_packet = None
@@ -358,20 +359,10 @@ def main():
     pgroup.add_bool_argument('--show-packets', '--show_packets', help='Emit like ffprobe -show_packets')
     pgroup.add_bool_argument('--show-frames', '--show_frames', help='Emit like ffprobe -show_frames')
 
+    pgroup = app.parser.add_argument_group('Format context flags')
+    ffmpeg.argparse_add_fflags_arguments(pgroup, encode=False)
+
     pgroup.add_argument('input_file', type=Path, help='file to probe')
-
-    pgroup.add_bool_argument('--autobsf', default=True, help='fflags: Automatically apply bitstream filters as required by the output format')
-    pgroup.add_bool_argument('--ignidx', help='fflags: ignore index')
-    pgroup.add_bool_argument('--genpts', help='fflags: generate pts')
-    pgroup.add_bool_argument('--nofillin', help='fflags: do not fill in missing values that can be exactly calculated')
-    pgroup.add_bool_argument('--noparse', help='fflags: disable AVParsers, this needs nofillin too')
-    pgroup.add_bool_argument('--igndts', help='fflags: ignore dts')
-    pgroup.add_bool_argument('--discardcorrupt', help='fflags: discard corrupted frames')
-    pgroup.add_bool_argument('--sortdts', help='fflags: try to interleave outputted packets by dts')
-    # pgroup.add_bool_argument('--keepside', help='fflags: deprecated, does nothing')
-    pgroup.add_bool_argument('--fastseek', help='fflags: fast but inaccurate seeks')
-    pgroup.add_bool_argument('--nobuffer', help='fflags: reduce the latency introduced by optional buffering')
-
 
     app.parse_args()
 
@@ -384,7 +375,6 @@ def main():
     do_streams = app.args.dump
     do_side_data = app.args.dump or app.args.show_frames
     if do_packets or do_frames:
-        from qip.ffmpeg import ffprobe
         p = ffprobe.PrintContext(pretty=app.args.pretty)
 
     def egetattr(obj, attr):
@@ -395,18 +385,7 @@ def main():
 
     av_file = av.open(os.fspath(app.args.input_file))
     av_file.max_analyze_duration = 0  # 10000000
-    av_file.flags = 0
-    av_file.auto_bsf = app.args.autobsf
-    av_file.ign_idx = app.args.ignidx
-    av_file.gen_pts = app.args.genpts
-    av_file.no_fill_in = app.args.nofillin
-    av_file.no_parse = app.args.noparse
-    av_file.ign_dts = app.args.igndts
-    av_file.discard_corrupt = app.args.discardcorrupt
-    av_file.sort_dts = app.args.sortdts
-    # av_file.keep_side_data = app.args.keepside
-    av_file.fast_seek = app.args.fastseek
-    av_file.no_buffer = app.args.nobuffer
+    ffmpeg.fflags_arguments_to_av_file(av_file, app.args.fflags)
     # av_file.non_block = TODO
     # av_file.custom_io = TODO
     # av_file.flush_packets = TODO

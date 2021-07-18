@@ -8,7 +8,7 @@ from argparse import *
 #from .decorator import trace
 def trace(func, **kwargs): return func
 
-from .utils import Constants as _Constants
+from .utils import Constants as _Constants, KeylNamespaceBase as _KeylNamespaceBase
 Auto = _Constants.Auto
 Ask = _Constants.Ask
 NotSet = _Constants.NotSet
@@ -132,13 +132,29 @@ class _NamespaceMeta(type):
         cls = super().__new__(mcs, name, bases, dct)
         return cls
 
-class Namespace(_argparse.Namespace, _AttributeHolder, metaclass=_NamespaceMeta):
+class Namespace(_KeylNamespaceBase, _argparse.Namespace, _AttributeHolder, metaclass=_NamespaceMeta):
 
     def __setattr__(self, name, value):
-        return super().__setattr__(name, value)
+        try:
+            name0, name_rest = name.split('.', maxsplit=1)
+        except ValueError:
+            return super().__setattr__(name, value)
+        try:
+            ns = getattr(self, name0)
+        except AttributeError:
+            ns = type(self)()
+            setattr(self, name0, ns)
+        return setattr(ns, name_rest, value)
 
-    #def __repr__(self):
-    #    return '<{}>'.format(self.__class__.__name__)
+    def __getattr__(self, name):
+        try:
+            name0, name_rest = name.split('.', maxsplit=1)
+        except ValueError:
+            return super().__getattr__(name)
+        try:
+            return getattr(getattr(self, name0), name_rest)
+        except AttributeError:
+            raise AttributeError(name)
 
 class _ActionsContainer(_argparse._ActionsContainer):
 

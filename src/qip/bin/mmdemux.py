@@ -440,12 +440,7 @@ def ffprobe_iter_av_frames(file, stream_index=0):
 
 def iter_av_frames(file, stream_index=0, max_analyze_duration=100 * 1000000):
     with av.open(os.fspath(file)) as av_file:
-        av_file.flags = 0
-        av_file.auto_bsf = app.args.autobsf
-        av_file.gen_pts = app.args.genpts
-        av_file.ign_dts = app.args.igndts
-        av_file.discard_corrupt = app.args.discardcorrupt
-        av_file.sort_dts = app.args.sortdts
+        ffmpeg.fflags_arguments_to_av_file(av_file, app.args.fflags)
         av_file.max_analyze_duration = max_analyze_duration
         for av_stream in av_file.streams:
             if av_stream.index != stream_index:
@@ -919,11 +914,7 @@ def main():
     pgroup.add_argument('--pad-video', default=None, choices=('None', 'clone', 'black'), help='pad video stream')
 
     pgroup = app.parser.add_argument_group('Format context flags')
-    pgroup.add_bool_argument('--autobsf', default=True, help='fflags: Automatically apply bitstream filters as required by the output format')
-    pgroup.add_bool_argument('--genpts', default=True, help='fflags: generate pts')
-    pgroup.add_bool_argument('--discardcorrupt', help='fflags: discard corrupted frames')
-    pgroup.add_bool_argument('--igndts', help='fflags: ignore dts')
-    pgroup.add_bool_argument('--sortdts', help='fflags: try to interleave outputted packets by dts')
+    ffmpeg.argparse_add_fflags_arguments(pgroup)
 
     pgroup = app.parser.add_argument_group('Subtitle Control')
     pgroup.add_argument('--subrip-matrix', default=Auto, type=_resolved_Path, help='SubRip OCR matrix file')

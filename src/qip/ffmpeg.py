@@ -712,6 +712,125 @@ class FfmpegSpawn(_FfmpegSpawnMixin, _exec_spawn):
 class FfmpegPopenSpawn(_FfmpegSpawnMixin, _exec_popen_spawn):
     pass
 
+def argparse_add_fflags_arguments(parser, exclude=(), dest_prefix='fflags.', encode=True, decode=True):
+    if encode:
+        if 'autobsf' not in exclude:
+            parser.add_bool_argument('--autobsf', dest=dest_prefix + 'autobsf', default=Constants.DefaultTrue, help='fflags: automatically apply bitstream filters as required by the output format')
+        if 'flush_packets' not in exclude:
+            parser.add_bool_argument('--flushpackets', dest=dest_prefix + 'flush_packets', default=Constants.DefaultFalse, help='fflags: reduce the latency by flushing out packets immediately')
+        # if 'latm' not in exclude:
+        #     parser.add_bool_argument('--latm', dest=dest_prefix + 'latm', default=Constants.DefaultFalse, help='fflags: deprecated, does nothing')
+        if 'bitexact' not in exclude:
+            parser.add_bool_argument('--bitexact', dest=dest_prefix + 'bitexact', default=Constants.DefaultFalse, help='fflags: do not write random/volatile data')
+        if 'shortest' not in exclude:
+            parser.add_bool_argument('--shortest', dest=dest_prefix + 'shortest', default=Constants.DefaultFalse, help='fflags: stop muxing with the shortest stream')
+    if decode:
+        if 'ignidx' not in exclude:
+            parser.add_bool_argument('--ignidx', dest=dest_prefix + 'ignidx', default=Constants.DefaultFalse, help='fflags: ignore index')
+        if 'genpts' not in exclude:
+            parser.add_bool_argument('--genpts', dest=dest_prefix + 'genpts', default=Constants.DefaultFalse, help='fflags: generate pts')
+        if 'nofillin' not in exclude:
+            parser.add_bool_argument('--nofillin', dest=dest_prefix + 'nofillin', default=Constants.DefaultFalse, help='fflags: do not fill in missing values that can be exactly calculated')
+        if 'noparse' not in exclude:
+            parser.add_bool_argument('--noparse', dest=dest_prefix + 'noparse', default=Constants.DefaultFalse, help='fflags: disable AVParsers, this needs nofillin too')
+        if 'igndts' not in exclude:
+            parser.add_bool_argument('--igndts', dest=dest_prefix + 'igndts', default=Constants.DefaultFalse, help='fflags: ignore dts')
+        if 'discardcorrupt' not in exclude:
+            parser.add_bool_argument('--discardcorrupt', dest=dest_prefix + 'discardcorrupt', default=Constants.DefaultFalse, help='fflags: discard corrupted frames')
+        if 'sortdts' not in exclude:
+            parser.add_bool_argument('--sortdts', dest=dest_prefix + 'sortdts', default=Constants.DefaultFalse, help='fflags: try to interleave outputted packets by dts')
+        # if 'keepside' not in exclude:
+        #     parser.add_bool_argument('--keepside', dest=dest_prefix + 'keepside', default=Constants.DefaultFalse, help='fflags: deprecated, does nothing')
+        if 'fastseek' not in exclude:
+            parser.add_bool_argument('--fastseek', dest=dest_prefix + 'fastseek', default=Constants.DefaultFalse, help='fflags: fast but inaccurate seeks')
+        if 'nobuffer' not in exclude:
+            parser.add_bool_argument('--nobuffer', dest=dest_prefix + 'nobuffer', default=Constants.DefaultFalse, help='fflags: reduce the latency introduced by optional buffering')
+
+def fflags_arguments_to_av_file(av_file, fflags):
+    av_file.flags = 0
+    try:
+        av_file.auto_bsf = fflags.autobsf in (True, Constants.DefaultTrue)
+    except AttributeError:
+        av_file.auto_bsf = True
+    try:
+        av_file.ign_idx = fflags.ignidx in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+    try:
+        av_file.gen_pts = fflags.genpts in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+    try:
+        av_file.no_fill_in = fflags.nofillin in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+    try:
+        av_file.no_parse = fflags.noparse in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+    try:
+        av_file.ign_dts = fflags.igndts in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+    try:
+        av_file.discard_corrupt = fflags.discardcorrupt in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+    try:
+        av_file.sort_dts = fflags.sortdts in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+    # try:
+    #     av_file.keep_side_data = fflags.keepside in (True, Constants.DefaultTrue)
+    # except AttributeError:
+    #     pass
+    try:
+        av_file.fast_seek = fflags.fastseek in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+    try:
+        av_file.no_buffer = fflags.nobuffer in (True, Constants.DefaultTrue)
+    except AttributeError:
+        pass
+
+def fflags_arguments_to_ffmpeg_args(fflags):
+    ffmpeg_args = []
+    for name in (
+            'autobsf',
+            'flush_packets',
+            'latm',
+            'bitexact',
+            'shortest',
+            'ignidx',
+            'genpts',
+            'nofillin',
+            'noparse',
+            'igndts',
+            'discardcorrupt',
+            'sortdts',
+            'keepside',
+            'fastseek',
+            'nobuffer',
+    ):
+        try:
+            value = getattr(fflags, name)
+        except AttributeError:
+            continue
+        if value is True:
+            ffmpeg_args += ['-fflags', f'+{name}']
+        elif value is False:
+            ffmpeg_args += ['-fflags', f'-{name}']
+        elif value in (
+            None,
+            Constants.Default,
+            Constants.DefaultTrue,
+            Constants.DefaultFalse,
+        ):
+            pass
+        else:
+            raise ValueError(value)
+    return ffmpeg_args
+
 class FfmpegOptions(collections.UserList):
 
     colon_options = None
@@ -902,6 +1021,10 @@ class _Ffmpeg(Executable):
             inputfile,
         ]
         return args
+
+_Ffmpeg.argparse_add_fflags_arguments = staticmethod(argparse_add_fflags_arguments)
+_Ffmpeg.fflags_arguments_to_ffmpeg_args = staticmethod(fflags_arguments_to_ffmpeg_args)
+_Ffmpeg.fflags_arguments_to_av_file = staticmethod(fflags_arguments_to_av_file)
 
 class Ffmpeg(_Ffmpeg):
 

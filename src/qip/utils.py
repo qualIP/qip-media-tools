@@ -8,6 +8,7 @@ __all__ = (
     'KwVarsObject',
     'TypedKeyDict',
     'TypedValueDict',
+    'KeylNamespace',
     'byte_decode',
     'pairwise',
     'grouper',
@@ -49,6 +50,7 @@ import sys
 import termios
 import textwrap
 import time
+import types
 log = logging.getLogger(__name__)
 
 def beep():
@@ -286,9 +288,12 @@ class Constants(enum.Enum):
     Auto = 'Auto'
     NotSet = 'NotSet'
     Ask = 'Ask'
+    Default = 'Default'
+    DefaultTrue = 'Default(True)'
+    DefaultFalse = 'Default(False)'
 
     def __str__(self):
-        return self.name
+        return self.value
 
     def __repr__(self):
         return self.name
@@ -296,6 +301,9 @@ class Constants(enum.Enum):
 Ask = Constants.Ask
 Auto = Constants.Auto
 NotSet = Constants.NotSet
+Default = Constants.Default
+DefaultTrue = Constants.DefaultTrue
+DefaultFalse = Constants.DefaultFalse
 
 Constants._value2member_map_.update({
     None: None,
@@ -318,6 +326,8 @@ Constants._value2member_map_.update({
     'Notset': NotSet,
     'notset': NotSet,
     'not-set': NotSet,
+    DefaultTrue: DefaultTrue,
+    DefaultFalse: DefaultFalse,
 })
 
 
@@ -988,3 +998,37 @@ def is_term_dark(default=False):
         return 0 <= bg <= 6 or bg == 8
 
     return default
+
+class KeylNamespaceBase(object):
+    """Reminiscent of a TclX keyed list, this namespace class accepts "." in
+    attribute names to auto-create nested namespaces.
+    """
+
+    def __setattr__(self, name, value):
+        try:
+            name0, name_rest = name.split('.', 1)
+        except ValueError:
+            return super().__setattr__(name, value)
+        try:
+            ns = getattr(self, name0)
+        except AttributeError:
+            ns = type(self)()
+            setattr(self, name0, ns)
+        return setattr(ns, name_rest, value)
+
+    def __getattr__(self, name):
+        try:
+            name0, name_rest = name.split('.', 1)
+        except ValueError:
+            try:
+                sup_getattr = super().__getattr__
+            except AttributeError:
+                raise AttributeError(name)
+            return sup_getattr(name)
+        try:
+            return getattr(getattr(self, name0), name_rest)
+        except AttributeError:
+            raise AttributeError(name)
+
+class KeylNamespace(KeylNamespaceBase, types.SimpleNamespace):
+    pass

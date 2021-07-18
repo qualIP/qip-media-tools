@@ -28,13 +28,14 @@ from qip import argparse
 from qip.app import app
 from qip.cmp import *
 from qip.exec import *
+from qip.ffmpeg import ffmpeg
 from qip.file import *
-from qip.matroska import MkaFile, MatroskaChaptersFile
-from qip.ogg import OgaFile
 from qip.flac import FlacFile
-from qip.mm import *
 from qip.img import ImageFile
+from qip.matroska import MkaFile, MatroskaChaptersFile
+from qip.mm import *
 from qip.mp4 import Mpeg4ContainerFile, M4bFile, mp4chaps, Mp4chapsFile
+from qip.ogg import OgaFile
 from qip.parser import *
 from qip.utils import byte_decode, save_and_restore_tcattr, replace_html_entities
 import qip.mm
@@ -46,8 +47,6 @@ import qip.mp3
 import qip.mp4
 import qip.ogg
 import qip.wav
-
-# TODO ffmpeg_input_cmd += ['-fflags', '+igndts']
 
 # times_1000 {{{
 
@@ -256,6 +255,9 @@ def main():
 
     pgroup = app.parser.add_argument_group('Tags')
     qip.mm.argparse_add_tags_arguments(pgroup, in_tags)
+
+    pgroup = app.parser.add_argument_group('Format context flags')
+    ffmpeg.argparse_add_fflags_arguments(pgroup)
 
     app.parser.add_argument('inputfiles', nargs='*', default=None, help='input sound files')
 
@@ -779,6 +781,7 @@ def mkm4b(inputfiles, default_tags):
                itunes_compat=app.args.itunes_compat,
                use_qaac=app.args.use_qaac,
                channels=getattr(app.args, 'channels', None),
+               fflags=app.args.fflags,
                picture=encode_picture,
                expected_duration=expected_duration,
                show_progress_bar=True)

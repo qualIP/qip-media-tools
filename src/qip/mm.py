@@ -753,6 +753,7 @@ class MediaFile(File):
                 finally:
                     metadata_file.file_name, metadata_file.fp = None, None
 
+        in_ffmpeg_args = list(ffmpeg_args or [])
         delete = True
         with self.NamedTemporaryFile(suffix=self.file_name.suffix, delete=False) as output_file:
             try:
@@ -760,6 +761,7 @@ class MediaFile(File):
                 ffmpeg_args = [
                     '-i', self,
                     '-i', metadata_file,
+                ] + in_ffmpeg_args + [
                     '-map', 0,
                     '-map_metadata', 1,
                     '-codec', 'copy',
@@ -5685,77 +5687,81 @@ class ArgparseGenreListAction(argparse.Action):
 
 def argparse_add_tags_arguments(parser, tags, exclude=()):
     if 'grouping' not in exclude:
-        parser.add_argument('--grouping', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--grouping', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'albumartist' not in exclude:
-        parser.add_argument('--albumartist', '-R', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--albumartist', '-R', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'albumtitle' not in exclude:
-        parser.add_argument('--albumtitle', '--album', '-A', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--albumtitle', '--album', '-A', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'artist' not in exclude:
-        parser.add_argument('--artist', '-a', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--artist', '-a', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'copyright' not in exclude:
-        parser.add_argument('--copyright', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--copyright', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'title' not in exclude:
-        parser.add_argument('--title', '--song', '-s', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--title', '--song', '-s', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'subtitle' not in exclude:
-        parser.add_argument('--subtitle', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--subtitle', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'genre' not in exclude:
-        parser.add_argument('--genre', '-g', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--genre', '-g', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'performer' not in exclude:
-        parser.add_argument('--performer', '--reader', '--conductor', '--soloist', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--performer', '--reader', '--conductor', '--soloist', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'writer' not in exclude:
-        parser.add_argument('--writer', '--composer', '-w', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--writer', '--composer', '-w', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'date' not in exclude:
-        parser.add_argument('--date', '--year', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--date', '--year', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'type' not in exclude:
-        parser.add_argument('--type', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--type', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'mediatype' not in exclude:
-        parser.add_argument('--mediatype', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='physical Media Type (%s)' % (', '.join((str(e) for e in qip.mm.MediaType)),))
+        parser.add_argument('--mediatype', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction, help='physical Media Type (%s)' % (', '.join((str(e) for e in MediaType)),))
     if 'contenttype' not in exclude:
-        parser.add_argument('--contenttype', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction, help='content Type (%s)' % (', '.join((str(e) for e in qip.mm.ContentType)),))
+        parser.add_argument('--contenttype', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction, help='content Type (%s)' % (', '.join((str(e) for e in ContentType)),))
     if 'comment' not in exclude:
-        parser.add_argument('--comment', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--comment', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'part' not in exclude:
-        parser.add_argument('--part', dest='part_slash_parts', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--part', dest='part_slash_parts', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'parttitle' not in exclude:
-        parser.add_argument('--parttitle', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--parttitle', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'disk' not in exclude:
-        parser.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--disk', '--disc', dest='disk_slash_disks', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'track' not in exclude:
-        parser.add_argument('--track', dest='track_slash_tracks', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--track', dest='track_slash_tracks', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'picture' not in exclude:
-        parser.add_argument('--picture', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--picture', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'tvshow' not in exclude:
-        parser.add_argument('--tvshow', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--tvshow', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'season' not in exclude:
-        parser.add_argument('--season', dest='season_slash_seasons', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--season', dest='season_slash_seasons', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'episode' not in exclude:
-        parser.add_argument('--episode', dest='episode_slash_episodes', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--episode', dest='episode_slash_episodes', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'language' not in exclude:
-        parser.add_argument('--language', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--language', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'country' not in exclude:
-        parser.add_argument('--country', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--country', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'compilation' not in exclude:
-        parser.add_argument('--compilation', '-K', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--compilation', '-K', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'sort-grouping' not in exclude:
-        parser.add_argument('--sort-grouping', dest='sortgrouping', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--sort-grouping', dest='sortgrouping', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'sort-albumartist' not in exclude:
-        parser.add_argument('--sort-albumartist', dest='sortalbumartist', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--sort-albumartist', dest='sortalbumartist', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'sort-albumtitle' not in exclude:
-        parser.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--sort-albumtitle', '--sort-album', dest='sortalbumtitle', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'sort-artist' not in exclude:
-        parser.add_argument('--sort-artist', dest='sortartist', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--sort-artist', dest='sortartist', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'sort-title' not in exclude:
-        parser.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--sort-title', '--sort-song', dest='sorttitle', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'sort-performer' not in exclude:
-        parser.add_argument('--sort-performer', '--sort-reader', '--sort-conductor', '--sort-soloist', dest='sortperformer', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--sort-performer', '--sort-reader', '--sort-conductor', '--sort-soloist', dest='sortperformer', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'sort-composer' not in exclude:
-        parser.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--sort-composer', '--sort-writer', dest='sortcomposer', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'sort-tvshow' not in exclude:
-        parser.add_argument('--sort-tvshow', dest='sorttvshow', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--sort-tvshow', dest='sorttvshow', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'xid' not in exclude:
-        parser.add_argument('--xid', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--xid', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'isbn' not in exclude:
-        parser.add_argument('--isbn', tags=tags, default=argparse.SUPPRESS, action=qip.mm.ArgparseSetTagAction)
+        parser.add_argument('--isbn', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
+    if 'encoded-by' not in exclude:
+        parser.add_argument('--encoded-by', dest='encodedby', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
+    if 'recording-date' not in exclude:
+        parser.add_argument('--recording-date', dest='recording_date', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
 
 def date_to_year(date):
     m = re.match('^(\d{4})(?:\d\d?-\d\d?)?$', date)
