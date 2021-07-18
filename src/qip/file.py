@@ -149,6 +149,7 @@ class File(object):
     open_mode = propex(
         name='open_mode',
         default='',
+        cdefault='',
         type=propex.test_in(('', 't', 'b')))
 
     mime_type = propex(

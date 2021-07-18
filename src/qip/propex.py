@@ -327,6 +327,64 @@ class propex(object):
         # Reached this point with a transformed value; Return.
         return value
 
+    def _default_cgetter(self, cls):
+
+        attr = self.__attr or '_' + self.__name__
+        try:
+            # Get the value using the internal attribute name.
+            value = getattr(cls, attr)
+        except AttributeError:
+            # No value; Consult the default (__cdef) and perform the appropriate
+            # action (__cdef_action.)
+            cfdef = self.__cdef
+            cdef_action = self.__cdef_action
+            if cdef_action is None:
+                # No cdefault; Return the descriptor itself
+                return self
+            elif cdef_action is propex.DefaultActions.value_return_default:
+                # Return the requested cdefault value. Since it was supplied, do
+                # not transform it.
+                return cfdef  # no transform
+            elif cdef_action is propex.DefaultActions.method_return_default:
+                # Call the specified method; Since the method supplies the
+                # value, do not transform it.
+                return cfdef(cls)  # no transform
+            elif cdef_action is propex.DefaultActions.function_return_default:
+                # Call the specified function; Since the method supplies the
+                # value, do not transform it.
+                return cfdef()  # no transform
+            elif cdef_action is propex.DefaultActions.value_set_init:
+                # Initialize the attribute with the requested default value.
+                # Since it is stored and further access will transform it,
+                # allow transformations here too.
+                value = cfdef
+            elif cdef_action is propex.DefaultActions.method_set_init:
+                # Call the specified method and initialize the attribute with
+                # the requested default value. Since it is stored and further
+                # access will transform it, allow transformations here too.
+                value = cfdef(cls)
+            elif cdef_action is propex.DefaultActions.function_set_init:
+                # Call the specified function and initialize the attribute with
+                # the requested default value. Since it is stored and further
+                # access will transform it, allow transformations here too.
+                value = cfdef()
+            else:
+                raise ValueError(cdef_action)
+            # Reached this point due to a new "init" value; Set, transform &
+            # return.
+            setattr(cls, attr, value)
+        try:
+            # Reached this point due to an existing value or a new "init"
+            # value; Transform & return.
+            # Apply transformations (__gettype)
+            value = self._transform(value, self.__gettype)
+        except ValueError as e:
+            # Transformation failed, convert to AttributeError which is
+            # appropriate for a getter.
+            raise AttributeError('%s: %s' % (attr, e))
+        # Reached this point with a transformed value; Return.
+        return value
+
     def _default_setter(self, inst, value):
         try:
             # Set the value using the internal attribute name.
@@ -346,6 +404,7 @@ class propex(object):
             raise AttributeError
 
     def __init__(self,
+                 # Instance
                  fget=not_specified,
                  fset=not_specified,
                  fdel=not_specified,
@@ -355,6 +414,15 @@ class propex(object):
                  finit=not_specified,
                  finit_method=not_specified,
                  init=not_specified,
+                 # Class
+                 cfget=not_specified,
+                 cfdef=not_specified,
+                 cfdef_method=not_specified,
+                 cdefault=not_specified,
+                 cfinit=not_specified,
+                 cfinit_method=not_specified,
+                 cinit=not_specified,
+                 # Meta
                  name=None, attr=None,
                  type=None, gettype=None,
                  read_only=False,
@@ -397,6 +465,9 @@ class propex(object):
         if fget not in (None, propex.not_specified) \
                 and not callable(fget):
             raise TypeError('fget argument not callable')
+        if cfget not in (None, propex.not_specified) \
+                and not callable(cfget):
+            raise TypeError('cfget argument not callable')
         if fset not in (None, propex.not_specified) \
                 and not callable(fset):
             raise TypeError('fset argument not callable')
@@ -443,6 +514,45 @@ class propex(object):
             fdef = None
             def_action = None
 
+        if sum([
+                cfdef is not propex.not_specified,
+                cfdef_method is not propex.not_specified,
+                cdefault is not propex.not_specified,
+                cfinit is not propex.not_specified,
+                cfinit_method is not propex.not_specified,
+                cinit is not propex.not_specified]) > 1:
+            raise TypeError('cfdef, cfdef_method, cdefault, cfinit, cfinit_method'
+                            ' and cinit arguments are all mutually exclusive')
+        if cfdef is not propex.not_specified:
+            if cfdef is not None and not callable(cfdef):
+                raise TypeError('cfdef argument not callable')
+            cfdef = cfdef
+            cdef_action = cfdef and propex.DefaultActions('fdef')
+        elif cfdef_method is not propex.not_specified:
+            if cfdef_method is not None and not callable(cfdef_method):
+                raise TypeError('cfdef_method argument not callable')
+            cfdef = cfdef_method
+            cdef_action = cfdef and propex.DefaultActions('fdef_method')
+        elif cdefault is not propex.not_specified:
+            cfdef = cdefault
+            cdef_action = propex.DefaultActions('default')
+        elif cfinit is not propex.not_specified:
+            if cfinit is not None and not callable(cfinit):
+                raise TypeError('cfinit argument not callable')
+            cfdef = cfinit
+            cdef_action = cfdef and propex.DefaultActions('finit')
+        elif cfinit_method is not propex.not_specified:
+            if cfinit_method is not None and not callable(cfinit_method):
+                raise TypeError('cfinit_method argument not callable')
+            cfdef = cfinit_method
+            cdef_action = cfdef and propex.DefaultActions('finit_method')
+        elif init is not propex.not_specified:
+            cfdef = init
+            cdef_action = propex.DefaultActions('init')
+        else:
+            cfdef = None
+            cdef_action = None
+
         if name is None:
             # name is mandatory as it is used for the default internal
             # attribute name and in raising meaningful AttributeError
@@ -469,10 +579,13 @@ class propex(object):
 
         # Save all settings to private attributes
         self.__get = fget
+        self.__cget = cfget
         self.__set = fset
         self.__del = fdel
         self.__def = fdef
         self.__def_action = def_action
+        self.__cdef = cfdef
+        self.__cdef_action = cdef_action
         self.__name__ = name
         self.__attr = attr
         self.__getter_doc = getter_doc
@@ -494,6 +607,11 @@ class propex(object):
             'finit': propex.not_specified,
             'finit_method': propex.not_specified,
             'init': propex.not_specified,
+            'cfdef': propex.not_specified,
+            'cfdef_method': propex.not_specified,
+            'cdefault': propex.not_specified,
+            'cfinit': propex.not_specified,
+            'cfinit_method': propex.not_specified,
             'name': self.__name__,
             'attr': self.__attr,
             'doc': None if self.__getter_doc else self.__doc__,
@@ -512,6 +630,18 @@ class propex(object):
             else:
                 # Degenerate "no default value" case.
                 d['fdef'] = None
+        # See if any keyword arguments correspond to default actions...
+        if not any(
+                (f'c{e.value}' in kwargs)
+                for e in propex.DefaultActions.__members__.values()):
+            # No default action arguments given
+            if self.__cdef_action:
+                # Convert the __cdef/__cdef_action private attributes into
+                # __init__'s corresponding argument
+                d[self.__cdef_action.value] = self.__cdef
+            else:
+                # Degenerate "no default value" case.
+                d['cfdef'] = None
         # Update defaults with the caller's overrides.
         # Any invalid keyword will cause __init__ to raise TypeError. Not
         # checking them here allows better subclassing support.
@@ -526,6 +656,11 @@ class propex(object):
         if fget is not None and not callable(fget):
             raise TypeError('getter argument not callable')
         return self.copy(fget=fget)
+
+    def cgetter(self, cfget):
+        if cfget is not None and not callable(cfget):
+            raise TypeError('cgetter argument not callable')
+        return self.copy(cfget=cfget)
 
     def setter(self, fset):
         if fset is not None and not callable(fset):
@@ -542,6 +677,11 @@ class propex(object):
             raise TypeError('defaulter argument not callable')
         return self.copy(fdef_method=fdef)
 
+    def cdefaulter(self, cfdef):
+        if cfdef is not None and not callable(cfdef):
+            raise TypeError('cdefaulter argument not callable')
+        return self.copy(cfdef_method=cfdef)
+
     def initter(self, finit):
         if finit is not None and not callable(finit):
             raise TypeError('initter argument not callable')
@@ -551,27 +691,43 @@ class propex(object):
         if inst is None:
             # No instance; Invoked from the owner class:
             #    descriptor = MyClass.attr
-            # Return the descriptor itself
-            return self
-        # With instance, Invoked from the object instance:
-        #     value = inst.attr
-        fget = self.__get
-        if fget is None:
-            # No getter; write-only!
-            # Same error message as property's
-            raise AttributeError('unreadable attribute')
-        if fget is propex.not_specified:
-            # No custom getter; Use propex's default getter
-            # implementation.
-            fget = self._default_getter
-        try:
-            # Call the getter and return the value.
-            return fget(inst)
-        except AttributeError as e:
-            # In no error message was provided, default it to the attribute
-            # name.
-            e.args = e.args or (self.__name__,)
-            raise
+            cfget = self.__cget
+            if cfget is None:
+                # No getter; write-only!
+                # Same error message as property's
+                raise AttributeError('unreadable attribute')
+            if cfget is propex.not_specified:
+                # No custom getter; Use propex's default cgetter
+                # implementation.
+                cfget = self._default_cgetter
+            try:
+                # Call the getter and return the value.
+                return cfget(cls)
+            except AttributeError as e:
+                # In no error message was provided, default it to the attribute
+                # name.
+                e.args = e.args or (self.__name__,)
+                raise
+        else:
+            # With instance, Invoked from the object instance:
+            #     value = inst.attr
+            fget = self.__get
+            if fget is None:
+                # No getter; write-only!
+                # Same error message as property's
+                raise AttributeError('unreadable attribute')
+            if fget is propex.not_specified:
+                # No custom getter; Use propex's default getter
+                # implementation.
+                fget = self._default_getter
+            try:
+                # Call the getter and return the value.
+                return fget(inst)
+            except AttributeError as e:
+                # In no error message was provided, default it to the attribute
+                # name.
+                e.args = e.args or (self.__name__,)
+                raise
 
     def __set__(self, inst, value):
         # Invoked from the object instance:
