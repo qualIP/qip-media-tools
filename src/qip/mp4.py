@@ -205,9 +205,13 @@ class Mpeg4ContainerFile(BinaryMediaFile):
                     mm.AudioType.lc_aac,
                     mm.AudioType.he_aac,
                     mm.AudioType.ac3,
-                    # Others
-                    mm.AudioType.flac,
                 )
+                from qip.app import app
+                if getattr(app.args, 'experimental', False):
+                    supported_audio_types += (
+                        # Others
+                        mm.AudioType.flac,
+                    )
 
             bitrate = force_input_bitrate
             if bitrate is None:

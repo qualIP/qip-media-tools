@@ -233,6 +233,7 @@ def main():
     pgroup.add_bool_argument('--prep-picture', default=True, help='prepare picture')
     pgroup.add_bool_argument('--ipod-compat', default=False, help='enable iPod compatibility')
     pgroup.add_bool_argument('--itunes-compat', default=True, help='enable iTunes compatibility')
+    pgroup.add_bool_argument('--experimental', default=False, help='enable experimental formats/codecs')
 
     pgroup = app.parser.add_argument_group('Chapters Control')
     pgroup.add_bool_argument('--chapters', default=True, help='generate chapters')
