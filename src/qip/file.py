@@ -586,20 +586,20 @@ class File(object):
                         seen.add(ext)
 
     @classmethod
-    def generate_file_name(cls, dirname=None, basename=None, ext=Auto):
+    def generate_file_name(cls, dirname=None, prefix=None, ext=Auto):
         dirname = Path(dirname) if dirname else None
-        if not basename:
-            basename = cls.__class__.__name__
-            basename = re.sub(r'File$', '', basename)
-            basename = re.sub(r'(?=[A-Z][a-z])(?<!Mc)(?<!Mac)', r' ', basename)       # AbCDef ->  AbC Def (not Mc Donald)
-            basename = re.sub(r'[a-z](?=[A-Z])(?<!Mc)(?<!Mac)', r'\g<0> ', basename)  # AbC Def -> Ab C Def (not Mc Donald)
-            basename = re.sub(r'[A-Za-z](?=\d)', r'\g<0> ', basename)  # ABC123 -> ABC 123
-            basename = re.sub(r'[^A-Za-z0-9]+', r'-', basename)      # AB$_12 -> AB-12
-            basename = basename.strip('-')                           # -ABC-  -> ABC
-        if not basename:
-            basename = 'file'
-        basename = Path(basename)
-        file_name = dirname / basename if dirname else basename
+        if not prefix:
+            prefix = cls.__class__.__name__
+            prefix = re.sub(r'File$', '', prefix)
+            prefix = re.sub(r'(?=[A-Z][a-z])(?<!Mc)(?<!Mac)', r' ', prefix)       # AbCDef ->  AbC Def (not Mc Donald)
+            prefix = re.sub(r'[a-z](?=[A-Z])(?<!Mc)(?<!Mac)', r'\g<0> ', prefix)  # AbC Def -> Ab C Def (not Mc Donald)
+            prefix = re.sub(r'[A-Za-z](?=\d)', r'\g<0> ', prefix)  # ABC123 -> ABC 123
+            prefix = re.sub(r'[^A-Za-z0-9]+', r'-', prefix)      # AB$_12 -> AB-12
+            prefix = prefix.strip('-')                           # -ABC-  -> ABC
+        if not prefix:
+            prefix = 'file'
+        prefix = Path(prefix)
+        file_name = dirname / prefix if dirname else prefix
         if ext is Auto:
             for ext in cls.get_default_extensions():
                 break

@@ -6531,13 +6531,13 @@ def action_extract_music(inputdir, in_tags):
             else:
                 raise ValueError('Unsupported codec type %r' % (stream_dict.codec_type,))
 
-def external_subtitle_file_name(output_file_name_stem, stream_file_name, stream_dict):
+def external_subtitle_file_name(output_file_name_prefix, stream_file_name, stream_dict):
     try:
         return stream_dict['external_stream_file_name']
     except KeyError:
         pass
     # stream_file_name = stream_dict['file_name']
-    external_stream_file_name = os.fspath(output_file_name_stem)
+    external_stream_file_name = os.fspath(output_file_name_prefix)
     external_stream_file_name += '.' + stream_dict.language.code3
     if stream_dict['disposition'].get('hearing_impaired', None):
         external_stream_file_name += '.hearing_impaired'
@@ -6583,9 +6583,9 @@ def action_demux(inputdir, in_tags):
     webm = app.args.webm
 
     if app.args.output_file is Auto:
-        output_file_name_stem = inputdir.with_suffix(inputdir.suffix + '.demux')
+        output_file_name_prefix = inputdir.with_suffix(inputdir.suffix + '.demux')
     else:
-        output_file_name_stem = app.args.output_file.stem
+        output_file_name_prefix = app.args.output_file.with_suffix('')
         if webm is Auto:
             webm = app.args.output_file.suffix == '.webm'
 
@@ -6937,7 +6937,7 @@ def action_demux(inputdir, in_tags):
     output_file_cls = WebmFile if webm else MkvFile
 
     output_file = output_file_cls(
-        output_file_cls.generate_file_name(basename=output_file_name_stem)
+        output_file_cls.generate_file_name(prefix=output_file_name_prefix)
         if app.args.output_file is Auto else app.args.output_file)
 
     # Write external files
@@ -6955,7 +6955,7 @@ def action_demux(inputdir, in_tags):
             try:
                 for stream_file_name in stream_file_names:
                     external_stream_file_name = external_subtitle_file_name(
-                        output_file_name_stem=output_file_name_stem,
+                        output_file_name_prefix=output_file_name_prefix,
                         stream_file_name=stream_file_name,
                         stream_dict=stream_dict)
                     app.log.warning('Stream #%s %s -> %s%s', stream_dict.pprint_index, stream_file_name, external_stream_file_name, ' (dry-run)' if app.args.dry_run else '')
@@ -6979,7 +6979,7 @@ def action_demux(inputdir, in_tags):
             # External
             attachment_type = stream_dict['attachment_type']
             attachment_counts[attachment_type] += 1
-            external_stream_file_name = output_file_name_stem.parent / '{type}{num_suffix}{ext}'.format(
+            external_stream_file_name = output_file_name_prefix.parent / '{type}{num_suffix}{ext}'.format(
                 type=attachment_type,
                 num_suffix='' if attachment_counts[attachment_type] == 1 else '-%d' % (attachment_counts[attachment_type],),
                 ext=my_splitext(stream_dict.file_name)[1],

@@ -567,7 +567,7 @@ def mkm4b(inputfiles, default_tags):
         if expected_duration is not None:
             app.log.info('Expected final duration: %s (%.3f seconds)', mp4chaps.Timestamp(expected_duration), expected_duration)
 
-    chapters_file = Mp4chapsFile(Mp4chapsFile.generate_file_name(dirname=mux_dir, basename='chapters'))
+    chapters_file = Mp4chapsFile(Mp4chapsFile.generate_file_name(dirname=mux_dir, prefix='chapters'))
     if app.args.chapters_file:
         if chapters_file.exists() and chapters_file.samefile(app.args.chapters_file):
             app.log.info('Reusing %s...', chapters_file)
@@ -754,7 +754,7 @@ def mkm4b(inputfiles, default_tags):
     encode_chapters = chapters_file.chapters
     ext_chapters_file = None
     if encode_chapters and not m4b.supports_chapters:
-        ext_chapters_file = type(chapters_file)(chapters_file.generate_file_name(basename=m4b.file_name.with_suffix('.chapters')))
+        ext_chapters_file = type(chapters_file)(chapters_file.generate_file_name(prefix=m4b.file_name.with_suffix('.chapters')))
         if ext_chapters_file.exists() and ext_chapters_file.samefile(chapters_file):
             pass
         else:
@@ -765,7 +765,7 @@ def mkm4b(inputfiles, default_tags):
     encode_picture = picture
     ext_picture_file = None
     if encode_picture and not m4b.supports_picture:
-        ext_picture_file = ImageFile.new_by_file_name(ImageFile.generate_file_name(basename=m4b.file_name.with_suffix('.cover'), ext=picture.suffix))
+        ext_picture_file = ImageFile.new_by_file_name(ImageFile.generate_file_name(prefix=m4b.file_name.with_suffix('.cover'), ext=picture.suffix))
         if ext_picture_file.exists() and ext_picture_file.samefile(picture):
             pass
         else:
