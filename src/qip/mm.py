@@ -946,7 +946,7 @@ class MediaFile(File):
                     assert isinstance(cover, mutagen.mp4.MP4Cover)
                     imageformat = {
                             mutagen.mp4.MP4Cover.FORMAT_JPEG: 'image/jpeg',
-                            mutagen.mp4.MP4Cover.FORMAT_PNG: 'png',
+                            mutagen.mp4.MP4Cover.FORMAT_PNG: 'image/png',
                             }.get(cover.imageformat, repr(cover.imageformat))
                     file_desc = byte_decode(do_exec_cmd(['file', '-b', '-'], input=bytes(cover), dry_run=False)).strip()
                     new_tag_value.append(PictureTagInfo(imageformat, file_desc))
