@@ -226,7 +226,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Files')
     pgroup.add_argument('--single', action='store_true', help='create single audiobooks files')
-    pgroup.add_argument('--output', '-o', dest='outputfile', default=argparse.SUPPRESS, type=Path, help='specify the output file name')
+    pgroup.add_argument('--output', '-o', dest='output_path', default=argparse.SUPPRESS, type=Path, help='specify the output file name')
     pgroup.add_argument('--format', default=Auto, choices=('m4b', 'mka', 'flac', 'oga'), help='specify the output file format')
 
     pgroup = app.parser.add_argument_group('Compatibility')
@@ -323,8 +323,8 @@ def mkm4b(inputfiles, default_tags):
             for inputfile in inputfiles]
 
     if app.args.format is Auto:
-        if 'outputfile' in app.args:
-            m4b = SoundFile.new_by_file_name(app.args.outputfile)
+        if getattr(app.args, 'output_path', None):
+            m4b = SoundFile.new_by_file_name(app.args.output_path)
         elif isinstance(inputfiles[0], (
                 qip.mp4.Mpeg4ContainerFile,
                 qip.wav.WaveFile,
@@ -472,8 +472,8 @@ def mkm4b(inputfiles, default_tags):
             m4b.tags.albumtitle = m4b.tags.title
 
     # m4b.file_name {{{
-    if 'outputfile' in app.args:
-        m4b.file_name = app.args.outputfile
+    if getattr(app.args, 'output_path', None):
+        m4b.file_name = app.args.output_path
     else:
         parts = []
         v = m4b.tags[MediaTagEnum.albumartist]
