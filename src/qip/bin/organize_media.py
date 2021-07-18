@@ -364,6 +364,8 @@ def organize_music(inputfile, *, suggest_tags, dbtype='music'):
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
 
+    dst_file_base += get_plex_format_hints_suffix(inputfile, dst_file_base)
+
     dst_file_base += format_part_suffix(inputfile, which=all_part_names - {'disk', 'track'})
 
     dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
@@ -435,6 +437,8 @@ def organize_audiobook(inputfile, *, suggest_tags):
     dst_file_base += inputfile.tags.title
 
     # TODO https://support.plex.tv/articles/200220677-local-media-assets-movies/
+
+    dst_file_base += get_plex_format_hints_suffix(inputfile, dst_file_base)
 
     dst_file_base = clean_file_name(dst_file_base, keep_ext=False)
     dst_file_base += get_dst_suffix(inputfile)
