@@ -311,7 +311,7 @@ class propex(object):
                 # access will transform it, allow transformations here too.
                 value = fdef()
             else:
-                raise ValueError(fdec_action)
+                raise ValueError(def_action)
             # Reached this point due to a new "init" value; Set, transform &
             # return.
             setattr(inst, attr, value)
