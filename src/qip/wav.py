@@ -2,7 +2,7 @@
 # vim: set fileencoding=utf-8 :
 
 __all__ = (
-    'WaveFile',
+    'WavFile',
 )
 
 import struct
@@ -20,7 +20,7 @@ WAV_FORMAT_HLEN = 24
 WAV_DATA_HLEN = 8
 WAV_HEADER_LEN = WAV_RIFF_HLEN + WAV_FORMAT_HLEN + WAV_DATA_HLEN
 
-class WaveFile(SoundFile):
+class WavFile(SoundFile):
 
     _common_extensions = (
         '.wav',
@@ -80,4 +80,4 @@ class WaveFile(SoundFile):
     def tag_writer(self):
         return mm.id3v2
 
-WaveFile._build_extension_to_class_map()
+WavFile._build_extension_to_class_map()

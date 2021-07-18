@@ -41,8 +41,8 @@ class FlacFile(SoundFile):
 
     def rip_cue_track(self, cue_track, bin_file=None, tags=None, yes=False):
         from .ffmpeg import ffmpeg
-        from qip.wav import WaveFile
-        with WaveFile.NamedTemporaryFile() as wav_file:
+        from qip.wav import WavFile
+        with WavFile.NamedTemporaryFile() as wav_file:
             wav_file.rip_cue_track(cue_track=cue_track, bin_file=bin_file, tags=None, yes=yes)
             # write -> read
             wav_file.flush()
