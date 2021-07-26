@@ -1258,12 +1258,20 @@ def ext_to_codec_args(ext, codec, lossless=False):
             codec_args.append_colon_option('-x265-params', 'lossless=1')
             codec_args.set_option('-preset', 'faster')  # lossless is used for temp files, prefer speed over size
     if codec in (
-            'h264_nvenc', 'libx264',
-            'hevc_nvenc',
+            'libx264',
     ):
         if lossless:
             codec_args += [
                 '-preset', 'lossless',
+            ]
+    if codec in (
+            'h264_nvenc',
+            'hevc_nvenc',
+    ):
+        if lossless:
+            codec_args += [
+                # '-preset', 'p7',  # default
+                '-tune', 'lossless',
             ]
 
     if ext in (
