@@ -663,7 +663,12 @@ def analyze_field_order_and_framerate(
                                 - video_frames[0][1].pts)
                             framerate = FrameRate(1 / (time_base * pts_diff / (len(video_frames) - 2)), 1)
                             app.log.debug('framerate = 1 / (%r * %r) / (%r - 2) = %r = %r', time_base, pts_diff, len(video_frames), framerate, float(framerate))
-                            framerate = framerate.round_common()
+                            try:
+                                framerate = framerate.round_common()
+                            except ValueError as e:
+                                if not app.args.fflags.genpts:
+                                    raise ValueError(f'{e} (try --genpts)')
+                                raise
                             app.log.debug('framerate.round_common() = %r = %r', framerate, float(framerate))
                         app.log.debug('Constant %s (%.3f) fps found...', framerate, framerate)
 
@@ -2736,9 +2741,11 @@ def chop_chapters(chaps,
 
     chaps_list_copy = copy.deepcopy(chaps_list)
     chaps_list_copy[-1].chapters[-1].end = ffmpeg.Timestamp.MAX  # Make sure whole movie is captured
-    ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args + [
-        '-fflags', '+genpts',
-    ] + ffmpeg.input_args(inputfile) + [
+    ffmpeg_args = default_ffmpeg_args + ffmpeg_input_args
+    tmp_fflags = copy.copy(app.args.fflags)
+    tmp_fflags.genpts = True
+    ffmpeg_args += ffmpeg.fflags_arguments_to_ffmpeg_args(tmp_fflags)
+    ffmpeg_args += ffmpeg.input_args(inputfile) + [
         '-segment_times', ','.join(str(ffmpeg.Timestamp(sub_chaps.chapters[-1].end))
                                    for sub_chaps in chaps_list_copy),
         '-segment_start_number', chaps_list_copy[0].chapters[0].no,
@@ -5853,6 +5860,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                             ]
                     ffmpeg_args += ffmpeg.input_args(stream_dict.file)
                     ffmpeg_args += ffmpeg_conv_args
+                    ffmpeg_args += ffmpeg.fflags_arguments_to_ffmpeg_args(app.args.fflags)
                     if app.args.force_constant_framerate \
                             or stream_dict.is_still_image:
                         ffmpeg_args += [
