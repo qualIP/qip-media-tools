@@ -2827,7 +2827,7 @@ def skip_duplicate_streams(streams, mux_subtitles=True):
     for stream1_i, stream1 in enumerate(streams):
         if stream1.skip:
             continue
-        if stream1.codec_type is CodecType.video and stream1['disposition'].get('attached_pic', False) and not mux_attached_pic:
+        if stream1.codec_type is CodecType.video and stream1.disposition.attached_pic and not mux_attached_pic:
             continue
         if stream1.codec_type is CodecType.subtitle and not mux_subtitles:
             continue
@@ -2837,7 +2837,7 @@ def skip_duplicate_streams(streams, mux_subtitles=True):
                 continue
             if stream2.codec_type is not stream1.codec_type:
                 continue
-            if stream2.codec_type is CodecType.video and stream2['disposition'].get('attached_pic', False) and not mux_attached_pic:
+            if stream2.codec_type is CodecType.video and stream2.disposition.attached_pic and not mux_attached_pic:
                 continue
             if stream2.codec_type is CodecType.subtitle and not mux_subtitles:
                 continue
@@ -3033,7 +3033,9 @@ def mux_dict_from_file(inputfile, outputdir):
                         if (
                                 stream.codec_type is CodecType.video
                                 and stream_codec_name == 'mjpeg'
-                                and ffprobe_stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
+                                and (
+                                    ffmpeg.Disposition(ffprobe_stream_dict.get('disposition', {})).attached_pic
+                                    or ffprobe_stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg')):
                             stream['codec_type'] = 'image'
 
                         if stream.codec_type is CodecType.video:
@@ -3166,7 +3168,9 @@ def mux_dict_from_file(inputfile, outputdir):
                                 CodecType.image,
                             )
                             and stream_codec_name == 'mjpeg'
-                            and ffprobe_stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg'):
+                            and (
+                                ffmpeg.Disposition(ffprobe_stream_dict.get('disposition', {})).attached_pic
+                                or ffprobe_stream_dict.get('tags', {}).get('mimetype', None) == 'image/jpeg')):
                         stream['codec_type'] = 'image'
                         stream_file_ext = '.jpg'
                     elif (
@@ -3371,7 +3375,7 @@ def mux_dict_from_file(inputfile, outputdir):
                         stream_file_format_ext += '.3D.MVC'
 
                     stream_file_name_language_suffix = '.%s' % (stream.language,) if stream.language is not isolang('und') else ''
-                    if stream['disposition'].get('attached_pic', False):
+                    if stream.disposition.attached_pic:
                         attachment_index += 1
                         output_track_file_name = 'attachment-%02d-%s%s%s%s' % (
                                 attachment_index,
@@ -3707,7 +3711,7 @@ def action_mux(inputfile, in_tags,
             ):
 
                 if (
-                        (not mux_attached_pic and stream['disposition'].get('attached_pic', False)) or
+                        (not mux_attached_pic and stream.disposition.attached_pic) or
                         (not mux_subtitles and stream.codec_type is CodecType.subtitle)):
                     app.log.warning('Not muxing %s stream #%s...', stream.codec_type, stream.pprint_index)
                     continue
@@ -3792,7 +3796,7 @@ def action_mux(inputfile, in_tags,
                                     # TODO y=app.args.yes or app.args.remux)
                     continue
 
-                if stream['disposition'].get('attached_pic', False):
+                if stream.disposition.attached_pic:
                     attachment_index += 1  # TODO inherit from mux_dict_from_file
                     app.log.info('Will extract %s stream #%s w/ mkvextract: %s', stream.codec_type, stream.pprint_index, stream_file_name)
                     mkvextract_attachments_args += [
@@ -4464,7 +4468,7 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
             language = isolang(stream_dict.get('language', 'und')).code3
             title = stream_dict.get('title', None)
             disposition = ', '.join(
-                [k for k, v in stream_dict.get('disposition', {}).items() if v]
+                sorted(stream_dict.disposition.enabled_names())
                 + (['suffix=' + repr(stream_dict['external_stream_file_name_suffix'])]
                    if stream_dict.get('external_stream_file_name_suffix', None)
                    else [])
@@ -4509,9 +4513,9 @@ class MmdemuxTask(collections.UserDict, json.JSONEncodable):
 def stream_dict_key(stream_dict):
     return (
         CodecType(stream_dict['codec_type']),
-        not bool(stream_dict.get('disposition', {}).get('default', False)),  # default then non-default
-        bool(stream_dict.get('disposition', {}).get('forced', False)),       # non-forced, then forced
-        bool(stream_dict.get('disposition', {}).get('comment', False)),      # non-comment, then comment
+        not stream_dict.disposition.default,  # default then non-default
+        stream_dict.disposition.forced,       # non-forced, then forced
+        stream_dict.disposition.comment,      # non-comment, then comment
         stream_dict.get('index', None),
     )
 
@@ -4664,12 +4668,12 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
     def __str__(self):
         orig_stream_file_name = self.get('original_file_name', self['file_name'])
-        desc = '{codec_type} stream #{index}: title={title!r}, language={language}, disposition=({disposition}), ext={orig_ext}'.format(
+        desc = '{codec_type} stream #{index}: title={title!r}, language={language}, disposition={disposition!r}, ext={orig_ext}'.format(
             codec_type=str(self.codec_type).title(),
             index=self.pprint_index,
             title=self.get('title', None),
             language=isolang(self.get('language', 'und')),
-            disposition=', '.join(k for k, v in self.get('disposition', {}).items() if v),
+            disposition=self.disposition.enabled_set(),
             orig_ext=my_splitext(orig_stream_file_name)[1],
         )
         external_stream_file_name_suffix = self.get('external_stream_file_name_suffix', None)
@@ -4765,6 +4769,13 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
             return isolang('und')
 
     @property
+    def disposition(self):
+        try:
+            return ffmpeg.Disposition(self.get('disposition', {}))  # TODO read-write!
+        except KeyError:
+            return None
+
+    @property
     def framerate(self):
         try:
             return FrameRate(self['framerate'])
@@ -4842,41 +4853,17 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                     stream_characteristics['angle'] = video_angle
 
         elif self.codec_type is CodecType.subtitle:
-            disposition = [
-                d for d in (
-                    'hearing_impaired',
-                    'visual_impaired',
-                    'karaoke',
-                    'dub',
-                    'clean_effects',
-                    'lyrics',
-                    'comment',
-                    'forced',
-                    'closed_caption',
-                )
-                if self['disposition'].get(d, None)]
-            if disposition:
-                stream_characteristics['disposition'] = '+'.join(disposition)
+            if self.disposition.enabled_set() - {'default',}:
+                stream_characteristics['disposition'] = '+'.join(self.disposition.enabled_set())
 
         if self.codec_type is CodecType.audio:
-            if self['disposition'].get('comment', None):
-                if stream_title is None:
-                    stream_title = 'Commentary'
-            elif self['disposition'].get('karaoke', None):
-                if stream_title is None:
-                    stream_title = 'Karaoke'
-            elif self['disposition'].get('dub', None):
-                if stream_title is None:
-                    stream_title = 'Dub'
-            elif self['disposition'].get('clean_effects', None):
-                if stream_title is None:
-                    stream_title = 'Clean Effects'
-            elif self['disposition'].get('original', None):
-                if stream_title is None:
-                    stream_title = 'Original'
-            elif app.args.audio_track_titles:
-                if stream_title is None:
-                    stream_title = self.language.name
+            if stream_title is None:
+                for field in self.disposition.enabled_set() - {'default',}:
+                    stream_title = self.disposition._names_map[field]
+                    break
+            # if stream_title is None:
+            #     if app.args.auto_track_titles:
+            #         stream_title = self.language.name
 
         if self.is_external_subtitle(webm=webm):
             stream_characteristics['external'] = True
@@ -4905,7 +4892,7 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
 
     @property
     def is_forced(self):
-        return self['disposition'].get('forced', False)
+        return self.disposition.forced
 
     def optimize(self, *, target_codec_names, stats):
         stream_dict = self
@@ -6658,26 +6645,11 @@ def external_subtitle_file_name(output_file_name_prefix, stream_file_name, strea
     # stream_file_name = stream_dict['file_name']
     external_stream_file_name = os.fspath(output_file_name_prefix)
     external_stream_file_name += '.' + stream_dict.language.code3
-    if stream_dict['disposition'].get('hearing_impaired', None):
-        external_stream_file_name += '.hearing_impaired'
-    if stream_dict['disposition'].get('visual_impaired', None):
-        external_stream_file_name += '.visual_impaired'
-    if stream_dict['disposition'].get('karaoke', None):
-        external_stream_file_name += '.karaoke'
-    if stream_dict['disposition'].get('original', None):
-        external_stream_file_name += '.original'
-    if stream_dict['disposition'].get('dub', None):
-        external_stream_file_name += '.dub'
-    if stream_dict['disposition'].get('clean_effects', None):
-        external_stream_file_name += '.clean_effects'
-    if stream_dict['disposition'].get('lyrics', None):
-        external_stream_file_name += '.lyrics'
-    if stream_dict['disposition'].get('comment', None):
-        external_stream_file_name += '.comment'
-    if stream_dict['disposition'].get('forced', None):
-        external_stream_file_name += '.forced'
-    elif stream_dict['disposition'].get('closed_caption', None):
-        external_stream_file_name += '.cc'
+    for k in stream_dict.disposition.enabled_set() - {'default',}:
+        external_stream_file_name += f'.{k}'
+    # TODO
+    # if stream_dict['disposition'].get('closed_caption', None):
+    #     external_stream_file_name += '.cc'
     try:
         external_stream_file_name += stream_dict['external_stream_file_name_suffix']
     except KeyError:
@@ -7164,8 +7136,7 @@ def action_demux(inputdir, in_tags):
                     display_aspect_ratio = Ratio(stream_dict.get('display_aspect_ratio', None))
                     if display_aspect_ratio:
                         mkvmerge_args += ['--aspect-ratio', '%d:%s' % (0, display_aspect_ratio)]
-                stream_default = stream_dict['disposition'].get('default', None)
-                mkvmerge_args += ['--default-track', '%d:%s' % (0, ('true' if stream_default else 'false'))]
+                mkvmerge_args += ['--default-track', '%d:%s' % (0, ('true' if stream_dict.disposition.default else 'false'))]
                 if stream_dict.language is not isolang('und'):
                     mkvmerge_args += ['--language', '0:%s' % (stream_dict.language.code3,)]
                 stream_forced = stream_dict.is_forced
@@ -7527,11 +7498,7 @@ def action_demux(inputdir, in_tags):
                 #ffmpeg_args += ['--language', '%d:%s' % (track_id, stream_dict.language.code3)]
                 option_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'language=%s' % (stream_dict.language.code3,),]
 
-            disposition_flags = []
-            if stream_dict['disposition'].get('default', None):
-                disposition_flags.append('default')
-            if stream_dict.is_forced:
-                disposition_flags.append('forced')
+            disposition_flags = list(stream_dict.disposition.enabled_set())
             ffmpeg_output_args += [
                 '-disposition:%d' % (stream_dict['_temp'].out_index,),
                 '+'.join(disposition_flags or ['0']),

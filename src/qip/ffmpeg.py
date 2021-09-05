@@ -31,6 +31,7 @@ from .utils import byte_decode, Timestamp as _BaseTimestamp, Ratio, round_half_u
 from qip.file import *
 from qip.collections import OrderedSet
 from qip.app import app
+from qip.mm import CodecType
 
 class Timestamp(_BaseTimestamp):
     '''hh:mm:ss.sssssssss format'''
@@ -310,6 +311,125 @@ class ConcatScriptFile(TextFile):
                      colalign=['right', 'left', 'right'] if files_table else None,
                      tablefmt='simple'),
             file=StreamTransform.indenter(file))
+
+
+_disposition_info_map = {
+    'attached_pic': (
+        'Attached Picture',
+        {CodecType.image, CodecType.video},
+    ),
+    'clean_effects': (
+        'Clean Effects',
+        {CodecType.audio, CodecType.subtitle},
+    ),
+    'comment': (
+        'Commentary',
+        set(CodecType),
+    ),
+    'default': (
+        'Default',
+        set(CodecType),
+    ),
+    'dub': (
+        'Dub',
+        {CodecType.audio,},
+    ),
+    'forced': (
+        'Forced',
+        {CodecType.subtitle,},
+    ),
+    'hearing_impaired': (
+        'Hearing Impaired',
+        {CodecType.subtitle,},
+    ),
+    'karaoke': (
+        'Karaoke',
+        {CodecType.audio, CodecType.subtitle},
+    ),
+    'lyrics': (
+        'Lyrics',
+        {CodecType.subtitle,},
+    ),
+    'original': (
+        'Original',  # a.k.a: Original Language
+        {CodecType.audio, CodecType.subtitle},
+    ),
+    'timed_thumbnails': (
+        'Timed Thumbnails',
+        {CodecType.image, CodecType.video},
+    ),
+    'visual_impaired': (
+        'Visually Impaired',
+        {CodecType.audio},
+    ),
+}
+
+
+class Disposition(collections.namedtuple(
+        'Disposition',
+        sorted(_disposition_info_map.keys()))):
+
+    _names_map = {k: v[0] for k, v in _disposition_info_map.items()}
+
+    _codec_types_map = {k: v[1] for k, v in _disposition_info_map.items()}
+
+    _defaults = {
+        field: False
+        for field in _names_map.keys()
+    }
+
+    def __new__(cls, *args, **kwargs):
+        if args:
+            if kwargs:
+                raise TypeError
+            kwargs, = args
+        if kwargs:
+            kwargs = cls._defaults | kwargs
+        else:
+            kwargs = cls._defaults
+        kwargs = {k: bool(v) for k, v in kwargs.items()}
+        return super().__new__(cls, **kwargs)
+
+    @classmethod
+    def _make(cls, iterable):
+        iterable = map(bool, iterable)
+        return super()._make(iterable)
+
+    def __repr__(self):
+        lskwargs = [f'{field}=True'
+                    for field in self.iter_enabled()]
+        skwargs = ', '.join(sorted(lskwargs))
+        return f'{self.__class__.__name__}({skwargs})'
+
+    def __str__(self):
+        l = list(self.enabled_names())
+        if l:
+            return ', '.join(sorted(l))
+        else:
+            return 'None'
+
+    def iter_enabled(self):
+        return (field
+                for field in self._fields
+                if getattr(self, field))
+
+    def iter_disabled(self):
+        return (field
+                for field in self._fields
+                if not getattr(self, field))
+
+    def disabled_set(self):
+        return set(self.iter_disabled())
+
+    def enabled_set(self):
+        return set(self.iter_enabled())
+
+    def enabled_names(self):
+        return (self._names_map[field]
+                for field in self.iter_enabled())
+
+
+del _disposition_info_map
 
 class _FfmpegSpawnMixin(_SpawnMixin):
 
@@ -937,6 +1057,7 @@ class _Ffmpeg(Executable):
     ConcatScriptFile = ConcatScriptFile
     MetadataFile = MetadataFile
     Options = FfmpegOptions
+    Disposition = Disposition
 
     encoding = 'utf-8'
     encoding_errors = 'replace'

@@ -260,6 +260,17 @@ class MatroskaFile(BinaryMediaFile):
 
     ffmpeg_container_format = 'matroska'
 
+    # https://www.matroska.org/technical/notes.html#track-flags
+    supported_dispositions = {
+        'default',
+        'forced',
+        'hearing_impaired',
+        'visual_impaired',
+        # 'descriptions',
+        'original',
+        'comment',
+    }
+
     @property
     def tag_writer(self):
         return taged
