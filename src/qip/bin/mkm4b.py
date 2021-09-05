@@ -360,7 +360,8 @@ def mkm4b(inputfiles, default_tags):
         if not inputfile.file_name.is_file():
             raise OSError(errno.ENOENT, f'No such file: {inputfile}')
         app.log.info('Reading %s...', inputfile)
-        inputfile.extract_info(need_actual_duration=(len(inputfiles) > 1))
+        need_actual_duration = True  # len(inputfiles) > 1)
+        inputfile.extract_info(need_actual_duration=need_actual_duration)
         #inputfile.tags.picture = None
         #app.log.debug(inputfile)
     with save_and_restore_tcattr():
