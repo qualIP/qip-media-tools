@@ -942,7 +942,7 @@ def main():
 
     pgroup = app.parser.add_argument_group('Encoding')
     pgroup.add_argument('--keyint', type=int, default=5, help='keyframe interval (seconds)')
-    pgroup.add_bool_argument('--audio-track-titles', default=False, help='include titles for all audio tracks')
+    pgroup.add_bool_argument('--auto-track-titles', default=True, help='automate titles for all tracks')
     pgroup.add_argument('--stereo-3d-mode', '--3d-mode', type=Stereo3DMode_or_None, default=Stereo3DMode.full_side_by_side, help='stereo 3D mode')
 
     pgroup = app.parser.add_argument_group('Tags')
@@ -7214,24 +7214,46 @@ def action_demux(inputdir, in_tags):
                     stream_dict['file_name'] = tmp_stream_file_name
                     stream_file_base, stream_file_ext = my_splitext(stream_dict.file_name)
 
+            default_stream_title = ''  # English Commentary
+
+            if stream_dict.language is not isolang('und'):
+                ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'language=%s' % (stream_dict.language.code3,),]
+                default_stream_title += ' ' + stream_dict.language.name
+
             disposition_flags = []
-            for k, v in stream_dict['disposition'].items():
-                if k in (
-                        'closed_caption',
-                ):
-                    continue
+            for k in stream_dict.disposition.enabled_set() - {'closed_caption',}:  # TODO
                 if k in (
                         'attached_pic',
                 ) and stream_dict.codec_type is CodecType.image:
                     continue
-                if v:
+                if k in MatroskaFile.supported_dispositions:
                     disposition_flags.append(k)
+                if k not in {'default',}:
+                    default_stream_title += ' ' + ffmpeg.Disposition._names_map[k]
             ffmpeg_output_args += [
                 '-disposition:%d' % (stream_dict['_temp'].out_index,),
                 '+'.join(disposition_flags or ['0']),
                 ]
-            if stream_dict.language is not isolang('und'):
-                ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'language=%s' % (stream_dict.language.code3,),]
+
+            if stream_dict.codec_type is CodecType.audio:
+                channels = stream_dict.file.ffprobe_dict['streams'][0].get('channels', 0)  # TODO
+                channel_layout = stream_dict.file.ffprobe_dict['streams'][0].get('channel_layout', None)  # TODO
+                if channels == 1:
+                    default_stream_title += ' Mono'
+                elif channels == 2:
+                    default_stream_title += ' Stereo'
+                elif channels > 2:
+                    if channel_layout:
+                        default_stream_title += ' %s Surround' % (channel_layout,)
+                    else:
+                        default_stream_title += ' %d Channel Surround' % (channels,)
+                else:
+                    print(f'ffprobe_dict={stream_dict.file.ffprobe_dict!r}')
+            if app.args.auto_track_titles and not stream_title and stream_dict.codec_type in (
+                    CodecType.audio,
+                    CodecType.subtitle,
+            ):
+                stream_title = default_stream_title.strip()
             if stream_title:
                 ffmpeg_output_args += ['-metadata:s:%d' % (stream_dict['_temp'].out_index,), 'title=%s' % (stream_title,),]
             if stream_dict.codec_type is CodecType.image:
