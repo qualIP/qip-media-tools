@@ -330,6 +330,7 @@ def mkm4b(inputfiles, default_tags):
                 qip.mp4.Mpeg4ContainerFile,
                 qip.wav.WavFile,
                 qip.mp3.Mp3File,
+                qip.mm.RawAc3File,
                 # qip.flac.FlacFile,  # Experimental, prefer other containers
         )):
             m4b = M4bFile(file_name=None)
