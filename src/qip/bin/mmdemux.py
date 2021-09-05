@@ -2111,10 +2111,12 @@ def action_rip_iso(rip_iso, device, in_tags):
 
     map_file.load()
     map_file.compact_sblocks()
-    if map_file.is_finished():
-        if app.args.eject and device.is_block_device():
-            app.log.info('Ejecting...')
-            eject(device)
+    if not map_file.is_finished():
+        raise Exception('Ripping is not complete. Rerun with --stage 1, 2 or 3 until complete.')
+
+    if app.args.eject and device.is_block_device():
+        app.log.info('Ejecting...')
+        eject(device)
 
 def device_type_for_stat(device):
     if device.is_block_device():
