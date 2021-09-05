@@ -137,6 +137,7 @@ from qip.mm import Y4mFile
 from qip.mp2 import Mpeg2ContainerFile
 from qip.mp2 import VobFile
 from qip.mp4 import M4aFile
+from qip.mp4 import M4bFile
 from qip.mp4 import Mpeg4ContainerFile
 from qip.pgs import PgsFile
 
@@ -976,6 +977,7 @@ def main():
     pgroup.add_argument('--combine', dest='combine_dirs', nargs=argparse.ONE_OR_MORE, default=(), type=_mux_dir_Path, help='directories to combine')
     pgroup.add_argument('--chop', dest='chop_dirs', nargs=argparse.ONE_OR_MORE, default=(), type=_mux_dir_Path, help='files/directories to chop into chapters')
     pgroup.add_argument('--extract-music', dest='extract_music_dirs', nargs=argparse.ONE_OR_MORE, default=(), type=_mux_dir_Path, help='directories to extract music from')
+    pgroup.add_argument('--mkm4b', dest='mkm4b_dirs', nargs=argparse.ONE_OR_MORE, default=(), type=_mux_dir_Path, help='directories to convert to audiobook')
     pgroup.add_argument('--optimize', dest='optimize_dirs', nargs=argparse.ONE_OR_MORE, default=(), type=_mux_dir_Path, help='directories to optimize')
     pgroup.add_argument('--demux', dest='demux_dirs', nargs=argparse.ONE_OR_MORE, default=(), type=_mux_dir_Path, help='directories to demux')
     pgroup.add_argument('--concat', dest='concat_files', nargs=argparse.ONE_OR_MORE, default=(), type=Path, help='files to concat')
@@ -1066,7 +1068,10 @@ def main():
         for inputdir in getattr(app.args, 'extract_music_dirs', ()):
             action_extract_music(inputdir, in_tags=in_tags)
             did_something = True
-        for inputdir in getattr(app.args, 'optimize_dirs', ()):
+        for inputdir in getattr(app.args, 'mkm4b_dirs', ()):  # TODO jump from file to mux directory?
+            action_mkm4b(inputdir, in_tags=in_tags)
+            did_something = True
+        for inputdir in getattr(app.args, 'optimize_dirs', ()):  # TODO jump from file to mux directory?
             action_optimize(inputdir, in_tags=in_tags)
             did_something = True
         for inputdir in getattr(app.args, 'demux_dirs', ()):
@@ -3084,10 +3089,14 @@ def mux_dict_from_file(inputfile, outputdir):
                             # Cover                                    : Yes
                             # Attachments                              : cover.jpg
                         elif stream.codec_type is CodecType.data:
+                            stream_codec_tag = ffprobe_stream_dict.get('codec_tag', None)
                             if stream_codec_name == 'dvd_nav_packet':
                                 mediainfo_track_dict = None
+                            elif stream_codec_name == 'bin_data' and stream_codec_tag == '0x74786574':
+                                # MP4 Chapters -- what type?
+                                mediainfo_track_dict = None
                             else:
-                                raise NotImplementedError(f'{stream.codec_type}/{stream_codec_name}')
+                                raise NotImplementedError(f'{stream.codec_type!r}/{stream_codec_name!r}/{stream_codec_tag!r}')
                         else:
                             raise NotImplementedError(stream.codec_type)
                         app.log.debug('1:mediainfo_track_dict = %r', mediainfo_track_dict)
@@ -3383,11 +3392,16 @@ def mux_dict_from_file(inputfile, outputdir):
 
 
                 elif stream.codec_type is CodecType.data:
+                    stream_codec_tag = ffprobe_stream_dict.get('codec_tag', None)
                     if stream_codec_name == 'dvd_nav_packet':
                         app.log.warning('Skipping %s/%s stream.', stream.codec_type, stream_codec_name)
                         stream['skip'] = f'Skipping {stream_codec_name}'
+                    elif stream_codec_name == 'bin_data' and stream_codec_tag == '0x74786574':
+                        # MP4 Chapters -- what type?
+                        app.log.warning('Skipping %s/%s stream.', stream.codec_type, stream_codec_name)
+                        stream['skip'] = f'Skipping {stream_codec_name} (MP4 Chapters)'
                     else:
-                        raise NotImplementedError(f'{stream.codec_type}/{stream_codec_name}')
+                        raise NotImplementedError(f'{stream.codec_type}/{stream_codec_name}/{stream_codec_tag}')
                 else:
                     raise ValueError('Unsupported codec type %r' % (stream.codec_type,))
 
@@ -6395,6 +6409,89 @@ class MmdemuxStream(collections.UserDict, json.JSONEncodable):
                 else:
                     raise ValueError('Unsupported codec type %r' % (stream_dict.codec_type,))
 
+@perfcontext_wrapper('Action: mkm4b', stat='action.mkm4b')
+def action_mkm4b(inputdir, in_tags):
+    app.log.info('Creating audiobook from %s...', inputdir)
+    outputdir = inputdir
+
+    mux_dict = MmdemuxTask(inputdir / 'mux.json', in_tags=in_tags)
+
+    try:
+        chapters_file_name = mux_dict['chapters']['file_name']
+    except KeyError:
+        chaps = None
+    else:
+        chaps = Chapters.from_mkv_xml(inputdir / chapters_file_name, add_pre_gap=False)
+
+    output_file_cls = M4bFile
+
+    try:
+        stream_index = app.args.stream_index
+    except AttributeError:
+        audio_stream_dicts = [
+            stream_dict
+            for stream_dict in sorted_stream_dicts(mux_dict['streams'])
+            if not stream_dict.skip \
+                and stream_dict.codec_type is CodecType.audio \
+                and stream_dict.disposition.visual_impaired]
+        if not audio_stream_dicts:
+            raise ValueError('No audio streams found for the visually impaired. (use --stream-index to select)')
+    else:
+        audio_stream_dicts = [
+            stream_dict
+            for stream_dict in sorted_stream_dicts(mux_dict['streams'])
+            if stream_dict.index == stream_index \
+                and stream_dict.codec_type is CodecType.audio]
+        if not audio_stream_dicts:
+            raise ValueError('No audio streams found with index {stream_index}.')
+
+    cover_stream_dicts = [
+        stream_dict
+        for stream_dict in sorted_stream_dicts(mux_dict['streams'])
+        if not stream_dict.skip \
+            and stream_dict.codec_type is CodecType.image \
+            and stream_dict.disposition.attached_pic]
+
+    for stream_dict in audio_stream_dicts:
+        if 'original_file_name' in stream_dict:
+            stream_dict = copy.copy(stream_dict)
+            stream_dict['file_name'] = stream_dict.pop('original_file_name')
+
+        output_file = output_file_cls(
+            output_file_cls.generate_file_name(prefix=f'{os.fspath(inputdir)}.{stream_dict.pprint_index}')
+            if app.args.output_file is Auto else app.args.output_file)
+
+        output_file.tags = TrackTags()
+        output_file.tags.album_tags = copy.copy(mux_dict['tags'])
+        original_type = output_file.tags.deduce_type()
+        output_file.tags.type = 'audiobook'
+        if not output_file.tags.artist:
+            raise ValueError('No artist tag. (use --artist)')
+        if stream_dict.disposition.visual_impaired:
+            output_file.tags.title += ' (AD)'
+            output_file.tags.albumtitle += ' (AD)'
+        if not output_file.tags.comment:
+            if stream_dict.disposition.visual_impaired:
+                output_file.tags.comment = f'Visually Impaired audio track from the {original_type}'
+            elif stream_dict.disposition.comment:
+                output_file.tags.comment = f'Commentary audio track from the {original_type}'
+            else:
+                output_file.tags.comment = f'Audio track from the {original_type}'
+        output_file.encode(
+            inputfiles=[stream_dict.file],
+            chapters=chaps,
+            # force_input_bitrate=
+            # target_bitrate=
+            yes=app.args.yes,
+            # force_encode=
+            # itunes_compat=
+            # use_qaac=
+            channels=getattr(app.args, 'channels', None),
+            fflags=app.args.fflags,
+            picture=cover_stream_dicts[0].file if cover_stream_dicts else None,
+            expected_duration=stream_dict.estimated_duration,
+            show_progress_bar=True)
+
 @perfcontext_wrapper('Action: optimize', stat='action.optimize')
 def action_optimize(inputdir, in_tags):
     app.log.info('Optimizing %s...', inputdir)
@@ -6503,7 +6600,7 @@ def action_extract_music(inputdir, in_tags):
                     if isinstance(m4a, Mpeg4ContainerFile):
                         m4a.ffmpeg_container_format = 'ipod'
                 m4a.tags = copy.copy(mux_dict['tags'].tracks_tags[track_no])
-                m4a.album_tags = copy.copy(mux_dict['tags'])
+                m4a.tags.album_tags = copy.copy(mux_dict['tags'])
                 m4a.tags.track = track_no  # Since a copy was taken and not fully connected to album_tags anymore
                 m4a.tags.tracks = tracks_total
                 m4a.tags.title = chap.title
