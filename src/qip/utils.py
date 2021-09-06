@@ -298,6 +298,15 @@ class Constants(enum.Enum):
     def __repr__(self):
         return self.name
 
+    def __bool__(self):
+        return not any(
+            self is e
+            for e in (
+                    Constants.NotSet,
+                    Constants.DefaultFalse,
+                    False,
+                    None,
+            ))
 Ask = Constants.Ask
 Auto = Constants.Auto
 NotSet = Constants.NotSet
