@@ -104,6 +104,47 @@ class TimestampInterval(object):
                 s += str(self.end)
         return s
 
+from .parser import lines_parser
+
+class ffmpeg_metadata_lines_parser(lines_parser):
+
+    def advance(self):
+        if not super().advance():
+            return False
+        line = self.line.rstrip('\r\n')
+        line_no = self.line_no
+        i = 0
+        while True:
+            try:
+                i = line.index('\\', i)
+            except ValueError:
+                break
+            if i == len(line) - 1:
+                if not super().advance():
+                    raise ValueError('Missing line after end of line escape')
+                self.line_no = line_no
+                self.line = line = line[:i] + '\n' + self.line.rstrip('\r\n')
+            else:
+                c = line[i:i + 2]
+                c = {
+                    '\\\\': '\\',
+                    '\\#': '#',
+                    '\\;': ';',
+                    '\\[': '[',
+                }[c]
+                line = line[:i] + c + line[i + 2:]
+                i += 1
+        return True
+
+    def pushback(self, line):
+        line = line.replace('\\', '\\\\')
+        line = line.replace('\n', '\\\n')
+        line = line.replace('#', '\\#')
+        line = line.replace(';', '\\;')
+        line = line.replace('[', '\\[')
+        super().pushback(line)
+        # TODO Fix next_line_no
+
 class MetadataFile(TextFile):
     # [ffmpeg-1]: https://ffmpeg.org/ffmpeg-formats.html#Metadata-1
 
@@ -129,8 +170,7 @@ class MetadataFile(TextFile):
                 return self.load(file=file)
         self.version = None
         self.sections = []
-        from .parser import lines_parser
-        parser = lines_parser(file)
+        parser = ffmpeg_metadata_lines_parser(file)
 
         # [ffmpeg-1] A file consists of a header and a number of metadata tags divided into sections, each on its own line.
 
