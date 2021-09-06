@@ -349,10 +349,11 @@ class File(object):
         with self.rename_temporarily(replace_ok=True):
             urllib.request.urlretrieve(url, filename=self.file_name)
             if md5:
-                # write -> read
-                self.flush()
-                self.seek(0)
-                file_md5 = tmp_file.md5.hexdigest()
+                #if not self.closed:
+                #    # write -> read
+                #    self.flush()
+                #    self.seek(0)
+                file_md5 = self.md5.hexdigest()
                 if file_md5 != md5:
                     raise ValueError('MD5 hash of %s is %s, expected %s' % (tmp_file, file_md5, md5))
         return True
