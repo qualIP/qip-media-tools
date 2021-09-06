@@ -3,9 +3,9 @@
 PACKAGE_NAMES = subtitleedit
 PACKAGE_NAME = subtitleedit
 # https://www.nikse.dk/subtitleedit/
-SUBTITLEEDIT_VER = 3.5.16
+SUBTITLEEDIT_VER = 3.6.1
 SUBTITLEEDIT_VER_SHORT = $(subst .,,$(SUBTITLEEDIT_VER))
-PACKAGE_VER = 3.5.16
+PACKAGE_VER = 3.6.1-qip1
 
 BUILD_PACKAGE_NAMES = $(filter %-build,$(PACKAGE_NAMES))
 NONBUILD_PACKAGE_NAMES = $(filter-out %-build,$(PACKAGE_NAMES))

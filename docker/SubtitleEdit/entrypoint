@@ -39,7 +39,7 @@ mono ~/SubtitleEdit/SubtitleEdit.exe "$@" &
 SUBTITLEEDIT_PID=$!
 
 while true ; do
-    status=$(</proc/$SUBTITLEEDIT_PID/status) 2>/dev/null || true
+    status=$(cat /proc/$SUBTITLEEDIT_PID/status 2>/dev/null) || true
     if [[ -z "$status" ]] ; then
         break
     elif grep -q "^Status: Z" <<<"$status" ; then
