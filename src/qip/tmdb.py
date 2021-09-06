@@ -138,8 +138,10 @@ class TMDb(tmdbv3api.TMDb, XdgResource):
         # 'vote_average': 7,
         # 'vote_count': 4828}
         from qip.mm import AlbumTags, ITunesXid
+        movie_api = Movie()
         tags = AlbumTags()
-        tags.xid = ITunesXid('tmdb', ITunesXid.Scheme.vendor_id, str(o_movie.id))
+        # tags.contenttype = 'movie'  # Could also be 'tvshow'
+        tags.tmdb_id = f'movie/{o_movie.id}'
         tags.title = o_movie.title
         try:
             tags.originaltitle = o_movie.original_title

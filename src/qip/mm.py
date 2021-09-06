@@ -1697,7 +1697,7 @@ class ITunesXid(object):
               r':'
               r'(?P<scheme>' + r'|'.join(scheme.value for scheme in Scheme) + r')'
               r':'
-              r'(?P<identifier>[A-Za-z0-9_.-]+)'  # TODO
+              r'(?P<identifier>[A-Za-z0-9_./-]+)'  # TODO
               r'$')
 
     prefix = propex(
@@ -1978,6 +1978,9 @@ class MediaTagEnum(enum.Enum):
     barcode = 'barcode'
     asin = 'asin'
     isbn = 'isbn'
+    tmdb_id = 'tmdb_id'  # https://www.themoviedb.org movie/123, tv/123
+    imdb_id = 'imdb_id'  # https://www.imdb.com/      tt1234567
+    tvdb_id = 'tvdb_id'  # https://thetvdb.com/       123456
 
     contentrating = 'contentrating'  # None|MediaTagRating  Set the Rating(none, clean, explicit)
 
@@ -2020,6 +2023,28 @@ MediaTagEnum.iTunesInternalTags = frozenset((
     MediaTagEnum.itunescatalogid,
     MediaTagEnum.itunesplaylistid,
 ))
+
+xid_to_tag_info = (
+    # (tag_enum, prefix, scheme)
+    (MediaTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
+    (MediaTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
+    (MediaTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
+    (MediaTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
+    (MediaTagEnum.isbn, 'isbn', ITunesXid.Scheme.vendor_id),
+    (MediaTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
+    (MediaTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
+    (MediaTagEnum.imdb_id, 'imdb', ITunesXid.Scheme.vendor_id),
+    (MediaTagEnum.tmdb_id, 'tmdb', ITunesXid.Scheme.vendor_id),
+    (MediaTagEnum.tvdb_id, 'tvdb', ITunesXid.Scheme.vendor_id),
+    # Leave all other isrc prefixes at the end to quit early in xids property
+    (MediaTagEnum.isrc, 'CDBaby', ITunesXid.Scheme.isrc),
+    (MediaTagEnum.isrc, 'Isolation', ITunesXid.Scheme.isrc),
+    (MediaTagEnum.isrc, 'Orchard', ITunesXid.Scheme.isrc),
+    (MediaTagEnum.isrc, 'URBNETCommunicationsInc', ITunesXid.Scheme.isrc),
+    (MediaTagEnum.isrc, 'Universal', ITunesXid.Scheme.isrc),
+    (MediaTagEnum.isrc, 'Warner', ITunesXid.Scheme.isrc),
+    (MediaTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
+)
 
 # BroadcastFormat {{{
 
@@ -2720,19 +2745,22 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
         try:
             yield getattr(self, '_xid')
         except AttributeError:
-            for tag_enum, prefix, scheme in (
-                    (MediaTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
-                    (MediaTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.isbn, 'isbn', ITunesXid.Scheme.vendor_id),
-            ):
+            for tag_enum, prefix, scheme in xid_to_tag_info:
+                if tag_enum is ITunesXid.Scheme.isrc and prefix != 'isrc':
+                    break
                 identifier = self[tag_enum]
                 if identifier is not None:
                     yield ITunesXid(prefix, scheme, identifier)
+
+    @staticmethod
+    def xid_to_tag(xid):
+        for tag_enum, prefix, scheme in xid_to_tag_info:
+            if xid.scheme is not scheme:
+                continue
+            if xid.prefix != prefix:
+                continue
+            return (tag_enum, xid.identifier)
+        raise ValueError(f'Unsupported iTunes XID: {xid}')
 
     @xids.setter
     def xids(self, value):
@@ -2740,30 +2768,9 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
             value = (value,)
         for xid in value:
             xid = ITunesXid(xid)
-            for tag_enum, prefix, scheme in (
-                    (MediaTagEnum.barcode, 'unknown', ITunesXid.Scheme.upc),
-                    (MediaTagEnum.asin, 'amazon', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.musicbrainz_discid, 'musicbrainz', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.cddb_discid, 'cddb', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.accuraterip_discid, 'accuraterip', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.isbn, 'isbn', ITunesXid.Scheme.vendor_id),
-                    (MediaTagEnum.isrc, 'URBNETCommunicationsInc', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.isrc, 'CDBaby', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.isrc, 'isrc', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.isrc, 'unknown', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.isrc, 'Universal', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.isrc, 'Isolation', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.isrc, 'Warner', ITunesXid.Scheme.isrc),
-                    (MediaTagEnum.isrc, 'Orchard', ITunesXid.Scheme.isrc),
-            ):
-                if xid.scheme is not scheme:
-                    continue
-                if xid.prefix != prefix:
-                    continue
-                self.set_tag(tag_enum, xid.identifier)
-                break
-            else:
-                raise ValueError('Unsupported iTunes XID: %s' % (xid,))
+            tag_enum, tag_value = self.xid_to_tag(xid)
+            self.set_tag(tag_enum, xid.identifier)
+            break
 
     itunescountryid = propex(
         name='itunescountryid',
@@ -3241,10 +3248,14 @@ class AlbumTags(MediaTagDict):
                 MediaTagEnum.country,
                 MediaTagEnum.date,
                 MediaTagEnum.barcode,
+                MediaTagEnum.isbn,
                 MediaTagEnum.musicbrainz_discid,
                 MediaTagEnum.musicbrainz_releaseid,
                 MediaTagEnum.musicbrainz_cdstubid,
                 MediaTagEnum.cddb_discid,
+                MediaTagEnum.imdb_id,
+                MediaTagEnum.tmdb_id,
+                MediaTagEnum.tvdb_id,
                 ):
             v = getattr(self, tag_enum.value)
             if v is not None:
@@ -5760,6 +5771,12 @@ def argparse_add_tags_arguments(parser, tags, exclude=()):
         parser.add_argument('--xid', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'isbn' not in exclude:
         parser.add_argument('--isbn', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
+    if 'imdb-id' not in exclude:
+        parser.add_argument('--imdb-id', dest='imdb_id', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
+    if 'tmdb-id' not in exclude:
+        parser.add_argument('--tmdb-id', dest='tmdb_id', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
+    if 'tvdb-id' not in exclude:
+        parser.add_argument('--tvdb-id', dest='tvdb_id', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'encoded-by' not in exclude:
         parser.add_argument('--encoded-by', dest='encodedby', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'recording-date' not in exclude:

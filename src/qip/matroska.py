@@ -179,6 +179,9 @@ default_tag_map = (
     TagInfo(None, None, 'ISRC', 'isrc'),
     TagInfo(None, None, 'BARCODE', 'barcode'),
     #TagInfo(None, None, 'TODO', 'asin'),
+    TagInfo(None, None, 'IMDB', 'imdb_id'),
+    TagInfo(None, None, 'TMDB', 'tmdb_id'),
+    TagInfo(None, None, 'TVDB', 'tvdb_id'),
     TagInfo(None, None, 'LAW_RATING', 'contentrating'),
     #TagInfo(None, None, 'TODO', 'itunescountryid'),
     #TagInfo(None, None, 'TODO', 'itunesartistid'),
@@ -604,6 +607,12 @@ class MatroskaFile(BinaryMediaFile):
                 continue
             tag = tag.name
             value = self.tags[tag]
+
+            if tag == 'xid':
+                if value is None:
+                    # Can't delete an undefined tag
+                    continue
+                tag, value = self.tags.xid_to_tag(value)
 
             for tag_info in tag_map:
                 if tag_info.tag != tag:
