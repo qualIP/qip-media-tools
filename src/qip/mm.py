@@ -76,17 +76,17 @@ log = logging.getLogger(__name__)
 from qip import _py
 from qip import argparse
 from qip import json
-from qip.app import app
-from qip.cmp import *
-from qip.exec import *
+from .app import app
+from .cmp import *
+from .exec import *
 import qip.file
-from qip.isolang import isolang, IsoLang
-from qip.isocountry import isocountry, IsoCountry
-from qip.file import *
-from qip.parser import *
-from qip.propex import propex
-from qip.utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise, Timestamp, Ratio, replace_html_entities, StreamTransform
-from qip.perf import perfcontext
+from .isolang import isolang, IsoLang
+from .isocountry import isocountry, IsoCountry
+from .file import *
+from .parser import *
+from .propex import propex
+from .utils import byte_decode, TypedKeyDict, TypedValueDict, pairwise, Timestamp, Ratio, replace_html_entities, StreamTransform
+from .perf import perfcontext
 import qip.utils
 
 from fractions import Fraction
@@ -96,7 +96,6 @@ import xml.etree.ElementTree as ET
 log = logging.getLogger(__name__)
 
 from .file import BinaryFile
-from .ffmpeg import ffmpeg, ffprobe
 
 
 def _tDebugTag(value):
@@ -324,6 +323,7 @@ class Chapter(json.JSONEncodable, object):
                    title=title, lang=lang, **kwargs)
 
     def to_mkv_xml_ChapterAtom(self):
+        from .ffmpeg import ffmpeg
         eChapterAtom = ET.Element('ChapterAtom')
         if self.uid is not None:
             eChapterUID = ET.SubElement(eChapterAtom, 'ChapterUID')
@@ -631,6 +631,7 @@ class MediaFile(File):
         return other
 
     def test_integrity(self):
+        from .ffmpeg import ffmpeg
         if not self.file_name:
             raise ValueError('%r: file_name not defined' % (self,))
         log.info('Testing %s...' % (self.file_name,))
@@ -656,6 +657,7 @@ class MediaFile(File):
         from .exec import clean_cmd_output
         from .parser import lines_parser
         from . import json
+        from .ffmpeg import ffprobe
 
         kwargs.setdefault('show_streams', True)
         kwargs.setdefault('show_format', True)
@@ -719,7 +721,7 @@ class MediaFile(File):
         return self.extract_mediainfo_dict()
 
     def load_ffmpeg_metadata(self):
-        from qip.ffmpeg import ffmpeg
+        from .ffmpeg import ffmpeg
         with ffmpeg.MetadataFile.NamedTemporaryFile() as metadata_file:
             ffmpeg_args = [
                 '-i', self,
@@ -738,7 +740,7 @@ class MediaFile(File):
     def write_ffmpeg_metadata(self, metadata_file,
                               ffmpeg_args=None,
                               show_progress_bar=None, progress_bar_max=None, progress_bar_title=None):
-        from qip.ffmpeg import ffmpeg
+        from .ffmpeg import ffmpeg
         assert isinstance(metadata_file, ffmpeg.MetadataFile)
         if metadata_file.file_name is None:
             assert metadata_file.fp is None, 'metadata file is opened file with no name!?'
@@ -972,19 +974,19 @@ class MediaFile(File):
         return tags
 
     def _load_tags_mf_VCFLACDict(self, mf):
-        from qip.flac import FlacFile
+        from .flac import FlacFile
         return self._load_tags_mf_VComment(mf, tag_map=FlacFile.tag_map)
 
     def _load_tags_mf_OggFLACVComment(self, mf):
-        from qip.ogg import OggFile
+        from .ogg import OggFile
         return self._load_tags_mf_VComment(mf, tag_map=OggFile.tag_map)
 
     def _load_tags_mf_OggOpusVComment(self, mf):
-        from qip.ogg import OggFile
+        from .ogg import OggFile
         return self._load_tags_mf_VComment(mf, tag_map=OggFile.tag_map, opus_chapters=True)
 
     def _load_tags_mf_OggTheoraCommentDict(self, mf):
-        from qip.ogg import OggFile
+        from .ogg import OggFile
         return self._load_tags_mf_VComment(mf, tag_map=OggFile.tag_map)
 
     def _load_tags_mf_VComment(self, mf, tag_map, opus_chapters=False):
@@ -3080,7 +3082,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
     def cite(self, cite_api=None, type_=None):
 
         if cite_api is None:
-            from qip.cite import default as cite_api
+            from .cite import default as cite_api
 
         type_ = type_ or self.deduce_type()
         if type_ == 'movie':
@@ -5372,6 +5374,7 @@ def get_audio_file_sox_stats(d):
 # get_audio_file_ffmpeg_stats {{{
 
 def get_audio_file_ffmpeg_stats(d):
+    from .ffmpeg import ffmpeg
     cache_file = app.mk_cache_file(str(d.file_name) + '.ffmpegstats')
     cache_file = cache_file and TextFile(cache_file)
     if (
