@@ -164,14 +164,14 @@ def _tIntOrList(value):
         return (value,)
     if type(value) is str:
         value = value.replace(',', ' ').split()
-    if isinstance(value, (tuple, list)):
+    if isinstance(value, (tuple, list, types.GeneratorType)):
         if not value:
             return None
         return tuple(int(e) for e in value)
     raise ValueError('Not a valid integer or list of: %r' % (value,))
 
 def _tPicture(value, accept_iterable=True):
-    if accept_iterable and isinstance(value, (tuple, list)):
+    if accept_iterable and isinstance(value, (tuple, list, types.GeneratorType)):
         return tuple(_tPicture(e, accept_iterable=False) for e in value)
     if isinstance(value, (File, PictureTagInfo)):
         return value
@@ -199,14 +199,66 @@ def parse_time_duration(dur):
 
 # }}}
 
+class PictureType(enum.Enum):
+    # https://en.wikipedia.org/wiki/ID3#ID3v2_embedded_image_extension
+    other = 'Other'                                     # ID3: $00 Other
+    file_icon = '32x32'                                 # ID3: $01 32x32 pixels 'file icon' (PNG only)
+    other_file_icon = 'Other'                           # ID3: $02 Other file icon
+    cover_front = 'Cover (front)'                       # ID3: $03 Cover (front)
+    cover_back = 'Cover (back)'                         # ID3: $04 Cover (back)
+    leaflet = 'Leaflet page'                            # ID3: $05 Leaflet page
+    media = 'Media'                                     # ID3: $06 Media (e.g. label side of CD)
+    lead_artist = 'Lead artist/lead performer/soloist'  # ID3: $07 Lead artist/lead performer/soloist
+    artist = 'Artist/performer'                         # ID3: $08 Artist/performer
+    conductor = 'Conductor'                             # ID3: $09 Conductor
+    band = 'Band/Orchestra'                             # ID3: $0A Band/Orchestra
+    composer = 'Composer'                               # ID3: $0B Composer
+    lyricist = 'Lyricist/text writer'                   # ID3: $0C Lyricist/text writer
+    recording_location = 'Recording Location'           # ID3: $0D Recording Location
+    during_recording = 'During recording'               # ID3: $0E During recording
+    during_performance = 'During performance'           # ID3: $0F During performance
+    movie = 'Movie/video screen capture'                # ID3: $10 Movie/video screen capture
+    a_bright_coloured_fish = 'A bright coloured fish'   # ID3: $11 A bright coloured fish
+    illustration = 'Illustration'                       # ID3: $12 Illustration
+    band_logo = 'Band/artist logotype'                  # ID3: $13 Band/artist logotype
+    publisher_logo = 'Publisher/Studio logotype'        # ID3: $14 Publisher/Studio logotype
+
+    def __str__(self):
+        return self.value
+
+    def __new_override__(cls, value):
+        if type(value) is int:
+            value = str(value)
+        if type(value) is str:
+            value = value.strip().lower()
+            for pattern, new_value in (
+                ):
+                m = re.search(pattern, value)
+                if m:
+                    value = new_value
+                    break
+        return super().__new__(cls, value)
+
+    def __int__(self):
+        return self.int_value
+
+PictureType.__new__ = PictureType.__new_override__
+for _i, _e in (
+):
+    _e.int_value = _i
+    PictureType._value2member_map_[str(_i)] = _e
+for _e in PictureType:
+    PictureType._value2member_map_[_e.value.lower()] = _e
+
 class PictureTagInfo(object):
 
-    def __init__(self, format, description, **kwargs):
+    def __init__(self, format, description, type=PictureType.cover_front, **kwargs):
         """
         format: mime type (image/jpeg)
         """
         self.format = format
         self.description = description
+        self.type = type
         super().__init__(**kwargs)
 
     def __str__(self):
@@ -860,7 +912,7 @@ class MediaFile(File):
                 file_desc = byte_decode(do_exec_cmd(['file', '-b', '-'], input=tag_value.data, dry_run=False)).strip()
                 if tag_value.desc:
                     file_desc = f'{tag_value.desc}, {file_desc}'
-                tag_value = PictureTagInfo(tag_value.mime, file_desc)
+                tag_value = PictureTagInfo(format=tag_value.mime, description=file_desc)
             if isinstance(tag_value, mutagen.id3.TextFrame):
                 tag_value = tag_value.text
             if isinstance(tag_value, list) and len(tag_value) == 1:
@@ -951,7 +1003,7 @@ class MediaFile(File):
                             mutagen.mp4.MP4Cover.FORMAT_PNG: 'image/png',
                             }.get(cover.imageformat, repr(cover.imageformat))
                     file_desc = byte_decode(do_exec_cmd(['file', '-b', '-'], input=bytes(cover), dry_run=False)).strip()
-                    new_tag_value.append(PictureTagInfo(imageformat, file_desc))
+                    new_tag_value.append(PictureTagInfo(format=imageformat, description=file_desc))
                 tag_value = new_tag_value
             if isinstance(tag_value, list) and len(tag_value) == 1:
                 tag_value = tag_value[0]
