@@ -527,6 +527,7 @@ def taged_mf_MP4Tags(mm_file, mf, tags):
                 MediaTagEnum.mediatype,
                 MediaTagEnum.seasons,
                 MediaTagEnum.episodes,
+                MediaTagEnum.originaltitle,
         ):
             continue
         tag = tag.name

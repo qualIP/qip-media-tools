@@ -2306,11 +2306,11 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
         type=(_tNullTag, _tPersonnelString))
 
     @property
-    def albumartist_list(self):
-        return [e.strip() for e in (self.albumartist or '').split(';')]
+    def albumartists(self):
+        return (e.strip() for e in (self.albumartist or '').split(';'))
 
-    @albumartist_list.setter
-    def albumartist_list(self, value):
+    @albumartists.setter
+    def albumartists(self, value):
         self.albumartist = value
 
     artist = propex(
@@ -2318,11 +2318,11 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
         type=(_tNullTag, _tPersonnelString))
 
     @property
-    def artist_list(self):
-        return [e.strip() for e in (self.artist or '').split(';')]
+    def artists(self):
+        return (e.strip() for e in (self.artist or '').split(';'))
 
-    @artist_list.setter
-    def artist_list(self, value):
+    @artists.setter
+    def artists(self, value):
         self.artist = value
 
     disk = propex(
@@ -3081,7 +3081,7 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
                 **self.as_str_dict())
         if type_ == 'audiobook':
             return cite_api.cite_book(
-                authors=self.artist_list,
+                authors=self.artists,
                 medium=self.mediatype or 'Audiobook',
                 **self.as_str_dict())
         if type_ == 'tvshow':
@@ -5698,6 +5698,8 @@ def argparse_add_tags_arguments(parser, tags, exclude=()):
         parser.add_argument('--copyright', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'title' not in exclude:
         parser.add_argument('--title', '--song', '-s', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
+    if 'originaltitle' not in exclude:
+        parser.add_argument('--originaltitle', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'subtitle' not in exclude:
         parser.add_argument('--subtitle', tags=tags, default=argparse.SUPPRESS, action=ArgparseSetTagAction)
     if 'genre' not in exclude:

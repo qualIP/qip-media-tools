@@ -11,6 +11,7 @@ __all__ = (
     'mkvpropedit',
 )
 
+# https://www.matroska.org/technical/tagging.html
 # https://matroska.org/technical/specs/tagging/index.html
 # https://www.webmproject.org/docs/container/
 # http://wiki.webmproject.org/webm-metadata/global-metadata
@@ -135,7 +136,8 @@ default_tag_map = (
     TagInfo(None, None, 'COMPOSER', 'composer'),
     TagInfo(None, None, 'PERFORMER', 'performer'),
     TagInfo(None, None, 'PUBLISHER', 'publisher'),
-    TagInfo(None, None, 'ORIGINAL/ARTIST', 'originalartist'),
+    # TODO TagInfo(None, None, 'ORIGINAL/ARTIST', 'originalartist'),
+    TagInfo(None, None, 'ORIGINAL/TITLE', 'originaltitle'),
     TagInfo(None, None, 'DATE_RELEASED', 'date'),
     #TagInfo(None, None, 'TODO', 'country'),
     TagInfo(None, None, 'RECORDING_LOCATION', 'recording_location'),
@@ -270,6 +272,10 @@ class MatroskaFile(BinaryMediaFile):
         'original',
         'comment',
     }
+
+    @property
+    def tag_writer(self):
+        return taged
 
     @property
     def tag_writer(self):
@@ -588,7 +594,8 @@ class MatroskaFile(BinaryMediaFile):
         default_TargetTypeValue, default_TargetTypes, tag_map = self.get_matroska_tag_map()
         tags_list = None
 
-        tags_to_set = set(self.tags.keys())
+        tags_to_set = sorted(set(self.tags.keys()))
+        log.debug('tags_to_set = %r', tags_to_set)
 
         for tag in tags_to_set:
             if tag in (
@@ -749,9 +756,9 @@ class MatroskaFile(BinaryMediaFile):
                             # TODO ringtone
                         }[d_tag.Target.TargetType]
                     except KeyError:
-                        log.debug('Deduced type is %r based on %r', tags.type, d_tag)
                         pass
                     else:
+                        log.debug('Deduced type is %r based on %r', tags.type, d_tag)
                         break
         if tags.contenttype is None:
             for d_tag in tags_list:
