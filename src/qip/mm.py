@@ -1710,12 +1710,15 @@ class _tReMatchGroups(_tReMatchTest):
             raise ValueError('Doesn\'t match r.e. {!r}'.format(self.expr))
         return m.groups()
 
-def _tPersonnelString(value):
-    if isinstance(value, (tuple, list)):
+def _tSemiColonListString(value):
+    if isinstance(value, (tuple, list, types.GeneratorType)):
         value = '; '.join(value)
     if isinstance(value, str):
         return value
     raise ValueError('Must be a string or list: %r' % (value,))
+
+_tPersonnelString = _tSemiColonListString
+_tGenreString = _tSemiColonListString
 
 # times_1000 {{{
 
@@ -2733,6 +2736,18 @@ class MediaTagDict(json.JSONEncodable, json.JSONDecodable, collections.abc.Mutab
     compilation = propex(
         name='compilation',
         type=(_tNullTag, _tBool))
+
+    genre = propex(
+        name='genre',
+        type=(_tNullTag, _tGenreString))
+
+    @property
+    def genres(self):
+        return (e.strip() for e in (self.genre or '').split(';'))
+
+    @genres.setter
+    def genres(self, value):
+        self.genre = value
 
     genreID = propex(
         name='genreID',

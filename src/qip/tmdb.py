@@ -93,6 +93,17 @@ class TMDb(tmdbv3api.TMDb, XdgResource):
         genre = Genre()
         return genre.movie_list()
 
+    movie_genre_map = propex(
+        name='movie_genre_map',
+    )
+
+    @movie_genre_map.initter
+    def movie_genre_map(self):
+        return {
+            genre.id: genre
+            for genre in self.movie_genre_list
+        }
+
     tvshow_genre_list = propex(
         name='tvshow_genre_list',
         )
@@ -155,8 +166,6 @@ class TMDb(tmdbv3api.TMDb, XdgResource):
             tags.description = o_movie.overview
         except AttributeError:
             pass
-        # print('genre_ids=%r' % (o_movie.genre_ids,))
-        # print('movie_genre_list=%r' % (self.movie_genre_list,))
         try:
             if o_movie.adult:
                 tags.contentrating = 'explicit'
@@ -167,7 +176,33 @@ class TMDb(tmdbv3api.TMDb, XdgResource):
                 tags.contenttype = 'video'
         except AttributeError:
             pass
+        genres = self.movie_to_genres(o_movie)
+        if genres:
+            tags.genres = (genre.name for genre in genres)
+        writers = []
+        screenplay_writers = []
+        credits = movie_api.credits(o_movie.id)
+        for person in credits.get('crew', ()):
+            person.setdefault('department', None)
+            if person.department == 'Writing':
+                person.setdefault('job', None)
+                if person.job == 'Writer':
+                    writers.append(person)
+                elif person.job == 'Screenplay':
+                    screenplay_writers.append(person)
+        if writers:
+            tags.artist = [person.name for person in writers]
+        elif screenplay_writers:
+            tags.artist = [person.name for person in screenplay_writers]
         return tags
+
+    def movie_to_genres(self, o_movie):
+        try:
+            genre_ids = o_movie.genre_ids
+        except AttributeError:
+            return
+        for genre_id in genre_ids:
+            yield self.movie_genre_map[genre_id]
 
     def cite_movie(self, o_movie, cite_api=None):
         if cite_api is None:
