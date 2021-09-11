@@ -500,12 +500,19 @@ def taged_mf_MP4Tags(mm_file, mf, tags):
     }
     for tag1, tag2 in overwrite_map.items():
         tag1 = MediaTagEnum[tag1]
+        if tag1 not in tags_to_set:
+            continue
         tag2 = MediaTagEnum[tag2]
-        if (tag1 in tags_to_set
-            and tag2 in tags_to_set
-            and tags[tag2] is None):
+        if tag2 not in tags_to_set:
+            continue
+        if tags[tag1] is None:
+            app.log.debug('Drop %s is None', tag1)
+            tags_to_set.remove(tag1)
+            continue
+        if tags[tag2] is None:
             app.log.debug('Drop %s is None: overwritting with %r', tag2, tag1)
             tags_to_set.remove(tag2)
+            continue
 
     for tag in (
             MediaTagEnum.barcode,
