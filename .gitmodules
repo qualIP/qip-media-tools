@@ -1,0 +1,3 @@
+[submodule "shfuncs"]
+	path = shfuncs
+	url = https://github.com/qualIP/shfuncs.git
