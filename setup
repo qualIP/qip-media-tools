@@ -135,9 +135,23 @@ test_prog_installed() {
     fi
 }
 
+PMS=
+DISTRO=
 if [[ -e /etc/debian_version ]] ; then
     PMS=apt-get
     DISTRO=debian
+elif [[ -e /etc/arch-release ]] ; then
+    PMS=pacman
+    DISTRO=arch
+elif [[ "$UNAME_S" = 'Darwin' ]] ; then
+    PMS=brew
+    DISTRO=darwin
+    PATH="${PATH}:/Applications/MakeMKV.app/Contents/MacOS"
+elif [[ -e /etc/os-release ]] ; then
+    DISTRO=$(ID=; . /etc/os-release ; echo "${ID:-}")
+fi
+
+if [[ "$PMS" = "apt-get" ]] ; then
 
     test_package_installed() {
         local package=$1 ; shift
@@ -175,9 +189,7 @@ if [[ -e /etc/debian_version ]] ; then
         fi
     }
 
-elif [[ -e /etc/arch-release ]] ; then
-    PMS=pacman
-    DISTRO=arch
+elif [[ "$PMS" = "pacmac" ]] ; then
 
     test_package_installed() {
         local package=$1 ; shift
@@ -246,11 +258,7 @@ elif [[ -e /etc/arch-release ]] ; then
         fi
     }
 
-elif [[ "$UNAME_S" = 'Darwin' ]] ; then
-    PMS=brew
-    DISTRO=darwin
-
-    PATH="${PATH}:/Applications/MakeMKV.app/Contents/MacOS"
+elif [[ "$PMS" = "brew" ]] ; then
 
     # qip-media-tools is not signed by Apple, you might need to adjust gatekeeper options in order to install the program:
     #     https://support.apple.com/en-us/HT202491
@@ -315,7 +323,7 @@ elif [[ "$UNAME_S" = 'Darwin' ]] ; then
     }
 
 else
-    print_err "ERROR: Unknown package management system."
+    print_err "ERROR: Unsupported package management system: ${PMS:-unknown}"
     print_err "Sorry, your system is not supported at this time."
     exit 1
 fi
